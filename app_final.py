@@ -38,7 +38,10 @@ LIGAS = {
     "chi.1":"Primera División 🇨🇱","sau.1":"Saudi Pro League 🇸🇦",
     "tur.1":"Süper Lig 🇹🇷","sco.1":"Premiership 🏴󠁧󠁢󠁳󠁣󠁴󠁿",
     "uefa.champions":"Champions League 🏆","uefa.europa":"Europa League 🏆",
+    "uefa.europa.conf":"Conference League 🏆",
     "den.1":"Superliga 🇩🇰","nor.1":"Eliteserien 🇳🇴",
+    "bel.1":"Pro League 🇧🇪",
+    "gre.1":"Super League 🇬🇷",
 }
 
 # ══════════════════════════════════════════════════════════
