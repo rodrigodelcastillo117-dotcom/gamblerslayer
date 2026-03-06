@@ -275,7 +275,7 @@ def get_standings(slug):
 # ══════════════════════════════════════════════════════════
 # ODDS API — The Odds API (gratis 500 req/mes)
 # ══════════════════════════════════════════════════════════
-ODDS_API_KEY = "fcd1d66114bf43935dfb7b53e7433994"  # Pon tu key de https://the-odds-api.com (gratis)
+ODDS_API_KEY = ""  # Pon tu key de https://the-odds-api.com (gratis)
 BOOKMAKERS   = ["bet365","pinnacle","unibet","williamhill"]
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -785,7 +785,7 @@ matches   = all_matches if liga_sel=="Todas" else [m for m in all_matches if m["
 # ══════════════════════════════════════════════════════════
 if st.session_state["view"] == "cartelera":
 
-    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial"])
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick"])
 
     # ─── TAB CARTELERA ───────────────────────────────────
     with tab1:
@@ -1011,9 +1011,117 @@ if st.session_state["view"] == "cartelera":
                     st.info("No hay resultados nuevos aún")
         render_history()
 
-# ══════════════════════════════════════════════════════════
-# ANÁLISIS
-# ══════════════════════════════════════════════════════════
+    # ─── TAB CALIFICA TU PICK ─────────────────────────────
+    with tab7:
+        st.markdown("<div class='shdr'>🎓 Califica tu Pick</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='color:#555;font-size:.85rem;margin-bottom:16px'>"
+            "Sube un screenshot de tu apuesta y la IA la califica al instante.</div>",
+            unsafe_allow_html=True)
+
+        uploaded = st.file_uploader("📸 Sube screenshot de tu apuesta",
+                                    type=["png","jpg","jpeg","webp"],
+                                    label_visibility="collapsed")
+
+        if uploaded:
+            import base64
+            img_bytes  = uploaded.read()
+            b64        = base64.b64encode(img_bytes).decode()
+            media_type = uploaded.type or "image/jpeg"
+
+            col_img, col_res = st.columns([1, 1])
+            with col_img:
+                st.image(img_bytes, caption="Tu apuesta", use_container_width=True)
+
+            with col_res:
+                with st.spinner("🔍 Analizando tu pick..."):
+                    try:
+                        resp = requests.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={"Content-Type": "application/json"},
+                            json={
+                                "model": "claude-sonnet-4-20250514",
+                                "max_tokens": 1000,
+                                "messages": [{
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "image",
+                                            "source": {
+                                                "type": "base64",
+                                                "media_type": media_type,
+                                                "data": b64
+                                            }
+                                        },
+                                        {
+                                            "type": "text",
+                                            "text": """Eres un experto analista de apuestas deportivas. Analiza esta apuesta y responde SOLO en este formato JSON exacto, sin texto extra ni markdown:
+
+{
+  "equipos": "Local vs Visitante",
+  "mercado": "tipo de apuesta detectada",
+  "cuota": "cuota si aparece, si no 'N/A'",
+  "calificacion_letra": "A+/A/A-/B+/B/B-/C+/C/C-/D/F",
+  "puntuacion": 85,
+  "veredicto": "✅ Jugada sólida / ⚠️ Riesgosa / ❌ Evitar",
+  "comentario": "Una sola frase directa y honesta sobre esta apuesta, máximo 20 palabras."
+}
+
+Criterios de calificación:
+- A+/A (90-100): Cuota justa o valor positivo, mercado sólido, baja varianza
+- B (75-89): Apuesta razonable con riesgo moderado
+- C (60-74): Cuota baja o mercado volátil
+- D/F (<60): Cuota baja, mercado difícil, o parlay muy largo"""
+                                        }
+                                    ]
+                                }]
+                            },
+                            timeout=30
+                        )
+                        raw  = resp.json()["content"][0]["text"].strip()
+                        # limpiar posibles backticks
+                        raw  = raw.replace("```json","").replace("```","").strip()
+                        data = __import__("json").loads(raw)
+
+                        # Calificación visual
+                        letra = data.get("calificacion_letra","?")
+                        pts   = data.get("puntuacion", 0)
+                        color_map = {
+                            "A+":"#00ff88","A":"#00ff88","A-":"#00dd77",
+                            "B+":"#7fff00","B":"#FFD700","B-":"#FFD700",
+                            "C+":"#ff9500","C":"#ff9500","C-":"#ff6600",
+                            "D":"#ff4444","F":"#cc0000"
+                        }
+                        color = color_map.get(letra, "#555")
+
+                        st.markdown(
+                            f"<div style='background:#0d0d2e;border:2px solid {color};"
+                            f"border-radius:20px;padding:28px 24px;text-align:center;margin-bottom:16px'>"
+                            f"<div style='font-size:5rem;font-weight:900;color:{color};line-height:1'>{letra}</div>"
+                            f"<div style='font-size:1.2rem;font-weight:700;color:{color};margin-top:4px'>{pts}/100</div>"
+                            f"<div style='font-size:1.1rem;margin-top:12px'>{data.get('veredicto','')}</div>"
+                            f"</div>", unsafe_allow_html=True)
+
+                        st.markdown(
+                            f"<div class='acard'>"
+                            f"<div style='font-size:.8rem;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.1em'>Detalles detectados</div>"
+                            f"<div style='margin:6px 0'><span style='color:#555'>⚽ Partido:</span> <b>{data.get('equipos','?')}</b></div>"
+                            f"<div style='margin:6px 0'><span style='color:#555'>🎯 Mercado:</span> <b>{data.get('mercado','?')}</b></div>"
+                            f"<div style='margin:6px 0'><span style='color:#555'>💰 Cuota:</span> <b>{data.get('cuota','N/A')}</b></div>"
+                            f"<div style='margin-top:14px;padding-top:12px;border-top:1px solid #252555;"
+                            f"font-style:italic;color:#aaa;font-size:.9rem'>💬 {data.get('comentario','')}</div>"
+                            f"</div>", unsafe_allow_html=True)
+
+                    except Exception as e:
+                        st.error(f"Error analizando la imagen: {e}")
+        else:
+            st.markdown(
+                "<div style='background:#0d0d2e;border:2px dashed #252555;border-radius:16px;"
+                "padding:40px;text-align:center;color:#444'>"
+                "<div style='font-size:3rem'>📸</div>"
+                "<div style='margin-top:12px;font-size:1rem'>Sube un screenshot de tu apuesta</div>"
+                "<div style='font-size:.82rem;margin-top:6px'>Funciona con Bet365, Codere, Betway, 1xBet y más</div>"
+                "</div>", unsafe_allow_html=True)
 else:
     g = st.session_state["sel"]
     if st.button("← Volver"):
