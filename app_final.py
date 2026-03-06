@@ -177,22 +177,63 @@ st.markdown("""
 </div>
 <script>
 (function(){
-  // Mostrar loader cuando Streamlit está cargando
   var loader = document.getElementById('glLoader');
   if(!loader) return;
-  // Observar cambios en el DOM para detectar re-runs
-  var lastRunning = false;
-  function checkRunning(){
-    var spinner = document.querySelector('[data-testid="stStatusWidget"]');
-    var running = spinner && spinner.innerText && spinner.innerText.includes('Running');
-    if(running && !lastRunning){
-      loader.classList.add('show');
-    } else if(!running && lastRunning){
-      loader.classList.remove('show');
-    }
-    lastRunning = !!running;
+
+  var showing = false;
+  function show(){ if(!showing){ showing=true; loader.classList.add('show'); } }
+  function hide(){ if(showing){ showing=false; loader.classList.remove('show'); } }
+
+  // Método 1: detectar el spinner SVG animado de Streamlit
+  function checkSpinner(){
+    // Streamlit usa un elemento con data-testid="stStatusWidget" o un svg animado
+    var w = document.querySelector('[data-testid="stStatusWidget"]');
+    var svg = document.querySelector('.stSpinner, [data-testid="stSpinner"]');
+    // También buscar el icono de "running" — en versiones nuevas es un círculo animado
+    var appRunning = document.querySelector('.stApp[data-streamlit-loaded]');
+    
+    // Detectar por atributo aria o clase de loading
+    var spinnerVisible = (
+      document.querySelector('svg[style*="animation"]') !== null ||
+      document.querySelector('[class*="spinner"]') !== null ||
+      (w && w.offsetParent !== null && w.innerHTML.trim() !== '')
+    );
+    spinnerVisible ? show() : hide();
   }
-  setInterval(checkRunning, 200);
+
+  // Método 2: MutationObserver — detecta cuando Streamlit modifica el DOM (= re-run)
+  var mutationTimer = null;
+  var observer = new MutationObserver(function(mutations){
+    // Filtrar mutaciones triviales
+    var relevant = mutations.some(function(m){
+      return m.target.id !== 'glLoader' &&
+             !m.target.closest('#glLoader') &&
+             m.addedNodes.length > 0;
+    });
+    if(!relevant) return;
+    show();
+    clearTimeout(mutationTimer);
+    // Si no hay más mutaciones en 800ms, el run terminó
+    mutationTimer = setTimeout(function(){
+      checkSpinner();
+      if(!document.querySelector('svg[style*="animation"], [class*="spinner"]')){
+        hide();
+      }
+    }, 800);
+  });
+
+  // Esperar a que el DOM esté listo
+  function init(){
+    var target = document.querySelector('[data-testid="stAppViewContainer"]') || document.body;
+    observer.observe(target, { childList:true, subtree:true });
+    setInterval(checkSpinner, 300);
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    setTimeout(init, 500);
+  }
 })();
 </script>
 """, unsafe_allow_html=True)
@@ -1067,32 +1108,75 @@ if st.session_state["view"] == "cartelera":
                                 res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
                                 ai_prompt = (
                                     f"Eres analista NBA experto. Analiza:\n"
-                                    f"{g['away']} @ {g['home']}\n"
-                                    f"Proy total: {res['proj']} pts | Línea O/U: {res['line']}\n"
-                                    f"P(Over)={res['p_over']*100:.1f}% P(Under)={res['p_under']*100:.1f}%\n\n"
-                                    f"Responde en español, máximo 4 líneas:\n"
-                                    f"1. ¿Over o Under? razón principal\n"
-                                    f"2. ¿ML quién gana? (local tiene ventaja)\n"
-                                    f"3. Confianza: Alta/Media/Baja"
+                                    f"{g['away']} (visitante) @ {g['home']} (local)\n"
+                                    f"Proyección total: {res['proj']} pts | Línea O/U: {res['line']}\n"
+                                    f"Modelo: Over={res['p_over']*100:.1f}% Under={res['p_under']*100:.1f}%\n\n"
+                                    f"Responde SOLO en JSON sin texto extra:\n"
+                                    f"{{\"over\": 58, \"under\": 42, \"ml_local\": 55, \"ml_visita\": 45, "
+                                    f"\"rec_ou\": \"OVER\", \"rec_ml\": \"{g['home']}\", "
+                                    f"\"conf\": \"Alta\", \"resumen\": \"2-3 lineas: O/U razon, ML quien gana y por que\"}}\n"
+                                    f"over+under=100, ml_local+ml_visita=100. Considera ritmo de juego, defensa, forma reciente."
                                 )
-                                ai_txt = ""
+                                ai_over = res["p_over"]*100
+                                ai_under = res["p_under"]*100
+                                ai_ml_h = 55.0; ai_ml_a = 45.0
+                                ai_rec_ou = res["rec"]; ai_rec_ml = g["home"]
+                                ai_txt = ""; ai_conf = "⚡ MEDIA"
                                 try:
                                     ai_r = requests.post("https://api.anthropic.com/v1/messages",
                                         headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-                                        json={"model":"claude-sonnet-4-20250514","max_tokens":300,
+                                        json={"model":"claude-sonnet-4-20250514","max_tokens":400,
                                               "messages":[{"role":"user","content":ai_prompt}]},timeout=15)
-                                    ai_txt = ai_r.json()["content"][0]["text"]
-                                except: ai_txt = ""
-                            rec_color = "#ff4444" if "OVER" in res["rec"] else ("#00ccff" if "UNDER" in res["rec"] else "#555")
+                                    raw = ai_r.json()["content"][0]["text"].strip()
+                                    raw = raw.replace("```json","").replace("```","").strip()
+                                    import json as _json
+                                    ad = _json.loads(raw)
+                                    ai_over   = float(ad.get("over", ai_over))
+                                    ai_under  = float(ad.get("under", ai_under))
+                                    ai_ml_h   = float(ad.get("ml_local", ai_ml_h))
+                                    ai_ml_a   = float(ad.get("ml_visita", ai_ml_a))
+                                    ai_rec_ou = ad.get("rec_ou", "OVER")
+                                    ai_rec_ml = ad.get("rec_ml", g["home"])
+                                    ai_txt    = ad.get("resumen","")
+                                    c = ad.get("conf","Media")
+                                    ai_conf   = "💎 DIAMANTE" if "alta" in c.lower() and max(ai_over,ai_under)>62 else ("🔥 ALTA" if "alta" in c.lower() else "⚡ MEDIA")
+                                except: ai_txt = raw if 'raw' in dir() else ""
+                            ou_color  = "#ff4444" if "OVER" in ai_rec_ou.upper() else "#00ccff"
+                            ml_color  = "#00ff88"
+                            conf_color2 = "#FFD700" if "DIAMANTE" in ai_conf else ("#00ff88" if "ALTA" in ai_conf else "#aaa")
                             st.markdown(
-                                f"<div class='acard' style='border-color:{rec_color}'>"
-                                f"<div style='font-size:1.4rem;font-weight:900;color:{rec_color};margin-bottom:12px'>📊 {res['rec']}</div>"
+                                f"<div class='acard' style='border-color:{conf_color2}'>"
+                                f"<div style='font-size:1.1rem;font-weight:900;color:{conf_color2};margin-bottom:14px'>"
+                                f"📊 {ai_rec_ou} · ML: {ai_rec_ml}  <span style='font-size:.75rem;font-weight:400;color:#555'>{ai_conf}</span></div>"
+                                f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Over / Under {res['line']}</div>"
                                 f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'>"
-                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{res['p_over']*100:.1f}%</div><div class='mlbl'>🔥 Over {res['line']}</div></div>"
-                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{res['p_under']*100:.1f}%</div><div class='mlbl'>❄️ Under {res['line']}</div></div>"
-                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{res['proj']}</div><div class='mlbl'>Proyección pts</div></div>"
+                                f"<div class='mbox' style='flex:1'>"
+                                f"<div class='mval' style='color:#ff4444'>{ai_over:.0f}%</div>"
+                                f"<div class='mlbl'>🔥 Over {res['line']}</div>"
+                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                f"<div style='height:5px;width:{ai_over:.0f}%;background:#ff4444;border-radius:3px'></div></div></div>"
+                                f"<div class='mbox' style='flex:1'>"
+                                f"<div class='mval' style='color:#00ccff'>{ai_under:.0f}%</div>"
+                                f"<div class='mlbl'>❄️ Under {res['line']}</div>"
+                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                f"<div style='height:5px;width:{ai_under:.0f}%;background:#00ccff;border-radius:3px'></div></div></div>"
+                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{res['proj']}</div><div class='mlbl'>Proy pts</div></div>"
                                 f"</div>"
-                                + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;border-left:3px solid #7c00ff;font-size:.88rem;line-height:1.6'>"
+                                f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Money Line</div>"
+                                f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
+                                f"<div class='mbox' style='flex:1'>"
+                                f"<div class='mval' style='color:#00ff88'>{ai_ml_h:.0f}%</div>"
+                                f"<div class='mlbl'>🏠 {g['home'][:12]}</div>"
+                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                f"<div style='height:5px;width:{ai_ml_h:.0f}%;background:#00ff88;border-radius:3px'></div></div></div>"
+                                f"<div class='mbox' style='flex:1'>"
+                                f"<div class='mval' style='color:#aa00ff'>{ai_ml_a:.0f}%</div>"
+                                f"<div class='mlbl'>✈️ {g['away'][:12]}</div>"
+                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                f"<div style='height:5px;width:{ai_ml_a:.0f}%;background:#aa00ff;border-radius:3px'></div></div></div>"
+                                f"</div>"
+                                + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
+                                   f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
                                    f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                 + f"</div>", unsafe_allow_html=True)
         with tab2:
@@ -1157,29 +1241,59 @@ if st.session_state["view"] == "cartelera":
                                         f"Analista tenis experto. Partido ATP/WTA:\n"
                                         f"Torneo: {m['torneo']}\n"
                                         f"{m['p1']} (rank #{m['rank1'] if m['rank1']<900 else '?'}) vs {m['p2']} (rank #{m['rank2'] if m['rank2']<900 else '?'})\n"
-                                        f"Momios: {m['odd_1'] if m['odd_1']>1 else 'N/D'} / {m['odd_2'] if m['odd_2']>1 else 'N/D'}\n"
-                                        f"Modelo: {m['p1']}={tm['p1']*100:.0f}%  {m['p2']}={tm['p2']*100:.0f}%\n\n"
-                                        f"Responde en español, máximo 4 líneas:\n"
-                                        f"1. ML: quién gana y por qué (ranking/superficie/forma)\n"
-                                        f"2. ¿Hay valor en los momios?\n"
-                                        f"3. Confianza: Alta/Media/Baja"
+                                        f"Momios: {m['odd_1'] if m['odd_1']>1 else 'N/D'} / {m['odd_2'] if m['odd_2']>1 else 'N/D'}\n\n"
+                                        f"Responde SOLO en este JSON, sin texto extra:\n"
+                                        f"{{\"p1\": 55, \"p2\": 45, \"fav\": \"{m['p1']}\", "
+                                        f"\"conf\": \"Alta\", \"resumen\": \"2-3 lineas: quien gana, por que (ranking/superficie/forma), si hay valor en momios\"}}\n\n"
+                                        f"p1+p2 deben sumar 100. Basa los % en ranking, historial en la superficie y forma reciente."
                                     )
+                                    ai_p1, ai_p2 = tm["p1"]*100, tm["p2"]*100
+                                    ai_fav = fav
                                     ai_txt = ""
+                                    ai_conf = tm["conf"]
                                     try:
                                         ai_r = requests.post("https://api.anthropic.com/v1/messages",
                                             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-                                            json={"model":"claude-sonnet-4-20250514","max_tokens":300,
+                                            json={"model":"claude-sonnet-4-20250514","max_tokens":400,
                                                   "messages":[{"role":"user","content":ai_prompt}]},timeout=15)
-                                        ai_txt = ai_r.json()["content"][0]["text"]
-                                    except: ai_txt = ""
+                                        raw = ai_r.json()["content"][0]["text"].strip()
+                                        raw = raw.replace("```json","").replace("```","").strip()
+                                        import json as _json
+                                        ai_data = _json.loads(raw)
+                                        ai_p1   = float(ai_data.get("p1", ai_p1))
+                                        ai_p2   = float(ai_data.get("p2", ai_p2))
+                                        # normalizar a 100
+                                        s = ai_p1 + ai_p2
+                                        if s > 0: ai_p1 = ai_p1/s*100; ai_p2 = ai_p2/s*100
+                                        ai_fav  = ai_data.get("fav", fav)
+                                        ai_txt  = ai_data.get("resumen","")
+                                        c = ai_data.get("conf","Media")
+                                        ai_conf = "💎 DIAMANTE" if "alta" in c.lower() and ai_p1>65 else ("🔥 ALTA" if "alta" in c.lower() else ("⚡ MEDIA" if "media" in c.lower() else "🔻 BAJA"))
+                                    except: ai_txt = raw if 'raw' in dir() else ""
+                                # color según confianza IA
+                                ai_color = "#FFD700" if "DIAMANTE" in ai_conf else ("#00ff88" if "ALTA" in ai_conf else ("#aaa" if "MEDIA" in ai_conf else "#ff4444"))
+                                fav_pct = max(ai_p1, ai_p2)
+                                p1_color = "#00ccff" if ai_p1 >= ai_p2 else "#aa00ff"
+                                p2_color = "#aa00ff" if ai_p1 >= ai_p2 else "#00ccff"
                                 st.markdown(
-                                    f"<div class='acard' style='border-color:{conf_color}'>"
-                                    f"<div style='font-weight:900;font-size:1.1rem;color:{conf_color};margin-bottom:10px'>{fav_p*100:.0f}% → {fav}</div>"
+                                    f"<div class='acard' style='border-color:{ai_color}'>"
+                                    f"<div style='font-weight:900;font-size:1.1rem;color:{ai_color};margin-bottom:10px'>"
+                                    f"{fav_pct:.0f}% → {ai_fav}  <span style='font-size:.78rem;font-weight:400;color:#555'>{ai_conf}</span></div>"
                                     f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
-                                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{tm['p1']*100:.0f}%</div><div class='mlbl'>{m['p1'][:14]}</div></div>"
-                                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{tm['p2']*100:.0f}%</div><div class='mlbl'>{m['p2'][:14]}</div></div>"
+                                    f"<div class='mbox' style='flex:1'>"
+                                    f"<div class='mval' style='color:{p1_color}'>{ai_p1:.0f}%</div>"
+                                    f"<div class='mlbl'>{m['p1'][:14]}</div>"
+                                    f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                    f"<div style='height:5px;width:{ai_p1:.0f}%;background:{p1_color};border-radius:3px'></div></div>"
                                     f"</div>"
-                                    + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;border-left:3px solid #7c00ff;font-size:.88rem;line-height:1.6'>"
+                                    f"<div class='mbox' style='flex:1'>"
+                                    f"<div class='mval' style='color:{p2_color}'>{ai_p2:.0f}%</div>"
+                                    f"<div class='mlbl'>{m['p2'][:14]}</div>"
+                                    f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                    f"<div style='height:5px;width:{ai_p2:.0f}%;background:{p2_color};border-radius:3px'></div></div>"
+                                    f"</div></div>"
+                                    + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
+                                       f"border-left:3px solid {ai_color};font-size:.88rem;line-height:1.7'>"
                                        f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                     + f"</div>", unsafe_allow_html=True)
         with tab2:
