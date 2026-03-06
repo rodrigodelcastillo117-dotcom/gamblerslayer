@@ -96,7 +96,62 @@ p,span,div,label,li,td,th,small,strong,em,b,h1,h2,h3,h4,
 .conf-pill{border-radius:20px;padding:4px 12px;font-size:.78rem;font-weight:700;display:inline-block;margin:2px}
 .stand-row{display:grid;grid-template-columns:28px 1fr 36px 36px 36px 36px 50px;gap:6px;
   align-items:center;padding:8px 4px;border-bottom:1px solid #151530;font-size:.85rem}
+/* ── INLINE CODE tags — dark always ── */
+code{background:#1a1a40!important;color:#00ccff!important;border-radius:5px!important;
+  padding:2px 7px!important;font-size:.85em!important;border:1px solid #252555!important}
+/* ── ST TEXT INPUT — dark background ── */
+[data-testid="stTextInput"] > div > div > input{
+  background:#0d0d2e!important;color:#EEEEFF!important;
+  border:1px solid #252555!important;border-radius:10px!important}
+[data-testid="stTextInput"] > div > div > input::placeholder{color:#555!important}
+[data-testid="stTextInput"] > div > div > input:focus{border-color:#7c00ff!important;
+  box-shadow:0 0 0 2px #7c00ff33!important}
+[data-testid="stTextInput"] label{color:#aaa!important;font-size:.82rem!important}
+/* ── NUMBER INPUT — dark ── */
+[data-testid="stNumberInput"] input{background:#0d0d2e!important;color:#EEEEFF!important;
+  border:1px solid #252555!important;border-radius:10px!important}
+/* ── PASSWORD INPUT ── */
+[data-testid="stTextInput"] [data-testid="InputInstructions"]{color:#555!important}
 /* loader lives in iframe component — no CSS needed here */
+/* ── SELECTBOX — texto visible siempre ── */
+[data-testid="stSelectbox"] > div > div{
+  background:#0d0d2e!important;border:1px solid #252555!important;
+  border-radius:10px!important;color:#EEEEFF!important}
+[data-testid="stSelectbox"] > div > div > div{color:#EEEEFF!important}
+[data-testid="stSelectbox"] svg{fill:#EEEEFF!important}
+/* Dropdown abierto */
+[data-baseweb="popover"] [role="option"]{
+  background:#0d0d2e!important;color:#EEEEFF!important}
+[data-baseweb="popover"] [role="option"]:hover,
+[data-baseweb="popover"] [aria-selected="true"]{
+  background:#1a1a50!important;color:#FFD700!important}
+[data-baseweb="select"] [data-testid="stMarkdownContainer"] *{color:#EEEEFF!important}
+/* Selectbox input text */
+div[data-baseweb="select"] > div{
+  background:#0d0d2e!important;border-color:#252555!important;color:#EEEEFF!important}
+div[data-baseweb="select"] > div > div{color:#EEEEFF!important;font-weight:600!important}
+div[data-baseweb="select"] input{color:#EEEEFF!important}
+/* ── EXPANDERS — texto siempre blanco ── */
+[data-testid="stExpander"]{border:1px solid #252555!important;border-radius:12px!important;background:#0d0d2e!important}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary *,
+[data-testid="stExpander"] summary p,
+[data-testid="stExpander"] summary span,
+[data-testid="stExpander"] details summary{
+  color:#EEEEFF!important;background:#0d0d2e!important;font-weight:700!important}
+[data-testid="stExpander"] summary:hover,
+[data-testid="stExpander"] summary:hover *{color:#FFD700!important}
+[data-testid="stExpander"] > details > summary{
+  background:#0d0d2e!important;border-radius:12px!important;padding:12px 16px!important;color:#EEEEFF!important}
+/* Force all text inside expander header white */
+details > summary > div,
+details > summary > div *,
+details > summary span,
+details > summary p{color:#EEEEFF!important}
+/* ── DATE / FECHA label en expanders ── */
+.streamlit-expanderHeader *{color:#EEEEFF!important}
+.streamlit-expanderHeader:hover,
+.streamlit-expanderHeader:hover *{color:#FFD700!important;background:#12123a!important}
 /* ── MOBILE ── */
 @media(max-width:768px){
   /* Header */
@@ -411,7 +466,10 @@ def get_standings(slug):
 # ══════════════════════════════════════════════════════════
 # ODDS API — The Odds API (gratis 500 req/mes)
 # ══════════════════════════════════════════════════════════
-ODDS_API_KEY = ""  # Pon tu key de https://the-odds-api.com (gratis)
+try:
+    ODDS_API_KEY = st.secrets.get("ODDS_API_KEY", "")
+except:
+    ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 BOOKMAKERS   = ["bet365","pinnacle","unibet","williamhill"]
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -420,7 +478,8 @@ def get_real_odds(home_name, away_name, league_slug):
     Intenta obtener cuotas reales de The Odds API.
     Si no hay key o falla, devuelve dict vacío.
     """
-    if not ODDS_API_KEY:
+    _key = st.session_state.get("runtime_odds_key", ODDS_API_KEY)
+    if not _key:
         return {}
     # Mapeo de slugs ESPN → sport_key de Odds API
     slug_map = {
@@ -438,7 +497,7 @@ def get_real_odds(home_name, away_name, league_slug):
     try:
         url  = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
         resp = requests.get(url, params={
-            "apiKey": ODDS_API_KEY, "regions":"eu",
+            "apiKey": st.session_state.get("runtime_odds_key", ODDS_API_KEY), "regions":"eu",
             "markets":"h2h","oddsFormat":"decimal","bookmakers": ",".join(BOOKMAKERS)
         }, timeout=8)
         if resp.status_code != 200: return {}
@@ -466,13 +525,37 @@ def render_odds_comparison(home, away, dp, mc, real_odds):
     st.markdown("<div class='shdr'>💰 Valor Esperado vs Casas de Apuestas</div>", unsafe_allow_html=True)
     
     if not real_odds:
-        # Sin Odds API — mostrar solo ESPN odds si hay
+        # Sin Odds API — mostrar mensaje con links visibles y dark input
         st.markdown(
-            "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
-            "padding:14px 18px;color:#555;font-size:.85rem'>"
-            "💡 Conecta <b>The Odds API</b> para comparar vs Bet365, Pinnacle y más. "
-            "Regístrate gratis en <code>the-odds-api.com</code> y pega tu key en <code>ODDS_API_KEY</code>"
-            "</div>", unsafe_allow_html=True)
+            "<div style='background:#0d0d2e;border:1px solid #7c00ff44;border-radius:14px;"
+            "padding:16px 20px'>"
+            "<div style='font-size:.78rem;color:#7c00ff;font-weight:700;letter-spacing:.1em;"
+            "margin-bottom:10px'>💰 CONECTA ODDS EN TIEMPO REAL</div>"
+            "<div style='font-size:.88rem;color:#aaa;line-height:1.6'>"
+            "Conecta <b style='color:#EEEEFF'>The Odds API</b> para comparar vs "
+            "<b style='color:#FFD700'>Bet365</b>, <b style='color:#FFD700'>Pinnacle</b> y más.<br>"
+            "<span style='color:#555'>Plan gratis: 500 requests/mes — más que suficiente.</span>"
+            "</div>"
+            "<div style='margin-top:12px;display:flex;gap:10px;flex-wrap:wrap'>"
+            "<a href='https://the-odds-api.com' target='_blank' "
+            "style='background:linear-gradient(135deg,#7c00ff,#00ccff);color:#fff!important;"
+            "padding:8px 18px;border-radius:10px;font-weight:700;font-size:.85rem;"
+            "text-decoration:none'>🔗 Registrarse gratis</a>"
+            "</div></div>"
+            , unsafe_allow_html=True)
+        # Input para pegar key — dark styled
+        _new_key = st.text_input(
+            "🔑 Pega tu API Key aquí",
+            value=ODDS_API_KEY,
+            placeholder="ej: a1b2c3d4e5f6...",
+            type="password",
+            key="odds_key_input",
+            help="Cópiala de the-odds-api.com → Dashboard"
+        )
+        if _new_key and _new_key != ODDS_API_KEY:
+            st.session_state["runtime_odds_key"] = _new_key
+            st.success("✅ Key guardada en sesión. Abre un partido para ver odds en vivo.")
+            st.rerun()
         return
 
     probs = {"Local gana": dp["ph"], "Empate": dp["pd"], "Visita gana": dp["pa"]}
