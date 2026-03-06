@@ -4301,8 +4301,6 @@ if st.session_state["view"] == "cartelera":
                                        f"border-left:3px solid {ai_color};font-size:.88rem;line-height:1.7'>"
                                        f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                     + f"</div>", unsafe_allow_html=True)
-        # ── ACTION NETWORK NBA ──
-        render_action_network_nba(g["home"], g["away"], g.get("ou_line",0))
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick Tenis del día:")
