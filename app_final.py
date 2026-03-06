@@ -2917,36 +2917,80 @@ def render_einstein_califica(key_sfx="fut"):
                 EINSTEIN = (
                     "Eres EINSTEIN BETS, la IA más avanzada del mundo en análisis de apuestas deportivas. "
                     "Tu misión: analizar esta apuesta con rigor matemático absoluto, como un quant de Wall Street aplicado al deporte. "
-                    "PROCESO OBLIGATORIO (ejecuta todos los pasos):\n"
-                    "PASO 1 — IDENTIFICACIÓN PRECISA: Deporte exacto, equipos/jugadores, torneo/liga, fecha estimada, mercado específico, cuota exacta, estado actual del partido.\n"
-                    "PASO 2 — VARIABLES HUMANAS VISIBLES:\n"
-                    "  · TENIS: Ranking ATP/WTA de ambos, superficie del torneo, historial H2H conocido, forma reciente (últimos 5 torneos).\n"
-                    "  · FÚTBOL: Posición en tabla, goles a favor/contra, condición local/visitante, importancia del partido.\n"
-                    "  · NBA: Win%, puntos por partido, diferencial ofensivo/defensivo.\n"
-                    "PASO 3 — VARIABLES OCULTAS (las que los humanos no calculan):\n"
-                    "  · TENIS: Fatiga acumulada (días desde último partido jugado esta semana). Velocidad de pista vs estilo de juego (servidor potente en hierba, defensor en tierra). Altitud del torneo (afecta resistencia). Temperatura y humedad estimada (afecta tenistas con menos masa muscular). Presión de favoritismo. Historial en esa ronda específica del torneo. Historial de lesiones crónicas relevantes. Cuántos sets jugados en los últimos 3 partidos (fatiga real). Motivación: ¿necesita puntos ranking? ¿ya clasificado?\n"
-                    "  · FÚTBOL: xG reales vs goles marcados (suerte vs mérito). Presión táctica específica del rival. Cansancio por calendario (Europa + Liga). Árbitro (si identificable) y tarjetas por partido. Clima estimado para ese día/ciudad. Historial de lesiones del equipo. Deuda táctica del entrenador. Eficiencia en goles de set-piece.\n"
-                    "  · NBA: Pace differential vs ese rival. Back-to-back games o cuarto partido en 6 noches. Travel miles esta semana. Rendimiento en 4Q y clutch time. Arbitraje tendencia (fouls per game). Rendimiento sin jugador estrella (rotaciones).\n"
-                    "PASO 4 — MODELO PROBABILÍSTICO: Ejecuta distribución de Poisson (fútbol/NBA) o Elo ajustado (tenis) mentalmente. Estima prob_real como un actuario. Calcula la probabilidad implícita de la cuota: 1/cuota. Calcula edge = prob_real - prob_implicita.\n"
-                    "PASO 5 — 50,000 SIMULACIONES MONTE CARLO: Simula el evento con las variables anteriores. Determina el intervalo de confianza al 95%. Calcula EV = (prob_real × (cuota-1)) - (prob_fallo × 1).\n"
-                    "PASO 6 — SEÑAL DE MERCADO SHARP: ¿La cuota parece de apertura o movida por sharp money? ¿Hay discrepancia con otras casas? ¿Es una cuota trampa para el público general?\n"
-                    "PASO 7 — REVISIÓN CRÍTICA: ¿El partido ya terminó? Si sí, veredicto='Inválida'. ¿Es mercado de mala cuota para el valor real? ¿Hay banderas rojas que invalidan el pick?\n"
-                    "PASO 8 — KELLY CRITERION: kelly% = max(0, min(5, ((cuota-1)*prob_real - prob_fallo)/(cuota-1)*100)). Nunca más del 5% del bankroll.\n"
-                    + (f"PASO 9 — APRENDIZAJE REAL DE TU HISTORIAL: {mem_ctx}\n" if mem_ctx else "")
-                    + "CALIFICACIÓN ESTRICTA (sé implacable — sólo el top 10% de picks merece A):\n"
-                    "A+(95-100): EV>+0.10, edge>10%, variables ocultas muy favorables, señal sharp\n"
-                    "A (88-94): EV>+0.06, edge 6-10%, análisis sólido\n"
-                    "A-(82-87): EV>+0.03, edge 3-6%, pick razonable\n"
-                    "B+(76-81): EV>+0.01, valor marginal pero existe\n"
-                    "B (70-75): EV≈0, cuota justa, sin ventaja real — no apostar\n"
-                    "B-(64-69): EV ligeramente negativo — no apostar\n"
-                    "C+(55-63): EV negativo -3% — pick malo\n"
+                    "Hoy es " + datetime.now(CDMX).strftime("%A %d de %B de %Y, %H:%M hora CDMX") + ".\n\n"
+
+                    "══ GLOSARIO DE TÉRMINOS LOCALES (CRÍTICO — memoriza esto) ══\n"
+                    "PA = 'PAGO ANTICIPADO' — NO es Primer Apuesta. "
+                    "  · En FÚTBOL: el equipo gana por 2+ goles en CUALQUIER momento del partido (incluso si al final empata o pierde). "
+                    "  · En NBA: el equipo lleva 17+ puntos de ventaja en CUALQUIER momento del partido. "
+                    "  · Es un mercado de cashout anticipado MUY popular en México/LATAM. Cuotas bajas son normales (1.10-1.50) porque el evento es más probable que el resultado final. "
+                    "  · Para calcular edge en PA: la prob real de que UN equipo líder gane por 2+ goles es ~40-65% dependiendo del favorito. NO uses la prob de resultado final.\n"
+                    "Parlay/Combinada/Múltiple = apuesta que combina 2+ selecciones. La cuota es el producto de todas las cuotas individuales. "
+                    "  · Analiza CADA selección del parlay por separado y calcula el edge combinado.\n"
+                    "Hándicap Asiático (AH) = mercado sin empate, con línea de ventaja.\n"
+                    "1X2 = mercado clásico local/empate/visitante.\n\n"
+
+                    "══ ESTADO DEL PARTIDO — REGLA CRÍTICA ══\n"
+                    "SOLO marca estado_partido='finalizado' si ves un marcador FINAL explícito (FT, Final, Terminado, 90') en la imagen. "
+                    "Si ves una hora futura (ej: '13:30', '20:00', 'Mañana') = 'pendiente'. "
+                    "Si ves un marcador parcial con tiempo en curso = 'en_juego'. "
+                    "NUNCA asumas que un partido pasó solo porque la hora ya ocurrió en tu zona horaria — el usuario está en México (CDMX, UTC-6).\n\n"
+
+                    "══ PROCESO OBLIGATORIO ══\n"
+                    "PASO 1 — IDENTIFICACIÓN PRECISA:\n"
+                    "  · Deporte, equipos/jugadores, liga/torneo, fecha/hora visible, cuota exacta.\n"
+                    "  · Mercado: identifica si es 1X2, Over/Under, Hándicap, PA (Pago Anticipado), Parlay, Goles, etc.\n"
+                    "  · Si es PARLAY: lista cada selección, cuota individual estimada, y la cuota combinada.\n"
+                    "  · Estado: pendiente/en_juego/finalizado según regla arriba.\n\n"
+
+                    "PASO 2 — VARIABLES VISIBLES:\n"
+                    "  · TENIS: Ranking ATP/WTA, superficie, H2H conocido, forma reciente.\n"
+                    "  · FÚTBOL: Posición tabla, goles a favor/contra, local/visitante, importancia.\n"
+                    "  · NBA: Win%, pts por partido, diferencial ofensivo/defensivo, lesiones conocidas.\n\n"
+
+                    "PASO 3 — VARIABLES OCULTAS (las que marcan la diferencia real):\n"
+                    "  · TENIS: Fatiga acumulada esta semana, velocidad de pista vs estilo, altitud, temperatura, presión de favoritismo, historial en esa ronda, lesiones crónicas, sets jugados últimos 3 partidos, necesidad de puntos ranking.\n"
+                    "  · FÚTBOL: xG real vs goles (suerte vs mérito), cansancio doble competición, árbitro y tarjetas/partido, clima ciudad, set-pieces efficiency, deuda táctica del entrenador.\n"
+                    "  · NBA: Pace differential, back-to-back, travel miles, rendimiento 4Q clutch, tendencia árbitro en fouls, rotaciones sin estrella.\n"
+                    "  · PA específico: velocidad de inicio del equipo favorecido, su historial de ventajas >=2 goles en primeros 60', si el rival tiende a cerrar partidos.\n\n"
+
+                    "PASO 4 — MODELO PROBABILÍSTICO:\n"
+                    "  · Poisson para fútbol/NBA, Elo para tenis.\n"
+                    "  · Para PA fútbol: prob_real = P(equipo X tenga +2 goles de ventaja en algún momento) ≈ 40-65%.\n"
+                    "  · Para PA NBA: prob_real = P(equipo X tenga +17 pts en algún momento) ≈ 35-70%.\n"
+                    "  · Para Parlay: prob_real = producto de probabilidades individuales.\n"
+                    "  · prob_implicita = 1/cuota_total. edge = prob_real - prob_implicita.\n\n"
+
+                    "PASO 5 — 50,000 SIMULACIONES MONTE CARLO:\n"
+                    "  · Simula con las variables anteriores. IC al 95%. EV = (prob_real × (cuota-1)) - ((1-prob_real) × 1).\n\n"
+
+                    "PASO 6 — SEÑAL SHARP:\n"
+                    "  · ¿Cuota movida por sharp money? ¿Discrepancia entre casas? ¿Trampa pública?\n\n"
+
+                    "PASO 7 — REVISIÓN CRÍTICA:\n"
+                    "  · ¿Partido finalizado? → veredicto=Inválida.\n"
+                    "  · ¿Es PA con cuota razonable para el favorito? → no penalices por cuota baja.\n"
+                    "  · ¿Parlay con picks de valor real? → evalúa el valor combinado honestamente.\n\n"
+
+                    "PASO 8 — KELLY: kelly% = max(0, min(5, ((cuota-1)×prob_real - (1-prob_real))/(cuota-1)×100)).\n"
+                    + (f"PASO 9 — HISTORIAL DEL USUARIO: {mem_ctx}\n" if mem_ctx else "")
+                    + "\n══ CALIFICACIÓN REALISTA (calibrada para el mercado real) ══\n"
+                    "Sé justo y calibrado. Un pick con edge positivo real MERECE una buena nota.\n"
+                    "A+(95-100): EV>+0.08, edge>8%, variables ocultas muy favorables, señal sharp clara\n"
+                    "A (88-94): EV>+0.05, edge 5-8%, análisis sólido, pick de valor real\n"
+                    "A-(82-87): EV>+0.02, edge 2-5%, pick razonable con fundamento\n"
+                    "B+(76-81): EV>0, edge marginal positivo, pick aceptable\n"
+                    "B (70-75): EV≈0, cuota justa, sin ventaja clara — apostar solo si hay otra razón\n"
+                    "B-(64-69): EV ligeramente negativo — precaución\n"
+                    "C+(55-63): EV negativo pequeño — mejor buscar otra opción\n"
                     "C (45-54): EV negativo significativo — evitar\n"
-                    "C-(35-44): EV muy negativo — tirar dinero\n"
-                    "D (20-34): Pick sin análisis, trampa de público\n"
-                    "F (0-19): Fraude, partido terminado, pick absurdo\n"
+                    "C-(35-44): EV muy negativo — no tiene sentido\n"
+                    "D (20-34): Pick sin fundamento estadístico\n"
+                    "F (0-19): Partido terminado, mercado cerrado, o pick completamente absurdo\n\n"
                     "RESPONDE SOLO EN JSON SIN MARKDOWN:\n"
                     "{\"deporte\": \"\", \"equipos\": \"\", \"mercado\": \"\", \"cuota\": 0.0, "
+                    "\"es_parlay\": false, \"selecciones_parlay\": [], "
+                    "\"es_pago_anticipado\": false, "
                     "\"estado_partido\": \"pendiente|en_juego|finalizado\", "
                     "\"prob_real_pct\": 0.0, \"prob_implicita_pct\": 0.0, \"edge_pct\": 0.0, "
                     "\"ev_por_unidad\": 0.0, \"ic_95\": \"\", "
@@ -2984,6 +3028,9 @@ def render_einstein_califica(key_sfx="fut"):
                 ic95    = str(data.get("ic_95",""))
                 p_real  = float(data.get("prob_real_pct", 0))
                 p_impl  = float(data.get("prob_implicita_pct", 0))
+                es_pa      = bool(data.get("es_pago_anticipado", False))
+                es_parlay  = bool(data.get("es_parlay", False))
+                sels_parlay= data.get("selecciones_parlay", [])
                 cmap = {"A+":"#00ff88","A":"#00ff88","A-":"#00dd77","B+":"#7fff00",
                         "B":"#FFD700","B-":"#ffc200","C+":"#ff9500","C":"#ff7700",
                         "C-":"#ff6600","D":"#ff4444","F":"#cc0000"}
@@ -2992,6 +3039,28 @@ def render_einstein_califica(key_sfx="fut"):
                 evcol  = "#00ff88" if ev > 0 else "#ff4444"
                 scol   = {"favorable":"#00ff88","neutral":"#FFD700","contrario":"#ff4444"}.get(sharp,"#aaa")
 
+                # ── PA / PARLAY BADGES ──
+                if es_pa:
+                    st.markdown(
+                        "<div style='background:#001a40;border:2px solid #00ccff66;"
+                        "border-radius:12px;padding:10px 16px;margin:8px 0;"
+                        "font-size:.85rem;color:#00ccff'>"
+                        "💰 <b>PAGO ANTICIPADO (PA)</b> — "
+                        "⚽ Fútbol: gana por +2 goles en cualquier momento del partido · "
+                        "🏀 NBA: +17 puntos de ventaja en cualquier momento. "
+                        "Cuota baja (1.10-1.50) es completamente normal para este mercado.</div>",
+                        unsafe_allow_html=True)
+                if es_parlay and sels_parlay:
+                    sel_html = "".join(
+                        f"<div style='padding:4px 0;border-bottom:1px solid #1a1a40;font-size:.8rem;color:#aaa'>▸ {s}</div>"
+                        for s in sels_parlay[:6] if s)
+                    st.markdown(
+                        f"<div style='background:#0a0018;border:2px solid #aa00ff66;"
+                        "border-radius:12px;padding:10px 16px;margin:8px 0'>"
+                        "<div style='font-size:.75rem;color:#aa00ff;font-weight:700;margin-bottom:6px'>"
+                        f"🎰 PARLAY / COMBINADA — {len(sels_parlay)} selecciones</div>"
+                        f"{sel_html}</div>",
+                        unsafe_allow_html=True)
                 # Partido terminado
                 if "finalizado" in estado.lower() or "inválida" in vered.lower() or "invalida" in vered.lower():
                     st.markdown("<div style='background:#2a0000;border:2px solid #ff4444;border-radius:14px;padding:14px;margin-bottom:12px;text-align:center;font-weight:700;color:#ff4444;font-size:1rem'>⛔ PARTIDO YA FINALIZADO — Pick inválido para apostar</div>", unsafe_allow_html=True)
