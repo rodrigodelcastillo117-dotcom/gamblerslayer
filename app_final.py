@@ -15,8 +15,11 @@ ESPN = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 H    = {"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36","Accept":"application/json"}
 
 # ── Bot Telegram ──────────────────────────────────────────
-BOT_TOKEN = "8661871209:AAFgRcFCnmjEDY5WHb0hYdliK6_qt84q54w"
-CHAT_ID   = "-5146321570"
+import os
+from dotenv import load_dotenv
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+CHAT_ID   = os.getenv("CHAT_ID", "")
 
 LIGAS = {
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
