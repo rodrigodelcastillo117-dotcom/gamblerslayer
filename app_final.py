@@ -15,11 +15,8 @@ ESPN = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 H    = {"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36","Accept":"application/json"}
 
 # ── Bot Telegram ──────────────────────────────────────────
-import os
-from dotenv import load_dotenv
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHAT_ID   = os.getenv("CHAT_ID", "")
+BOT_TOKEN = "8661871209:AAFgRcFCnmjEDY5WHb0hYdliK6_qt84q54w"
+CHAT_ID   = "-5146321570"
 
 LIGAS = {
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -97,7 +94,7 @@ def parse_score(s):
 @st.cache_data(ttl=300, show_spinner=False)
 def get_cartelera():
     now   = datetime.now(CDMX)
-    dates = [(now + timedelta(days=i)).strftime("%Y%m%d") for i in range(1, 5)]
+    dates = [(now + timedelta(days=i)).strftime("%Y%m%d") for i in range(3)]
     matches, seen = [], set()
     for slug in LIGAS:
         for ds in dates:
@@ -342,10 +339,10 @@ def cmprow(label, hv, av, fmt="{:.2f}", suf=""):
 # TELEGRAM
 # ══════════════════════════════════════════════════════════
 def tg_send(msg):
-    if BOT_TOKEN == "Pega_Aqui_Tu_Token_De_BotFather": return False
+    if BOT_TOKEN == "8661871209:AAFgRcFCnmjEDY5WHb0hYdliK6_qt84q54w": return False
     try:
         r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                          json={"chat_id":CHAT_ID,"text":msg,"parse_mode":"Markdown"},timeout=10)
+                          json={"-5146321570":CHAT_ID,"-5146321570":msg,"parse_mode":"Markdown"},timeout=10)
         return r.ok
     except: return False
 
@@ -466,29 +463,15 @@ if st.session_state["view"] == "cartelera":
 
     # ─── TAB CARTELERA ───────────────────────────────────
     with tab1:
-        st.markdown(f"<div style='color:#555;font-size:.85rem;margin-bottom:12px'>{len(matches)} partidos · Vie 6 – Lun 9 Mar</div>",unsafe_allow_html=True)
-        # Agrupar por fecha y liga
-        from collections import defaultdict
-        fecha_liga = defaultdict(lambda: defaultdict(list))
-        fecha_labels = {"2026-03-06":"Viernes 6 Mar","2026-03-07":"Sábado 7 Mar",
-                        "2026-03-08":"Domingo 8 Mar","2026-03-09":"Lunes 9 Mar"}
+        st.markdown(f"<div style='color:#555;font-size:.85rem;margin-bottom:12px'>{len(matches)} partidos</div>",unsafe_allow_html=True)
         for m in matches:
-            fecha_liga[m["fecha"]][m["league"]].append(m)
-        for fecha in sorted(fecha_liga.keys()):
-            flabel = fecha_labels.get(fecha, fecha)
-            st.markdown(f"<div style='font-size:1rem;font-weight:900;color:#FFD700;margin:20px 0 10px;"
-                        f"padding:8px 0;border-bottom:2px solid #252555;letter-spacing:.05em'>"
-                        f"📅 {flabel}</div>", unsafe_allow_html=True)
-            for liga in sorted(fecha_liga[fecha].keys()):
-                st.markdown(f"<div class='shdr'>{liga}</div>", unsafe_allow_html=True)
-                for m in fecha_liga[fecha][liga]:
-                    live = m["state"]=="in"
-                    sc   = f"{m['score_h']}-{m['score_a']}" if live else m["hora"]
-                    lbl  = f"{'🔴 ' if live else ''}{m['home']}  vs  {m['away']}   ·   {sc}"
-                    if st.button(lbl, key=f"b_{m['id']}", use_container_width=True):
-                        st.session_state["sel"]  = m
-                        st.session_state["view"] = "analisis"
-                        st.rerun()
+            live = m["state"]=="in"
+            sc   = f"{m['score_h']}-{m['score_a']}" if live else m["hora"]
+            lbl  = f"{'🔴 ' if live else ''}{m['home']}  vs  {m['away']}   {sc}   |   {m['league']}"
+            if st.button(lbl, key=f"b_{m['id']}", use_container_width=True):
+                st.session_state["sel"]  = m
+                st.session_state["view"] = "analisis"
+                st.rerun()
 
     # ─── TAB TRILAY ──────────────────────────────────────
     with tab2:
@@ -511,7 +494,7 @@ if st.session_state["view"] == "cartelera":
                     f"<div style='font-weight:700'>{i}. {t['home']} vs {t['away']}</div>"
                     f"<div style='color:#555;font-size:.82rem'>{t['league']} · {t['hora']}</div>"
                     f"<div style='margin-top:6px'><span style='color:#aa00ff;font-weight:700'>👉 {t['best_m']}</span>"
-                    f"<span style='color:#666;margin-left:12px'>{t['best_p']*100:.1f}% · xG {t['hxg']:.1f}-{t['axg']:.1f}</span>"
+                    f"<span style='color:#666;margin-left:12px'>{t['best_p']*100:.1f}% · xG {t['hxg']}-{t['axg']}</span>"
                     f"</div></div>",unsafe_allow_html=True)
             st.markdown("</div>",unsafe_allow_html=True)
 
@@ -586,7 +569,7 @@ if st.session_state["view"] == "cartelera":
 
     # ─── TAB BOT TELEGRAM ────────────────────────────────
     with tab5:
-        bot_ok = BOT_TOKEN != "Pega_Aqui_Tu_Token_De_BotFather"
+        bot_ok = BOT_TOKEN != "8661871209:AAFgRcFCnmjEDY5WHb0hYdliK6_qt84q54w"
         st.markdown(
             f"<div class='bot-card'>"
             f"<div style='font-size:.8rem;color:#229ED9;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>🤖 BOT TELEGRAM</div>"
@@ -698,7 +681,7 @@ else:
         +"".join(f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:{'#7c00ff' if i==0 else '#555'}'>{v*100:.1f}%</div><div class='mlbl'>{l[:18]}</div></div>" for i,(l,v) in enumerate(picks_s))
         +f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:#ff9500'>{mc['btts']*100:.0f}%</div><div class='mlbl'>⚡ Ambos Anotan</div></div>"
         +f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:#00ccff'>{mc['o25']*100:.0f}%</div><div class='mlbl'>⚽ Over 2.5</div></div>"
-        +f"</div><div style='font-size:.78rem;color:#444;margin-top:14px'>xG: {hxg:.1f} vs {axg:.1f} · MC 50K + H2H + Forma</div></div>",
+        +f"</div><div style='font-size:.78rem;color:#444;margin-top:14px'>xG: {hxg:.2f} vs {axg:.2f} · MC 50K + H2H + Forma</div></div>",
         unsafe_allow_html=True)
 
     # ── MERCADOS ──
@@ -741,7 +724,7 @@ else:
           f"<div>{g['away'][:14]}</div></div>")
     rows+=cmprow("Goles anotados/partido",h_gf,a_gf)
     rows+=cmprow("Goles recibidos/partido",h_gc,a_gc)
-    rows+=cmprow("xG estimado",hxg,axg,"{:.1f}")
+    rows+=cmprow("xG estimado",hxg,axg)
     rows+=cmprow("% Over 2.5 (últimos 10)",h_o25,a_o25,"{:.0f}","%")
     rows+=cmprow("% Ambos Anotan (últimos 10)",h_bt,a_bt,"{:.0f}","%")
     st.markdown(f"<div class='acard'>{rows}</div>",unsafe_allow_html=True)
@@ -755,40 +738,19 @@ else:
             d=sum(1 for r in form if r["result"]=="D")
             l=sum(1 for r in form if r["result"]=="L")
             gf=sum(r["gf"] for r in form); gc=sum(r["gc"] for r in form)
-            if form:
-                st.markdown(
-                    f"<div class='acard'>"
-                    f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
-                    f"<div style='margin-bottom:12px'>{badges(form)}</div>"
-                    f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{w}</div><div class='mlbl'>V</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{d}</div><div class='mlbl'>E</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{l}</div><div class='mlbl'>D</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{gf}</div><div class='mlbl'>GF</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff9500'>{gc}</div><div class='mlbl'>GC</div></div>"
-                    f"</div>"
-                    f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec} · Último: hace {days_since(form)}d</div>"
-                    f"</div>",unsafe_allow_html=True)
-            else:
-                # Sin historial ESPN — mostrar solo récord de temporada
-                try:
-                    rw,rd,rl = map(int, rec.split("-"))
-                    rn = rw+rd+rl
-                    rwp = round(rw/rn*100) if rn>0 else 0
-                except: rw=rd=rl=rn=rwp=0
-                st.markdown(
-                    f"<div class='acard'>"
-                    f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
-                    f"<div style='margin-bottom:12px'><span style='color:#555;font-size:.85rem'>Sin historial detallado en ESPN</span></div>"
-                    f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{rw}</div><div class='mlbl'>V</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{rd}</div><div class='mlbl'>E</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{rl}</div><div class='mlbl'>D</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{rn}</div><div class='mlbl'>PJ</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#7c00ff'>{rwp}%</div><div class='mlbl'>% V</div></div>"
-                    f"</div>"
-                    f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec}</div>"
-                    f"</div>",unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='acard'>"
+                f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
+                f"<div style='margin-bottom:12px'>{badges(form)}</div>"
+                f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
+                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{w}</div><div class='mlbl'>V</div></div>"
+                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{d}</div><div class='mlbl'>E</div></div>"
+                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{l}</div><div class='mlbl'>D</div></div>"
+                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{gf}</div><div class='mlbl'>GF</div></div>"
+                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff9500'>{gc}</div><div class='mlbl'>GC</div></div>"
+                f"</div>"
+                f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec} · Último: hace {days_since(form)}d</div>"
+                f"</div>",unsafe_allow_html=True)
             with st.expander(f"📋 {tname[:20]} — partidos detallados"):
                 if not form:
                     st.markdown("<div style='color:#555;padding:10px'>Sin historial ESPN para esta liga.</div>",unsafe_allow_html=True)
