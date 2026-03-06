@@ -18,8 +18,13 @@ H    = {"User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKi
 import os
 from dotenv import load_dotenv
 load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHAT_ID   = os.getenv("CHAT_ID", "")
+# Streamlit Cloud usa st.secrets, local usa .env
+try:
+    BOT_TOKEN = st.secrets["BOT_TOKEN"]
+    CHAT_ID   = st.secrets["CHAT_ID"]
+except:
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+    CHAT_ID   = os.getenv("CHAT_ID", "")
 
 LIGAS = {
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -121,7 +126,7 @@ def get_cartelera():
     now   = datetime.now(CDMX)
     # Pedimos hoy + 5 días en UTC para no perder partidos por diferencia horaria
     dates = [(now + timedelta(days=i)).strftime("%Y%m%d") for i in range(0, 6)]
-    manana = (now + timedelta(days=1)).strftime("%Y-%m-%d")  # mínimo mañana CDMX
+    hoy   = now.strftime("%Y-%m-%d")  # desde hoy CDMX
     matches, seen = [], set()
     for slug in LIGAS:
         for ds in dates:
@@ -139,8 +144,8 @@ def get_cartelera():
                     hora  = utc.astimezone(CDMX).strftime("%H:%M")
                     fecha = utc.astimezone(CDMX).strftime("%Y-%m-%d")
                     state = ev["status"]["type"]["state"]
-                    # Solo partidos de mañana en adelante en hora CDMX
-                    if fecha < manana: continue
+                    # Solo partidos de hoy en adelante en hora CDMX
+                    if fecha < hoy: continue
                     # Solo hasta lunes 9 Mar
                     if fecha > (now + timedelta(days=4)).strftime("%Y-%m-%d"): continue
                     odd_h = odd_a = odd_d = 0.0
