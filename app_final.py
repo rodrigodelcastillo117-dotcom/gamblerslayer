@@ -817,75 +817,54 @@ def nba_ou_model(home_id, away_id, ou_line):
 # ══════════════════════════════════════════════════════════
 # TENIS DATA
 # ══════════════════════════════════════════════════════════
+TENNIS_API_KEY = "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc"
+TENNIS_API     = "https://api.api-tennis.com/tennis/"
+
 @st.cache_data(ttl=300, show_spinner=False)
 def get_tennis_cartelera():
-    now = datetime.now(CDMX)
-    dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(0,5)]
-    hoy = now.strftime("%Y-%m-%d")
-    matches, seen = [], set()
-    # ESPN tenis — torneo activo: BNP Paribas Open Indian Wells (ID 411)
-    # La API de ESPN para tenis usa el endpoint de resultados del torneo
-    base = "https://site.api.espn.com/apis/site/v2/sports"
-    tour_slugs = [
-        ("ATP", "tennis/atp-tennis"),
-        ("WTA", "tennis/wta-tennis"),
-    ]
-    # También intentar con el endpoint del torneo directo
-    torneo_urls = [
-        ("ATP", f"{base}/tennis/atp-tennis/scoreboard"),
-        ("WTA", f"{base}/tennis/wta-tennis/scoreboard"),
-        ("ATP", f"https://site.web.api.espn.com/apis/site/v2/sports/tennis/atp-tennis/scoreboard"),
-        ("WTA", f"https://site.web.api.espn.com/apis/site/v2/sports/tennis/wta-tennis/scoreboard"),
-    ]
-    for ds in dates:
-        for tour, url in torneo_urls:
-            data = eg(url, {"dates": ds, "limit": 100})
-            evs = data.get("events", [])
-            if not evs: continue
-            for ev in evs:
-                eid = ev.get("id","")
-                if eid in seen: continue
-                seen.add(eid)
+    now  = datetime.now(CDMX)
+    hoy  = now.strftime("%Y-%m-%d")
+    fin  = (now + timedelta(days=4)).strftime("%Y-%m-%d")
+    matches = []
+    try:
+        r = requests.get(TENNIS_API, params={
+            "method":     "get_fixtures",
+            "APIkey":     TENNIS_API_KEY,
+            "date_start": hoy,
+            "date_stop":  fin,
+        }, headers=H, timeout=12)
+        data = r.json() if r.status_code == 200 else {}
+        for ev in data.get("result", []):
+            try:
+                fecha = ev.get("event_date","")
+                hora  = ev.get("event_time","00:00")
+                # Convertir hora a CDMX (API devuelve UTC)
                 try:
-                    comp  = ev["competitions"][0]
-                    comps = comp["competitors"]
-                    p1=comps[0]; p2=comps[1]
-                    utc   = datetime.strptime(ev["date"],"%Y-%m-%dT%H:%MZ").replace(tzinfo=pytz.UTC)
-                    hora  = utc.astimezone(CDMX).strftime("%H:%M")
-                    fecha = utc.astimezone(CDMX).strftime("%Y-%m-%d")
-                    state = ev["status"]["type"]["state"]
-                    if fecha < hoy: continue
-                    if fecha > (now+timedelta(days=4)).strftime("%Y-%m-%d"): continue
-                    odd_1=odd_2=0.0
-                    try:
-                        odds=comp.get("odds",[])
-                        if odds:
-                            o=odds[0]
-                            def am2dec(v):
-                                try:
-                                    v=int(v)
-                                    return round((v/100)+1,2) if v>0 else round((100/abs(v))+1,2)
-                                except: return 0.0
-                            odd_1=am2dec(o.get("homeTeamOdds",{}).get("moneyLine",0))
-                            odd_2=am2dec(o.get("awayTeamOdds",{}).get("moneyLine",0))
-                    except: pass
-                    def pname(c):
-                        try: return c["athlete"]["displayName"]
-                        except:
-                            try: return c["team"]["displayName"]
-                            except: return "?"
-                    def prank(c):
-                        try: return int(c.get("curatedRank",{}).get("current",999))
-                        except: return 999
-                    matches.append({
-                        "id":eid,"p1":pname(p1),"p2":pname(p2),
-                        "rank1":prank(p1),"rank2":prank(p2),
-                        "tour":tour.upper(),
-                        "torneo":ev.get("shortName",ev.get("name","")),
-                        "hora":hora,"fecha":fecha,"state":state,
-                        "odd_1":odd_1,"odd_2":odd_2,
-                    })
-                except: continue
+                    utc_t = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=pytz.UTC)
+                    hora  = utc_t.astimezone(CDMX).strftime("%H:%M")
+                    fecha = utc_t.astimezone(CDMX).strftime("%Y-%m-%d")
+                except: pass
+                if fecha < hoy or fecha > fin: continue
+                tour_type = ev.get("event_type_type","").upper()
+                if "ATP" in tour_type or "WTA" in tour_type or "GRAND SLAM" in tour_type or "MASTERS" in tour_type:
+                    tour = "WTA" if "WTA" in tour_type else "ATP"
+                else:
+                    continue  # filtrar ITF y challengers
+                matches.append({
+                    "id":    str(ev.get("event_key","")),
+                    "p1":    ev.get("event_first_player","?"),
+                    "p2":    ev.get("event_second_player","?"),
+                    "rank1": 999, "rank2": 999,
+                    "tour":  tour,
+                    "torneo": ev.get("tournament_name",""),
+                    "hora":  hora,
+                    "fecha": fecha,
+                    "state": "in" if ev.get("event_live","0")=="1" else "pre",
+                    "odd_1": 0.0, "odd_2": 0.0,
+                })
+            except: continue
+    except Exception as e:
+        pass
     return matches
 
 def tennis_model(rank1, rank2, odd_1, odd_2):
@@ -1010,12 +989,7 @@ if st.session_state["view"] == "cartelera":
     elif deporte == "tenis":
         st.markdown("<div class='shdr'>🎾 Tenis ATP / WTA</div>", unsafe_allow_html=True)
         if not ten_matches:
-            st.info("No hay partidos de tenis disponibles.")
-            slug_ok = st.session_state.get("tennis_slug_ok","ninguno")
-            st.markdown(f"<div style='color:#333;font-size:.75rem'>Debug: slug activo = {slug_ok}</div>", unsafe_allow_html=True)
-        else:
-            slug_ok = st.session_state.get("tennis_slug_ok","?")
-            st.markdown(f"<div style='color:#333;font-size:.72rem'>Fuente: {slug_ok}</div>", unsafe_allow_html=True)
+            st.info("No hay partidos ATP/WTA disponibles para estas fechas.")
         from collections import defaultdict
         ten_por_fecha = defaultdict(lambda: defaultdict(list))
         for m in ten_matches: ten_por_fecha[m["fecha"]][m["tour"]].append(m)
