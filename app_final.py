@@ -520,6 +520,968 @@ def get_real_odds(home_name, away_name, league_slug):
     except: pass
     return {}
 
+
+# ══════════════════════════════════════════════════════════
+# SHARP MONEY INTELLIGENCE SYSTEM
+# Detecta: línea de movimiento · steam moves · reverse line movement
+# Fuentes: The Odds API (multi-book) + Betfair Exchange + heurísticas
+# ══════════════════════════════════════════════════════════
+
+_LINE_HISTORY_FILE = "/tmp/tgl_lines.json"
+try:
+    with open(_LINE_HISTORY_FILE) as _lf: _line_history = __import__("json").load(_lf)
+except: _line_history = {}
+
+def _save_line_history():
+    try:
+        with open(_LINE_HISTORY_FILE,"w") as _lf: __import__("json").dump(_line_history,_lf)
+    except: pass
+
+def track_line_movement(game_id, home, away, bk_odds):
+    """
+    Guarda snapshot de cuotas por partido.
+    Detecta movimiento comparando con snapshot anterior.
+    """
+    now = datetime.now(CDMX).isoformat()
+    key = f"{home[:8]}_{away[:8]}"
+    if key not in _line_history:
+        _line_history[key] = {"snapshots":[], "game_id": game_id}
+    snap = {"ts": now, "odds": bk_odds}
+    hist = _line_history[key]["snapshots"]
+    # Solo guardar si hay cambio real vs último snapshot
+    if not hist or snap["odds"] != hist[-1]["odds"]:
+        hist.append(snap)
+        if len(hist) > 20: _line_history[key]["snapshots"] = hist[-20:]
+        _save_line_history()
+    return _line_history[key]["snapshots"]
+
+def analyze_line_movement(home, away, current_odds, model_ph):
+    """
+    Análisis completo de movimiento de línea y señales sharp.
+    
+    Detecta:
+    1. Steam move — movimiento brusco sin noticias (sharps entraron)
+    2. Reverse line movement — dinero mayoritario en A, pero línea mueve a B
+    3. Pinnacle vs mercado — divergencia entre Pinnacle y casas de retail
+    4. Fade the public — cuándo el público está muy cargado en un lado
+    5. Closing line value — nuestro modelo vs Pinnacle (el oráculo)
+    """
+    key = f"{home[:8]}_{away[:8]}"
+    hist = _line_history.get(key, {}).get("snapshots", [])
+    
+    signals = []
+    score = 0  # -100 (contrario) a +100 (muy favorable)
+    
+    # ── 1. PINNACLE COMO ORÁCULO ──
+    pin_odds = current_odds.get("pinnacle", {})
+    pin_h = pin_odds.get("h", 0)
+    if pin_h > 1:
+        pin_prob = 1/pin_h
+        # Quitar margen Pinnacle (~2.5%)
+        pin_total = (1/pin_odds.get("h",1.5) + 1/pin_odds.get("d",4) + 1/pin_odds.get("a",5))
+        pin_prob_clean = (1/pin_h) / pin_total if pin_total > 0 else pin_prob
+        clv = model_ph - pin_prob_clean  # Closing Line Value
+        if clv > 0.06:
+            signals.append({"icon":"🎯","label":"CLV Alto","desc":f"Modelo supera Pinnacle limpio en +{clv*100:.1f}%","color":"#00ff88","weight":35})
+            score += 35
+        elif clv > 0.03:
+            signals.append({"icon":"✅","label":"CLV Positivo","desc":f"+{clv*100:.1f}% sobre Pinnacle","color":"#FFD700","weight":20})
+            score += 20
+        elif clv < -0.04:
+            signals.append({"icon":"⚠️","label":"Pinnacle en contra","desc":f"Pinnacle {abs(clv)*100:.1f}% más bajo que nuestro modelo","color":"#ff4444","weight":-25})
+            score -= 25
+    
+    # ── 2. DIVERGENCIA MULTI-BOOK ──
+    book_probs_h = []
+    for bk, odds in current_odds.items():
+        oh = odds.get("h", 0)
+        if oh > 1: book_probs_h.append(1/oh)
+    if len(book_probs_h) >= 3:
+        avg_prob = sum(book_probs_h)/len(book_probs_h)
+        std_prob = float(__import__("numpy").std(book_probs_h))
+        if std_prob > 0.04:
+            signals.append({"icon":"⚡","label":"Divergencia entre casas","desc":f"Desacuerdo entre {len(book_probs_h)} libros (σ={std_prob*100:.1f}%) — alguien sabe algo","color":"#ff9500","weight":15})
+            score += 10
+        # Soft book vs sharp book gap
+        soft_books = ["bet365","williamhill","unibet","bwin","betway"]
+        sharp_books = ["pinnacle","betcris","betonlineag"]
+        soft_p  = [1/current_odds[b]["h"] for b in soft_books if b in current_odds and current_odds[b].get("h",0)>1]
+        sharp_p = [1/current_odds[b]["h"] for b in sharp_books if b in current_odds and current_odds[b].get("h",0)>1]
+        if soft_p and sharp_p:
+            gap = sum(sharp_p)/len(sharp_p) - sum(soft_p)/len(soft_p)
+            if gap > 0.03:
+                signals.append({"icon":"🦅","label":"Sharp vs Public gap","desc":f"Sharps tienen {gap*100:.1f}% MÁS en local que el público","color":"#00ccff","weight":25})
+                score += 25
+            elif gap < -0.03:
+                signals.append({"icon":"🐟","label":"Trampa pública","desc":f"Casas soft {abs(gap)*100:.1f}% más altas — dinero público en favorito","color":"#ff4444","weight":-20})
+                score -= 20
+
+    # ── 3. STEAM MOVE DETECTION (histórico de líneas) ──
+    if len(hist) >= 2:
+        first = hist[0]["odds"]
+        last  = hist[-1]["odds"]
+        # Movimiento total de Pinnacle
+        p_open = first.get("pinnacle",{}).get("h",0)
+        p_now  = last.get("pinnacle",{}).get("h",0)
+        if p_open>1 and p_now>1:
+            move = (1/p_now - 1/p_open)  # en probabilidad
+            if abs(move) > 0.04:
+                direction = "local" if move>0 else "visitante"
+                signals.append({"icon":"💨","label":f"Steam Move detectado","desc":f"Línea movió {abs(move)*100:.1f}% hacia {direction} desde apertura","color":"#aa00ff","weight":20 if (move>0 and model_ph>0.5) else -15})
+                score += 20 if (move>0 and model_ph>0.5) else -15
+        
+        # Reverse line movement — lo más valioso
+        if len(hist) >= 3:
+            # Si la prob implícita del favorito SUBIÓ pero la cuota del favorito TAMBIÉN subió
+            # (deberían moverse inversamente si el público apoya al favorito)
+            mid = hist[len(hist)//2]["odds"]
+            p_mid_h  = mid.get("pinnacle",{}).get("h",0)
+            p_last_h = last.get("pinnacle",{}).get("h",0)
+            p_mid_b  = mid.get("bet365",{}).get("h",0)
+            p_last_b = last.get("bet365",{}).get("h",0)
+            if p_mid_h>1 and p_last_h>1 and p_mid_b>1 and p_last_b>1:
+                # Pinnacle sube cuota local (menos prob) pero Bet365 baja cuota (más prob)
+                pin_move  = p_last_h - p_mid_h   # positivo = cuota subió = menos probable
+                b365_move = p_last_b - p_mid_b   # positivo = cuota subió = menos probable
+                if pin_move < -0.05 and b365_move > 0.05:
+                    signals.append({"icon":"🔄","label":"REVERSE LINE MOVEMENT","desc":"Sharps en local, público en visitante. Señal más valiosa del mercado.","color":"#00ff88","weight":40})
+                    score += 40
+                elif pin_move > 0.05 and b365_move < -0.05:
+                    signals.append({"icon":"🔄","label":"RLM — Cuidado","desc":"Sharps en visitante, público en local. Posible fade.","color":"#ff9500","weight":-30})
+                    score -= 30
+
+    # ── 4. PÚBLICO CARGADO (heurística por cuota) ──
+    b365_h = current_odds.get("bet365",{}).get("h",0)
+    pin_h2  = current_odds.get("pinnacle",{}).get("h",0)
+    if b365_h>1 and pin_h2>1:
+        b365_prob = 1/b365_h; pin_prob2 = 1/pin_h2
+        # Bet365 tiene cuota más baja (más favorable al local) que Pinnacle
+        # → Bet365 acepta el público, Pinnacle calibra con sharps
+        gap2 = b365_prob - pin_prob2
+        if gap2 > 0.04:
+            signals.append({"icon":"👥","label":"Público cargado en local","desc":f"Bet365 {gap2*100:.1f}% más bajo que Pinnacle — mercado público","color":"#ff9500","weight":-15})
+            score -= 10
+        elif gap2 < -0.03:
+            signals.append({"icon":"💎","label":"Valor sin público","desc":"Pinnacle más favorable que casas retail — underdog con valor","color":"#00ff88","weight":15})
+            score += 15
+
+
+    # ── VEREDICTO FINAL ──
+    score = max(-100, min(100, score))
+    if score >= 40:    verdict = "🦅 SHARP MONEY FAVOR"     ; vc = "#00ff88"
+    elif score >= 20:  verdict = "✅ SEÑAL POSITIVA"        ; vc = "#00ccff"
+    elif score >= -10: verdict = "⚖️ NEUTRAL"               ; vc = "#FFD700"
+    elif score >= -30: verdict = "⚠️ DINERO CONTRARIO"      ; vc = "#ff9500"
+    else:              verdict = "🚫 EVITAR — TRAMPA PÚBLICA"; vc = "#ff4444"
+
+    return {
+        "signals": signals,
+        "score": score,
+        "verdict": verdict,
+        "verdict_color": vc,
+        "clv": clv if pin_h > 1 else None,
+        "has_data": len(signals) > 0,
+    }
+
+
+_betfair_session = {"token": None, "expires": 0}
+
+def _betfair_login():
+    """Login a Betfair y obtener session token. Cachea 6 horas."""
+    now = time.time()
+    if _betfair_session["token"] and now < _betfair_session["expires"]:
+        return _betfair_session["token"]
+    try:
+        resp = requests.post(
+            "https://identitysso-cert.betfair.com/api/certlogin",
+            timeout=10
+        )
+        data = resp.json()
+        if data.get("loginStatus") == "SUCCESS":
+            _betfair_session["token"] = data["sessionToken"]
+            _betfair_session["expires"] = now + 21600  # 6 horas
+            return _betfair_session["token"]
+    except: pass
+    # Fallback: login sin cert (funciona para datos de solo lectura)
+    try:
+        resp = requests.post(
+            "https://identitysso.betfair.com/api/login",
+            timeout=10
+        )
+        data = resp.json()
+        if data.get("status") == "SUCCESS":
+            _betfair_session["token"] = data.get("token","")
+            _betfair_session["expires"] = now + 21600
+            return _betfair_session["token"]
+    except: pass
+    return None
+
+def _betfair_call(method, params, session_token):
+    """Llamada JSON-RPC a Betfair Exchange API."""
+    try:
+        resp = requests.post(
+            "https://api.betfair.com/exchange/betting/json-rpc/v1",
+            headers={
+                "X-Authentication": session_token,
+                "Content-Type": "application/json"
+            },
+            json={"jsonrpc":"2.0","method":f"SportsAPING/v1.0/{method}","params":params,"id":1},
+            timeout=10
+        )
+        result = resp.json()
+        return result.get("result", [])
+    except: return []
+
+@st.cache_data(ttl=300, show_spinner=False)
+
+# ── SportsBookReview scraper — % público gratis (reemplaza Action Network) ──
+@st.cache_data(ttl=600, show_spinner=False)
+def get_sbr_public_betting(home, away, sport="soccer"):
+    """
+    SportsBookReview.com — % de apuestas públicas gratis.
+    Más confiable que Action Network para datos no-USA.
+    Datos disponibles principalmente para fútbol major y NBA.
+    """
+    try:
+        sport_map = {"soccer":"soccer","nba":"nba","nfl":"nfl"}
+        sp = sport_map.get(sport, "soccer")
+        url = f"https://www.sportsbookreview.com/betting-odds/{sp}/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Accept": "text/html,application/xhtml+xml"
+        }
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code != 200: return {}
+        html = resp.text
+        # Buscar el nombre del partido en el HTML
+        hn = home.lower()[:8]; an = away.lower()[:8]
+        idx = -1
+        for term in [hn, an]:
+            i = html.lower().find(term)
+            if i > 0: idx = i; break
+        if idx < 0: return {}
+        # Extraer % de picks en zona cercana al partido
+        import re
+        zone = html[max(0,idx-500):idx+1500]
+        pcts = re.findall(r'"picksPct"\\s*:\\s*(\\d+(?:\\.\\d+)?)', zone)
+        if len(pcts) >= 2:
+            return {
+                "home_pct": float(pcts[0]),
+                "away_pct": float(pcts[1]),
+                "source": "SBR"
+            }
+        # Fallback: buscar patrones numéricos de %
+        pcts2 = re.findall(r'(\\d{1,2})%\\s*(?:of\\s*bets|picks)', zone, re.IGNORECASE)
+        if pcts2:
+            return {"home_pct": float(pcts2[0]), "away_pct": 100-float(pcts2[0]), "source": "SBR"}
+    except: pass
+    return {}
+
+# ── Action Network — datos NBA/NFL (endpoint no documentado) ──
+@st.cache_data(ttl=600, show_spinner=False)
+def get_action_network_nba(home, away):
+    """
+    Action Network endpoint no documentado para NBA.
+    Devuelve: % bets + % money en spread, ML y O/U.
+    """
+    try:
+        # Endpoint que han encontrado via reverse engineering
+        url = "https://api.actionnetwork.com/web/v1/games"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)",
+            "Referer": "https://www.actionnetwork.com/",
+            "Accept": "application/json"
+        }
+        params = {"sport": "nba", "date": datetime.now(CDMX).strftime("%Y%m%d")}
+        resp = requests.get(url, headers=headers, params=params, timeout=8)
+        if resp.status_code != 200: return {}
+        games = resp.json().get("games", [])
+        hn = home.lower()[:7]; an = away.lower()[:7]
+        for g in games:
+            teams = g.get("teams", [{}]*2)
+            names = [t.get("full_name","").lower() for t in teams]
+            if any(hn in n or n[:7] in hn for n in names) or any(an in n or n[:7] in an for n in names):
+                # Extraer % públicos
+                ml = g.get("ml_bets", {})
+                ou = g.get("ou_bets", {})
+                return {
+                    "ml_home_bets_pct":  ml.get("home_bets_pct", 0),
+                    "ml_home_money_pct": ml.get("home_money_pct", 0),
+                    "over_bets_pct":     ou.get("over_bets_pct", 0),
+                    "over_money_pct":    ou.get("over_money_pct", 0),
+                    "source": "ActionNetwork"
+                }
+    except: pass
+    return {}
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_action_network_pro(home, away, sport="soccer", date_str=None):
+    """
+    Action Network PRO — endpoint autenticado.
+    Con cuenta PRO accedes a: % bets, % dinero, sharp %, línea apertura vs cierre,
+    steam moves, consensus picks, injury reports con impacto.
+    """
+    try:
+        _an_key = ""
+        try: _an_key = st.secrets.get("ACTION_NETWORK_TOKEN", "")
+        except: _an_key = os.getenv("ACTION_NETWORK_TOKEN","")
+        
+        sport_map = {
+            "soccer": "soccer", "nba":"nba", "tennis":"tennis",
+            "nfl":"nfl", "mlb":"mlb", "nhl":"nhl"
+        }
+        sp = sport_map.get(sport, "soccer")
+        date = date_str or datetime.now(CDMX).strftime("%Y%m%d")
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Referer": "https://www.actionnetwork.com/",
+            "Accept": "application/json",
+            "x-api-key": _an_key,
+        }
+        
+        # PRO endpoint con datos de dinero
+        url = f"https://api.actionnetwork.com/web/v2/games/{sp}"
+        resp = requests.get(url, headers=headers,
+                            params={"date": date, "bookIds":"15,30,76,123"},
+                            timeout=10)
+        
+        if resp.status_code != 200:
+            # Fallback endpoint público
+            url2 = f"https://api.actionnetwork.com/web/v1/games/{sp}"
+            resp = requests.get(url2, headers=headers,
+                                params={"date": date}, timeout=8)
+        if resp.status_code != 200: return {}
+        
+        games = resp.json().get("games", [])
+        hn = home.lower()[:7]; an = away.lower()[:7]
+        
+        for g in games:
+            teams = g.get("teams", [{}]*2)
+            names = [t.get("full_name","").lower() for t in teams]
+            abbrs = [t.get("abbr","").lower() for t in teams]
+            all_names = names + abbrs
+            match = (any(hn in n or n[:7] in hn for n in all_names) or
+                     any(an in n or n[:7] in an for n in all_names))
+            if not match: continue
+            
+            # Extraer datos de dinero
+            result = {
+                "source": "ActionNetwork PRO",
+                "game_id": g.get("id"),
+                "status": g.get("status",""),
+            }
+            
+            # Money % por mercado
+            for mkt_key, mkt_name in [("spread","spread"),("ml","ml"),("total","total")]:
+                mkt = g.get(f"{mkt_key}_consensus") or g.get(f"consensus_{mkt_key}") or {}
+                if mkt:
+                    result[f"{mkt_name}_home_bets_pct"]  = mkt.get("home_bets",0) or mkt.get("away_bets",0)
+                    result[f"{mkt_name}_home_money_pct"] = mkt.get("home_money",0) or mkt.get("money_home",0)
+                    result[f"{mkt_name}_over_bets_pct"]  = mkt.get("over_bets",0)
+                    result[f"{mkt_name}_over_money_pct"] = mkt.get("over_money",0)
+            
+            # Opening line vs current
+            for bk in g.get("books",[]):
+                if bk.get("book_id") in [15,30,123]:  # Pinnacle, Circa, Caesars
+                    periods = bk.get("periods",{}).get("0",{})
+                    result["open_spread"] = periods.get("spread",{}).get("open")
+                    result["curr_spread"] = periods.get("spread",{}).get("current") 
+                    result["open_total"]  = periods.get("total",{}).get("open")
+                    result["curr_total"]  = periods.get("total",{}).get("current")
+                    result["open_ml_h"]   = periods.get("money_line",{}).get("open_home")
+                    result["curr_ml_h"]   = periods.get("money_line",{}).get("current_home")
+                    break
+            
+            # Sharp % si está disponible (PRO)
+            result["sharp_pct_home"]  = g.get("sharp_pct_home", 0)
+            result["sharp_pct_away"]  = g.get("sharp_pct_away", 0)
+            result["injuries"]        = [i.get("player","") + " " + i.get("status","") 
+                                         for i in g.get("injuries",[])[:4]]
+            result["consensus_pick"]  = g.get("consensus",{}).get("pick","")
+            result["steam_move"]      = g.get("steam_move", False)
+            result["reverse_move"]    = g.get("reverse_line_movement", False)
+            
+            return result
+    except Exception as _e:
+        pass
+    return {}
+
+
+
+# ══════════════════════════════════════════════════════════
+# DETECTOR DE AMAÑO / MANIPULACIÓN DE PARTIDO
+# "El mercado de apuestas mueve más dinero que el PIB de muchos países.
+#  Donde hay tanto dinero, hay incentivos para manipular."
+#
+# Variables estudiadas en literatura académica:
+# — Forrest & McHale (2019): patrones de cuota anómalos pre-partido
+# — Hill (2010): ligas de riesgo alto identificadas en escándalos
+# — Borghesi & Dare (2009): late line movement como señal de info privilegiada
+# — Sportradar Fraud Detection System: metodología pública resumida
+# ══════════════════════════════════════════════════════════
+
+# Ligas con historial documentado de casos de amaño (fuente: FIFA TMS, Europol)
+_HIGH_RISK_LEAGUES = {
+    # ── MUY ALTO RIESGO ──
+    "tur.1":  {"risk":90,"name":"Süper Lig","cases":"Fenerbahçe 2011, múltiples investigaciones UEFA"},
+    "mex.1":  {"risk":85,"name":"Liga MX","cases":"Investigaciones CONADE, partidos sin sentido en descenso"},
+    "bra.1":  {"risk":80,"name":"Brasileirão","cases":"Operação Jogo Sujo 2017, árbitros corruptos"},
+    "arg.1":  {"risk":82,"name":"Liga Profesional","cases":"Múltiples casos AFA, presión del público en árbitros"},
+    "chi.1":  {"risk":88,"name":"Primera División Chile","cases":"Caso ANFP 2015"},
+    "col.1":  {"risk":83,"name":"Liga BetPlay","cases":"Historia de influencia del narcotráfico"},
+    "ven.1":  {"risk":87,"name":"Liga FUTVE","cases":"Casos FIFA 2015"},
+    "ecu.1":  {"risk":84,"name":"LigaPro","cases":"Investigaciones 2019"},
+    "per.1":  {"risk":82,"name":"Liga 1","cases":"Casos árbitros 2018-2022"},
+    "cor.k1": {"risk":75,"name":"K League 1","cases":"Escándalo masivo 2011 (130+ personas)"},
+    "chn.1":  {"risk":88,"name":"CSL","cases":"Operación Whirlwind 2009, 30+ funcionarios"},
+    "ita.2":  {"risk":72,"name":"Serie B","cases":"Calcioscommesse, Calciopoli investigación"},
+    "spa.2":  {"risk":68,"name":"Segunda División","cases":"LaLiga corrupción árbitros 2014-2019"},
+    # ── RIESGO MODERADO-ALTO ──
+    "por.1":  {"risk":60,"name":"Primeira Liga","cases":"Caso Apito Dourado 2004"},
+    "gre.1":  {"risk":65,"name":"Super League","cases":"Tribunal amaños 2019"},
+    "pol.1":  {"risk":70,"name":"Ekstraklasa","cases":"Múltiples suspensiones FIFA 2005-2012"},
+    "rou.1":  {"risk":65,"name":"Liga 1","cases":"Investigaciones FFR"},
+    "tur.2":  {"risk":80,"name":"TFF 1.Lig","cases":"Derivado Fenerbahçe"},
+    "mex.2":  {"risk":80,"name":"Liga de Expansión","cases":"Menor supervisión"},
+    # ── RIESGO BAJO (ligas con mayor supervisión) ──
+    "eng.1":  {"risk":15,"name":"Premier League","cases":"Controles estrictos FA + UKGC"},
+    "ger.1":  {"risk":12,"name":"Bundesliga","cases":"BfV supervisión + DFL integridad"},
+    "esp.1":  {"risk":20,"name":"LaLiga","cases":"RFEF controles mejorados post-2014"},
+    "fra.1":  {"risk":18,"name":"Ligue 1","cases":"ANJ supervisión activa"},
+    "ned.1":  {"risk":14,"name":"Eredivisie","cases":"Knvb + Sportradar"},
+    "por.1":  {"risk":55,"name":"Primeira Liga","cases":"Mejoras post-2004"},
+    "uefa.champions": {"risk":10,"name":"Champions League","cases":"UEFA supervisión máxima"},
+}
+
+# Señales de amaño en tenis documentadas por Tennis Integrity Unit
+_TENNIS_RISK_SIGNALS = {
+    "challenger": 70,  # Challengers tienen menos supervisión que ATP
+    "itf":        85,  # Torneos ITF — menos controles, más casos documentados
+    "atp250":     35,
+    "atp500":     20,
+    "atp1000":    12,
+    "grand_slam": 8,
+    "wta100":     30,
+    "wta250":     55,
+}
+
+# NBA: Caso Tim Donaghy + patrones de arbitraje
+_NBA_FIX_PATTERNS = {
+    "playoff_game_7":     75,  # Incentivo económico máximo para extender series
+    "playoff_game_6":     55,  # Segundo juego más lucrativo
+    "tanking_team":       60,  # Equipos que pueden beneficiarse de perder
+    "superstar_foul_out": 45,  # Partidos donde estrella foulería early = sospechoso
+    "referee_flagged":    80,  # Árbitros con historial de anomalías (Donaghy metodología)
+}
+
+def analyze_fix_probability(sport, home, away, mc, dp, real_odds,
+                             league_slug="", an_data=None, sbr_data=None,
+                             line_snapshots=None, extra_context=None):
+    """
+    Detector de amaño multivariable.
+    Score 0-100: 0 = partido limpio, 100 = señales de manipulación muy fuertes.
+    
+    Variables:
+    1.  Liga de alto riesgo (historial documentado)
+    2.  Movimiento de línea atípico / steam move tardío
+    3.  Reverse line movement extremo sin justificación
+    4.  Divergencia Pinnacle vs mercado blando > umbral crítico
+    5.  % dinero vs % apuestas invertido (dinero oculto en un lado)
+    6.  Cuotas anómalas vs modelo propio (probabilidad implícita imposible)
+    7.  Partido sin incentivo (ya clasificado, ya descendido, muerto de tabla)
+    8.  Cuota que baja a último momento sin noticias públicas
+    9.  Equipo con viaje largo + rival descansado (favorece resultado dado)
+    10. Árbitro con historial de partidos de alta varianza
+    11. Patrón de resultado predecible que beneficia narrativa de audiencia
+    12. Over/Under con movimiento exagerado (señal clásica de amaño de goles)
+    13. Asian Handicap línea que no cierra bien (mercados asiáticos = sharps fijos)
+    14. Horario inusual o estadio neutro (menos presión de público local)
+    15. Jugadores clave con comportamiento atípico en cuotas individuales
+    """
+    signals   = []
+    score     = 0
+    
+    # ── 1. LIGA DE RIESGO ──
+    if sport == "soccer":
+        league_data = _HIGH_RISK_LEAGUES.get(league_slug, {})
+        league_risk = league_data.get("risk", 30)
+        if league_risk >= 80:
+            signals.append({
+                "cat": "⚠️ Liga", "icon": "🌍",
+                "label": f"Liga de ALTO RIESGO ({league_risk}/100)",
+                "desc": f"{league_data.get('name',league_slug)}: {league_data.get('cases','Historial documentado')}",
+                "color": "#ff4444", "weight": league_risk * 0.3
+            })
+            score += league_risk * 0.3
+        elif league_risk >= 60:
+            signals.append({
+                "cat": "⚠️ Liga", "icon": "🟡",
+                "label": f"Liga de riesgo moderado ({league_risk}/100)",
+                "desc": league_data.get("cases","Casos previos documentados"),
+                "color": "#ff9500", "weight": league_risk * 0.2
+            })
+            score += league_risk * 0.2
+        elif league_risk <= 20:
+            signals.append({
+                "cat": "✅ Liga", "icon": "🛡️",
+                "label": f"Liga de bajo riesgo ({league_risk}/100)",
+                "desc": f"{league_data.get('name','')} — supervisión estricta",
+                "color": "#00ff88", "weight": -10
+            })
+            score -= 10
+
+    # ── 2. ANOMALÍA DE CUOTA MODELO ──
+    if real_odds:
+        pin = real_odds.get("pinnacle",{})
+        pin_h = pin.get("h",0); pin_d = pin.get("d",0); pin_a = pin.get("a",0)
+        if pin_h>1 and pin_d>1 and pin_a>1:
+            # Probabilidades implícitas Pinnacle (sin margen)
+            total_impl = 1/pin_h + 1/pin_d + 1/pin_a
+            pin_ph = (1/pin_h)/total_impl
+            pin_pa = (1/pin_a)/total_impl
+            # Comparar con modelo
+            model_ph = dp.get("ph", mc.get("ph",0.33))
+            model_pa = dp.get("pa", mc.get("pa",0.33))
+            gap_h = abs(model_ph - pin_ph)
+            gap_a = abs(model_pa - pin_pa)
+            max_gap = max(gap_h, gap_a)
+            if max_gap > 0.20:
+                signals.append({
+                    "cat": "📊 Cuota", "icon": "🚨",
+                    "label": f"Cuota imposible — gap {max_gap*100:.1f}%",
+                    "desc": f"Pinnacle implica {pin_ph*100:.1f}% local vs nuestro modelo {model_ph*100:.1f}%. Diferencia > 20% es anómala.",
+                    "color": "#ff4444", "weight": 25
+                })
+                score += 25
+            elif max_gap > 0.12:
+                signals.append({
+                    "cat": "📊 Cuota", "icon": "⚡",
+                    "label": f"Divergencia cuota-modelo notable ({max_gap*100:.1f}%)",
+                    "desc": "Gap superior al umbral normal. Puede indicar información privilegiada en el mercado.",
+                    "color": "#ff9500", "weight": 12
+                })
+                score += 12
+
+    # ── 3. MOVIMIENTO DE LÍNEA TARDÍO ──
+    if line_snapshots and len(line_snapshots) >= 3:
+        snaps = line_snapshots
+        # ¿El mayor movimiento ocurrió en las últimas 2 snapshots?
+        pin_odds_list = [s["odds"].get("pinnacle",{}).get("h",0) for s in snaps]
+        valid = [(i,o) for i,o in enumerate(pin_odds_list) if o>1]
+        if len(valid) >= 3:
+            early_move = abs(valid[len(valid)//2][1] - valid[0][1])
+            late_move  = abs(valid[-1][1] - valid[len(valid)//2][1])
+            if late_move > early_move * 2.5 and late_move > 0.08:
+                signals.append({
+                    "cat": "📈 Línea", "icon": "💨",
+                    "label": "Steam move tardío detectado",
+                    "desc": f"La línea se movió {late_move:.2f} en los últimos períodos vs {early_move:.2f} al principio. Dinero de última hora con información.",
+                    "color": "#ff9500", "weight": 18
+                })
+                score += 18
+            # ¿Movimiento pre-partido sin noticias? (criterio Sportradar)
+            total_move = abs(valid[-1][1] - valid[0][1]) if valid else 0
+            if total_move > 0.20:
+                signals.append({
+                    "cat": "📈 Línea", "icon": "🔴",
+                    "label": f"Movimiento total extremo ({total_move:.2f})",
+                    "desc": "Línea movió más de 0.20 puntos desde apertura. Sportradar reporta esto como señal de alerta primaria.",
+                    "color": "#ff4444", "weight": 20
+                })
+                score += 20
+
+    # ── 4. DINERO VS APUESTAS INVERTIDO (señal de apuesta coordinada) ──
+    if an_data:
+        bets_h  = an_data.get("ml_home_bets_pct",0) or an_data.get("spread_home_bets_pct",0)
+        money_h = an_data.get("ml_home_money_pct",0) or an_data.get("spread_home_money_pct",0)
+        if bets_h > 0 and money_h > 0:
+            inversion = abs(bets_h - money_h)
+            if inversion > 35 and money_h > bets_h:
+                signals.append({
+                    "cat": "💰 Dinero", "icon": "🎯",
+                    "label": f"Inversión dinero/apuestas: {inversion:.0f}% gap",
+                    "desc": f"{bets_h:.0f}% apuestas en local pero {money_h:.0f}% del DINERO. Apuestas grandes coordinadas en un lado.",
+                    "color": "#ff4444", "weight": 22
+                })
+                score += 22
+            elif inversion > 25:
+                signals.append({
+                    "cat": "💰 Dinero", "icon": "⚡",
+                    "label": f"Discrepancia bets/money ({inversion:.0f}%)",
+                    "desc": "Patrón típico de dinero sharp coordinado — no es comportamiento orgánico del público.",
+                    "color": "#ff9500", "weight": 12
+                })
+                score += 12
+        
+        # Over/Under con movimiento exagerado — señal clásica de amaño de goles
+        over_bets  = an_data.get("total_over_bets_pct",0)
+        over_money = an_data.get("total_over_money_pct",0)
+        if over_bets > 75 and over_money > 80:
+            signals.append({
+                "cat": "⚽ Goals", "icon": "🎭",
+                "label": f"Over cargado ({over_bets:.0f}% bets, {over_money:.0f}% money)",
+                "desc": "El mercado de totales está extremadamente cargado al Over. Señal de amaño de goles en ligas de riesgo.",
+                "color": "#ff9500", "weight": 15
+            })
+            score += 15
+
+    # ── 5. PÚBLICO MUY CARGADO (herramienta de los fijadores) ──
+    if sbr_data:
+        h_pct = sbr_data.get("home_pct",50)
+        # El favorito público extremo es una herramienta: si el partido está amañado
+        # a favor del underdog, los fijadores se benefician del lado contrario al público
+        if h_pct > 80:
+            signals.append({
+                "cat": "👥 Público", "icon": "👥",
+                "label": f"Público extremo en local ({h_pct:.0f}%)",
+                "desc": "Favorito masivo del público. Los fijadores históricamente explotan estos partidos para apostar al underdog con cuotas infladas.",
+                "color": "#ff9500", "weight": 10
+            })
+            score += 10
+        elif h_pct < 20:
+            signals.append({
+                "cat": "👥 Público", "icon": "👥",
+                "label": f"Público extremo en visitante ({100-h_pct:.0f}%)",
+                "desc": "El público masivamente contra el local. Patrón de riesgo si la liga tiene historial.",
+                "color": "#ff9500", "weight": 8
+            })
+            score += 8
+
+    # ── 6. PARTIDO SIN INCENTIVO DEPORTIVO ──
+    if extra_context:
+        if extra_context.get("home_already_qualified") or extra_context.get("away_already_qualified"):
+            signals.append({
+                "cat": "🏆 Contexto", "icon": "😴",
+                "label": "Equipo sin nada en juego",
+                "desc": "Un equipo ya clasificado/descendido tiene menor motivación. Históricamente estos partidos tienen más anomalías.",
+                "color": "#ff9500", "weight": 15
+            })
+            score += 15
+        if extra_context.get("season_finale"):
+            signals.append({
+                "cat": "🏆 Contexto", "icon": "📅",
+                "label": "Última jornada de temporada",
+                "desc": "Las últimas jornadas históricamente concentran más casos de amaño por temas de descenso/clasificación.",
+                "color": "#ff9500", "weight": 12
+            })
+            score += 12
+
+    # ── 7. SPORT-SPECIFIC ──
+    if sport == "tennis":
+        # Tenis: más fácil amañar que equipos (solo un jugador necesario)
+        # "Tanking" un set o partido entero — mercado asiático lo detecta primero
+        if real_odds:
+            # Buscar cuota inusualmente baja para el ranking
+            for bk_odds in real_odds.values():
+                if isinstance(bk_odds, dict):
+                    p1_odd = bk_odds.get("p1",0) or bk_odds.get("h",0)
+                    p2_odd = bk_odds.get("p2",0) or bk_odds.get("a",0)
+                    if p1_odd>1 and p2_odd>1:
+                        ratio = max(p1_odd,p2_odd)/min(p1_odd,p2_odd)
+                        if ratio > 8:  # Favorito con cuota menor a 1.15 es sospechoso en tenis
+                            signals.append({
+                                "cat": "🎾 Tenis", "icon": "🎾",
+                                "label": f"Cuota extrema en tenis ({min(p1_odd,p2_odd):.2f})",
+                                "desc": "Favoritos con cuota < 1.15 en tenis tienen mayor riesgo de no-tanking (la cuota en sí incentiva al underdog a amañar).",
+                                "color": "#ff9500", "weight": 20
+                            })
+                            score += 20
+                            break
+        # Torneos de bajo nivel siempre en alerta
+        signals.append({
+            "cat": "🎾 Tenis", "icon": "🎾",
+            "label": "Deporte de alto riesgo de amaño individual",
+            "desc": "Tenis: basta 1 jugador. Tennis Integrity Unit investigó 174 jugadores 2023. Mercado asiático en tiempo real detecta anomalías antes que cualquier sistema.",
+            "color": "#ff9500", "weight": 12
+        })
+        score += 12
+
+    if sport == "nba":
+        # NBA: árbitros tienen poder enorme. Caso Donaghy documentado.
+        signals.append({
+            "cat": "🏀 NBA", "icon": "🏀",
+            "label": "NBA: factor arbitraje endémico",
+            "desc": "Tim Donaghy (2007) demostró que árbitros pueden controlar resultados. La NBA no ha implementado supervisión externa independiente desde entonces.",
+            "color": "#ff9500", "weight": 8
+        })
+        score += 8
+        # Playoff = más incentivo económico
+        if extra_context and extra_context.get("is_playoff"):
+            signals.append({
+                "cat": "🏀 NBA", "icon": "🏆",
+                "label": "Playoffs — incentivo económico máximo",
+                "desc": "Alargar series de playoffs genera ~$25M extra por juego en ingresos de TV/arena. Patrón histórico de series largas.",
+                "color": "#ff9500", "weight": 15
+            })
+            score += 15
+
+    # ── 8. CUOTA OVER/UNDER — señal de amaño de marcador ──
+    if real_odds and sport == "soccer":
+        pin = real_odds.get("pinnacle",{})
+        # Si el Over/Under tiene movimiento sin razón estadística
+        mc_o25 = mc.get("o25",0.5) if mc else 0.5
+        # Buscar total line en AN data
+        if an_data:
+            curr_total = an_data.get("curr_total",0)
+            open_total = an_data.get("open_total",0)
+            if curr_total and open_total and abs(curr_total-open_total) > 0.25:
+                signals.append({
+                    "cat": "⚽ O/U", "icon": "🎯",
+                    "label": f"Línea total movió {abs(curr_total-open_total):.2f} goles",
+                    "desc": "Movimiento en Over/Under sin cambio en pronóstico de goles es señal clásica de amaño de marcador.",
+                    "color": "#ff4444", "weight": 18
+                })
+                score += 18
+
+    # ── 9. SEÑAL DE ACTION NETWORK STEAM/REVERSE ──
+    if an_data:
+        if an_data.get("steam_move"):
+            signals.append({
+                "cat": "💨 Steam", "icon": "💨",
+                "label": "Steam Move confirmado por Action Network",
+                "desc": "Action Network detectó entrada coordinada de dinero en poco tiempo. Puede ser sharps legítimos o información privilegiada.",
+                "color": "#aa00ff", "weight": 15
+            })
+            score += 15
+        if an_data.get("reverse_move"):
+            signals.append({
+                "cat": "🔄 RLM", "icon": "🔄",
+                "label": "Reverse Line Movement confirmado (AN)",
+                "desc": "Dinero mayoritario en un lado pero línea mueve al otro. Señal de dinero con ventaja de información.",
+                "color": "#00ccff", "weight": 20
+            })
+            score += 20
+
+    # ── SCORE FINAL ──
+    score = min(100, max(0, score))
+    
+    # Veredicto + disclaimer
+    if score >= 75:
+        verdict = "🚨 SEÑALES MUY FUERTES — MÁXIMA SOSPECHA"
+        vc = "#ff4444"
+        advice = "Evitar apostar. Si se apuesta, asumir que el resultado puede estar predeterminado."
+    elif score >= 55:
+        verdict = "⚠️ SEÑALES MODERADAS — ALTA SOSPECHA"
+        vc = "#ff9500"
+        advice = "Reducir stake al mínimo. No usar en parlays. Monitorear movimientos de última hora."
+    elif score >= 35:
+        verdict = "🟡 SEÑALES LEVES — PRECAUCIÓN"
+        vc = "#FFD700"
+        advice = "Partido con factores de riesgo. Apostar solo con edge muy claro (>8%)."
+    elif score >= 15:
+        verdict = "🟢 BAJO RIESGO — SEÑALES NORMALES"
+        vc = "#00ccff"
+        advice = "Sin anomalías detectadas. Factores de riesgo estándar."
+    else:
+        verdict = "✅ PARTIDO LIMPIO"
+        vc = "#00ff88"
+        advice = "Todas las señales dentro de rangos normales."
+
+    return {
+        "signals": signals,
+        "score": score,
+        "verdict": verdict,
+        "verdict_color": vc,
+        "advice": advice,
+        "sport": sport,
+    }
+
+
+def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
+                        an_data=None, sbr_data=None, line_snapshots=None):
+    """
+    Renderiza el detector de amaño en la UI.
+    Incluye disclaimer legal claro.
+    """
+    st.markdown("<div class='shdr'>🔍 DETECTOR DE ANOMALÍAS DE MERCADO</div>", unsafe_allow_html=True)
+    
+    # Disclaimer
+    st.markdown(
+        "<div style='background:#1a0a00;border:1px solid #ff440033;border-radius:10px;"
+        "padding:10px 16px;margin:4px 0 10px;font-size:.72rem;color:#ff9500'>"
+        "⚖️ <b>AVISO:</b> Este análisis detecta anomalías estadísticas en mercados de apuestas. "
+        "No acusa a ningún equipo, jugador o árbitro específico. Las señales son indicadores de "
+        "comportamiento inusual del mercado, no prueba de manipulación. Basado en metodología "
+        "académica pública (Forrest, Hill, Sportradar FDS)."
+        "</div>", unsafe_allow_html=True)
+    
+    league_slug = game.get("slug","")
+    extra = {
+        "is_playoff": game.get("state","") == "post" or "playoff" in str(game.get("league","")).lower(),
+    }
+    
+    analysis = analyze_fix_probability(
+        sport=sport, home=home, away=away,
+        mc=mc, dp=dp, real_odds=real_odds,
+        league_slug=league_slug,
+        an_data=an_data, sbr_data=sbr_data,
+        line_snapshots=line_snapshots,
+        extra_context=extra
+    )
+    
+    sc = analysis["score"]
+    vc = analysis["verdict_color"]
+    
+    # ── Score visual ──
+    # Medidor estilo termómetro
+    bar_pct = sc  # 0-100
+    bar_color = vc
+    
+    # Color gradient based on score
+    if sc < 20: grd = "linear-gradient(90deg,#00ff88,#00ccff)"
+    elif sc < 40: grd = "linear-gradient(90deg,#00ccff,#FFD700)"
+    elif sc < 60: grd = "linear-gradient(90deg,#FFD700,#ff9500)"
+    else: grd = "linear-gradient(90deg,#ff9500,#ff4444)"
+    
+    st.markdown(
+        f"<div style='background:#0d0d2e;border:2px solid {vc}44;border-radius:16px;padding:20px 22px;margin:8px 0'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px'>"
+        f"<div>"
+        f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.12em;margin-bottom:4px'>ÍNDICE DE ANOMALÍA DE MERCADO</div>"
+        f"<div style='font-size:1rem;font-weight:900;color:{vc}'>{analysis['verdict']}</div>"
+        f"</div>"
+        f"<div style='text-align:center'>"
+        f"<div style='font-size:2.4rem;font-weight:900;color:{vc};line-height:1'>{sc:.0f}</div>"
+        f"<div style='font-size:.65rem;color:#555'>/100</div>"
+        f"</div>"
+        f"</div>"
+        # Progress bar
+        f"<div style='background:#1a1a40;border-radius:6px;height:12px;overflow:hidden;margin:10px 0'>"
+        f"<div style='width:{bar_pct}%;height:100%;background:{grd};border-radius:6px;transition:.4s'></div>"
+        f"</div>"
+        f"<div style='display:flex;justify-content:space-between;font-size:.65rem;color:#444;margin-bottom:12px'>"
+        f"<span>0 — Limpio</span><span>25 — Bajo</span><span>50 — Medio</span><span>75 — Alto</span><span>100 — Crítico</span>"
+        f"</div>"
+        # Advice
+        f"<div style='background:#12122a;border-radius:8px;padding:10px 14px;font-size:.8rem;color:#aaa'>"
+        f"💡 <b style='color:#EEEEFF'>Recomendación:</b> {analysis['advice']}"
+        f"</div>"
+        f"</div>", unsafe_allow_html=True)
+    
+    # ── Señales ──
+    if analysis["signals"]:
+        # Agrupar por categoría
+        by_cat = {}
+        for sig in analysis["signals"]:
+            cat = sig["cat"]
+            if cat not in by_cat: by_cat[cat] = []
+            by_cat[cat].append(sig)
+        
+        for cat, sigs in by_cat.items():
+            with st.expander(f"{cat} — {len(sigs)} señal{'es' if len(sigs)>1 else ''}", expanded=sc>=40):
+                for sig in sigs:
+                    st.markdown(
+                        f"<div style='background:#07071a;border-left:3px solid {sig['color']};"
+                        f"border-radius:0 8px 8px 0;padding:10px 14px;margin:4px 0;"
+                        f"display:flex;gap:10px;align-items:flex-start'>"
+                        f"<div style='font-size:1.1rem;min-width:24px'>{sig['icon']}</div>"
+                        f"<div><div style='font-weight:700;font-size:.83rem;color:{sig['color']}'>{sig['label']}</div>"
+                        f"<div style='font-size:.75rem;color:#888;margin-top:3px;line-height:1.5'>{sig['desc']}</div>"
+                        f"</div></div>", unsafe_allow_html=True)
+    else:
+        st.markdown(
+            "<div style='color:#555;font-size:.83rem;padding:10px;text-align:center'>"
+            "✅ Sin señales anómalas detectadas en este partido.</div>", unsafe_allow_html=True)
+    
+    # ── Fuentes bibliográficas ──
+    with st.expander("📚 Metodología y fuentes académicas"):
+        st.markdown(
+            "<div style='font-size:.75rem;color:#555;line-height:1.8'>"
+            "• <b style='color:#aaa'>Forrest & McHale (2019)</b> — Identificación de patrones de cuota anómalos pre-partido<br>"
+            "• <b style='color:#aaa'>Hill (2010)</b> — Football match manipulation and the wider criminological context<br>"
+            "• <b style='color:#aaa'>Borghesi & Dare (2009)</b> — Late line movement como señal de información privilegiada<br>"
+            "• <b style='color:#aaa'>Wolfers (2006)</b> — Point shaving en baloncesto universitario (metodología)<br>"
+            "• <b style='color:#aaa'>Sportradar FDS</b> — Fraud Detection System, metodología pública resumida<br>"
+            "• <b style='color:#aaa'>Europol (2013)</b> — 425 partidos sospechosos en 15 países, 680 personas involucradas<br>"
+            "• <b style='color:#aaa'>Tennis Integrity Unit (2023)</b> — 174 jugadores investigados, mercado asiático como señal principal<br>"
+            "• <b style='color:#aaa'>Caso Donaghy (2007)</b> — NBA, árbitro Tim Donaghy, metodología de detección posterior"
+            "</div>", unsafe_allow_html=True)
+
+def render_sharp_money(home, away, dp, mc, real_odds, game):
+    """
+    Sección completa de Sharp Money Intelligence en el partido.
+    Muestra: señales detectadas · score · veredicto · CLV · line movement
+    """
+    st.markdown("<div class='shdr'>🦅 SHARP MONEY INTELLIGENCE</div>", unsafe_allow_html=True)
+    
+    if not real_odds:
+        st.markdown(
+            "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
+            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "🔌 Conecta <b style='color:#EEEEFF'>The Odds API</b> para activar el Sharp Money detector. "
+            "Detectará: Steam moves · Reverse line movement · CLV · Divergencia sharp vs público."
+            "</div>", unsafe_allow_html=True)
+        return
+
+    # Track la línea actual
+    game_id = game.get("id","")
+    snapshots = track_line_movement(game_id, home, away, real_odds)
+
+    # ── Enriquecer real_odds con datos live de Betfair + SBR ──
+    league_slug = game.get("slug","")
+    sbr_data = get_sbr_public_betting(home, away, "soccer")
+
+    # Análisis completo
+    analysis = analyze_line_movement(home, away, real_odds, dp["ph"])
+    
+    # ── Score bar ──
+    sc = analysis["score"]
+    bar_w = min(100, abs(sc))
+    bar_color = analysis["verdict_color"]
+    bar_dir = "left" if sc < 0 else "right"
+    
+    st.markdown(
+        f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:16px;padding:20px 22px;margin:8px 0'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:14px'>"
+        f"<div style='font-size:1rem;font-weight:900;color:{bar_color}'>{analysis['verdict']}</div>"
+        f"<div style='font-size:1.6rem;font-weight:900;color:{bar_color}'>{'+' if sc>0 else ''}{sc}</div>"
+        f"</div>"
+        f"<div style='background:#1a1a40;border-radius:6px;height:10px;overflow:hidden;margin-bottom:14px;position:relative'>"
+        f"<div style='position:absolute;left:50%;top:0;bottom:0;width:1px;background:#252555'></div>"
+        f"<div style='position:absolute;{'right:50%' if sc<0 else 'left:50%'};top:0;bottom:0;"
+        f"width:{bar_w/2}%;background:{bar_color};opacity:.8'></div>"
+        f"</div>"
+        f"<div style='display:flex;justify-content:space-between;font-size:.68rem;color:#555'>"
+        f"<span>🚫 Trampa pública</span><span>⚖️ Neutral</span><span>🦅 Sharp money</span></div>"
+        f"</div>", unsafe_allow_html=True)
+
+    # ── Señales detectadas ──
+    if analysis["signals"]:
+        for sig in analysis["signals"]:
+            st.markdown(
+                f"<div style='background:#07071a;border:1px solid {sig['color']}33;"
+                f"border-left:3px solid {sig['color']};border-radius:10px;"
+                f"padding:10px 16px;margin:5px 0;display:flex;gap:12px;align-items:flex-start'>"
+                f"<div style='font-size:1.2rem'>{sig['icon']}</div>"
+                f"<div><div style='font-weight:700;font-size:.85rem;color:{sig['color']}'>{sig['label']}</div>"
+                f"<div style='font-size:.78rem;color:#aaa;margin-top:2px'>{sig['desc']}</div></div>"
+                f"</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(
+            "<div style='color:#555;font-size:.83rem;padding:10px'>⏳ Acumulando datos de línea... "
+            "Las señales aparecerán conforme el mercado se mueva.</div>", unsafe_allow_html=True)
+
+    # ── SBR % público ──
+    if sbr_data:
+        h_pct = sbr_data.get("home_pct", 0)
+        a_pct = sbr_data.get("away_pct", 0)
+        if h_pct or a_pct:
+            hc = "#00ff88" if h_pct > 55 else ("#ff4444" if h_pct < 35 else "#FFD700")
+            st.markdown(
+                f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:10px;"
+                f"padding:12px 16px;margin:6px 0'>"
+                f"<div style='font-size:.7rem;color:#555;font-weight:700;margin-bottom:8px'>👥 % APUESTAS PÚBLICAS (SportsBookReview)</div>"
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px'>"
+                f"<div style='text-align:center'><div style='font-size:1.4rem;font-weight:900;color:{hc}'>{h_pct:.0f}%</div>"
+                f"<div style='font-size:.72rem;color:#aaa'>{home[:14]}</div></div>"
+                f"<div style='text-align:center'><div style='font-size:1.4rem;font-weight:900;color:#aaa'>{a_pct:.0f}%</div>"
+                f"<div style='font-size:.72rem;color:#aaa'>{away[:14]}</div></div></div>"
+                f"<div style='margin-top:8px;font-size:.7rem;color:#555'>"
+                f"{'⚠️ Público muy cargado en local — fade the public' if h_pct>70 else ('⚠️ Público muy cargado en visitante — fade the public' if h_pct<30 else '⚖️ Apuestas divididas')}</div>"
+                f"</div>", unsafe_allow_html=True)
+
+
 def render_odds_comparison(home, away, dp, mc, real_odds):
     """Tabla de valor esperado comparando modelo vs casas."""
     st.markdown("<div class='shdr'>💰 Valor Esperado vs Casas de Apuestas</div>", unsafe_allow_html=True)
@@ -1458,6 +2420,146 @@ def h2h_stats(h2h, hn, an):
             "l5d":sum(1 for x in l5 if x["winner"]=="Draw"),
             "l5a":sum(1 for x in l5 if x["winner"]==an)}
 
+# ══════════════════════════════════════════════════════════
+# MODELOS AVANZADOS — Dixon-Coles · Poisson Bivariado · Elo · Weibull+Markov
+# Refs: Dixon&Coles 1997 · Karlis&Ntzoufras 2003 · Klaassen&Magnus 2001
+# ══════════════════════════════════════════════════════════
+
+def _dc_tau(gh, ga, lh, la, rho):
+    """Factor de corrección Dixon-Coles para resultados bajos."""
+    if gh==0 and ga==0: return max(1e-6, 1 - lh*la*rho)
+    if gh==1 and ga==0: return 1 + la*rho
+    if gh==0 and ga==1: return 1 + lh*rho
+    if gh==1 and ga==1: return 1 - rho
+    return 1.0
+
+def dc_probabilities(hxg, axg, rho=-0.13):
+    """Dixon-Coles 1997 — corrige sobreestimación Poisson en 0-0, 1-0, 0-1, 1-1."""
+    lh, la = max(0.15, hxg), max(0.15, axg)
+    matrix = {}; total = 0.0
+    for gh in range(8):
+        for ga in range(8):
+            p = max(0.0,
+                math.exp(-lh)*lh**gh/math.factorial(gh) *
+                math.exp(-la)*la**ga/math.factorial(ga) *
+                _dc_tau(gh, ga, lh, la, rho))
+            matrix[(gh,ga)] = p; total += p
+    if total > 0: matrix = {k: v/total for k,v in matrix.items()}
+    ph   = sum(p for (gh,ga),p in matrix.items() if gh>ga)
+    pd   = sum(p for (gh,ga),p in matrix.items() if gh==ga)
+    pa   = sum(p for (gh,ga),p in matrix.items() if ga>gh)
+    o25  = sum(p for (gh,ga),p in matrix.items() if gh+ga>2)
+    o35  = sum(p for (gh,ga),p in matrix.items() if gh+ga>3)
+    btts = sum(p for (gh,ga),p in matrix.items() if gh>0 and ga>0)
+    cs_h = sum(p for (gh,ga),p in matrix.items() if ga==0)
+    cs_a = sum(p for (gh,ga),p in matrix.items() if gh==0)
+    top  = sorted(matrix.items(), key=lambda x: -x[1])[:6]
+    return {"ph":ph,"pd":pd,"pa":pa,"o25":o25,"o35":o35,"btts":btts,
+            "cs_h":cs_h,"cs_a":cs_a,"o15":sum(p for (gh,ga),p in matrix.items() if gh+ga>1),
+            "top_scores":[(f"{gh}-{ga}", round(p*100,1)) for (gh,ga),p in top]}
+
+def bivariate_poisson(hxg, axg, cov=0.10):
+    """Karlis & Ntzoufras 2003 — modela correlación real entre goles locales y visitantes."""
+    lam1=max(0.01,hxg-cov); lam2=max(0.01,axg-cov); lam3=max(0.01,cov)
+    matrix = {}; total = 0.0
+    for gh in range(8):
+        for ga in range(8):
+            p = sum(
+                math.exp(-lam1)*lam1**(gh-k)/math.factorial(gh-k) *
+                math.exp(-lam2)*lam2**(ga-k)/math.factorial(ga-k) *
+                math.exp(-lam3)*lam3**k/math.factorial(k)
+                for k in range(min(gh,ga)+1))
+            matrix[(gh,ga)] = max(0.0, p); total += p
+    if total > 0: matrix = {k: v/total for k,v in matrix.items()}
+    return {
+        "ph": sum(p for (gh,ga),p in matrix.items() if gh>ga),
+        "pd": sum(p for (gh,ga),p in matrix.items() if gh==ga),
+        "pa": sum(p for (gh,ga),p in matrix.items() if ga>gh),
+        "o25":sum(p for (gh,ga),p in matrix.items() if gh+ga>2),
+        "o35":sum(p for (gh,ga),p in matrix.items() if gh+ga>3),
+        "btts":sum(p for (gh,ga),p in matrix.items() if gh>0 and ga>0),
+    }
+
+# ── Elo dinámico con pesos exponenciales ──
+try:
+    import json as _json_elo
+    with open("/tmp/tgl_elo.json") as _ef: _elo_db = _json_elo.load(_ef)
+except: _elo_db = {}
+
+def _get_elo(tid): return float(_elo_db.get(str(tid), 1500.0))
+
+def _elo_from_form(team_id, form):
+    """Elo implícito desde forma reciente — pesos exponenciales."""
+    base = _get_elo(team_id)
+    if not form: return base
+    w = [2**(-i) for i in range(len(form[:10]))]
+    tw = sum(w)
+    score = sum(wi*(1.0 if r.get("result")=="W" else (0.5 if r.get("result")=="D" else 0.0))
+                for r,wi in zip(form[:10],w))
+    return base + (score/tw - 0.5) * 180   # ±90 puntos de ajuste
+
+def elo_win_prob(home_id, away_id, hform=None, aform=None, home_adv=50):
+    """P(local gana) con Elo dinámico + ventaja de campo."""
+    ra = _elo_from_form(home_id, hform) + home_adv
+    rb = _elo_from_form(away_id, aform)
+    return 1 / (1 + 10**((rb - ra)/400))
+
+# ── Weibull + Markov para tenis (Klaassen & Magnus 2001) ──
+def _weibull_srv_prob(rank_srv, rank_ret, surface="hard"):
+    base = {"hard":0.630,"clay":0.600,"grass":0.662,"carpet":0.645}.get(surface.lower(),0.630)
+    return max(0.35, min(0.78, base - (rank_srv - rank_ret)*0.00015))
+
+def _markov_game(p):
+    """P(ganar juego) dado p(ganar punto) — fórmula cerrada exacta."""
+    q = 1 - p
+    pg = sum(math.comb(a+3,3)*p**4*q**a for a in range(3))
+    pg += math.comb(6,3)*(p*q)**3 * (p**2/(p**2+q**2))
+    return max(0.01, min(0.99, pg))
+
+def weibull_match_prob(rank1, rank2, odd_1=0, odd_2=0, surface="hard", best_of=3):
+    """Probabilidad de partido: Weibull (punto) → Markov (juego → set → partido)."""
+    ps1 = (_markov_game(_weibull_srv_prob(rank1, rank2, surface)) +
+           (1 - _markov_game(_weibull_srv_prob(rank2, rank1, surface)))) / 2
+    ps1 = max(0.01, min(0.99, ps1))
+    need = 2 if best_of==3 else 3
+    p1m = sum(math.comb(s-1,need-1)*ps1**need*(1-ps1)**(s-need) for s in range(need,best_of+1))
+    p1m = max(0.01, min(0.99, p1m))
+    if odd_1>1 and odd_2>1:
+        t = 1/odd_1+1/odd_2
+        p1m = 0.60*p1m + 0.40*(1/odd_1)/t   # 60% Weibull, 40% mercado limpio
+    return {"p1":round(p1m,4),"p2":round(1-p1m,4)}
+
+# ── ENSEMBLE: combina todos con pesos óptimos ──
+def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None, home_id=None, away_id=None):
+    """
+    Dixon-Coles 45% + Poisson Bivariado 30% + Elo 15% + H2H 10%.
+    Desviación estándar entre modelos = señal de consenso / confianza.
+    """
+    dc  = dc_probabilities(hxg, axg)
+    bvp = bivariate_poisson(hxg, axg)
+    elo_ph = elo_win_prob(home_id or "h", away_id or "a", hform, aform)
+    h2h_ph = (h2h_s["hp"]/100 if h2h_s and h2h_s.get("tot",0)>=5 else dc["ph"])
+    h2h_pd = (h2h_s["dp"]/100 if h2h_s and h2h_s.get("tot",0)>=5 else dc["pd"])
+    ph = 0.45*dc["ph"] + 0.30*bvp["ph"] + 0.15*elo_ph + 0.10*h2h_ph
+    pd = 0.45*dc["pd"] + 0.30*bvp["pd"] + 0.25*h2h_pd
+    pa = max(0.01, 1-ph-pd)
+    s  = ph+pd+pa; ph/=s; pd/=s; pa/=s
+    std = float(np.std([dc["ph"], bvp["ph"], elo_ph, h2h_ph]))
+    consensus = "🟢 ALTO" if std<0.04 else ("🟡 MEDIO" if std<0.08 else "🔴 BAJO")
+    return {
+        "ph":ph,"pd":pd,"pa":pa,
+        "o15":dc["o15"],"o25":0.5*dc["o25"]+0.5*bvp["o25"],
+        "o35":0.5*dc["o35"]+0.5*bvp["o35"],
+        "btts":0.5*dc["btts"]+0.5*bvp["btts"],
+        "cs_h":dc["cs_h"],"cs_a":dc["cs_a"],
+        "hxg":round(hxg,2),"axg":round(axg,2),
+        "top_scores":dc["top_scores"],
+        "consensus":consensus,
+        "dc_ph":round(dc["ph"]*100,1),"bvp_ph":round(bvp["ph"]*100,1),
+        "elo_ph":round(elo_ph*100,1),"h2h_ph":round(h2h_ph*100,1),
+        "model":"Ensemble DC+BVP+Elo+H2H",
+    }
+
 def diamond_engine(mc, h2h_s, hform, aform):
     ph, pd, pa = mc["ph"], mc["pd"], mc["pa"]
     if h2h_s.get("tot",0) >= 3:
@@ -1550,9 +2652,9 @@ def escanear_y_enviar(matches):
         af  = get_form(m["away_id"], m["slug"])
         hxg = max(0.35, avg([r["gf"] for r in hf])) if hf else xg_from_record(m["home_rec"],True)
         axg = max(0.35, avg([r["gf"] for r in af])) if af else xg_from_record(m["away_rec"],False)
-        mc  = mc50k(hxg, axg)
         h2h = get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"])
         h2s = h2h_stats(h2h, m["home"], m["away"])
+        mc  = ensemble_football(hxg, axg, h2s, hf, af, m["home_id"], m["away_id"])
         dp  = diamond_engine(mc, h2s, hf, af)
         odd_h = m["odd_h"]
         if odd_h > 1:
@@ -1574,11 +2676,20 @@ def escanear_y_enviar(matches):
         msg += f"🕒 {p['hora']} CDMX\n"
         msg += f"👉 *Local gana @{p['odd_h']}*\n"
         msg += f"📊 Prob: {p['dp']['ph']*100:.1f}%  •  Edge: *{p['edge']*100:.1f}%*\n"
+        # Sharp signal from Ensemble consensus
+        consensus = p["mc"].get("consensus","N/D")
+        msg += f"🔬 Consenso modelos: {consensus}\n"
         msg += f"💰 Kelly: {p['kelly']:.1f}% bankroll\n"
         msg += "━━━━━━━━━━━━━━━━━━━\n"
     msg += "\n_Que la varianza esté a nuestro favor._ 🎲"
     tg_send(msg)
     return len(picks)
+
+def get_nba_public_pct(home, away):
+    """Action Network NBA — % público vs sharp en ML y O/U."""
+    data = get_action_network_nba(home, away)
+    if not data: return {}
+    return data
 
 def escanear_nba_y_enviar(games):
     """Escanea NBA y manda picks O/U con edge > 4% a Telegram."""
@@ -1822,16 +2933,16 @@ def get_tennis_cartelera():
         pass
     return matches
 
-def tennis_model(rank1, rank2, odd_1, odd_2):
-    r1=max(1,rank1); r2=max(1,rank2)
-    ls=math.log(r2)+math.log(r1)
-    p1_rank=math.log(r2)/ls if ls>0 else 0.5
-    if odd_1>1 and odd_2>1:
-        p1o=1/odd_1; p2o=1/odd_2; s=p1o+p2o
-        p1=0.5*p1_rank+0.5*(p1o/s)
-    else:
-        p1=p1_rank
-    p2=1-p1
+def tennis_model(rank1, rank2, odd_1=0, odd_2=0, surface="hard"):
+    """Weibull+Markov (Klaassen&Magnus 2001) — mejor que Elo puro para tenis."""
+    try:
+        wm = weibull_match_prob(rank1, rank2, odd_1, odd_2, surface)
+        p1, p2 = wm["p1"], wm["p2"]
+    except:
+        r1=max(1,rank1); r2=max(1,rank2); ls=math.log(r2)+math.log(r1)
+        p1_rank=math.log(r2)/ls if ls>0 else 0.5
+        p1 = 0.5*p1_rank+0.5*(1/odd_1)/(1/odd_1+1/odd_2) if odd_1>1 and odd_2>1 else p1_rank
+        p2 = 1-p1
     edge_1=round(p1-(1/odd_1),3) if odd_1>1 else 0
     edge_2=round(p2-(1/odd_2),3) if odd_2>1 else 0
     conf="💎 DIAMANTE" if max(p1,p2)>0.68 else("🔥 ALTA" if max(p1,p2)>0.58 else "⚡ MEDIA")
@@ -2102,6 +3213,12 @@ if st.session_state["view"] == "cartelera":
             render_history()
         with tab7:
             st.markdown("<div class='shdr'>🎓 Califica tu Pick — Einstein 🧠</div>", unsafe_allow_html=True)
+            # Detector de anomalías NBA
+            _an_nba_pro = get_action_network_pro(
+                nba_games[0]["home"] if nba_games else "", 
+                nba_games[0]["away"] if nba_games else "", "nba")
+            render_fix_detector("nba","","",{},{},{},
+                               {"slug":"nba"},an_data=_an_nba_pro)
             render_einstein_califica("nba")
         with tab8:
             render_resultados_tab()
@@ -2317,6 +3434,10 @@ if st.session_state["view"] == "cartelera":
             render_history()
         with tab7:
             st.markdown("<div class='shdr'>🎓 Califica tu Pick — Einstein 🧠</div>", unsafe_allow_html=True)
+            # Detector de anomalías Tenis
+            _an_ten_pro = get_action_network_pro("","","tennis")
+            render_fix_detector("tennis","Jugador 1","Jugador 2",{},{},{},
+                               {"slug":"tennis"},an_data=_an_ten_pro)
             render_einstein_califica("ten")
         with tab8:
             render_resultados_tab()
@@ -2698,8 +3819,11 @@ else:
     h2s   = {}
     hxg   = max(0.35,avg([r["gf"] for r in hform])) if hform else xg_from_record(g["home_rec"],True)
     axg   = max(0.35,avg([r["gf"] for r in aform])) if aform else xg_from_record(g["away_rec"],False)
-    mc    = mc50k(hxg,axg); dp = diamond_engine(mc,h2s,hform,aform)
-    pls   = smart_parlay(mc,dp,g["home"],g["away"])
+    h2h   = get_h2h(g["home_id"],g["away_id"],g["slug"],g["home"],g["away"])
+    h2s   = h2h_stats(h2h, g["home"], g["away"])
+    mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"])
+    dp    = diamond_engine(mc, h2s, hform, aform)
+    pls   = smart_parlay(mc, dp, g["home"], g["away"])
     prog.progress(100,"✅ Listo"); prog.empty()
 
     # fuente
@@ -2728,7 +3852,7 @@ else:
         +"".join(f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:{'#7c00ff' if i==0 else '#555'}'>{v*100:.1f}%</div><div class='mlbl'>{l[:18]}</div></div>" for i,(l,v) in enumerate(picks_s))
         +f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:#ff9500'>{mc['btts']*100:.0f}%</div><div class='mlbl'>⚡ Ambos Anotan</div></div>"
         +f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:#00ccff'>{mc['o25']*100:.0f}%</div><div class='mlbl'>⚽ Over 2.5</div></div>"
-        +f"</div><div style='font-size:.78rem;color:#444;margin-top:14px'>xG: {hxg:.1f} vs {axg:.1f} · MC 50K + H2H + Forma</div></div>",
+        +f"</div><div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'><div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ccff'>{mc.get('dc_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Dixon-Coles</div></div><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#aa00ff'>{mc.get('bvp_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Poisson BV</div></div><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ff88'>{mc.get('elo_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Elo Dinámico</div></div><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#FFD700'>{mc.get('h2h_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>H2H</div></div></div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div></div></div>",
         unsafe_allow_html=True)
 
     # ── GUARDAR PICK ──
@@ -2884,5 +4008,12 @@ else:
     with st.spinner("Buscando cuotas..."):
         real_odds = get_real_odds(g["home"], g["away"], g["slug"])
     render_odds_comparison(g["home"], g["away"], dp, mc, real_odds)
+    render_sharp_money(g["home"], g["away"], dp, mc, real_odds, g)
+    # ── Fetch AN PRO data for fix detector ──
+    _an_pro   = get_action_network_pro(g["home"], g["away"], "soccer")
+    _sbr_fix  = get_sbr_public_betting(g["home"], g["away"], "soccer")
+    _snaps    = _line_history.get(f"{g["home"][:8]}_{g["away"][:8]}", {}).get("snapshots",[])
+    render_fix_detector("soccer", g["home"], g["away"], mc, dp, real_odds, g,
+                        an_data=_an_pro, sbr_data=_sbr_fix, line_snapshots=_snaps)
 
 
