@@ -779,38 +779,94 @@ def get_sbr_public_betting(home, away, sport="soccer"):
 
 # ── Action Network — datos NBA/NFL (endpoint no documentado) ──
 @st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def get_action_network_nba(home, away):
     """
-    Action Network endpoint no documentado para NBA.
-    Devuelve: % bets + % money en spread, ML y O/U.
+    Action Network NBA — PRO + fallback público.
+    Devuelve: % bets + % money en spread, ML y O/U + línea apertura/cierre.
     """
     try:
-        # Endpoint que han encontrado via reverse engineering
-        url = "https://api.actionnetwork.com/web/v1/games"
+        _token = ""
+        try: _token = st.secrets.get("ACTION_NETWORK_TOKEN", "")
+        except: _token = os.getenv("ACTION_NETWORK_TOKEN", "")
+        
+        date = datetime.now(CDMX).strftime("%Y%m%d")
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)",
-            "Referer": "https://www.actionnetwork.com/",
-            "Accept": "application/json"
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Referer":    "https://www.actionnetwork.com/",
+            "Accept":     "application/json",
         }
-        params = {"sport": "nba", "date": datetime.now(CDMX).strftime("%Y%m%d")}
-        resp = requests.get(url, headers=headers, params=params, timeout=8)
-        if resp.status_code != 200: return {}
+        if _token:
+            headers["Authorization"] = f"Bearer {_token}"
+        
+        # PRO endpoint primero, fallback a v1
+        for url, params in [
+            ("https://api.actionnetwork.com/web/v2/games/nba",
+             {"date": date, "bookIds": "15,30,76,123"}),
+            ("https://api.actionnetwork.com/web/v1/games/nba",
+             {"date": date}),
+            ("https://api.actionnetwork.com/web/v1/games",
+             {"sport": "nba", "date": date}),
+        ]:
+            try:
+                resp = requests.get(url, headers=headers, params=params, timeout=8)
+                if resp.status_code == 200: break
+            except: continue
+        else:
+            return {}
+        
         games = resp.json().get("games", [])
         hn = home.lower()[:7]; an = away.lower()[:7]
+        
         for g in games:
             teams = g.get("teams", [{}]*2)
             names = [t.get("full_name","").lower() for t in teams]
-            if any(hn in n or n[:7] in hn for n in names) or any(an in n or n[:7] in an for n in names):
-                # Extraer % públicos
-                ml = g.get("ml_bets", {})
-                ou = g.get("ou_bets", {})
-                return {
-                    "ml_home_bets_pct":  ml.get("home_bets_pct", 0),
-                    "ml_home_money_pct": ml.get("home_money_pct", 0),
-                    "over_bets_pct":     ou.get("over_bets_pct", 0),
-                    "over_money_pct":    ou.get("over_money_pct", 0),
-                    "source": "ActionNetwork"
-                }
+            abbrs = [t.get("abbr","").lower() for t in teams]
+            if not (any(hn in n or n[:7] in hn for n in names+abbrs) or
+                    any(an in n or n[:7] in an for n in names+abbrs)):
+                continue
+            
+            # ── % Bets y Money ──
+            ml  = g.get("ml_bets",{})  or g.get("moneyline_bets",{}) or {}
+            ou  = g.get("ou_bets",{})  or g.get("total_bets",{})     or {}
+            spd = g.get("spread_bets",{}) or {}
+            
+            # Línea apertura vs cierre
+            open_total = curr_total = open_ml = curr_ml = 0
+            for bk in g.get("books",[]):
+                if bk.get("book_id") in [15, 30, 123]:
+                    p = bk.get("periods",{}).get("0",{})
+                    open_total = p.get("total",{}).get("open",0) or 0
+                    curr_total = p.get("total",{}).get("current",0) or 0
+                    open_ml    = p.get("money_line",{}).get("open_home",0) or 0
+                    curr_ml    = p.get("money_line",{}).get("current_home",0) or 0
+                    break
+            
+            return {
+                # ML
+                "ml_home_bets_pct":    ml.get("home_bets_pct",0) or ml.get("home_bets",0),
+                "ml_home_money_pct":   ml.get("home_money_pct",0) or ml.get("home_money",0),
+                "ml_away_bets_pct":    ml.get("away_bets_pct",0) or ml.get("away_bets",0),
+                "ml_away_money_pct":   ml.get("away_money_pct",0) or ml.get("away_money",0),
+                # O/U
+                "over_bets_pct":       ou.get("over_bets_pct",0) or ou.get("over_bets",0),
+                "over_money_pct":      ou.get("over_money_pct",0) or ou.get("over_money",0),
+                "under_bets_pct":      ou.get("under_bets_pct",0) or ou.get("under_bets",0),
+                "under_money_pct":     ou.get("under_money_pct",0) or ou.get("under_money",0),
+                # Spread
+                "spread_home_bets_pct":  spd.get("home_bets_pct",0),
+                "spread_home_money_pct": spd.get("home_money_pct",0),
+                # Línea
+                "open_total": open_total, "curr_total": curr_total,
+                "open_ml_h":  open_ml,   "curr_ml_h":  curr_ml,
+                # Meta
+                "steam_move":    g.get("steam_move", False),
+                "reverse_move":  g.get("reverse_line_movement", False),
+                "consensus_pick":g.get("consensus",{}).get("pick",""),
+                "injuries":      [i.get("player","")+" "+i.get("status","")
+                                  for i in g.get("injuries",[])[:4]],
+                "source":        "ActionNetwork PRO" if _token else "ActionNetwork",
+            }
     except: pass
     return {}
 
@@ -1384,6 +1440,14 @@ def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
             "<div style='color:#555;font-size:.83rem;padding:10px;text-align:center'>"
             "✅ Sin señales anómalas detectadas en este partido.</div>", unsafe_allow_html=True)
     
+    # ── IA Investigadora ──
+    render_ai_investigation(
+        sport=sport, home=home, away=away,
+        league_slug=league_slug,
+        league_name=_HIGH_RISK_LEAGUES.get(league_slug,{}).get("name", league_slug or sport),
+        dp=dp, mc=mc, real_odds=real_odds,
+        fix_score=score
+    )
     # ── Fuentes bibliográficas ──
     with st.expander("📚 Metodología y fuentes académicas"):
         st.markdown(
@@ -1397,6 +1461,287 @@ def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
             "• <b style='color:#aaa'>Tennis Integrity Unit (2023)</b> — 174 jugadores investigados, mercado asiático como señal principal<br>"
             "• <b style='color:#aaa'>Caso Donaghy (2007)</b> — NBA, árbitro Tim Donaghy, metodología de detección posterior"
             "</div>", unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def ai_investigate_match(sport, home, away, league_slug, league_name,
+                          model_ph, model_pd, model_pa,
+                          real_odds_summary, fix_score):
+    """
+    Claude investiga el partido específico:
+    1. Historial de amaños/escándalos documentados en la liga
+    2. Antecedentes de los equipos en partidos sospechosos
+    3. Contexto del partido (posición tabla, motivación)
+    4. Estimación de sharp money cuando no hay datos directos
+    5. Veredicto final con nivel de confianza
+    """
+    if not ANTHROPIC_API_KEY: return {}
+    
+    prompt = f"""Eres un analista de integridad deportiva y mercados de apuestas. 
+Investiga este partido y responde SOLO en JSON válido sin texto adicional ni backticks.
+
+PARTIDO: {home} vs {away}
+LIGA: {league_name} ({league_slug})
+DEPORTE: {sport}
+MODELO: Local {model_ph*100:.1f}% / Empate {model_pd*100:.1f}% / Visita {model_pa*100:.1f}%
+CUOTAS DISPONIBLES: {real_odds_summary}
+SCORE ANOMALÍA PREVIO: {fix_score}/100
+
+INVESTIGA Y RESPONDE EN JSON:
+{{
+  "league_integrity": {{
+    "risk_score": <0-100>,
+    "known_cases": "<casos documentados de amaño en esta liga, escándalos FIFA/UEFA/Europol>",
+    "supervision_level": "<alta/media/baja>",
+    "last_scandal": "<año y descripción del último escándalo conocido>"
+  }},
+  "team_flags": {{
+    "home_flags": "<cualquier historial sospechoso del equipo local, deudas, problemas financieros, presión de resultados>",
+    "away_flags": "<igual para visitante>",
+    "rivalry_context": "<contexto de la rivalidad y si hay presiones externas>"
+  }},
+  "match_context": {{
+    "sporting_incentive": "<ambos necesitan ganar/uno sin nada en juego/partido muerto>",
+    "fixture_risk": "<es final de temporada, playoff, partido de descenso?>",
+    "referee_concern": "<árbitros de esta liga tienen historial de anomalías?>"
+  }},
+  "sharp_money_estimate": {{
+    "estimated_public_pct_home": <0-100>,
+    "estimated_sharp_pct_home": <0-100>,
+    "estimated_line_direction": "<hacia local/hacia visitante/sin movimiento>",
+    "confidence": "<alta/media/baja>",
+    "reasoning": "<por qué estimas este movimiento de sharp money basado en cuotas disponibles y contexto>"
+  }},
+  "manipulation_probability": {{
+    "score": <0-100>,
+    "primary_risk": "<principal factor de riesgo>",
+    "verdict": "<LIMPIO/BAJO RIESGO/PRECAUCIÓN/ALTO RIESGO/CRÍTICO>",
+    "recommendation": "<qué hacer con este partido desde perspectiva de apuestas>"
+  }},
+  "market_intelligence": {{
+    "asian_handicap_signal": "<qué implican las cuotas asiáticas si puedes inferirlo>",
+    "closing_line_prediction": "<hacia dónde esperas que cierre la línea>",
+    "best_market": "<qué mercado tiene más valor en este partido: 1X2/Over-Under/AH>"
+  }}
+}}
+
+Sé directo y específico. Si no tienes datos concretos, usa tu conocimiento de la liga y el contexto.
+Para sharp_money_estimate: usa las cuotas disponibles para inferir dónde está el dinero inteligente."""
+
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1200,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=20
+        )
+        if r.status_code != 200: return {}
+        raw = r.json()["content"][0]["text"].strip()
+        raw = raw.replace("```json","").replace("```","").strip()
+        import json as _j
+        return _j.loads(raw)
+    except Exception as _e:
+        return {}
+
+
+def render_ai_investigation(sport, home, away, league_slug, league_name,
+                             dp, mc, real_odds, fix_score):
+    """
+    Renderiza la investigación IA del partido.
+    Muestra: integridad de liga · flags de equipos · sharp money estimado · veredicto IA
+    """
+    st.markdown("<div class='shdr'>🤖 IA INVESTIGADORA — ANÁLISIS PROFUNDO</div>",
+                unsafe_allow_html=True)
+    
+    # Construir resumen de cuotas para el prompt
+    odds_summary = "Sin cuotas disponibles"
+    if real_odds:
+        parts = []
+        for bk, odds in list(real_odds.items())[:4]:
+            if isinstance(odds, dict) and odds.get("h",0) > 1:
+                parts.append(f"{bk}: {odds.get('h',0):.2f}/{odds.get('d',0):.2f}/{odds.get('a',0):.2f}")
+        if parts: odds_summary = " | ".join(parts)
+    
+    model_ph = dp.get("ph", mc.get("ph", 0.33)) if dp else mc.get("ph", 0.33)
+    model_pd = dp.get("pd", mc.get("pd", 0.33)) if dp else mc.get("pd", 0.33)
+    model_pa = dp.get("pa", mc.get("pa", 0.33)) if dp else mc.get("pa", 0.33)
+    
+    with st.spinner("🔍 IA investigando partido, liga e historial..."):
+        inv = ai_investigate_match(
+            sport, home, away, league_slug, league_name,
+            model_ph, model_pd, model_pa,
+            odds_summary, fix_score
+        )
+    
+    if not inv:
+        st.markdown(
+            "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
+            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "⚠️ IA no disponible. Verifica ANTHROPIC_API_KEY en Streamlit secrets."
+            "</div>", unsafe_allow_html=True)
+        return
+    
+    # ── VEREDICTO IA ──
+    manip = inv.get("manipulation_probability", {})
+    ai_score = manip.get("score", 0)
+    ai_verdict = manip.get("verdict", "N/D")
+    ai_rec = manip.get("recommendation", "")
+    ai_risk = manip.get("primary_risk", "")
+    
+    vc_map = {
+        "LIMPIO": "#00ff88", "BAJO RIESGO": "#00ccff",
+        "PRECAUCIÓN": "#FFD700", "ALTO RIESGO": "#ff9500", "CRÍTICO": "#ff4444"
+    }
+    vc = vc_map.get(ai_verdict, "#aaa")
+    
+    if ai_score < 20: grd = "linear-gradient(90deg,#00ff88,#00ccff)"
+    elif ai_score < 40: grd = "linear-gradient(90deg,#00ccff,#FFD700)"
+    elif ai_score < 60: grd = "linear-gradient(90deg,#FFD700,#ff9500)"
+    else: grd = "linear-gradient(90deg,#ff9500,#ff4444)"
+    
+    st.markdown(
+        f"<div style='background:#0d0d2e;border:2px solid {vc}55;border-radius:16px;"
+        f"padding:18px 22px;margin:8px 0'>"
+        f"<div style='font-size:.65rem;color:#555;font-weight:700;letter-spacing:.14em;margin-bottom:6px'>"
+        f"🤖 INTELIGENCIA ARTIFICIAL — VEREDICTO</div>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'>"
+        f"<div style='font-size:1.1rem;font-weight:900;color:{vc}'>{ai_verdict}</div>"
+        f"<div style='font-size:2rem;font-weight:900;color:{vc}'>{ai_score}</div>"
+        f"</div>"
+        f"<div style='background:#1a1a40;border-radius:6px;height:8px;overflow:hidden;margin-bottom:12px'>"
+        f"<div style='width:{min(ai_score,100)}%;height:8px;background:{grd};border-radius:6px'></div>"
+        f"</div>"
+        f"<div style='font-size:.78rem;color:#aaa;margin-bottom:6px'>"
+        f"⚠️ <b style='color:#ff9500'>Riesgo principal:</b> {ai_risk}</div>"
+        f"<div style='background:#12122a;border-radius:8px;padding:10px 14px;font-size:.8rem;color:#aaa'>"
+        f"💡 {ai_rec}</div>"
+        f"</div>", unsafe_allow_html=True)
+    
+    # ── INTEGRIDAD DE LIGA ──
+    lig = inv.get("league_integrity", {})
+    if lig:
+        lig_score = lig.get("risk_score", 0)
+        lig_c = "#ff4444" if lig_score>=70 else ("#ff9500" if lig_score>=45 else "#00ff88")
+        with st.expander(f"🌍 Integridad de Liga — Riesgo {lig_score}/100", expanded=lig_score>=45):
+            st.markdown(
+                f"<div style='font-size:.8rem;line-height:1.8;color:#aaa'>"
+                f"<div style='margin-bottom:8px'>"
+                f"<b style='color:{lig_c}'>Score de riesgo: {lig_score}/100</b> · "
+                f"Supervisión: <b style='color:#EEEEFF'>{lig.get('supervision_level','N/D').upper()}</b></div>"
+                f"<div style='margin-bottom:6px'>📋 <b style='color:#EEEEFF'>Casos conocidos:</b> "
+                f"{lig.get('known_cases','Sin datos')}</div>"
+                f"<div>🗓️ <b style='color:#EEEEFF'>Último escándalo:</b> "
+                f"{lig.get('last_scandal','No documentado')}</div>"
+                f"</div>", unsafe_allow_html=True)
+    
+    # ── FLAGS DE EQUIPOS ──
+    teams = inv.get("team_flags", {})
+    if teams:
+        home_flag = teams.get("home_flags","")
+        away_flag = teams.get("away_flags","")
+        rivalry   = teams.get("rivalry_context","")
+        if any([home_flag, away_flag, rivalry]):
+            with st.expander("🚩 Flags de Equipos"):
+                for label, val, icon in [
+                    (home, home_flag, "🏠"),
+                    (away, away_flag, "✈️"),
+                    ("Contexto del partido", rivalry, "⚽")
+                ]:
+                    if val and val.lower() not in ["n/a","ninguno","sin datos","none",""]:
+                        st.markdown(
+                            f"<div style='background:#07071a;border-left:3px solid #ff950055;"
+                            f"border-radius:0 8px 8px 0;padding:10px 14px;margin:4px 0;"
+                            f"font-size:.8rem;color:#aaa'>"
+                            f"<b style='color:#ff9500'>{icon} {label}:</b> {val}</div>",
+                            unsafe_allow_html=True)
+    
+    # ── CONTEXTO DEL PARTIDO ──
+    ctx = inv.get("match_context", {})
+    if ctx:
+        incentive = ctx.get("sporting_incentive","")
+        fixture   = ctx.get("fixture_risk","")
+        ref       = ctx.get("referee_concern","")
+        if incentive or fixture:
+            with st.expander("🏆 Contexto Deportivo"):
+                for label, val, icon in [
+                    ("Incentivo deportivo", incentive, "🎯"),
+                    ("Contexto del fixture", fixture, "📅"),
+                    ("Árbitros", ref, "🟨")
+                ]:
+                    if val:
+                        st.markdown(
+                            f"<div style='font-size:.8rem;color:#aaa;padding:6px 0;"
+                            f"border-bottom:1px solid #1a1a40'>"
+                            f"<b style='color:#EEEEFF'>{icon} {label}:</b> {val}</div>",
+                            unsafe_allow_html=True)
+    
+    # ── SHARP MONEY ESTIMADO IA ──
+    sharp = inv.get("sharp_money_estimate", {})
+    if sharp:
+        est_pub  = sharp.get("estimated_public_pct_home", 0)
+        est_shrp = sharp.get("estimated_sharp_pct_home", 0)
+        line_dir = sharp.get("estimated_line_direction", "")
+        conf     = sharp.get("confidence", "")
+        reason   = sharp.get("reasoning", "")
+        conf_c   = "#00ff88" if conf=="alta" else ("#FFD700" if conf=="media" else "#aaa")
+        
+        st.markdown(
+            f"<div style='background:#0d0d2e;border:1px solid #aa00ff44;border-radius:14px;"
+            f"padding:16px 20px;margin:8px 0'>"
+            f"<div style='font-size:.7rem;color:#aa00ff;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>"
+            f"🦅 SHARP MONEY ESTIMADO POR IA</div>"
+            f"<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px'>"
+            # Público estimado
+            f"<div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
+            f"<div style='font-size:.65rem;color:#555;margin-bottom:4px'>👥 PÚBLICO LOCAL</div>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:#aaa'>{est_pub:.0f}%</div></div>"
+            # Sharp estimado
+            f"<div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
+            f"<div style='font-size:.65rem;color:#555;margin-bottom:4px'>🦅 SHARP LOCAL</div>"
+            f"<div style='font-size:1.6rem;font-weight:900;color:#aa00ff'>{est_shrp:.0f}%</div></div>"
+            # Confianza
+            f"<div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
+            f"<div style='font-size:.65rem;color:#555;margin-bottom:4px'>📊 CONFIANZA</div>"
+            f"<div style='font-size:1.1rem;font-weight:900;color:{conf_c}'>{conf.upper()}</div></div>"
+            f"</div>"
+            # Dirección de línea
+            + (f"<div style='background:#12122a;border-radius:8px;padding:8px 12px;"
+               f"margin-bottom:10px;font-size:.78rem;color:#00ccff'>"
+               f"📈 Línea esperada: <b>{line_dir}</b></div>" if line_dir else "")
+            # Razonamiento
+            + (f"<div style='font-size:.78rem;color:#888;line-height:1.6'>"
+               f"💭 {reason}</div>" if reason else "")
+            + f"<div style='margin-top:8px;font-size:.65rem;color:#444'>"
+            f"⚠️ Estimación IA — no datos reales. Confianza: {conf}</div>"
+            f"</div>", unsafe_allow_html=True)
+    
+    # ── MARKET INTELLIGENCE ──
+    mkt = inv.get("market_intelligence", {})
+    if mkt:
+        ah     = mkt.get("asian_handicap_signal","")
+        cl_pred= mkt.get("closing_line_prediction","")
+        best_m = mkt.get("best_market","")
+        if any([ah, cl_pred, best_m]):
+            with st.expander("📈 Inteligencia de Mercado"):
+                for label, val, icon in [
+                    ("Señal Asian Handicap", ah, "🀄"),
+                    ("Predicción cierre de línea", cl_pred, "🎯"),
+                    ("Mercado con más valor", best_m, "💰")
+                ]:
+                    if val:
+                        st.markdown(
+                            f"<div style='font-size:.82rem;color:#aaa;padding:8px 0;"
+                            f"border-bottom:1px solid #1a1a40'>"
+                            f"<b style='color:#00ccff'>{icon} {label}:</b> {val}</div>",
+                            unsafe_allow_html=True)
 
 def render_sharp_money(home, away, dp, mc, real_odds, game):
     """
@@ -2131,6 +2476,398 @@ def render_resultados_tab():
 
 def avg(lst): return sum(lst)/len(lst) if lst else 0.0
 
+
+# ══════════════════════════════════════════════════════════
+# EL PAPA DE EINSTEIN — Meta-IA Auditora
+# Audita, critica y valida el análisis de Einstein.
+# Usa Opus 4 (el modelo más potente) para máxima precisión.
+# ══════════════════════════════════════════════════════════
+
+def papa_einstein_audit(einstein_data, imagen_b64, media_type, mem_ctx=""):
+    """
+    El Papa de Einstein — meta-IA que audita el análisis de Einstein.
+    
+    Proceso:
+    1. Recibe el JSON completo de Einstein + la imagen original
+    2. Verifica CADA número calculado por Einstein
+    3. Detecta errores, sesgos, omisiones críticas
+    4. Recalcula edge, EV, Kelly de forma independiente
+    5. Da su propio veredicto — puede SUBIR o BAJAR la calificación
+    6. Score de confianza en Einstein: 0-100
+    """
+    if not ANTHROPIC_API_KEY: return {}
+    
+    einstein_json = __import__("json").dumps(einstein_data, ensure_ascii=False, indent=2)
+    
+    PAPA_PROMPT = f"""Eres EL PAPA DE EINSTEIN — la meta-IA más crítica, rigurosa e implacable del mundo en análisis de apuestas deportivas.
+Tu única misión: AUDITAR y VALIDAR el análisis de Einstein sobre esta apuesta.
+Eres el control de calidad supremo. No tienes misericordia con errores. Solo el 100% correcto pasa tu filtro.
+
+ANÁLISIS DE EINSTEIN QUE DEBES AUDITAR:
+{einstein_json}
+
+PROCESO DE AUDITORÍA OBLIGATORIO:
+
+1. VERIFICA LA IMAGEN tú mismo — identifica el partido, mercado, cuota y estado.
+   ¿Einstein identificó correctamente todos los datos? ¿Hay errores de lectura?
+
+2. RECALCULA INDEPENDIENTEMENTE:
+   - Probabilidad implícita = 1/cuota. ¿Einstein la calculó bien?
+   - Edge = prob_real - prob_implicita. ¿Es matemáticamente correcto?
+   - EV = (prob_real × (cuota-1)) - ((1-prob_real) × 1). ¿Correcto?
+   - Kelly = max(0, min(5%, ((cuota-1)×p - (1-p))/(cuota-1)×100)). ¿Correcto?
+
+3. EVALÚA LA PROBABILIDAD REAL:
+   - ¿Es razonable la prob_real que Einstein asignó?
+   - ¿Consideró suficientes variables ocultas?
+   - ¿Hay variables CRÍTICAS que Einstein omitió completamente?
+   - ¿Tiene sesgo favorable o desfavorable injustificado?
+
+4. VERIFICA LA CALIFICACIÓN:
+   - Escala: A+ (95-100), A (88-94), A- (82-87), B+ (76-81), B (70-75), B- (64-69), C+ (55-63), C (45-54), C- (35-44), D (20-34), F (0-19)
+   - ¿La calificación corresponde al EV y edge calculados?
+   - ¿El veredicto es consistente con la puntuación?
+   - ¿Einstein fue demasiado generoso o demasiado conservador?
+
+5. VERIFICA EL ESTADO DEL PARTIDO:
+   - ¿El partido ya terminó y Einstein no lo detectó? (Error crítico = F automático)
+   - ¿La cuota parece de partido en vivo vs pre-partido?
+
+6. SEÑAL SHARP:
+   - ¿La evaluación del sharp signal es válida?
+   - ¿Hay inconsistencias entre la señal sharp y la calificación?
+
+7. ALTERNATIVA DE MERCADO:
+   - ¿La alternativa propuesta por Einstein es realmente mejor?
+   - ¿Hay una mejor alternativa que Einstein no vio?
+
+{f"8. HISTORIAL DEL APOSTADOR: {mem_ctx} — ¿El pick es consistente con los patrones de éxito del usuario?" if mem_ctx else ""}
+
+RESPONDE SOLO EN JSON SIN MARKDOWN NI TEXTO EXTRA:
+{{
+  "lectura_imagen": {{
+    "partido_correcto": true/false,
+    "mercado_correcto": true/false,
+    "cuota_correcta": true/false,
+    "estado_correcto": true/false,
+    "errores_lectura": "<errores detectados o 'ninguno'>"
+  }},
+  "matematicas": {{
+    "prob_implicita_correcta": true/false,
+    "prob_implicita_papa": <float>,
+    "edge_correcto": true/false,
+    "edge_papa": <float>,
+    "ev_correcto": true/false,
+    "ev_papa": <float>,
+    "kelly_correcto": true/false,
+    "kelly_papa": <float>,
+    "errores_matematicos": "<descripción o 'ninguno'>"
+  }},
+  "probabilidad_real": {{
+    "es_razonable": true/false,
+    "prob_real_papa": <float>,
+    "sesgo_detectado": "<sobreestimado/subestimado/correcto>",
+    "variables_omitidas": "<variables críticas que Einstein no consideró>",
+    "variables_mal_ponderadas": "<variables que Einstein ponderó mal>"
+  }},
+  "calificacion": {{
+    "calificacion_einstein_correcta": true/false,
+    "calificacion_papa": "<A+/A/A-/B+/B/B-/C+/C/C-/D/F>",
+    "puntuacion_papa": <0-100>,
+    "veredicto_papa": "<Excelente|Sólida|Marginal|Riesgosa|Evitar|Inválida>",
+    "apostar_papa": true/false,
+    "justificacion_cambio": "<por qué cambias o confirmas la calificación>"
+  }},
+  "sharp_signal": {{
+    "evaluacion_correcta": true/false,
+    "sharp_signal_papa": "<favorable|neutral|contrario|desconocido>",
+    "razon": "<análisis de la señal sharp>"
+  }},
+  "alternativa": {{
+    "alternativa_einstein_valida": true/false,
+    "mejor_alternativa_papa": "<mercado alternativo o 'la de Einstein es correcta'>",
+    "razon_alternativa": "<por qué>"
+  }},
+  "confianza_en_einstein": <0-100>,
+  "resumen_auditoria": "<2-3 oraciones: qué hizo bien Einstein, qué falló, veredicto final>",
+  "kelly_recomendado_papa": <float>,
+  "advertencia_critica": "<advertencia importante o 'ninguna'>",
+  "sello": "<APROBADO CON HONORES|APROBADO|APROBADO CON OBSERVACIONES|RECHAZADO|RECHAZADO - ERROR CRÍTICO>"
+}}
+
+Sé brutalmente honesto. Si Einstein se equivocó, dilo claramente.
+Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad, no halagos."""
+
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-opus-4-5",
+                "max_tokens": 2000,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": imagen_b64
+                        }},
+                        {"type": "text", "text": PAPA_PROMPT}
+                    ]
+                }]
+            },
+            timeout=60
+        )
+        if r.status_code != 200: return {}
+        raw = r.json()["content"][0]["text"].strip()
+        raw = raw.replace("```json","").replace("```","").strip()
+        import json as _j
+        return _j.loads(raw)
+    except Exception as _e:
+        return {}
+
+
+def render_papa_einstein(einstein_data, audit, score_einstein):
+    """
+    Renderiza el veredicto del Papa de Einstein.
+    Diseño supremo — por encima de Einstein visualmente.
+    """
+    if not audit:
+        st.markdown(
+            "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
+            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "⚠️ El Papa no pudo auditar. Verifica conexión API."
+            "</div>", unsafe_allow_html=True)
+        return
+
+    sello      = audit.get("sello","N/D")
+    confianza  = audit.get("confianza_en_einstein", 0)
+    resumen    = audit.get("resumen_auditoria","")
+    advertencia= audit.get("advertencia_critica","")
+    calif      = audit.get("calificacion",{})
+    mat        = audit.get("matematicas",{})
+    prob_r     = audit.get("probabilidad_real",{})
+    sharp_a    = audit.get("sharp_signal",{})
+    alt_a      = audit.get("alternativa",{})
+    lectura    = audit.get("lectura_imagen",{})
+    
+    calif_papa  = calif.get("calificacion_papa","?")
+    pts_papa    = calif.get("puntuacion_papa", 0)
+    vered_papa  = calif.get("veredicto_papa","")
+    apostar_papa= calif.get("apostar_papa", False)
+    justif      = calif.get("justificacion_cambio","")
+    kelly_papa  = audit.get("kelly_recomendado_papa", 0)
+
+    # Sello colors
+    sello_data = {
+        "APROBADO CON HONORES":        ("#00ff88", "✦", "linear-gradient(135deg,#001a0a,#002a12)"),
+        "APROBADO":                    ("#00ccff", "✓", "linear-gradient(135deg,#001020,#002040)"),
+        "APROBADO CON OBSERVACIONES":  ("#FFD700", "!", "linear-gradient(135deg,#1a1400,#2a2000)"),
+        "RECHAZADO":                   ("#ff9500", "✗", "linear-gradient(135deg,#1a0800,#2a1000)"),
+        "RECHAZADO - ERROR CRÍTICO":   ("#ff4444", "✗✗","linear-gradient(135deg,#1a0000,#2a0000)"),
+    }
+    sc, si, sg = sello_data.get(sello, ("#aaa","?","linear-gradient(135deg,#0d0d2e,#1a1a40)"))
+    
+    # Confianza color
+    cc = "#00ff88" if confianza>=75 else ("#FFD700" if confianza>=50 else "#ff4444")
+    
+    # ── SELLO PRINCIPAL ──
+    st.markdown(
+        f"<div style='background:{sg};border:2px solid {sc};border-radius:20px;"
+        f"padding:22px 24px;margin:12px 0;position:relative;overflow:hidden'>"
+        # Watermark
+        f"<div style='position:absolute;right:-10px;top:-10px;font-size:6rem;"
+        f"opacity:.04;color:{sc};font-weight:900;line-height:1'>{si}</div>"
+        # Header
+        f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px'>"
+        f"<div>"
+        f"<div style='font-size:.65rem;color:#555;font-weight:700;letter-spacing:.2em;margin-bottom:4px'>"
+        f"✝ EL PAPA DE EINSTEIN — AUDITORÍA SUPREMA</div>"
+        f"<div style='font-size:1.2rem;font-weight:900;color:{sc}'>{sello}</div>"
+        f"</div>"
+        f"<div style='text-align:center'>"
+        f"<div style='font-size:.6rem;color:#555;margin-bottom:2px'>CONFIANZA EN EINSTEIN</div>"
+        f"<div style='font-size:2rem;font-weight:900;color:{cc}'>{confianza}</div>"
+        f"<div style='font-size:.6rem;color:#555'>/100</div>"
+        f"</div>"
+        f"</div>"
+        # Confianza bar
+        f"<div style='background:#1a1a40;border-radius:4px;height:6px;overflow:hidden;margin-bottom:14px'>"
+        f"<div style='width:{confianza}%;height:6px;"
+        f"background:{'#00ff88' if confianza>=75 else ('#FFD700' if confianza>=50 else '#ff4444')}"
+        f";border-radius:4px'></div></div>"
+        # Resumen
+        f"<div style='font-size:.85rem;color:#ccc;line-height:1.7;margin-bottom:12px'>"
+        f"📋 {resumen}</div>"
+        # Advertencia
+        + (f"<div style='background:#2a0000;border:1px solid #ff444455;border-radius:8px;"
+           f"padding:8px 14px;font-size:.78rem;color:#ff4444;margin-top:8px'>"
+           f"⚠️ <b>ADVERTENCIA CRÍTICA:</b> {advertencia}</div>"
+           if advertencia and advertencia.lower() not in ["ninguna","none","n/a",""] else "")
+        + f"</div>", unsafe_allow_html=True)
+
+    # ── CALIFICACIÓN DEL PAPA vs EINSTEIN ──
+    letra_e = einstein_data.get("calificacion_letra","?")
+    pts_e   = einstein_data.get("puntuacion",0)
+    changed = calif_papa != letra_e
+    change_color = "#00ff88" if pts_papa > pts_e else ("#ff4444" if pts_papa < pts_e else "#FFD700")
+    
+    grade_colors = {
+        "A+":"#00ff88","A":"#00cc66","A-":"#00aa44",
+        "B+":"#FFD700","B":"#ccaa00","B-":"#aa8800",
+        "C+":"#ff9500","C":"#cc7000","C-":"#aa5500",
+        "D":"#ff4444","F":"#cc0000"
+    }
+    gce = grade_colors.get(letra_e,"#aaa")
+    gcp = grade_colors.get(calif_papa,"#aaa")
+    
+    calific_html = (
+        "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;"
+        "padding:16px 20px;margin:8px 0'>"
+        "<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>"
+        "📊 CALIFICACIÓN: EINSTEIN vs PAPA</div>"
+        f"<div style='display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center'>"
+        f"<div style='background:#07071a;border-radius:12px;padding:14px;text-align:center'>"
+        f"<div style='font-size:.65rem;color:#555;margin-bottom:6px'>🧠 EINSTEIN</div>"
+        f"<div style='font-size:3rem;font-weight:900;color:{gce};line-height:1'>{letra_e}</div>"
+        f"<div style='font-size:.75rem;color:#555;margin-top:4px'>{pts_e}/100</div>"
+        f"</div>"
+        f"<div style='font-size:1.5rem;text-align:center;color:{change_color}'>"
+        f"{'→' if not changed else ('↑' if pts_papa>pts_e else '↓')}</div>"
+        f"<div style='background:#07071a;border:2px solid {gcp}44;border-radius:12px;padding:14px;text-align:center'>"
+        f"<div style='font-size:.65rem;color:#555;margin-bottom:6px'>✝ EL PAPA</div>"
+        f"<div style='font-size:3rem;font-weight:900;color:{gcp};line-height:1'>{calif_papa}</div>"
+        f"<div style='font-size:.75rem;color:#555;margin-top:4px'>{pts_papa}/100</div>"
+        f"</div>"
+        f"</div>"
+        + (f"<div style='margin-top:12px;padding:10px 14px;background:#12122a;border-radius:8px;"
+           f"font-size:.8rem;color:#aaa;line-height:1.6'>"
+           f"<b style='color:{change_color}'>{'🔄 CAMBIO JUSTIFICADO' if changed else '✅ CALIFICACIÓN CONFIRMADA'}:</b> "
+           f"{justif}</div>" if justif else "")
+        + f"<div style='margin-top:12px;display:flex;gap:10px'>"
+        f"<div style='flex:1;background:{'#002a00' if apostar_papa else '#1a0000'};"
+        f"border:1px solid {'#00ff8855' if apostar_papa else '#ff444455'};"
+        f"border-radius:10px;padding:10px;text-align:center'>"
+        f"<div style='font-size:1.1rem;font-weight:900;color:{'#00ff88' if apostar_papa else '#ff4444'}'>"
+        f"{'✅ EL PAPA APRUEBA APOSTAR' if apostar_papa else '❌ EL PAPA DICE NO APOSTAR'}</div>"
+        f"<div style='font-size:.72rem;color:#555;margin-top:3px'>Kelly Papa: {kelly_papa:.1f}% bankroll</div>"
+        f"</div></div>"
+        f"</div>"
+    )
+    st.markdown(calific_html, unsafe_allow_html=True)
+
+    # ── AUDITORÍA MATEMÁTICA ──
+    if mat:
+        errores_mat = mat.get("errores_matematicos","ninguno")
+        tiene_errores = mat.get("edge_correcto") == False or mat.get("ev_correcto") == False or mat.get("kelly_correcto") == False
+        
+        with st.expander(f"🔢 Auditoría Matemática {'⚠️ ERRORES DETECTADOS' if tiene_errores else '✅ Cálculos correctos'}",
+                          expanded=tiene_errores):
+            cols = [
+                ("Prob. Implícita", mat.get("prob_implicita_correcta"), 
+                 f"Papa: {mat.get('prob_implicita_papa',0)*100:.2f}%",
+                 f"Einstein: {einstein_data.get('prob_implicita_pct',0):.2f}%"),
+                ("Edge", mat.get("edge_correcto"),
+                 f"Papa: {mat.get('edge_papa',0)*100:.2f}%",
+                 f"Einstein: {einstein_data.get('edge_pct',0):.2f}%"),
+                ("EV", mat.get("ev_correcto"),
+                 f"Papa: {mat.get('ev_papa',0):.4f}",
+                 f"Einstein: {einstein_data.get('ev_por_unidad',0):.4f}"),
+                ("Kelly", mat.get("kelly_correcto"),
+                 f"Papa: {mat.get('kelly_papa',0):.2f}%",
+                 f"Einstein: {einstein_data.get('kelly_pct',0):.2f}%"),
+            ]
+            for label, correcto, papa_val, ein_val in cols:
+                c = "#00ff88" if correcto else "#ff4444"
+                icon = "✅" if correcto else "❌"
+                st.markdown(
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                    f"padding:6px 10px;border-bottom:1px solid #1a1a40;font-size:.82rem'>"
+                    f"<span style='color:#aaa'>{icon} {label}</span>"
+                    f"<span style='color:#555'>{ein_val}</span>"
+                    f"<span style='color:{c};font-weight:700'>{papa_val}</span>"
+                    f"</div>", unsafe_allow_html=True)
+            if errores_mat and errores_mat.lower() not in ["ninguno","none",""]:
+                st.markdown(
+                    f"<div style='background:#1a0a00;border-radius:8px;padding:10px;margin-top:8px;"
+                    f"font-size:.78rem;color:#ff9500'>⚠️ {errores_mat}</div>",
+                    unsafe_allow_html=True)
+
+    # ── LECTURA DE IMAGEN ──
+    lectura_ok = all([
+        lectura.get("partido_correcto"),
+        lectura.get("mercado_correcto"),
+        lectura.get("cuota_correcta"),
+    ])
+    if not lectura_ok:
+        errs_lec = lectura.get("errores_lectura","")
+        if errs_lec and errs_lec.lower() not in ["ninguno","none",""]:
+            st.markdown(
+                f"<div style='background:#1a0000;border:1px solid #ff444455;border-radius:10px;"
+                f"padding:12px 16px;margin:6px 0;font-size:.82rem;color:#ff4444'>"
+                f"🔍 <b>ERROR DE LECTURA:</b> {errs_lec}</div>", unsafe_allow_html=True)
+
+    # ── PROBABILIDAD REAL ──
+    pb = audit.get("probabilidad_real",{})
+    sesgo = pb.get("sesgo_detectado","")
+    omitidas = pb.get("variables_omitidas","")
+    mal_pond = pb.get("variables_mal_ponderadas","")
+    
+    if sesgo != "correcto" or omitidas or mal_pond:
+        with st.expander("🎯 Probabilidad Real — Observaciones del Papa"):
+            pb_papa = pb.get("prob_real_papa",0)
+            pb_ein  = einstein_data.get("prob_real_pct",0)
+            diff = pb_papa - pb_ein
+            diff_c = "#00ff88" if abs(diff) < 2 else ("#ff9500" if abs(diff) < 5 else "#ff4444")
+            st.markdown(
+                f"<div style='display:flex;gap:12px;margin-bottom:10px'>"
+                f"<div style='flex:1;background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
+                f"<div style='font-size:.65rem;color:#555'>🧠 Einstein dice</div>"
+                f"<div style='font-size:1.4rem;font-weight:900;color:#aaa'>{pb_ein:.1f}%</div></div>"
+                f"<div style='flex:1;background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
+                f"<div style='font-size:.65rem;color:#555'>✝ Papa dice</div>"
+                f"<div style='font-size:1.4rem;font-weight:900;color:{diff_c}'>{pb_papa:.1f}%</div></div>"
+                f"<div style='flex:1;background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
+                f"<div style='font-size:.65rem;color:#555'>Diferencia</div>"
+                f"<div style='font-size:1.4rem;font-weight:900;color:{diff_c}'>{diff:+.1f}%</div></div>"
+                f"</div>", unsafe_allow_html=True)
+            if sesgo:
+                sc2 = "#ff4444" if sesgo != "correcto" else "#00ff88"
+                st.markdown(f"<div style='font-size:.8rem;color:{sc2};margin-bottom:6px'>📊 Sesgo: <b>{sesgo.upper()}</b></div>", unsafe_allow_html=True)
+            if omitidas and omitidas.lower() not in ["ninguna","none",""]:
+                st.markdown(f"<div style='font-size:.8rem;color:#ff9500;margin-bottom:4px'>⚠️ <b>Variables omitidas por Einstein:</b> {omitidas}</div>", unsafe_allow_html=True)
+            if mal_pond and mal_pond.lower() not in ["ninguna","none",""]:
+                st.markdown(f"<div style='font-size:.8rem;color:#FFD700'>📉 <b>Mal ponderadas:</b> {mal_pond}</div>", unsafe_allow_html=True)
+
+    # ── SHARP SIGNAL ──
+    sharp_ok = sharp_a.get("evaluacion_correcta", True)
+    if not sharp_ok:
+        sp = sharp_a.get("sharp_signal_papa","")
+        sp_r = sharp_a.get("razon","")
+        sp_c = {"favorable":"#00ff88","neutral":"#FFD700","contrario":"#ff4444","desconocido":"#555"}.get(sp,"#aaa")
+        st.markdown(
+            f"<div style='background:#0d0d2e;border:1px solid {sp_c}44;border-left:3px solid {sp_c};"
+            f"border-radius:0 10px 10px 0;padding:10px 16px;margin:6px 0;font-size:.82rem'>"
+            f"🦅 <b style='color:{sp_c}'>Sharp Signal corregido: {sp.upper()}</b><br>"
+            f"<span style='color:#888'>{sp_r}</span></div>", unsafe_allow_html=True)
+
+    # ── ALTERNATIVA ──
+    mejor_alt = alt_a.get("mejor_alternativa_papa","")
+    if mejor_alt and "einstein es correcta" not in mejor_alt.lower():
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#001a10,#002a12);"
+            f"border:2px solid #00ff8855;border-radius:14px;padding:14px 18px;margin:8px 0'>"
+            f"<div style='font-size:.7rem;color:#00ff88;font-weight:700;letter-spacing:.1em;margin-bottom:6px'>"
+            f"✝ ALTERNATIVA DEL PAPA — MEJOR QUE EINSTEIN</div>"
+            f"<div style='font-size:.95rem;font-weight:700;color:#fff'>{mejor_alt}</div>"
+            f"<div style='font-size:.8rem;color:#aaa;margin-top:4px'>{alt_a.get('razon_alternativa','')}</div>"
+            f"</div>", unsafe_allow_html=True)
+
 def render_einstein_califica(key_sfx="fut"):
     """Unified Einstein-level pick grader — shared across all sports."""
     init_califica_memory()
@@ -2321,6 +3058,21 @@ def render_einstein_califica(key_sfx="fut"):
                         f"<div style='font-size:1rem;font-weight:700;color:#fff'>🎯 {data.get('alternativa_mercado','')}</div>"
                         f"<div style='font-size:.82rem;color:#aaa;margin-top:5px'>{data.get('alternativa_razon','')}</div>"
                         f"</div>", unsafe_allow_html=True)
+
+                # ── EL PAPA DE EINSTEIN ──
+                st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+                st.markdown(
+                    "<div style='background:linear-gradient(135deg,#0a0005,#050015);"
+                    "border:2px solid #7c00ff44;border-radius:18px;padding:18px 22px;margin:12px 0'>"
+                    "<div style='font-size:.65rem;color:#7c00ff;font-weight:700;letter-spacing:.2em;margin-bottom:4px'>"
+                    "NIVEL SUPREMO</div>"
+                    "<div style='font-size:1rem;font-weight:900;color:#EEEEFF;margin-bottom:4px'>"
+                    "✝ EL PAPA DE EINSTEIN</div>"
+                    "<div style='font-size:.78rem;color:#555'>Meta-IA auditora — verifica, recalcula y valida cada número de Einstein.</div>"
+                    "</div>", unsafe_allow_html=True)
+                with st.spinner("✝ El Papa auditando el análisis de Einstein..."):
+                    papa_audit = papa_einstein_audit(data, b64, media_type, mem_ctx)
+                render_papa_einstein(data, papa_audit, pts)
 
                 # ── SAVE TO BRAIN ──
                 st.markdown("<div class='shdr' style='margin-top:16px'>📥 Registrar resultado real</div>", unsafe_allow_html=True)
@@ -2691,6 +3443,167 @@ def get_nba_public_pct(home, away):
     if not data: return {}
     return data
 
+
+def render_action_network_nba(home, away, ou_line=0):
+    """
+    Renderiza datos Action Network PRO para NBA:
+    % bets vs % money en ML, O/U, spread + línea apertura/cierre + lesiones.
+    """
+    data = get_action_network_nba(home, away)
+    
+    src_color = "#aa00ff" if data.get("source","") == "ActionNetwork PRO" else "#555"
+    src_label = data.get("source", "ActionNetwork")
+    
+    st.markdown(
+        f"<div class='shdr'>📊 ACTION NETWORK — % PÚBLICO & DINERO</div>",
+        unsafe_allow_html=True)
+    
+    if not data:
+        st.markdown(
+            "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
+            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "📡 Conectando con Action Network... "
+            "Agrega <b style='color:#EEEEFF'>ACTION_NETWORK_TOKEN</b> en Streamlit secrets para datos PRO."
+            "</div>", unsafe_allow_html=True)
+        return
+    
+    ml_h_b  = data.get("ml_home_bets_pct", 0)
+    ml_h_m  = data.get("ml_home_money_pct", 0)
+    ml_a_b  = data.get("ml_away_bets_pct", 0) or (100-ml_h_b if ml_h_b else 0)
+    ml_a_m  = data.get("ml_away_money_pct", 0) or (100-ml_h_m if ml_h_m else 0)
+    ov_b    = data.get("over_bets_pct", 0)
+    ov_m    = data.get("over_money_pct", 0)
+    un_b    = data.get("under_bets_pct", 0) or (100-ov_b if ov_b else 0)
+    un_m    = data.get("under_money_pct", 0) or (100-ov_m if ov_m else 0)
+    
+    def pct_bar(val, color):
+        return (f"<div style='background:#1a1a40;border-radius:4px;height:6px;margin-top:4px'>"
+                f"<div style='width:{min(val,100):.0f}%;height:6px;background:{color};border-radius:4px'></div></div>")
+    
+    def side_color(pct):
+        return "#00ff88" if pct >= 60 else ("#ff4444" if pct <= 40 else "#FFD700")
+    
+    # ── ML ──
+    if ml_h_b or ml_h_m:
+        st.markdown(
+            f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;"
+            f"padding:14px 18px;margin:6px 0'>"
+            f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em;margin-bottom:10px'>"
+            f"🏆 MONEY LINE — {src_label}</div>"
+            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px'>"
+            # Local
+            f"<div style='background:#07071a;border-radius:10px;padding:10px'>"
+            f"<div style='font-size:.72rem;color:#aaa;margin-bottom:6px'>🏠 {home[:14]}</div>"
+            f"<div style='display:flex;justify-content:space-between;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Apuestas</span>"
+            f"<span style='font-weight:700;color:{side_color(ml_h_b)}'>{ml_h_b:.0f}%</span></div>"
+            f"{pct_bar(ml_h_b, side_color(ml_h_b))}"
+            f"<div style='display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Dinero</span>"
+            f"<span style='font-weight:700;color:{side_color(ml_h_m)}'>{ml_h_m:.0f}%</span></div>"
+            f"{pct_bar(ml_h_m, side_color(ml_h_m))}</div>"
+            # Visitante
+            f"<div style='background:#07071a;border-radius:10px;padding:10px'>"
+            f"<div style='font-size:.72rem;color:#aaa;margin-bottom:6px'>✈️ {away[:14]}</div>"
+            f"<div style='display:flex;justify-content:space-between;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Apuestas</span>"
+            f"<span style='font-weight:700;color:{side_color(ml_a_b)}'>{ml_a_b:.0f}%</span></div>"
+            f"{pct_bar(ml_a_b, side_color(ml_a_b))}"
+            f"<div style='display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Dinero</span>"
+            f"<span style='font-weight:700;color:{side_color(ml_a_m)}'>{ml_a_m:.0f}%</span></div>"
+            f"{pct_bar(ml_a_m, side_color(ml_a_m))}</div>"
+            f"</div>"
+            # Sharp signal
+            + (f"<div style='margin-top:10px;font-size:.75rem;padding:6px 10px;"
+               f"background:#12123a;border-radius:6px;color:#FFD700'>"
+               f"⚡ <b>Sharp money en {home[:12] if ml_h_m > ml_h_b + 10 else away[:12]}:</b> "
+               f"{'Local' if ml_h_m > ml_h_b + 10 else 'Visitante'} tiene más dinero que apuestas — señal sharp</div>"
+               if abs(ml_h_m - ml_h_b) > 10 else "")
+            + f"</div>", unsafe_allow_html=True)
+    
+    # ── O/U ──
+    if ov_b or ov_m:
+        ov_color  = side_color(ov_b)
+        un_color  = side_color(un_b)
+        st.markdown(
+            f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;"
+            f"padding:14px 18px;margin:6px 0'>"
+            f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em;margin-bottom:10px'>"
+            f"📊 OVER / UNDER {ou_line if ou_line else ''}</div>"
+            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px'>"
+            f"<div style='background:#07071a;border-radius:10px;padding:10px'>"
+            f"<div style='font-size:.8rem;color:#ff4444;font-weight:700;margin-bottom:6px'>🔥 OVER</div>"
+            f"<div style='display:flex;justify-content:space-between;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Apuestas</span>"
+            f"<span style='font-weight:700;color:{ov_color}'>{ov_b:.0f}%</span></div>"
+            f"{pct_bar(ov_b, ov_color)}"
+            f"<div style='display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Dinero</span>"
+            f"<span style='font-weight:700;color:{side_color(ov_m)}'>{ov_m:.0f}%</span></div>"
+            f"{pct_bar(ov_m, side_color(ov_m))}</div>"
+            f"<div style='background:#07071a;border-radius:10px;padding:10px'>"
+            f"<div style='font-size:.8rem;color:#00ccff;font-weight:700;margin-bottom:6px'>❄️ UNDER</div>"
+            f"<div style='display:flex;justify-content:space-between;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Apuestas</span>"
+            f"<span style='font-weight:700;color:{un_color}'>{un_b:.0f}%</span></div>"
+            f"{pct_bar(un_b, un_color)}"
+            f"<div style='display:flex;justify-content:space-between;margin-top:8px;margin-bottom:4px'>"
+            f"<span style='font-size:.7rem;color:#555'>% Dinero</span>"
+            f"<span style='font-weight:700;color:{side_color(un_m)}'>{un_m:.0f}%</span></div>"
+            f"{pct_bar(un_m, side_color(un_m))}</div>"
+            f"</div>"
+            # Fade signal
+            + (f"<div style='margin-top:10px;font-size:.75rem;padding:6px 10px;"
+               f"background:#12123a;border-radius:6px;color:#ff9500'>"
+               f"👥 <b>Público muy cargado en {'Over' if ov_b>70 else 'Under'}:</b> "
+               f"Considera fade the public</div>"
+               if ov_b > 70 or ov_b < 30 else "")
+            + f"</div>", unsafe_allow_html=True)
+    
+    # ── Línea apertura vs cierre ──
+    open_t = data.get("open_total", 0)
+    curr_t = data.get("curr_total", 0)
+    open_ml = data.get("open_ml_h", 0)
+    curr_ml = data.get("curr_ml_h", 0)
+    
+    if open_t and curr_t and open_t != curr_t:
+        move = curr_t - open_t
+        mc2 = "#00ff88" if move > 0 else "#ff4444"
+        st.markdown(
+            f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:10px;"
+            f"padding:10px 16px;margin:6px 0;display:flex;justify-content:space-between;align-items:center'>"
+            f"<div><div style='font-size:.7rem;color:#555;font-weight:700'>📈 MOVIMIENTO DE LÍNEA TOTAL</div>"
+            f"<div style='font-size:.78rem;color:#aaa;margin-top:2px'>Apertura → Actual</div></div>"
+            f"<div style='text-align:right'>"
+            f"<div style='font-size:.85rem;color:#aaa'>{open_t} → <b style='color:{mc2}'>{curr_t}</b></div>"
+            f"<div style='font-size:.72rem;color:{mc2}'>{'▲' if move>0 else '▼'} {abs(move):.1f} pts</div>"
+            f"</div></div>", unsafe_allow_html=True)
+    
+    # ── Steam / Reverse ──
+    if data.get("steam_move"):
+        st.markdown(
+            "<div style='background:#2a0050;border:1px solid #aa00ff55;border-radius:10px;"
+            "padding:10px 16px;margin:6px 0;font-size:.83rem;color:#aa00ff'>"
+            "💨 <b>STEAM MOVE detectado por Action Network</b> — dinero coordinado entrando.</div>",
+            unsafe_allow_html=True)
+    if data.get("reverse_move"):
+        st.markdown(
+            "<div style='background:#002a00;border:1px solid #00ff8855;border-radius:10px;"
+            "padding:10px 16px;margin:6px 0;font-size:.83rem;color:#00ff88'>"
+            "🔄 <b>REVERSE LINE MOVEMENT</b> — dinero contrario a la opinión pública. Señal sharp.</div>",
+            unsafe_allow_html=True)
+    
+    # ── Lesiones ──
+    injuries = data.get("injuries", [])
+    if injuries:
+        inj_html = " · ".join(f"<b style='color:#ff4444'>{i}</b>" for i in injuries if i.strip())
+        if inj_html:
+            st.markdown(
+                f"<div style='background:#1a0a00;border:1px solid #ff440033;border-radius:10px;"
+                f"padding:10px 16px;margin:6px 0;font-size:.78rem;color:#ff9500'>"
+                f"🏥 <b>Lesiones:</b> {inj_html}</div>", unsafe_allow_html=True)
+
 def escanear_nba_y_enviar(games):
     """Escanea NBA y manda picks O/U con edge > 4% a Telegram."""
     picks = []
@@ -2714,6 +3627,10 @@ def escanear_nba_y_enviar(games):
         msg += f"🕒 {p['hora']} CDMX\n"
         msg += f"👉 *{p['pick']}* | Proy: {p['res']['proj']} pts\n"
         msg += f"📊 Prob: {p['best_p']*100:.1f}%  •  Edge: *{p['edge']*100:.1f}%*\n"
+        _an = get_action_network_nba(p["home"], p["away"])
+        if _an.get("over_bets_pct"): msg += f"📊 AN: Over {_an['over_bets_pct']:.0f}% bets · {_an['over_money_pct']:.0f}% money\n"
+        if _an.get("steam_move"): msg += "💨 STEAM MOVE detectado\n"
+        if _an.get("reverse_move"): msg += "🔄 REVERSE LINE MOVEMENT\n"
         msg += "━━━━━━━━━━━━━━━━━━━\n"
     msg += "\n_Que la varianza esté a nuestro favor._ 🎲"
     tg_send(msg)
@@ -3120,6 +4037,8 @@ if st.session_state["view"] == "cartelera":
                                    f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
                                    f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                 + f"</div>", unsafe_allow_html=True)
+        # ── ACTION NETWORK NBA ──
+        render_action_network_nba(g["home"], g["away"], g.get("ou_line",0))
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick NBA del día:")
@@ -3313,6 +4232,8 @@ if st.session_state["view"] == "cartelera":
                                        f"border-left:3px solid {ai_color};font-size:.88rem;line-height:1.7'>"
                                        f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                     + f"</div>", unsafe_allow_html=True)
+        # ── ACTION NETWORK NBA ──
+        render_action_network_nba(g["home"], g["away"], g.get("ou_line",0))
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick Tenis del día:")
