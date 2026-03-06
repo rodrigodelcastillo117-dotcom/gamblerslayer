@@ -3351,6 +3351,505 @@ def weibull_match_prob(rank1, rank2, odd_1=0, odd_2=0, surface="hard", best_of=3
     return {"p1":round(p1m,4),"p2":round(1-p1m,4)}
 
 # ── ENSEMBLE: combina todos con pesos óptimos ──
+
+# ══════════════════════════════════════════════════════════════════════
+# PRE-MATCH INTELLIGENCE BOT
+# Raspa noticias, bajas, lesiones, sanciones, clima antes del partido.
+# Ajusta automáticamente las probabilidades de los modelos.
+# ══════════════════════════════════════════════════════════════════════
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🤖 BADRINO — Pre-Match Intelligence Bot
+#    Busca en internet: alineaciones, lesiones, sanciones, rumores.
+#    Fútbol: alineaciones 60-90 min antes del partido.
+#    NBA: injury report 30 min antes.
+#    Tenis: rumores, lesiones, superficie, forma reciente.
+#    Ajusta automáticamente todas las probabilidades del modelo.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _badrino_minutes_to_kickoff(hora_str):
+    """Calcula minutos hasta el partido. hora_str = 'HH:MM' CDMX."""
+    try:
+        now  = datetime.now(CDMX)
+        h, m = map(int, hora_str.replace("h","").split(":"))
+        kick = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if kick < now: kick += timedelta(days=1)
+        return int((kick - now).total_seconds() / 60)
+    except:
+        return 999
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def badrino_web_search(sport, home, away, league_name, hora_partido="",
+                        rank1=0, rank2=0, ou_line=0, hxg=0, axg=0,
+                        model_ph=0.33, model_pd=0.25, model_pa=0.33):
+    """
+    🤖 BADRINO — core function.
+    Usa web_search tool de Anthropic para buscar en internet
+    alineaciones, lesiones, rumores y ajustar el modelo.
+    TTL = 10 min (alineaciones cambian cerca del partido).
+    """
+    if not ANTHROPIC_API_KEY:
+        return {"error": "Sin API key", "badrino_ok": False}
+
+    mins = _badrino_minutes_to_kickoff(hora_partido) if hora_partido else 999
+    fecha_hoy = datetime.now(CDMX).strftime("%d %B %Y")
+    fecha_corta = datetime.now(CDMX).strftime("%d/%m/%Y")
+
+    # ── Construir queries específicas por deporte ──
+    if sport == "soccer":
+        queries = [
+            f"{home} vs {away} alineacion titular hoy {fecha_hoy}",
+            f"{home} vs {away} bajas lesiones sancionados {fecha_corta}",
+            f"{home} lesionados bajas confirmadas {datetime.now(CDMX).strftime('%B %Y')}",
+            f"{away} lesionados bajas confirmadas {datetime.now(CDMX).strftime('%B %Y')}",
+        ]
+        timing_note = (
+            f"⚽ El partido es en ~{mins} minutos. "
+            + ("BUSCA ALINEACION CONFIRMADA — ya debería estar publicada." if mins <= 90
+               else "Las alineaciones salen 60-90 min antes del partido.")
+        )
+    elif sport == "nba":
+        queries = [
+            f"{home} vs {away} NBA injury report today {fecha_hoy}",
+            f"{home} NBA out questionable tonight {datetime.now(CDMX).strftime('%B %Y')}",
+            f"{away} NBA out questionable tonight {datetime.now(CDMX).strftime('%B %Y')}",
+        ]
+        timing_note = (
+            f"🏀 El partido es en ~{mins} minutos. "
+            + ("INJURY REPORT FINAL disponible — busca quién está OUT." if mins <= 90
+               else "El injury report final sale 30 min antes del partido.")
+        )
+    else:  # tennis
+        queries = [
+            f"{home} vs {away} tenis lesion retiro {datetime.now(CDMX).strftime('%B %Y')}",
+            f"{home} tenis lesion forma reciente {datetime.now(CDMX).strftime('%B %Y')}",
+            f"{away} tenis lesion forma reciente {datetime.now(CDMX).strftime('%B %Y')}",
+            f"{home} vs {away} {league_name} preview prediction",
+        ]
+        timing_note = f"🎾 Partido en ~{mins} minutos. Busca lesiones, retiros o rumores recientes."
+
+    # ── Construir contexto del modelo ──
+    if sport == "soccer":
+        model_ctx = f"xG local={hxg:.2f} xG visit={axg:.2f} | Prob modelo: {home} {model_ph*100:.1f}% / Emp {model_pd*100:.1f}% / {away} {model_pa*100:.1f}%"
+    elif sport == "nba":
+        model_ctx = f"O/U line={ou_line} | Prob modelo: {home} {model_ph*100:.1f}% / {away} {model_pa*100:.1f}%"
+    else:
+        model_ctx = f"Ranking {home}=#{rank1 if rank1<900 else '?'} Ranking {away}=#{rank2 if rank2<900 else '?'} | Prob modelo: {home} {model_ph*100:.1f}% / {away} {model_pa*100:.1f}%"
+
+    # ── Prompt para BADRINO con web_search ──
+    system_prompt = f"""Eres BADRINO, el bot de inteligencia pre-partido más avanzado del mundo.
+Tu trabajo: usar web_search para buscar información REAL y ACTUAL sobre el partido, 
+luego analizar el impacto y ajustar las probabilidades del modelo estadístico.
+
+DEPORTE: {sport.upper()}
+PARTIDO: {home} vs {away}
+LIGA: {league_name}
+FECHA: {fecha_hoy}
+CONTEXTO MODELO: {model_ctx}
+{timing_note}
+
+PROCESO OBLIGATORIO:
+1. Busca en internet con web_search las queries más útiles para este partido.
+2. Para FÚTBOL busca: alineación titular de ambos equipos (XI), bajas, lesiones, sanciones.
+3. Para NBA busca: injury report oficial, quién está OUT/Questionable/Doubtful.
+4. Para TENIS busca: lesiones recientes, retiros, forma en superficie, viajes largos.
+5. Analiza el impacto de todo lo encontrado en las probabilidades.
+
+REGLAS DE AJUSTE:
+- Portero titular OUT: +0.06 a +0.09 prob rival
+- Goleador principal OUT: -0.3 a -0.5 xG del equipo, -0.08 prob gana
+- 2-3 bajas defensivas clave: +0.3 a +0.5 xG rival
+- Estrella NBA OUT (All-Star o top scorer): -8 a -12 pts al total, +0.10 prob rival
+- Jugador NBA Questionable: -4 a -6 pts, incertidumbre
+- Tenista con lesión activa en rodilla/tobillo en superficie rápida: -0.10 a -0.15 prob
+- Rotación esperada (tercer partido en 7 días): -0.06 a -0.10 prob del equipo cansado
+- Back-to-back NBA: -6 a -10 pts al total
+
+RESPONDE SOLO EN JSON (sin markdown, sin texto fuera del JSON):
+{{
+  "bajas_home": ["jugador — razón/status"],
+  "bajas_away": ["jugador — razón/status"],
+  "sanciones_home": ["jugador — tarjetas/suspensión"],
+  "sanciones_away": ["jugador — tarjetas/suspensión"],
+  "dudas_home": ["jugador — duda/questionable"],
+  "dudas_away": ["jugador — duda/questionable"],
+  "alineacion_home": ["XI confirmado o 'No disponible aún'"],
+  "alineacion_away": ["XI confirmado o 'No disponible aún'"],
+  "alineacion_disponible": false,
+  "noticias_clave": ["noticia 1", "noticia 2", "noticia 3"],
+  "clima_impacto": "descripción o Sin impacto significativo",
+  "motivacion_home": "motivación y contexto de {home}",
+  "motivacion_away": "motivación y contexto de {away}",
+  "rumores_lesion_home": "rumores o lesiones de {home} — solo tenis/NBA",
+  "rumores_lesion_away": "rumores o lesiones de {away} — solo tenis/NBA",
+  "ajuste_ph": 0.0,
+  "ajuste_pd": 0.0,
+  "ajuste_pa": 0.0,
+  "ajuste_xg_home": 0.0,
+  "ajuste_xg_away": 0.0,
+  "ajuste_total_pts": 0.0,
+  "impacto_ou": "sube/baja/neutro — explicación",
+  "impacto_nivel": "ALTO/MEDIO/BAJO/NULO",
+  "equipo_mas_afectado": "{home}/{away}/ambos/ninguno",
+  "recomendacion_tactica": "qué mercado se beneficia de esta info",
+  "confianza_datos": "alta/media/baja",
+  "fuentes_usadas": ["url o nombre de fuente 1", "fuente 2"],
+  "resumen": "2-3 líneas de lo más importante para apostar en este partido"
+}}"""
+
+    user_msg = f"Analiza {home} vs {away} ({league_name}, {fecha_hoy}). Busca en internet y dame el JSON completo."
+
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 3000,
+                "system": system_prompt,
+                "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+                "messages": [{"role": "user", "content": user_msg}]
+            },
+            timeout=60   # web search tarda más
+        )
+        if resp.status_code != 200:
+            return {"error": f"API {resp.status_code}", "badrino_ok": False}
+
+        # ── Procesar respuesta (puede tener tool_use + text) ──
+        content_blocks = resp.json().get("content", [])
+        final_text = ""
+        for block in content_blocks:
+            if block.get("type") == "text":
+                final_text += block.get("text", "")
+
+        if not final_text:
+            return {"error": "Sin respuesta de texto", "badrino_ok": False}
+
+        raw = final_text.strip()
+        raw = raw.replace("```json","").replace("```","").strip()
+        # Extraer JSON si hay texto rodeándolo
+        if "{" in raw:
+            raw = raw[raw.find("{"):raw.rfind("}")+1]
+
+        import json as _jb
+        result = _jb.loads(raw)
+        result["badrino_ok"] = True
+        result["mins_to_kickoff"] = mins
+        return result
+
+    except Exception as e:
+        return {"error": str(e), "badrino_ok": False}
+
+
+def apply_prematch_adjustments(model_result, ai_analysis, sport="soccer"):
+    """Aplica los ajustes Badrino al modelo estadístico."""
+    if not ai_analysis or not ai_analysis.get("badrino_ok"): 
+        return model_result, False
+
+    adj_ph  = float(ai_analysis.get("ajuste_ph", 0))
+    adj_pd  = float(ai_analysis.get("ajuste_pd", 0))
+    adj_pa  = float(ai_analysis.get("ajuste_pa", 0))
+    adj_xgh = float(ai_analysis.get("ajuste_xg_home", 0))
+    adj_xga = float(ai_analysis.get("ajuste_xg_away", 0))
+    adj_pts = float(ai_analysis.get("ajuste_total_pts", 0))
+
+    if max(abs(adj_ph),abs(adj_pd),abs(adj_pa),abs(adj_xgh),abs(adj_xga),abs(adj_pts)) < 0.01:
+        return model_result, False
+
+    adjusted = dict(model_result)
+    if sport == "soccer":
+        ph = max(0.01, adjusted.get("ph",0.33) + adj_ph)
+        pd = max(0.01, adjusted.get("pd",0.25) + adj_pd)
+        pa = max(0.01, adjusted.get("pa",0.33) + adj_pa)
+        s  = ph+pd+pa
+        adjusted["ph"]=ph/s; adjusted["pd"]=pd/s; adjusted["pa"]=pa/s
+        if adj_xgh or adj_xga:
+            adjusted["hxg"] = max(0.1, adjusted.get("hxg",1.3)+adj_xgh)
+            adjusted["axg"] = max(0.1, adjusted.get("axg",1.0)+adj_xga)
+    elif sport == "nba":
+        if adj_pts:
+            adjusted["proj"] = max(150, adjusted.get("proj",220)+adj_pts)
+        if adj_ph or adj_pa:
+            ph = max(0.05, adjusted.get("ph",0.5)+adj_ph)
+            pa = max(0.05, adjusted.get("pa",0.5)+adj_pa)
+            s  = ph+pa; adjusted["ph"]=ph/s; adjusted["pa"]=pa/s
+    elif sport == "tennis":
+        ph = max(0.05, adjusted.get("p1",0.5)+adj_ph)
+        pa = max(0.05, adjusted.get("p2",0.5)+adj_pa)
+        s  = ph+pa; adjusted["p1"]=ph/s; adjusted["p2"]=pa/s
+
+    adjusted["_prematch_adjusted"]=True
+    adjusted["_adj_ph"]=adj_ph; adjusted["_adj_pa"]=adj_pa
+    return adjusted, True
+
+
+def render_prematch_bot(sport, home, away, league_slug, league_name,
+                         model_result, hxg=0, axg=0, ou_line=0,
+                         rank1=0, rank2=0, hora_partido=""):
+    """🤖 BADRINO — UI renderer."""
+
+    model_ph = model_result.get("ph", model_result.get("p1",0.5))
+    model_pd = model_result.get("pd", 0)
+    model_pa = model_result.get("pa", model_result.get("p2",0.5))
+    mins     = _badrino_minutes_to_kickoff(hora_partido) if hora_partido else 999
+
+    # ── Header Badrino ──
+    timing_color = "#ff4444" if mins<=30 else ("#ff9500" if mins<=90 else "#00ccff")
+    timing_txt   = (
+        f"⚡ {mins} min — ALINEACIONES DISPONIBLES" if sport=="soccer" and mins<=90
+        else f"⚡ {mins} min — INJURY REPORT FINAL" if sport=="nba" and mins<=60
+        else f"⚡ {mins} min para el partido"
+    ) if mins < 999 else "📡 Análisis bajo demanda"
+
+    st.markdown(
+        f"<div style='background:linear-gradient(135deg,#05051f,#0a0a30);"
+        f"border:2px solid #aa00ff44;border-radius:16px;padding:14px 18px;margin:8px 0'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+        f"<div>"
+        f"<div style='font-size:.65rem;color:#aa00ff;font-weight:700;letter-spacing:.2em'>🤖 BADRINO</div>"
+        f"<div style='font-size:.88rem;font-weight:700;color:#EEEEFF'>Pre-Match Intelligence Bot</div>"
+        f"<div style='font-size:.72rem;color:#555;margin-top:2px'>"
+        f"Web search · Alineaciones · Lesiones · Rumores · Ajuste automático</div>"
+        f"</div>"
+        f"<div style='text-align:right'>"
+        f"<div style='font-size:.72rem;color:{timing_color};font-weight:700'>{timing_txt}</div>"
+        f"</div></div></div>",
+        unsafe_allow_html=True)
+
+    cache_key = f"badrino_{sport}_{home[:8]}_{away[:8]}"
+    col1, col2 = st.columns([3,1])
+    with col2:
+        run = st.button("🔍 Activar Badrino", key=f"badrino_btn_{cache_key}",
+                        use_container_width=True)
+    with col1:
+        if mins <= 90 and sport == "soccer":
+            st.markdown(f"<div style='font-size:.75rem;color:{timing_color};padding-top:8px'>⚽ Busca alineación confirmada en internet ahora</div>", unsafe_allow_html=True)
+        elif mins <= 60 and sport == "nba":
+            st.markdown(f"<div style='font-size:.75rem;color:{timing_color};padding-top:8px'>🏀 Busca injury report final en internet</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='font-size:.75rem;color:#555;padding-top:8px'>Busca en internet bajas, lesiones, rumores y ajusta el modelo</div>", unsafe_allow_html=True)
+
+    if run or st.session_state.get(cache_key+"_done"):
+        if run: st.session_state[cache_key+"_done"] = True
+
+        with st.spinner("🌐 Badrino buscando en internet..."):
+            bd = badrino_web_search(
+                sport=sport, home=home, away=away,
+                league_name=league_name, hora_partido=hora_partido,
+                rank1=rank1, rank2=rank2, ou_line=ou_line,
+                hxg=hxg, axg=axg,
+                model_ph=model_ph, model_pd=model_pd, model_pa=model_pa
+            )
+
+        if not bd.get("badrino_ok"):
+            st.warning(f"⚠️ Badrino no pudo completar la búsqueda: {bd.get('error','')}")
+            return model_result, False
+
+        # ── IMPACT HEADER ──
+        nivel   = bd.get("impacto_nivel","NULO")
+        afect   = bd.get("equipo_mas_afectado","ninguno")
+        conf    = bd.get("confianza_datos","baja")
+        resumen = bd.get("resumen","")
+        mins_k  = bd.get("mins_to_kickoff", 999)
+        nivel_c = {"ALTO":"#ff4444","MEDIO":"#ff9500","BAJO":"#FFD700","NULO":"#00ff88"}.get(nivel,"#aaa")
+        conf_c  = {"alta":"#00ff88","media":"#FFD700","baja":"#ff9500"}.get(conf,"#aaa")
+
+        st.markdown(
+            f"<div style='background:#0d0d2e;border:2px solid {nivel_c}44;"
+            f"border-radius:16px;padding:16px 20px;margin:8px 0'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px'>"
+            f"<div><div style='font-size:.65rem;color:#555;font-weight:700;letter-spacing:.12em;margin-bottom:3px'>"
+            f"🤖 BADRINO — REPORTE PRE-PARTIDO</div>"
+            f"<div style='font-size:1rem;font-weight:900;color:{nivel_c}'>⚡ IMPACTO {nivel}</div></div>"
+            f"<div style='text-align:right'>"
+            f"<div style='font-size:.65rem;color:#555'>Más afectado</div>"
+            f"<div style='font-weight:700;color:#EEEEFF;font-size:.85rem'>{afect}</div>"
+            f"<div style='font-size:.65rem;color:{conf_c};margin-top:2px'>Confianza: {conf}</div>"
+            f"</div></div>"
+            f"<div style='font-size:.82rem;color:#aaa;line-height:1.6;border-top:1px solid #1a1a40;padding-top:8px'>"
+            f"{resumen}</div></div>", unsafe_allow_html=True)
+
+        # ── ALINEACIONES (solo fútbol) ──
+        if sport == "soccer":
+            alin_h = bd.get("alineacion_home",[])
+            alin_a = bd.get("alineacion_away",[])
+            alin_ok = bd.get("alineacion_disponible", False) or (
+                alin_h and alin_h[0].lower() not in ["no disponible aún","no disponible","n/a",""])
+
+            st.markdown(
+                f"<div style='font-size:.7rem;color:#00ccff;font-weight:700;"
+                f"letter-spacing:.1em;margin:10px 0 6px'>⚽ ALINEACIONES</div>",
+                unsafe_allow_html=True)
+
+            if alin_ok and (alin_h or alin_a):
+                c1, c2 = st.columns(2)
+                def render_xi(team, xi, col):
+                    with col:
+                        st.markdown(
+                            f"<div style='background:#07071a;border-radius:10px;padding:10px 12px'>"
+                            f"<div style='font-size:.7rem;color:#00ff88;font-weight:700;margin-bottom:6px'>"
+                            f"🟢 XI TITULAR — {team[:18].upper()}</div>"
+                            + "".join(
+                                f"<div style='font-size:.8rem;color:#ccc;padding:3px 0;"
+                                f"border-bottom:1px solid #111'>{p}</div>"
+                                for p in (xi[:11] if xi else ["No disponible aún"]))
+                            + "</div>", unsafe_allow_html=True)
+                render_xi(home, alin_h, c1)
+                render_xi(away, alin_a, c2)
+            else:
+                mins_left = mins_k if mins_k < 999 else "?"
+                st.markdown(
+                    f"<div style='background:#07071a;border-radius:10px;padding:10px 14px;"
+                    f"color:#555;font-size:.8rem;text-align:center'>"
+                    f"⏳ Alineaciones no publicadas aún — salen ~60-90 min antes del partido"
+                    f"{'  (' + str(mins_left) + ' min restantes)' if mins_left != '?' else ''}"
+                    f"</div>", unsafe_allow_html=True)
+
+        # ── BAJAS, SANCIONES Y DUDAS ──
+        def render_plist(title, players, color, icon):
+            if not players: return ""
+            items = "".join(
+                f"<div style='padding:4px 0;border-bottom:1px solid #111;"
+                f"font-size:.79rem;color:#aaa'>{icon} {p}</div>"
+                for p in players[:7] if p)
+            return (
+                f"<div style='background:#07071a;border-left:3px solid {color};"
+                f"border-radius:0 10px 10px 0;padding:9px 13px;margin:4px 0'>"
+                f"<div style='font-size:.68rem;color:{color};font-weight:700;margin-bottom:5px'>{title}</div>"
+                f"{items}</div>")
+
+        hb = bd.get("bajas_home",[]); ab = bd.get("bajas_away",[])
+        hs = bd.get("sanciones_home",[]); as_ = bd.get("sanciones_away",[])
+        hd = bd.get("dudas_home",[]); ad = bd.get("dudas_away",[])
+
+        has_players = any([hb,ab,hs,as_,hd,ad])
+        if has_players:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(f"<div style='font-size:.75rem;color:#EEEEFF;font-weight:700;margin:8px 0 3px'>🏠 {home[:22]}</div>", unsafe_allow_html=True)
+                for html in [
+                    render_plist("🚑 BAJAS CONFIRMADAS", hb, "#ff4444","❌"),
+                    render_plist("🟨 SANCIONES", hs, "#ff9500","🟨"),
+                    render_plist("⚠️ DUDAS", hd, "#FFD700","⚠️"),
+                ]:
+                    if html: st.markdown(html, unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"<div style='font-size:.75rem;color:#EEEEFF;font-weight:700;margin:8px 0 3px'>✈️ {away[:22]}</div>", unsafe_allow_html=True)
+                for html in [
+                    render_plist("🚑 BAJAS CONFIRMADAS", ab, "#ff4444","❌"),
+                    render_plist("🟨 SANCIONES", as_, "#ff9500","🟨"),
+                    render_plist("⚠️ DUDAS", ad, "#FFD700","⚠️"),
+                ]:
+                    if html: st.markdown(html, unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='color:#555;font-size:.8rem;padding:8px;text-align:center'>✅ Sin bajas confirmadas detectadas</div>", unsafe_allow_html=True)
+
+        # ── RUMORES LESIONES (Tenis / NBA) ──
+        rum_h = bd.get("rumores_lesion_home","")
+        rum_a = bd.get("rumores_lesion_away","")
+        if (rum_h or rum_a) and sport in ("tennis","nba"):
+            st.markdown("<div style='font-size:.7rem;color:#aa00ff;font-weight:700;letter-spacing:.1em;margin:10px 0 5px'>🔊 RUMORES E INTEL</div>", unsafe_allow_html=True)
+            if rum_h and rum_h.lower() not in ["","ninguno","n/a","none"]:
+                st.markdown(f"<div style='background:#07071a;border-left:3px solid #aa00ff;border-radius:0 8px 8px 0;padding:7px 12px;margin:3px 0;font-size:.8rem;color:#aaa'>🏠 <b>{home[:18]}:</b> {rum_h}</div>", unsafe_allow_html=True)
+            if rum_a and rum_a.lower() not in ["","ninguno","n/a","none"]:
+                st.markdown(f"<div style='background:#07071a;border-left:3px solid #aa00ff;border-radius:0 8px 8px 0;padding:7px 12px;margin:3px 0;font-size:.8rem;color:#aaa'>✈️ <b>{away[:18]}:</b> {rum_a}</div>", unsafe_allow_html=True)
+
+        # ── NOTICIAS CLAVE ──
+        noticias = bd.get("noticias_clave",[])
+        if noticias:
+            st.markdown("<div style='font-size:.7rem;color:#00ccff;font-weight:700;letter-spacing:.1em;margin:10px 0 5px'>📰 NOTICIAS CLAVE</div>", unsafe_allow_html=True)
+            for n in noticias[:4]:
+                if n and n.lower() not in ["ninguna","n/a","none",""]:
+                    st.markdown(f"<div style='background:#07071a;border-left:3px solid #00ccff33;border-radius:0 8px 8px 0;padding:6px 12px;margin:3px 0;font-size:.79rem;color:#aaa'>📌 {n}</div>", unsafe_allow_html=True)
+
+        # ── CLIMA E IMPACTO O/U ──
+        clima  = bd.get("clima_impacto","")
+        ou_imp = bd.get("impacto_ou","")
+        if (clima and "sin impacto" not in clima.lower()) or ou_imp:
+            st.markdown(
+                f"<div style='background:#07071a;border:1px solid #252555;border-radius:10px;"
+                f"padding:10px 14px;margin:6px 0;font-size:.79rem;color:#aaa'>"
+                + (f"🌦️ <b style='color:#00ccff'>Clima:</b> {clima}<br>" if clima and "sin impacto" not in clima.lower() else "")
+                + (f"📊 <b style='color:#FFD700'>Over/Under:</b> {ou_imp}" if ou_imp else "")
+                + "</div>", unsafe_allow_html=True)
+
+        # ── MOTIVACIÓN ──
+        mot_h = bd.get("motivacion_home",""); mot_a = bd.get("motivacion_away","")
+        if mot_h or mot_a:
+            with st.expander("🎯 Motivación y Contexto"):
+                if mot_h: st.markdown(f"<div style='font-size:.8rem;color:#aaa;padding:6px 0;border-bottom:1px solid #1a1a40'><b style='color:#00ff88'>🏠 {home}:</b> {mot_h}</div>", unsafe_allow_html=True)
+                if mot_a: st.markdown(f"<div style='font-size:.8rem;color:#aaa;padding:6px 0'><b style='color:#aa00ff'>✈️ {away}:</b> {mot_a}</div>", unsafe_allow_html=True)
+
+        # ── FUENTES ──
+        fuentes = bd.get("fuentes_usadas",[])
+        if fuentes:
+            with st.expander("🔗 Fuentes consultadas por Badrino"):
+                for f_ in fuentes[:6]:
+                    if f_: st.markdown(f"<div style='font-size:.75rem;color:#555;padding:2px 0'>🔗 {f_}</div>", unsafe_allow_html=True)
+
+        # ── AJUSTE AL MODELO ──
+        adj_ph  = float(bd.get("ajuste_ph",0))
+        adj_pd  = float(bd.get("ajuste_pd",0))
+        adj_pa  = float(bd.get("ajuste_pa",0))
+        adj_xgh = float(bd.get("ajuste_xg_home",0))
+        adj_xga = float(bd.get("ajuste_xg_away",0))
+        adj_pts = float(bd.get("ajuste_total_pts",0))
+        has_adj = max(abs(adj_ph),abs(adj_pd),abs(adj_pa),abs(adj_xgh),abs(adj_xga),abs(adj_pts)) >= 0.01
+
+        if has_adj:
+            rec = bd.get("recomendacion_tactica","")
+            boxes = ""
+
+            def adj_box(label, orig, delta, fmt="{:.1f}%", scale=100):
+                if abs(delta) < 0.008: return ""
+                new_v = orig+delta
+                dc = "#00ff88" if delta>0 else "#ff4444"
+                arr = "▲" if delta>0 else "▼"
+                return (
+                    f"<div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
+                    f"<div style='font-size:.65rem;color:#555;margin-bottom:3px'>{label}</div>"
+                    f"<div style='font-size:.75rem;color:#555'>{fmt.format(orig*scale)}</div>"
+                    f"<div style='font-size:.95rem;font-weight:900;color:{dc}'>{arr} {fmt.format(new_v*scale)}</div>"
+                    f"<div style='font-size:.65rem;color:{dc}'>{('+' if delta>0 else '')}{fmt.format(delta*scale)}</div></div>")
+
+            if sport=="soccer":
+                boxes += adj_box(f"🏠 {home[:11]}", model_ph, adj_ph)
+                boxes += adj_box(f"✈️ {away[:11]}", model_pa, adj_pa)
+                if adj_xgh: boxes += adj_box("⚽ xG Local", hxg, adj_xgh, "{:.2f} xG", 1)
+                if adj_xga: boxes += adj_box("⚽ xG Visita", axg, adj_xga, "{:.2f} xG", 1)
+            elif sport=="nba":
+                if adj_pts: boxes += adj_box("🏀 Total pts", ou_line, adj_pts, "{:.1f} pts", 1)
+                if adj_ph: boxes += adj_box(f"🏠 {home[:11]}", model_ph, adj_ph)
+                if adj_pa: boxes += adj_box(f"✈️ {away[:11]}", model_pa, adj_pa)
+            elif sport=="tennis":
+                boxes += adj_box(f"🎾 {home[:13]}", model_ph, adj_ph)
+                boxes += adj_box(f"🎾 {away[:13]}", model_pa, adj_pa)
+
+            if boxes:
+                st.markdown(
+                    "<div style='background:linear-gradient(135deg,#050518,#0a0a28);"
+                    "border:2px solid #aa00ff44;border-radius:14px;padding:14px 18px;margin:10px 0'>"
+                    "<div style='font-size:.68rem;color:#aa00ff;font-weight:700;letter-spacing:.12em;margin-bottom:10px'>"
+                    "⚡ BADRINO — AJUSTE AUTOMÁTICO AL MODELO</div>"
+                    f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px'>"
+                    f"{boxes}</div>"
+                    + (f"<div style='margin-top:10px;background:#12122a;border-radius:8px;padding:8px 14px;"
+                       f"font-size:.82rem;color:#00ff88'>💡 <b>Badrino recomienda:</b> {rec}</div>" if rec else "")
+                    + "</div>", unsafe_allow_html=True)
+
+        # Aplicar ajustes al modelo y devolver
+        adjusted_model, was_adjusted = apply_prematch_adjustments(model_result, bd, sport)
+        return adjusted_model, was_adjusted
+
+    return model_result, False
+
+
 def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None, home_id=None, away_id=None):
     """
     Dixon-Coles 45% + Poisson Bivariado 30% + Elo 15% + H2H 10%.
@@ -4106,6 +4605,15 @@ if st.session_state["view"] == "cartelera":
                                    f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
                                    f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                 + f"</div>", unsafe_allow_html=True)
+        # ── PRE-MATCH INTELLIGENCE BOT — NBA ──
+        _nba_ou = g.get("ou_line",220)
+        adj_nba, _was_adj_nba = render_prematch_bot(
+            sport="nba", home=g["home"], away=g["away"],
+            league_slug="nba", league_name="NBA",
+            model_result={"ph":0.5,"pa":0.5,"proj":_nba_ou},
+            ou_line=_nba_ou,
+            hora_partido=g.get("hora","")
+        )
         # ── ACTION NETWORK NBA ──
         render_action_network_nba(g["home"], g["away"], g.get("ou_line",0))
         with tab2:
@@ -4301,6 +4809,17 @@ if st.session_state["view"] == "cartelera":
                                        f"border-left:3px solid {ai_color};font-size:.88rem;line-height:1.7'>"
                                        f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                     + f"</div>", unsafe_allow_html=True)
+                                # ── PRE-MATCH BOT — Tenis ──
+                                _ten_model = {"p1": ai_p1/100, "p2": ai_p2/100, "ph": ai_p1/100, "pd": 0, "pa": ai_p2/100}
+                                render_prematch_bot(
+                                    sport="tennis",
+                                    home=m["p1"], away=m["p2"],
+                                    league_slug=m.get("tour","tennis"),
+                                    league_name=m.get("torneo", m.get("tour","Tenis")),
+                                    model_result=_ten_model,
+                                    rank1=m.get("rank1",0), rank2=m.get("rank2",0),
+                                    hora_partido=m.get("hora","")
+                                )
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick Tenis del día:")
@@ -4996,6 +5515,16 @@ else:
     with st.spinner("Buscando cuotas..."):
         real_odds = get_real_odds(g["home"], g["away"], g["slug"])
     render_odds_comparison(g["home"], g["away"], dp, mc, real_odds)
+    # ── PRE-MATCH INTELLIGENCE BOT — Fútbol ──
+    adj_dp, _was_adj = render_prematch_bot(
+        sport="soccer", home=g["home"], away=g["away"],
+        league_slug=g.get("slug",""),
+        league_name=g.get("league",g.get("slug","Fútbol")),
+        model_result=dp,
+        hxg=g.get("hxg",1.3), axg=g.get("axg",1.0),
+        hora_partido=g.get("hora","")
+    )
+    if _was_adj: dp = adj_dp  # modelo ajustado con bajas
     render_sharp_money(g["home"], g["away"], dp, mc, real_odds, g)
     # ── Fetch AN PRO data for fix detector ──
     _an_pro   = get_action_network_pro(g["home"], g["away"], "soccer")
