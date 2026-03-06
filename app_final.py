@@ -1180,12 +1180,34 @@ if st.session_state["view"] == "cartelera":
                                    f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                 + f"</div>", unsafe_allow_html=True)
         with tab2:
-            st.info("El TRILAY multi-deporte está en ⚽ Fútbol → TRILAY.")
+            st.markdown("<div class='shdr'>🎰 TRILAY NBA del Día</div>", unsafe_allow_html=True)
+            with st.spinner("Calculando TRILAY NBA..."):
+                _nba_cands = []
+                for _g in nba_games[:20]:
+                    if _g["state"]!="pre": continue
+                    _r = nba_ou_model(_g["home_id"],_g["away_id"],_g["ou_line"])
+                    _bp = max(_r["p_over"],_r["p_under"])
+                    _bm = f"🔥 Over {_r['line']}" if _r["p_over"]>_r["p_under"] else f"❄️ Under {_r['line']}"
+                    if _bp >= 0.55:
+                        _nba_cands.append({"teams":f"{_g['away']} @ {_g['home']}","liga":"NBA","hora":_g["hora"],"pick":_bm,"prob":_bp,"sport":"🏀"})
+                _nba_cands.sort(key=lambda x:-x["prob"])
+                _trilay3 = _nba_cands[:3]
+            if len(_trilay3) >= 2:
+                _comb = 1.0
+                for _t in _trilay3: _comb *= _t["prob"]
+                _cuota = round(1/_comb, 2) if _comb>0 else 0
+                st.markdown(f"<div class='trilay-card'><div style='font-size:.8rem;font-weight:700;color:#aa00ff;letter-spacing:.1em;margin-bottom:12px'>✦ TRILAY NBA DEL DÍA</div><div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'><div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{_comb*100:.1f}%</div><div class='mlbl'>Prob. combinada</div></div><div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{_cuota}x</div><div class='mlbl'>Cuota estimada</div></div></div>", unsafe_allow_html=True)
+                for _i,_t in enumerate(_trilay3):
+                    _cc = "#FFD700" if _t["prob"]>0.65 else ("#00ff88" if _t["prob"]>0.58 else "#aaa")
+                    st.markdown(f"<div class='mrow'><span style='color:{_cc};font-weight:700'>{_i+1}. {_t['teams']}</span><br><span style='color:#555;font-size:.78rem'>NBA · {_t['hora']}</span><br><span style='color:#00ccff;font-weight:700'>{_t['pick']}</span> <span style='color:{_cc};font-size:.85rem'>{_t['prob']*100:.1f}%</span></div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.info("No hay suficientes picks NBA para TRILAY hoy.")
         with tab3:
             st.info("PATO es exclusivo de fútbol (Under 4.5 goles).")
         with tab4:
-            st.markdown("<div class='shdr'>🎯 Picks NBA del Día</div>", unsafe_allow_html=True)
-            with st.spinner("Calculando..."):
+            st.markdown("<div class='shdr'>🎯 Picks NBA del Día — O/U + ML</div>", unsafe_allow_html=True)
+            with st.spinner("🤖 IA calculando picks NBA..."):
                 nba_picks = []
                 for g in nba_games[:20]:
                     if g["state"]!="pre": continue
@@ -1194,17 +1216,73 @@ if st.session_state["view"] == "cartelera":
                     best_m = f"🔥 Over {res['line']}" if res["p_over"]>res["p_under"] else f"❄️ Under {res['line']}"
                     if best_p-0.5 > 0.04:
                         conf = "💎 DIAMANTE" if best_p>0.65 else ("🔥 ALTA" if best_p>0.58 else "⚡ MEDIA")
-                        nba_picks.append({"home":g["home"],"away":g["away"],"hora":g["hora"],"pick":best_m,"prob":best_p,"conf":conf})
+                        nba_picks.append({"home":g["home"],"away":g["away"],"hora":g["hora"],"pick":best_m,"prob":best_p,"conf":conf,"type":"O/U"})
+                # Add ML picks via AI for top 6 games
+                try:
+                    _top_games = [g for g in nba_games[:6] if g["state"]=="pre"]
+                    if _top_games and ANTHROPIC_API_KEY:
+                        _games_txt = "\n".join([f"{g['away']} @ {g['home']}" for g in _top_games])
+                        _ml_r = requests.post("https://api.anthropic.com/v1/messages",
+                            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+                            json={"model":"claude-sonnet-4-20250514","max_tokens":600,
+                                  "messages":[{"role":"user","content":
+                                    "NBA ML picks experto. Para estos partidos da solo los que tengan valor real (prob >= 58%). Responde SOLO en JSON array: [{teams, ml_pick, prob, razon}]. Partidos:\n" + _games_txt}]},timeout=12)
+                        import json as _j
+                        _ml_raw = _ml_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
+                        _ml_data = _j.loads(_ml_raw)
+                        for _ml in _ml_data:
+                            _p = float(_ml.get("prob",0))/100
+                            if _p >= 0.58:
+                                _conf = "💎 DIAMANTE" if _p>0.65 else ("🔥 ALTA" if _p>0.60 else "⚡ MEDIA")
+                                nba_picks.append({"home":_ml["teams"].split(" @ ")[1] if " @ " in _ml["teams"] else _ml["teams"],
+                                                  "away":_ml["teams"].split(" @ ")[0] if " @ " in _ml["teams"] else "",
+                                                  "hora":"","pick":f"🏆 ML: {_ml['ml_pick']}","prob":_p,
+                                                  "conf":_conf,"type":"ML","razon":_ml.get("razon","")})
+                except: pass
                 nba_picks.sort(key=lambda x:-x["prob"])
+            if not nba_picks: st.info("No hay picks NBA con valor hoy.")
             for p in nba_picks:
                 cc = "#FFD700" if "DIAMANTE" in p["conf"] else ("#00ff88" if "ALTA" in p["conf"] else "#aaa")
-                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'><div><div style='font-weight:700'>{p['away']} @ {p['home']}</div><div style='color:#555;font-size:.78rem'>NBA · {p['hora']}</div><div style='margin-top:4px;color:#00ccff;font-weight:700'>{p['pick']}</div></div><div style='text-align:right'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div><div style='font-size:.72rem;color:{cc}'>{p['conf']}</div></div></div>",unsafe_allow_html=True)
+                tipo_badge = f"<span style='background:#ff444422;color:#ff4444;border-radius:4px;padding:2px 6px;font-size:.7rem;margin-left:6px'>{p.get('type','')}</span>"
+                razon_txt = f"<div style='color:#555;font-size:.76rem;margin-top:2px'>{p.get('razon','')}</div>" if p.get('razon') else ""
+                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'><div style='flex:1;min-width:0'><div style='font-weight:700;font-size:.9rem'>{p['away']} @ {p['home']}{tipo_badge}</div><div style='color:#555;font-size:.78rem'>NBA{' · '+p['hora'] if p['hora'] else ''}</div><div style='margin-top:4px;color:#00ccff;font-weight:700'>{p['pick']}</div>{razon_txt}</div><div style='text-align:right;flex-shrink:0'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div><div style='font-size:.72rem;color:{cc}'>{p['conf']}</div></div></div>",unsafe_allow_html=True)
         with tab5:
             st.info("Bot configurado en ⚽ Fútbol → Bot.")
         with tab6:
-            st.info("Historial en ⚽ Fútbol → Historial.")
+            st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
+            init_history()
+            render_history()
         with tab7:
-            st.info("Calificador en ⚽ Fútbol → Califica tu Pick.")
+            st.markdown("<div class='shdr'>🎓 Califica tu Pick</div>", unsafe_allow_html=True)
+            st.markdown("<div style='color:#555;font-size:.85rem;margin-bottom:16px'>Sube o fotografía tu apuesta y la IA la califica.</div>", unsafe_allow_html=True)
+            _src = st.radio("F", ["📁 Galería","📷 Cámara"], horizontal=True, label_visibility="collapsed")
+            _up = None
+            if _src=="📁 Galería":
+                _up = st.file_uploader("Sube", type=["png","jpg","jpeg","webp"], label_visibility="collapsed")
+            else:
+                _cam = st.camera_input("Cam", label_visibility="collapsed")
+                if _cam: _up = _cam
+            if _up:
+                import base64 as _b64, json as _json2
+                _img=_up.read(); _b64d=_b64.b64encode(_img).decode(); _mt=getattr(_up,"type",None) or "image/jpeg"
+                st.image(_img, use_container_width=True)
+                with st.spinner("🔍 Analizando..."):
+                    try:
+                        _r=requests.post("https://api.anthropic.com/v1/messages",
+                            headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},
+                            json={"model":"claude-sonnet-4-20250514","max_tokens":600,
+                                  "messages":[{"role":"user","content":[
+                                    {"type":"image","source":{"type":"base64","media_type":_mt,"data":_b64d}},
+                                    {"type":"text","text":"Analista de apuestas. Responde SOLO en JSON: {equipos,mercado,cuota,calificacion_letra(A+/A/A-/B+/B/B-/C+/C/C-/D/F),puntuacion(0-100),veredicto,comentario(max 20 palabras),alternativa_mercado,alternativa_razon}. A+=valor positivo; B=razonable; C=cuota baja; D/F=evitar"}
+                                  ]}]},timeout=30)
+                        _raw=_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
+                        _d=_json2.loads(_raw)
+                        _l=_d.get("calificacion_letra","?"); _pts=_d.get("puntuacion",0)
+                        _cm={"A+":"#00ff88","A":"#00ff88","A-":"#00dd77","B+":"#7fff00","B":"#FFD700","B-":"#FFD700","C+":"#ff9500","C":"#ff9500","C-":"#ff6600","D":"#ff4444","F":"#cc0000"}
+                        _c=_cm.get(_l,"#555")
+                        st.markdown(f"<div style='background:#0d0d2e;border:2px solid {_c};border-radius:20px;padding:24px;text-align:center'><div style='font-size:4rem;font-weight:900;color:{_c}'>{_l}</div><div style='color:{_c};font-weight:700'>{_pts}/100</div><div style='margin-top:8px'>{_d.get('veredicto','')}</div><div style='color:#aaa;font-size:.85rem'>{_d.get('comentario','')}</div></div>",unsafe_allow_html=True)
+                        if _d.get("alternativa_mercado"): st.markdown(f"<div style='background:#0a1a2e;border:1px solid #00ccff44;border-radius:12px;padding:14px;margin-top:10px'><div style='color:#00ccff;font-weight:700'>🎯 {_d['alternativa_mercado']}</div><div style='color:#aaa;font-size:.85rem'>{_d.get('alternativa_razon','')}</div></div>",unsafe_allow_html=True)
+                    except Exception as _e: st.error(f"Error: {_e}")
 
     # ─── TENIS ───────────────────────────────────────────
     elif deporte == "tenis":
@@ -1297,12 +1375,34 @@ if st.session_state["view"] == "cartelera":
                                        f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                     + f"</div>", unsafe_allow_html=True)
         with tab2:
-            st.info("El TRILAY multi-deporte está en ⚽ Fútbol → TRILAY.")
+            st.markdown("<div class='shdr'>🎰 TRILAY Tenis del Día</div>", unsafe_allow_html=True)
+            with st.spinner("Calculando TRILAY Tenis..."):
+                _ten_cands = []
+                for _tm_match in ten_matches:
+                    if _tm_match["state"]!="pre": continue
+                    _tmm = tennis_model(_tm_match["rank1"],_tm_match["rank2"],_tm_match["odd_1"],_tm_match["odd_2"])
+                    _bp = max(_tmm["p1"],_tmm["p2"])
+                    _fv = _tm_match["p1"] if _tmm["p1"]>=_tmm["p2"] else _tm_match["p2"]
+                    if _bp >= 0.58:
+                        _ten_cands.append({"teams":f"{_tm_match['p1']} vs {_tm_match['p2']}","tour":_tm_match["tour"],"hora":_tm_match["hora"],"pick":f"🎾 {_fv}","prob":_bp})
+                _ten_cands.sort(key=lambda x:-x["prob"])
+                _trilay_ten = _ten_cands[:3]
+            if len(_trilay_ten) >= 2:
+                _comb_t = 1.0
+                for _t in _trilay_ten: _comb_t *= _t["prob"]
+                _cuota_t = round(1/_comb_t,2) if _comb_t>0 else 0
+                st.markdown(f"<div class='trilay-card'><div style='font-size:.8rem;font-weight:700;color:#aa00ff;letter-spacing:.1em;margin-bottom:12px'>✦ TRILAY TENIS DEL DÍA</div><div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'><div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{_comb_t*100:.1f}%</div><div class='mlbl'>Prob. combinada</div></div><div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{_cuota_t}x</div><div class='mlbl'>Cuota estimada</div></div></div>",unsafe_allow_html=True)
+                for _i,_t in enumerate(_trilay_ten):
+                    _cc = "#FFD700" if _t["prob"]>0.65 else ("#00ff88" if _t["prob"]>0.58 else "#aaa")
+                    st.markdown(f"<div class='mrow'><span style='color:{_cc};font-weight:700'>{_i+1}. {_t['teams']}</span><br><span style='color:#555;font-size:.78rem'>{_t['tour']} · {_t['hora']}</span><br><span style='color:#00ccff;font-weight:700'>{_t['pick']} gana</span> <span style='color:{_cc};font-size:.85rem'>{_t['prob']*100:.1f}%</span></div>",unsafe_allow_html=True)
+                st.markdown("</div>",unsafe_allow_html=True)
+            else:
+                st.info("No hay suficientes picks de tenis para TRILAY hoy.")
         with tab3:
             st.info("PATO es exclusivo de fútbol.")
         with tab4:
-            st.markdown("<div class='shdr'>🎯 Picks Tenis del Día</div>", unsafe_allow_html=True)
-            with st.spinner("Calculando..."):
+            st.markdown("<div class='shdr'>🎯 Picks Tenis del Día — ML + Valor</div>", unsafe_allow_html=True)
+            with st.spinner("🤖 IA calculando picks de tenis..."):
                 ten_picks = []
                 for m in ten_matches:
                     if m["state"]!="pre": continue
@@ -1310,21 +1410,81 @@ if st.session_state["view"] == "cartelera":
                     best_p = max(tm["p1"],tm["p2"])
                     fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
                     best_odd = m["odd_1"] if tm["p1"]>=tm["p2"] else m["odd_2"]
-                    if best_p >= 0.58:
+                    edge = tm["edge_1"] if tm["p1"]>=tm["p2"] else tm["edge_2"]
+                    if best_p >= 0.57:
                         conf = "💎 DIAMANTE" if best_p>0.68 else ("🔥 ALTA" if best_p>0.62 else "⚡ MEDIA")
-                        ten_picks.append({"p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],"torneo":m["torneo"],"pick":f"🎾 {fav} gana","prob":best_p,"odd":best_odd,"conf":conf})
+                        ten_picks.append({"p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
+                                         "torneo":m["torneo"],"pick":f"🎾 ML: {fav}","prob":best_p,
+                                         "odd":best_odd,"conf":conf,"edge":edge,"type":"ML"})
+                # AI picks for matches without clear ranking edge
+                try:
+                    _no_rank = [m for m in ten_matches if m["state"]=="pre" and m["rank1"]>=900 and m["rank2"]>=900][:5]
+                    if _no_rank and ANTHROPIC_API_KEY:
+                        _txt = "\n".join([f"{m['p1']} vs {m['p2']} ({m['tour']}) @{m['odd_1']}/{m['odd_2']}" for m in _no_rank])
+                        _ai_r = requests.post("https://api.anthropic.com/v1/messages",
+                            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+                            json={"model":"claude-sonnet-4-20250514","max_tokens":500,
+                                  "messages":[{"role":"user","content":
+                                    "Analista tenis experto. Para estos partidos ATP/WTA da picks con valor (prob>=58%). Solo JSON array: [{p1,p2,pick,prob,razon}]. Partidos: " + _txt}]},timeout=12)
+                        import json as _jt
+                        _ai_raw = _ai_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
+                        _ai_picks = _jt.loads(_ai_raw)
+                        for _ap in _ai_picks:
+                            _p = float(_ap.get("prob",0))/100
+                            if _p >= 0.58:
+                                _conf = "💎 DIAMANTE" if _p>0.68 else ("🔥 ALTA" if _p>0.62 else "⚡ MEDIA")
+                                ten_picks.append({"p1":_ap.get("p1",""),"p2":_ap.get("p2",""),
+                                                  "hora":"","tour":"ATP/WTA","torneo":"","pick":f"🎾 ML: {_ap.get('pick','')}",
+                                                  "prob":_p,"odd":0,"conf":_conf,"edge":0,"type":"ML-IA",
+                                                  "razon":_ap.get("razon","")})
+                except: pass
                 ten_picks.sort(key=lambda x:-x["prob"])
             if not ten_picks: st.info("No hay picks de tenis con valor hoy.")
             for p in ten_picks:
                 cc = "#FFD700" if "DIAMANTE" in p["conf"] else ("#00ff88" if "ALTA" in p["conf"] else "#aaa")
-                os_ = f"@{p['odd']}" if p["odd"]>1 else ""
-                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'><div><div style='font-weight:700'>{p['p1']} vs {p['p2']}</div><div style='color:#555;font-size:.78rem'>{p['tour']} · {p['torneo']} · {p['hora']}</div><div style='margin-top:4px;color:#00ccff;font-weight:700'>{p['pick']} {os_}</div></div><div style='text-align:right'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div><div style='font-size:.72rem;color:{cc}'>{p['conf']}</div></div></div>",unsafe_allow_html=True)
+                os_ = f" @{p['odd']:.2f}" if p["odd"]>1 else ""
+                edge_txt = f"<span style='color:#00ff88;font-size:.75rem'> +{p['edge']*100:.1f}% edge</span>" if p.get("edge",0)>0.05 else ""
+                razon_txt = f"<div style='color:#555;font-size:.76rem'>{p.get('razon','')}</div>" if p.get("razon") else ""
+                tipo = p.get("type","ML")
+                tipo_badge = f"<span style='background:#00ccff22;color:#00ccff;border-radius:4px;padding:2px 6px;font-size:.7rem;margin-left:4px'>{tipo}</span>"
+                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'><div style='flex:1;min-width:0'><div style='font-weight:700;font-size:.9rem'>{p['p1']} vs {p['p2']}{tipo_badge}</div><div style='color:#555;font-size:.78rem'>{p['tour']}{' · '+p['torneo'] if p['torneo'] else ''}{' · '+p['hora'] if p['hora'] else ''}</div><div style='margin-top:4px;color:#00ccff;font-weight:700'>{p['pick']}{os_}{edge_txt}</div>{razon_txt}</div><div style='text-align:right;flex-shrink:0'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div><div style='font-size:.72rem;color:{cc}'>{p['conf']}</div></div></div>",unsafe_allow_html=True)
         with tab5:
             st.info("Bot configurado en ⚽ Fútbol → Bot.")
         with tab6:
-            st.info("Historial en ⚽ Fútbol → Historial.")
+            st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
+            init_history()
+            render_history()
         with tab7:
-            st.info("Calificador en ⚽ Fútbol → Califica tu Pick.")
+            st.markdown("<div class='shdr'>🎓 Califica tu Pick</div>", unsafe_allow_html=True)
+            st.markdown("<div style='color:#555;font-size:.85rem;margin-bottom:16px'>Sube o fotografía tu apuesta y la IA la califica.</div>", unsafe_allow_html=True)
+            _src = st.radio("F", ["📁 Galería","📷 Cámara"], horizontal=True, label_visibility="collapsed")
+            _up = None
+            if _src=="📁 Galería":
+                _up = st.file_uploader("Sube", type=["png","jpg","jpeg","webp"], label_visibility="collapsed")
+            else:
+                _cam = st.camera_input("Cam", label_visibility="collapsed")
+                if _cam: _up = _cam
+            if _up:
+                import base64 as _b64, json as _json2
+                _img=_up.read(); _b64d=_b64.b64encode(_img).decode(); _mt=getattr(_up,"type",None) or "image/jpeg"
+                st.image(_img, use_container_width=True)
+                with st.spinner("🔍 Analizando..."):
+                    try:
+                        _r=requests.post("https://api.anthropic.com/v1/messages",
+                            headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},
+                            json={"model":"claude-sonnet-4-20250514","max_tokens":600,
+                                  "messages":[{"role":"user","content":[
+                                    {"type":"image","source":{"type":"base64","media_type":_mt,"data":_b64d}},
+                                    {"type":"text","text":"Analista de apuestas. Responde SOLO en JSON: {equipos,mercado,cuota,calificacion_letra(A+/A/A-/B+/B/B-/C+/C/C-/D/F),puntuacion(0-100),veredicto,comentario(max 20 palabras),alternativa_mercado,alternativa_razon}. A+=valor positivo; B=razonable; C=cuota baja; D/F=evitar"}
+                                  ]}]},timeout=30)
+                        _raw=_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
+                        _d=_json2.loads(_raw)
+                        _l=_d.get("calificacion_letra","?"); _pts=_d.get("puntuacion",0)
+                        _cm={"A+":"#00ff88","A":"#00ff88","A-":"#00dd77","B+":"#7fff00","B":"#FFD700","B-":"#FFD700","C+":"#ff9500","C":"#ff9500","C-":"#ff6600","D":"#ff4444","F":"#cc0000"}
+                        _c=_cm.get(_l,"#555")
+                        st.markdown(f"<div style='background:#0d0d2e;border:2px solid {_c};border-radius:20px;padding:24px;text-align:center'><div style='font-size:4rem;font-weight:900;color:{_c}'>{_l}</div><div style='color:{_c};font-weight:700'>{_pts}/100</div><div style='margin-top:8px'>{_d.get('veredicto','')}</div><div style='color:#aaa;font-size:.85rem'>{_d.get('comentario','')}</div></div>",unsafe_allow_html=True)
+                        if _d.get("alternativa_mercado"): st.markdown(f"<div style='background:#0a1a2e;border:1px solid #00ccff44;border-radius:12px;padding:14px;margin-top:10px'><div style='color:#00ccff;font-weight:700'>🎯 {_d['alternativa_mercado']}</div><div style='color:#aaa;font-size:.85rem'>{_d.get('alternativa_razon','')}</div></div>",unsafe_allow_html=True)
+                    except Exception as _e: st.error(f"Error: {_e}")
 
     # ─── FÚTBOL ──────────────────────────────────────────
     else:
@@ -1702,35 +1862,14 @@ if st.session_state["view"] == "cartelera":
                     try:
                         resp = requests.post(
                             "https://api.anthropic.com/v1/messages",
-                            headers={
-                                "Content-Type": "application/json",
-                                "x-api-key": ANTHROPIC_API_KEY,
-                                "anthropic-version": "2023-06-01"
-                            },
-                            json={
-                                "model": "claude-sonnet-4-20250514",
-                                "max_tokens": 1000,
-                                "messages": [{
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "image",
-                                            "source": {
-                                                "type": "base64",
-                                                "media_type": media_type,
-                                                "data": b64
-                                            }
-                                        },
-                                        {
-                                            "type": "text",
-                                            "text": ("Eres experto en apuestas deportivas. Analiza la imagen y responde SOLO en JSON sin texto extra ni markdown. ""Formato: {equipos, mercado, cuota, calificacion_letra (A+/A/A-/B+/B/B-/C+/C/C-/D/F), puntuacion (0-100), ""veredicto (Solida/Riesgosa/Evitar), comentario (max 20 palabras), alternativa_mercado, alternativa_razon}. ""Criterios: A+(90-100)=valor positivo bajo riesgo; B(75-89)=razonable; C(60-74)=cuota baja; D/F(<60)=evitar"
-                                            ),
-                                            }
-                                        ]
-                                    }]
-                                },
-                                timeout=30
-                            )
+                            headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},
+                            json={"model":"claude-sonnet-4-20250514","max_tokens":1000,
+                                  "messages":[{"role":"user","content":[
+                                      {"type":"image","source":{"type":"base64","media_type":media_type,"data":b64}},
+                                      {"type":"text","text":"Eres experto en apuestas deportivas. Analiza la imagen y responde SOLO en JSON sin texto extra ni markdown. Formato: {equipos, mercado, cuota, calificacion_letra (A+/A/A-/B+/B/B-/C+/C/C-/D/F), puntuacion (0-100), veredicto (Solida/Riesgosa/Evitar), comentario (max 20 palabras), alternativa_mercado, alternativa_razon}. Criterios: A+(90-100)=valor positivo bajo riesgo; B(75-89)=razonable; C(60-74)=cuota baja; D/F(<60)=evitar"}
+                                  ]}]},
+                            timeout=30
+                        )
                         raw  = resp.json()["content"][0]["text"].strip()
                         # limpiar posibles backticks
                         raw  = raw.replace("```json","").replace("```","").strip()
@@ -1800,9 +1939,9 @@ else:
 
     prog = st.progress(0,"📊 Cargando datos ESPN...")
     hform = get_form(g["home_id"],g["slug"]); prog.progress(30,f"📊 {g['away']}...")
-    aform = get_form(g["away_id"],g["slug"]); prog.progress(60,"⚔️ H2H...")
-    h2h   = get_h2h(g["home_id"],g["away_id"],g["slug"],g["home"],g["away"]); prog.progress(85,"⚡ Monte Carlo...")
-    h2s   = h2h_stats(h2h,g["home"],g["away"])
+    aform = get_form(g["away_id"],g["slug"]); prog.progress(60,"📊 Calculando...")
+    h2h   = []
+    h2s   = {}
     hxg   = max(0.35,avg([r["gf"] for r in hform])) if hform else xg_from_record(g["home_rec"],True)
     axg   = max(0.35,avg([r["gf"] for r in aform])) if aform else xg_from_record(g["away_rec"],False)
     mc    = mc50k(hxg,axg); dp = diamond_engine(mc,h2s,hform,aform)
@@ -1992,36 +2131,4 @@ else:
         real_odds = get_real_odds(g["home"], g["away"], g["slug"])
     render_odds_comparison(g["home"], g["away"], dp, mc, real_odds)
 
-    # ── H2H ──
-    st.markdown("<div class='shdr'>⚔️ Head to Head</div>",unsafe_allow_html=True)
-    if h2h:
-        ha,hb=st.columns([3,2])
-        with ha:
-            st.markdown("<div class='acard'>",unsafe_allow_html=True)
-            for x in h2h[:8]:
-                wc="#00ff88" if x["winner"]==g["home"] else ("#ff4444" if x["winner"]==g["away"] else "#FFD700")
-                bg="#00ff8810" if x["winner"]==g["home"] else ("#ff444410" if x["winner"]==g["away"] else "#FFD70010")
-                st.markdown(
-                    f"<div style='display:flex;justify-content:space-between;align-items:center;"
-                    f"padding:8px 12px;border-radius:6px;margin:3px 0;background:{bg}'>"
-                    f"<span style='color:#555'>{x['date'][:7]}</span>"
-                    f"<span>{x['home'][:12]}</span>"
-                    f"<span style='font-weight:900;color:{wc};min-width:40px;text-align:center'>{x['gh']}-{x['ga']}</span>"
-                    f"<span>{x['away'][:12]}</span></div>",unsafe_allow_html=True)
-            st.markdown("</div>",unsafe_allow_html=True)
-        with hb:
-            if h2s:
-                st.markdown(
-                    f"<div class='acard'>"
-                    f"<div style='font-weight:700;margin-bottom:12px'>Últimos {h2s['tot']} encuentros</div>"
-                    f"<div style='display:flex;gap:8px;margin-bottom:12px'>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{h2s['hw']}</div><div class='mlbl'>{g['home'][:8]}</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{h2s['dw']}</div><div class='mlbl'>Empate</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{h2s['aw']}</div><div class='mlbl'>{g['away'][:8]}</div></div>"
-                    f"</div>"
-                    f"<div style='font-size:.85rem;color:#555'>Prom. goles: {h2s['avg_g']}</div>"
-                    f"<div style='font-size:.85rem;color:#555'>Over 2.5: {h2s['o25p']}%</div>"
-                    f"<div style='font-size:.85rem;color:#555'>BTTS: {h2s['bttsp']}%</div>"
-                    f"</div>",unsafe_allow_html=True)
-    else:
-        st.info("No se encontraron encuentros anteriores en ESPN para esta liga.")
+
