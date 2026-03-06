@@ -1446,7 +1446,7 @@ def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
         league_slug=league_slug,
         league_name=_HIGH_RISK_LEAGUES.get(league_slug,{}).get("name", league_slug or sport),
         dp=dp, mc=mc, real_odds=real_odds,
-        fix_score=score
+        fix_score=sc
     )
     # ── Fuentes bibliográficas ──
     with st.expander("📚 Metodología y fuentes académicas"):
