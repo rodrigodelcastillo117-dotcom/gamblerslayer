@@ -20,11 +20,13 @@ from dotenv import load_dotenv
 load_dotenv()
 # Streamlit Cloud usa st.secrets, local usa .env
 try:
-    BOT_TOKEN = st.secrets["BOT_TOKEN"]
-    CHAT_ID   = st.secrets["CHAT_ID"]
+    BOT_TOKEN        = st.secrets["BOT_TOKEN"]
+    CHAT_ID          = st.secrets["CHAT_ID"]
+    ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", "")
 except:
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-    CHAT_ID   = os.getenv("CHAT_ID", "")
+    BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
+    CHAT_ID           = os.getenv("CHAT_ID", "")
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 LIGAS = {
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -1038,7 +1040,11 @@ if st.session_state["view"] == "cartelera":
                     try:
                         resp = requests.post(
                             "https://api.anthropic.com/v1/messages",
-                            headers={"Content-Type": "application/json"},
+                            headers={
+                                "Content-Type": "application/json",
+                                "x-api-key": ANTHROPIC_API_KEY,
+                                "anthropic-version": "2023-06-01"
+                            },
                             json={
                                 "model": "claude-sonnet-4-20250514",
                                 "max_tokens": 1000,
