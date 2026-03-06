@@ -181,58 +181,56 @@ st.markdown("""
   if(!loader) return;
 
   var showing = false;
-  function show(){ if(!showing){ showing=true; loader.classList.add('show'); } }
-  function hide(){ if(showing){ showing=false; loader.classList.remove('show'); } }
+  var hideTimer = null;
 
-  // Método 1: detectar el spinner SVG animado de Streamlit
-  function checkSpinner(){
-    // Streamlit usa un elemento con data-testid="stStatusWidget" o un svg animado
-    var w = document.querySelector('[data-testid="stStatusWidget"]');
-    var svg = document.querySelector('.stSpinner, [data-testid="stSpinner"]');
-    // También buscar el icono de "running" — en versiones nuevas es un círculo animado
-    var appRunning = document.querySelector('.stApp[data-streamlit-loaded]');
-    
-    // Detectar por atributo aria o clase de loading
-    var spinnerVisible = (
-      document.querySelector('svg[style*="animation"]') !== null ||
-      document.querySelector('[class*="spinner"]') !== null ||
-      (w && w.offsetParent !== null && w.innerHTML.trim() !== '')
-    );
-    spinnerVisible ? show() : hide();
+  function show(){
+    if(!showing){ showing=true; loader.classList.add('show'); }
+    clearTimeout(hideTimer);
+    // seguro: ocultar después de 8s si algo falla
+    hideTimer = setTimeout(hide, 8000);
+  }
+  function hide(){
+    if(showing){ showing=false; loader.classList.remove('show'); }
+    clearTimeout(hideTimer);
   }
 
-  // Método 2: MutationObserver — detecta cuando Streamlit modifica el DOM (= re-run)
-  var mutationTimer = null;
-  var observer = new MutationObserver(function(mutations){
-    // Filtrar mutaciones triviales
-    var relevant = mutations.some(function(m){
-      return m.target.id !== 'glLoader' &&
-             !m.target.closest('#glLoader') &&
-             m.addedNodes.length > 0;
-    });
-    if(!relevant) return;
+  // ── Estrategia: escuchar clicks en botones de Streamlit ──
+  // Streamlit re-renderiza el DOM entero en cada rerun;
+  // usamos delegación en document para capturar todo.
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('button');
+    if(!btn) return;
+    // Ignorar clicks dentro del loader mismo
+    if(btn.closest('#glLoader')) return;
     show();
-    clearTimeout(mutationTimer);
-    // Si no hay más mutaciones en 800ms, el run terminó
-    mutationTimer = setTimeout(function(){
-      checkSpinner();
-      if(!document.querySelector('svg[style*="animation"], [class*="spinner"]')){
-        hide();
-      }
-    }, 800);
+  }, true);
+
+  // ── Estrategia 2: detectar cuando Streamlit termina via WebSocket ──
+  // Streamlit manda mensajes por websocket; cuando el DOM deja de
+  // cambiar por 600ms asumimos que terminó.
+  var domTimer = null;
+  var obs = new MutationObserver(function(muts){
+    var real = muts.some(function(m){
+      return !m.target.closest('#glLoader') && m.addedNodes.length > 0;
+    });
+    if(!real) return;
+    clearTimeout(domTimer);
+    // Mientras haya mutaciones el run sigue
+    domTimer = setTimeout(function(){
+      // Sin cambios en 700ms = run terminó
+      hide();
+    }, 700);
   });
 
-  // Esperar a que el DOM esté listo
-  function init(){
-    var target = document.querySelector('[data-testid="stAppViewContainer"]') || document.body;
-    observer.observe(target, { childList:true, subtree:true });
-    setInterval(checkSpinner, 300);
+  function boot(){
+    var root = document.querySelector('[data-testid="stAppViewContainer"]') || document.body;
+    obs.observe(root, {childList:true, subtree:true});
   }
 
   if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    setTimeout(init, 500);
+    setTimeout(boot, 400);
   }
 })();
 </script>
