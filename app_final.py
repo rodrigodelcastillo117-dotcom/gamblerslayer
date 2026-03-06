@@ -273,6 +273,210 @@ def get_standings(slug):
     return rows
 
 # ══════════════════════════════════════════════════════════
+# ODDS API — The Odds API (gratis 500 req/mes)
+# ══════════════════════════════════════════════════════════
+ODDS_API_KEY = ""  # Pon tu key de https://the-odds-api.com (gratis)
+BOOKMAKERS   = ["bet365","pinnacle","unibet","williamhill"]
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_real_odds(home_name, away_name, league_slug):
+    """
+    Intenta obtener cuotas reales de The Odds API.
+    Si no hay key o falla, devuelve dict vacío.
+    """
+    if not ODDS_API_KEY:
+        return {}
+    # Mapeo de slugs ESPN → sport_key de Odds API
+    slug_map = {
+        "eng.1":"soccer_epl","esp.1":"soccer_spain_la_liga",
+        "ger.1":"soccer_germany_bundesliga","ita.1":"soccer_italy_serie_a",
+        "fra.1":"soccer_france_ligue_one","ned.1":"soccer_netherlands_eredivisie",
+        "por.1":"soccer_portugal_primeira_liga","mex.1":"soccer_mexico_ligamx",
+        "usa.1":"soccer_usa_mls","arg.1":"soccer_argentina_primera_division",
+        "bra.1":"soccer_brazil_campeonato","tur.1":"soccer_turkey_super_league",
+        "bel.1":"soccer_belgium_first_div","sco.1":"soccer_scotland_premiership",
+        "uefa.champions":"soccer_uefa_champs_league","uefa.europa":"soccer_uefa_europa_league",
+    }
+    sport = slug_map.get(league_slug)
+    if not sport: return {}
+    try:
+        url  = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
+        resp = requests.get(url, params={
+            "apiKey": ODDS_API_KEY, "regions":"eu",
+            "markets":"h2h","oddsFormat":"decimal","bookmakers": ",".join(BOOKMAKERS)
+        }, timeout=8)
+        if resp.status_code != 200: return {}
+        for game in resp.json():
+            h = game.get("home_team","").lower()
+            a = game.get("away_team","").lower()
+            if home_name[:6].lower() in h or away_name[:6].lower() in a:
+                out = {}
+                for bk in game.get("bookmakers",[]):
+                    name = bk["key"]
+                    for mkt in bk.get("markets",[]):
+                        if mkt["key"] == "h2h":
+                            outs = {o["name"].lower():o["price"] for o in mkt["outcomes"]}
+                            out[name] = {
+                                "h": outs.get(h, 0),
+                                "d": outs.get("draw", 0),
+                                "a": outs.get(a, 0),
+                            }
+                return out
+    except: pass
+    return {}
+
+def render_odds_comparison(home, away, dp, mc, real_odds):
+    """Tabla de valor esperado comparando modelo vs casas."""
+    st.markdown("<div class='shdr'>💰 Valor Esperado vs Casas de Apuestas</div>", unsafe_allow_html=True)
+    
+    if not real_odds:
+        # Sin Odds API — mostrar solo ESPN odds si hay
+        st.markdown(
+            "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
+            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "💡 Conecta <b>The Odds API</b> para comparar vs Bet365, Pinnacle y más. "
+            "Regístrate gratis en <code>the-odds-api.com</code> y pega tu key en <code>ODDS_API_KEY</code>"
+            "</div>", unsafe_allow_html=True)
+        return
+
+    probs = {"Local gana": dp["ph"], "Empate": dp["pd"], "Visita gana": dp["pa"]}
+    bk_names = {"bet365":"Bet365","pinnacle":"Pinnacle","unibet":"Unibet","williamhill":"William Hill"}
+    
+    header = (f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;overflow:hidden'>"
+              f"<div style='display:grid;grid-template-columns:120px repeat({len(real_odds)+2},1fr);"
+              f"gap:0;padding:10px 14px;background:#12123a;font-size:.75rem;font-weight:700;color:#555'>"
+              f"<span>Resultado</span><span>Modelo</span>")
+    for bk in real_odds: header += f"<span>{bk_names.get(bk,bk[:8])}</span>"
+    header += "<span>Mejor Edge</span></div>"
+    st.markdown(header, unsafe_allow_html=True)
+
+    for label, prob in probs.items():
+        key = "h" if "Local" in label else ("d" if "Empate" in label else "a")
+        best_edge = 0; best_bk = ""
+        row = (f"<div style='display:grid;grid-template-columns:120px repeat({len(real_odds)+2},1fr);"
+               f"gap:0;padding:10px 14px;border-top:1px solid #151530;align-items:center'>")
+        row += f"<span style='font-weight:700;font-size:.85rem'>{label}</span>"
+        row += f"<span style='color:#7c00ff;font-weight:700'>{prob*100:.1f}%</span>"
+        for bk, odds in real_odds.items():
+            odd = odds.get(key, 0)
+            if odd > 1:
+                impl  = 1/odd
+                edge  = prob - impl
+                color = "#00ff88" if edge > 0.05 else ("#FFD700" if edge > 0 else "#ff4444")
+                row  += f"<span style='color:{color};font-weight:700'>{odd:.2f}<br><span style='font-size:.72rem'>{'▲' if edge>0 else '▼'}{abs(edge)*100:.1f}%</span></span>"
+                if edge > best_edge: best_edge=edge; best_bk=bk_names.get(bk,bk)
+            else:
+                row += "<span style='color:#333'>—</span>"
+        if best_edge > 0.05:
+            row += f"<span style='color:#00ff88;font-weight:900'>+{best_edge*100:.1f}%<br><span style='font-size:.72rem'>{best_bk}</span></span>"
+        elif best_edge > 0:
+            row += f"<span style='color:#FFD700;font-weight:700'>+{best_edge*100:.1f}%</span>"
+        else:
+            row += "<span style='color:#555'>Sin valor</span>"
+        row += "</div>"
+        st.markdown(row, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════
+# FORM CHART — gráfica SVG de racha
+# ══════════════════════════════════════════════════════════
+def render_form_chart(form, team_name, color):
+    """Gráfica SVG de tendencia de los últimos 10 partidos."""
+    if not form or len(form) < 2:
+        return
+    # Puntos: W=3, D=1, L=0
+    pts = [3 if r["result"]=="W" else (1 if r["result"]=="D" else 0) for r in reversed(form)]
+    # Media móvil de 3
+    ma = []
+    for i in range(len(pts)):
+        w = pts[max(0,i-2):i+1]
+        ma.append(sum(w)/len(w))
+
+    W, H = 300, 80
+    pad  = 10
+    n    = len(pts)
+    xs   = [pad + i*(W-2*pad)/(n-1) for i in range(n)]
+    # normalizar a 0-3
+    ys   = [H - pad - (v/3)*(H-2*pad) for v in ma]
+
+    # Path
+    path = f"M {xs[0]:.1f},{ys[0]:.1f} " + " ".join(f"L {xs[i]:.1f},{ys[i]:.1f}" for i in range(1,n))
+    # Dots
+    dots = ""
+    for i,(x,y,p) in enumerate(zip(xs,ys,pts)):
+        dc = "#00ff88" if p==3 else ("#FFD700" if p==1 else "#ff4444")
+        dots += f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{dc}" stroke="#07071a" stroke-width="1.5"/>'
+
+    # Trend arrow
+    trend     = ma[-1] - ma[0]
+    trend_txt = f"{'↑' if trend>0.3 else ('↓' if trend<-0.3 else '→')} {'Mejorando' if trend>0.3 else ('Bajando' if trend<-0.3 else 'Estable')}"
+    trend_col = "#00ff88" if trend>0.3 else ("#ff4444" if trend<-0.3 else "#FFD700")
+
+    svg = f"""<div style='margin:8px 0'>
+    <div style='font-size:.75rem;color:#555;margin-bottom:4px'>Tendencia últimos {n} partidos</div>
+    <svg width="100%" viewBox="0 0 {W} {H}" style="background:#0a0a20;border-radius:8px;border:1px solid #1a1a40">
+      <defs><linearGradient id="grad{team_name[:3]}" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="{color}" stop-opacity="0.1"/>
+        <stop offset="100%" stop-color="{color}" stop-opacity="0.4"/>
+      </linearGradient></defs>
+      <path d="{path}" fill="none" stroke="{color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+      {dots}
+    </svg>
+    <div style='font-size:.78rem;color:{trend_col};font-weight:700;margin-top:4px'>{trend_txt}</div>
+    </div>"""
+    st.markdown(svg, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════
+# AUTO TRACKER — revisa resultados de picks guardados
+# ══════════════════════════════════════════════════════════
+def auto_track_picks():
+    """Revisa picks pendientes y actualiza resultado automáticamente."""
+    init_history()
+    h = st.session_state["pick_history"]
+    updated = 0
+    for i, pick in enumerate(h):
+        if pick["result"] != "⏳": continue
+        try:
+            # Buscar el partido en ESPN por fecha
+            pick_date = datetime.strptime(pick["date"].split()[0], "%d/%m")
+            pick_date = pick_date.replace(year=datetime.now().year)
+            ds   = pick_date.strftime("%Y%m%d")
+            slug = next((s for s,n in LIGAS.items() if n.split()[0] in pick["league"]), None)
+            if not slug: continue
+            data = eg(f"{ESPN}/{slug}/scoreboard", {"dates": ds, "limit": 100})
+            for ev in data.get("events", []):
+                comp  = ev["competitions"][0]
+                comps = comp["competitors"]
+                state = ev.get("status",{}).get("type",{}).get("state","")
+                if state != "post": continue
+                hc = next((c for c in comps if c["homeAway"]=="home"), None)
+                ac = next((c for c in comps if c["homeAway"]=="away"), None)
+                if not hc or not ac: continue
+                hn = hc["team"]["displayName"]; an = ac["team"]["displayName"]
+                if pick["home"][:8].lower() not in hn.lower(): continue
+                gh = parse_score(hc.get("score",0)); ga = parse_score(ac.get("score",0))
+                # Determinar resultado
+                pick_txt = pick["pick"].lower()
+                if "local" in pick_txt or "home" in pick_txt or pick["home"][:6].lower() in pick_txt:
+                    won = gh > ga
+                elif "visita" in pick_txt or "away" in pick_txt or pick["away"][:6].lower() in pick_txt:
+                    won = ga > gh
+                elif "over 2.5" in pick_txt:
+                    won = (gh+ga) > 2
+                elif "ambos" in pick_txt or "btts" in pick_txt:
+                    won = gh > 0 and ga > 0
+                elif "empate" in pick_txt:
+                    won = gh == ga
+                else:
+                    continue
+                st.session_state["pick_history"][i]["result"] = "✅" if won else "❌"
+                st.session_state["pick_history"][i]["score"]  = f"{gh}-{ga}"
+                updated += 1
+                break
+        except: continue
+    return updated
+
+# ══════════════════════════════════════════════════════════
 # HISTORIAL DE PICKS (session state)
 # ══════════════════════════════════════════════════════════
 def init_history():
@@ -794,7 +998,17 @@ if st.session_state["view"] == "cartelera":
     # ─── TAB HISTORIAL ───────────────────────────────────
     with tab6:
         st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
-        st.markdown("<div style='color:#555;font-size:.82rem;margin-bottom:12px'>Abre un partido → click en 💾 Guardar Pick → marca ✅ o ❌ cuando termine</div>", unsafe_allow_html=True)
+        col_a, col_b = st.columns([3,1])
+        with col_a:
+            st.markdown("<div style='color:#555;font-size:.82rem;margin-bottom:4px'>Abre un partido → click en 💾 Guardar Pick → marca ✅ o ❌ cuando termine</div>", unsafe_allow_html=True)
+        with col_b:
+            if st.button("🔄 Auto-actualizar", use_container_width=True, help="Revisa ESPN y actualiza resultados automáticamente"):
+                with st.spinner("Revisando resultados..."):
+                    n = auto_track_picks()
+                if n > 0:
+                    st.success(f"✅ {n} pick(s) actualizados")
+                else:
+                    st.info("No hay resultados nuevos aún")
         render_history()
 
 # ══════════════════════════════════════════════════════════
@@ -966,8 +1180,8 @@ else:
                     f"</div>"
                     f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec} · Último: hace {days_since(form)}d</div>"
                     f"</div>",unsafe_allow_html=True)
+                render_form_chart(form, tname, color)
             else:
-                # Sin historial ESPN — mostrar solo récord de temporada
                 try:
                     rw,rd,rl = map(int, rec.split("-"))
                     rn = rw+rd+rl
@@ -999,6 +1213,11 @@ else:
                         f"<span>{loc} {r['opponent'][:18]}</span>"
                         f"<span style='color:{rc};font-weight:700'>{r['gf']}-{r['gc']} ({r['result']})</span></div>",
                         unsafe_allow_html=True)
+
+    # ── ODDS COMPARISON ──
+    with st.spinner("Buscando cuotas..."):
+        real_odds = get_real_odds(g["home"], g["away"], g["slug"])
+    render_odds_comparison(g["home"], g["away"], dp, mc, real_odds)
 
     # ── H2H ──
     st.markdown("<div class='shdr'>⚔️ Head to Head</div>",unsafe_allow_html=True)
