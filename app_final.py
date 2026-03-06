@@ -96,26 +96,7 @@ p,span,div,label,li,td,th,small,strong,em,b,h1,h2,h3,h4,
 .conf-pill{border-radius:20px;padding:4px 12px;font-size:.78rem;font-weight:700;display:inline-block;margin:2px}
 .stand-row{display:grid;grid-template-columns:28px 1fr 36px 36px 36px 36px 50px;gap:6px;
   align-items:center;padding:8px 4px;border-bottom:1px solid #151530;font-size:.85rem}
-/* ── LOADING SPINNER ── */
-.gl-loader-overlay{position:fixed;top:0;left:0;width:100%;height:100%;
-  background:#07071acc;backdrop-filter:blur(4px);z-index:9999;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  opacity:0;pointer-events:none;transition:opacity .3s}
-.gl-loader-overlay.show{opacity:1;pointer-events:all}
-.gl-loader-track{display:flex;gap:18px;align-items:center;margin-bottom:20px}
-.gl-loader-ball{font-size:2.4rem;animation:glBounce 1.1s ease-in-out infinite}
-.gl-loader-ball:nth-child(1){animation-delay:0s}
-.gl-loader-ball:nth-child(2){animation-delay:.18s}
-.gl-loader-ball:nth-child(3){animation-delay:.36s}
-.gl-loader-ball:nth-child(4){animation-delay:.54s}
-.gl-loader-ball:nth-child(5){animation-delay:.72s}
-@keyframes glBounce{
-  0%,100%{transform:translateY(0) scale(1);opacity:.4}
-  50%{transform:translateY(-22px) scale(1.15);opacity:1}
-}
-.gl-loader-text{color:#FFD700;font-size:1rem;font-weight:700;letter-spacing:.12em;
-  text-transform:uppercase;animation:glPulse 1.5s ease-in-out infinite}
-@keyframes glPulse{0%,100%{opacity:.5}50%{opacity:1}}
+/* loader lives in iframe component — no CSS needed here */
 /* ── MOBILE ── */
 @media(max-width:768px){
   /* Header */
@@ -157,84 +138,110 @@ p,span,div,label,li,td,th,small,strong,em,b,h1,h2,h3,h4,
     white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:58vw!important}
   /* Full width containers */
   section[data-testid="stMain"] .block-container{padding:0.5rem 0.6rem 2rem!important}
-  /* Loading balls smaller */
-  .gl-loader-ball{font-size:1.8rem!important}
-  .gl-loader-track{gap:12px!important}
 }
 </style>""", unsafe_allow_html=True)
 
-# ── Loading animation HTML ──
-st.markdown("""
-<div class="gl-loader-overlay" id="glLoader">
-  <div class="gl-loader-track">
-    <span class="gl-loader-ball">⚽</span>
-    <span class="gl-loader-ball">🎾</span>
-    <span class="gl-loader-ball">🪙</span>
-    <span class="gl-loader-ball">🏀</span>
-    <span class="gl-loader-ball">🎰</span>
-  </div>
-  <div class="gl-loader-text">Cargando picks...</div>
-</div>
+# ── Loading animation — inyectada via components para que el JS se ejecute ──
+# st.markdown bloquea <script>; st.components.v1.html() vive en iframe
+# Solución: meter el overlay en el DOM padre via postMessage + JS en iframe
+import streamlit.components.v1 as _components
+_components.html("""<!DOCTYPE html>
+<html><head><style>
+  body{margin:0;padding:0;background:transparent;overflow:hidden}
+</style></head>
+<body>
 <script>
 (function(){
-  var loader = document.getElementById('glLoader');
-  if(!loader) return;
+  // Este iframe se ejecuta dentro de Streamlit.
+  // Inyectamos el overlay y su lógica en el documento PADRE.
+  var css = [
+    '.gl-overlay{position:fixed;top:0;left:0;width:100%;height:100%;',
+    'background:rgba(5,5,20,.82);backdrop-filter:blur(6px);z-index:99999;',
+    'display:flex;flex-direction:column;align-items:center;justify-content:center;',
+    'opacity:0;pointer-events:none;transition:opacity .25s}',
+    '.gl-overlay.show{opacity:1;pointer-events:all}',
+    '.gl-track{display:flex;gap:18px;align-items:center;margin-bottom:18px}',
+    '.gl-ball{font-size:2.4rem;animation:glB 1.1s ease-in-out infinite}',
+    '.gl-ball:nth-child(1){animation-delay:0s}',
+    '.gl-ball:nth-child(2){animation-delay:.18s}',
+    '.gl-ball:nth-child(3){animation-delay:.36s}',
+    '.gl-ball:nth-child(4){animation-delay:.54s}',
+    '.gl-ball:nth-child(5){animation-delay:.72s}',
+    '@keyframes glB{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}',
+    '.gl-txt{color:#FFD700;font-size:1rem;font-weight:700;letter-spacing:.12em;',
+    'animation:glP 1.4s ease-in-out infinite}',
+    '@keyframes glP{0%,100%{opacity:1}50%{opacity:.4}}'
+  ].join('');
+
+  var p = window.parent;
+  if(!p || p === window) return;
+  var pd = p.document;
+
+  // Inject CSS
+  if(!pd.getElementById('gl-style')){
+    var s = pd.createElement('style');
+    s.id = 'gl-style'; s.textContent = css;
+    pd.head.appendChild(s);
+  }
+
+  // Inject overlay div
+  var overlay = pd.getElementById('gl-overlay');
+  if(!overlay){
+    overlay = pd.createElement('div');
+    overlay.id = 'gl-overlay';
+    overlay.className = 'gl-overlay';
+    overlay.innerHTML = '<div class="gl-track">'
+      + '<span class="gl-ball">⚽</span>'
+      + '<span class="gl-ball">🎾</span>'
+      + '<span class="gl-ball">🪙</span>'
+      + '<span class="gl-ball">🏀</span>'
+      + '<span class="gl-ball">🎰</span>'
+      + '</div><div class="gl-txt">Cargando picks...</div>';
+    pd.body.appendChild(overlay);
+  }
 
   var showing = false;
   var hideTimer = null;
 
   function show(){
-    if(!showing){ showing=true; loader.classList.add('show'); }
+    if(!showing){ showing=true; overlay.classList.add('show'); }
     clearTimeout(hideTimer);
-    // seguro: ocultar después de 8s si algo falla
-    hideTimer = setTimeout(hide, 8000);
+    hideTimer = setTimeout(hide, 9000); // failsafe
   }
   function hide(){
-    if(showing){ showing=false; loader.classList.remove('show'); }
+    if(showing){ showing=false; overlay.classList.remove('show'); }
     clearTimeout(hideTimer);
   }
 
-  // ── Estrategia: escuchar clicks en botones de Streamlit ──
-  // Streamlit re-renderiza el DOM entero en cada rerun;
-  // usamos delegación en document para capturar todo.
-  document.addEventListener('click', function(e){
+  // Click en cualquier botón del padre = show loader
+  pd.addEventListener('click', function(e){
     var btn = e.target.closest('button');
-    if(!btn) return;
-    // Ignorar clicks dentro del loader mismo
-    if(btn.closest('#glLoader')) return;
+    if(!btn || btn.closest('#gl-overlay')) return;
     show();
   }, true);
 
-  // ── Estrategia 2: detectar cuando Streamlit termina via WebSocket ──
-  // Streamlit manda mensajes por websocket; cuando el DOM deja de
-  // cambiar por 600ms asumimos que terminó.
+  // MutationObserver en padre: cuando el DOM deja de cambiar 700ms = hide
   var domTimer = null;
   var obs = new MutationObserver(function(muts){
-    var real = muts.some(function(m){
-      return !m.target.closest('#glLoader') && m.addedNodes.length > 0;
+    var sig = muts.some(function(m){
+      return m.target.id !== 'gl-overlay' && !m.target.closest('#gl-overlay') && m.addedNodes.length > 0;
     });
-    if(!real) return;
+    if(!sig) return;
     clearTimeout(domTimer);
-    // Mientras haya mutaciones el run sigue
-    domTimer = setTimeout(function(){
-      // Sin cambios en 700ms = run terminó
-      hide();
-    }, 700);
+    domTimer = setTimeout(hide, 700);
   });
 
   function boot(){
-    var root = document.querySelector('[data-testid="stAppViewContainer"]') || document.body;
+    var root = pd.querySelector('[data-testid="stAppViewContainer"]') || pd.body;
     obs.observe(root, {childList:true, subtree:true});
   }
 
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    setTimeout(boot, 400);
-  }
+  pd.readyState === 'loading'
+    ? pd.addEventListener('DOMContentLoaded', boot)
+    : setTimeout(boot, 300);
 })();
 </script>
-""", unsafe_allow_html=True)
+</body></html>""", height=0, scrolling=False)
 
 NBA_ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 TEN_ESPN = "https://site.api.espn.com/apis/site/v2/sports/tennis"
