@@ -275,7 +275,7 @@ def get_standings(slug):
 # ══════════════════════════════════════════════════════════
 # ODDS API — The Odds API (gratis 500 req/mes)
 # ══════════════════════════════════════════════════════════
-ODDS_API_KEY = ""  # Pon tu key de https://the-odds-api.com (gratis)
+ODDS_API_KEY = "fcd1d66114bf43935dfb7b53e7433994"  # Pon tu key de https://the-odds-api.com (gratis)
 BOOKMAKERS   = ["bet365","pinnacle","unibet","williamhill"]
 
 @st.cache_data(ttl=300, show_spinner=False)
