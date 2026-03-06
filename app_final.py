@@ -823,10 +823,26 @@ def get_tennis_cartelera():
     dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(0,5)]
     hoy = now.strftime("%Y-%m-%d")
     matches, seen = [], set()
+    # ESPN tenis — torneo activo: BNP Paribas Open Indian Wells (ID 411)
+    # La API de ESPN para tenis usa el endpoint de resultados del torneo
+    base = "https://site.api.espn.com/apis/site/v2/sports"
+    tour_slugs = [
+        ("ATP", "tennis/atp-tennis"),
+        ("WTA", "tennis/wta-tennis"),
+    ]
+    # También intentar con el endpoint del torneo directo
+    torneo_urls = [
+        ("ATP", f"{base}/tennis/atp-tennis/scoreboard"),
+        ("WTA", f"{base}/tennis/wta-tennis/scoreboard"),
+        ("ATP", f"https://site.web.api.espn.com/apis/site/v2/sports/tennis/atp-tennis/scoreboard"),
+        ("WTA", f"https://site.web.api.espn.com/apis/site/v2/sports/tennis/wta-tennis/scoreboard"),
+    ]
     for ds in dates:
-        for tour, tour_slug in [("ATP","atp-tennis"),("WTA","wta-tennis")]:
-            data = eg(f"{TEN_ESPN}/{tour_slug}/scoreboard", {"dates":ds,"limit":100})
-            for ev in data.get("events",[]):
+        for tour, url in torneo_urls:
+            data = eg(url, {"dates": ds, "limit": 100})
+            evs = data.get("events", [])
+            if not evs: continue
+            for ev in evs:
                 eid = ev.get("id","")
                 if eid in seen: continue
                 seen.add(eid)
@@ -995,6 +1011,11 @@ if st.session_state["view"] == "cartelera":
         st.markdown("<div class='shdr'>🎾 Tenis ATP / WTA</div>", unsafe_allow_html=True)
         if not ten_matches:
             st.info("No hay partidos de tenis disponibles.")
+            slug_ok = st.session_state.get("tennis_slug_ok","ninguno")
+            st.markdown(f"<div style='color:#333;font-size:.75rem'>Debug: slug activo = {slug_ok}</div>", unsafe_allow_html=True)
+        else:
+            slug_ok = st.session_state.get("tennis_slug_ok","?")
+            st.markdown(f"<div style='color:#333;font-size:.72rem'>Fuente: {slug_ok}</div>", unsafe_allow_html=True)
         from collections import defaultdict
         ten_por_fecha = defaultdict(lambda: defaultdict(list))
         for m in ten_matches: ten_por_fecha[m["fecha"]][m["tour"]].append(m)
