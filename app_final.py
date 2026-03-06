@@ -96,23 +96,106 @@ p,span,div,label,li,td,th,small,strong,em,b,h1,h2,h3,h4,
 .conf-pill{border-radius:20px;padding:4px 12px;font-size:.78rem;font-weight:700;display:inline-block;margin:2px}
 .stand-row{display:grid;grid-template-columns:28px 1fr 36px 36px 36px 36px 50px;gap:6px;
   align-items:center;padding:8px 4px;border-bottom:1px solid #151530;font-size:.85rem}
+/* ── LOADING SPINNER ── */
+.gl-loader-overlay{position:fixed;top:0;left:0;width:100%;height:100%;
+  background:#07071acc;backdrop-filter:blur(4px);z-index:9999;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .3s}
+.gl-loader-overlay.show{opacity:1;pointer-events:all}
+.gl-loader-track{display:flex;gap:18px;align-items:center;margin-bottom:20px}
+.gl-loader-ball{font-size:2.4rem;animation:glBounce 1.1s ease-in-out infinite}
+.gl-loader-ball:nth-child(1){animation-delay:0s}
+.gl-loader-ball:nth-child(2){animation-delay:.18s}
+.gl-loader-ball:nth-child(3){animation-delay:.36s}
+.gl-loader-ball:nth-child(4){animation-delay:.54s}
+.gl-loader-ball:nth-child(5){animation-delay:.72s}
+@keyframes glBounce{
+  0%,100%{transform:translateY(0) scale(1);opacity:.4}
+  50%{transform:translateY(-22px) scale(1.15);opacity:1}
+}
+.gl-loader-text{color:#FFD700;font-size:1rem;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;animation:glPulse 1.5s ease-in-out infinite}
+@keyframes glPulse{0%,100%{opacity:.5}50%{opacity:1}}
 /* ── MOBILE ── */
 @media(max-width:768px){
-  .diamond-hero{padding:18px 16px!important}
-  .diamond-hero::before{font-size:3rem!important;opacity:.06!important}
-  .mval{font-size:1.4rem!important}
-  .mlbl{font-size:.65rem!important}
-  .mbox{padding:10px 6px!important}
-  .acard{padding:14px 12px!important}
-  .parlay-hero{padding:16px 14px!important}
-  .trilay-card{padding:14px 12px!important}
-  .pato-card{padding:12px 10px!important}
-  .shdr{font-size:.72rem!important;letter-spacing:.08em!important}
-  .stTabs [data-baseweb="tab"]{padding:8px 8px!important;font-size:.78rem!important}
-  [data-testid="column"]{min-width:0!important}
-  .stand-row{grid-template-columns:22px 1fr 28px 28px 28px 28px 42px!important;font-size:.75rem!important}
+  /* Header */
+  div[style*="2.8rem"]{font-size:1.9rem!important}
+  div[style*="letter-spacing:.15em"]{font-size:.65rem!important;letter-spacing:.08em!important}
+  /* Cards */
+  .diamond-hero{padding:14px 12px!important}
+  .diamond-hero::before{font-size:2.5rem!important;opacity:.05!important;right:10px!important;top:10px!important}
+  .parlay-hero{padding:14px 12px!important}
+  .trilay-card{padding:12px 10px!important}
+  .pato-card{padding:10px 8px!important}
+  .pato-hero{padding:14px 12px!important}
+  .acard{padding:12px 10px!important}
+  .mrow{padding:10px 12px!important}
+  .bot-card{padding:14px 12px!important}
+  /* Metric boxes */
+  .mval{font-size:1.2rem!important}
+  .mlbl{font-size:.6rem!important}
+  .mbox{padding:8px 4px!important}
+  /* Headers */
+  .shdr{font-size:.68rem!important;letter-spacing:.06em!important}
+  /* Tabs — scroll horizontal */
+  .stTabs [data-baseweb="tab-list"]{overflow-x:auto!important;flex-wrap:nowrap!important;
+    -webkit-overflow-scrolling:touch!important;gap:0!important;
+    scrollbar-width:none!important}
+  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar{display:none!important}
+  .stTabs [data-baseweb="tab"]{padding:8px 10px!important;font-size:.72rem!important;
+    white-space:nowrap!important;min-width:auto!important;flex-shrink:0!important}
+  /* Columns no overflow */
+  [data-testid="column"]{min-width:0!important;overflow:hidden!important}
+  /* Sport selector buttons */
+  .stButton>button{padding:8px 6px!important;font-size:.8rem!important}
+  /* Standings */
+  .stand-row{grid-template-columns:18px 1fr 26px 26px 26px 26px 38px!important;font-size:.7rem!important;padding:6px 2px!important}
+  /* Expanders */
+  .streamlit-expanderHeader{padding:10px 14px!important;font-size:.85rem!important}
+  /* Text overflow */
+  .mrow div[style*="font-weight:700"]{font-size:.88rem!important;
+    white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:58vw!important}
+  /* Full width containers */
+  section[data-testid="stMain"] .block-container{padding:0.5rem 0.6rem 2rem!important}
+  /* Loading balls smaller */
+  .gl-loader-ball{font-size:1.8rem!important}
+  .gl-loader-track{gap:12px!important}
 }
 </style>""", unsafe_allow_html=True)
+
+# ── Loading animation HTML ──
+st.markdown("""
+<div class="gl-loader-overlay" id="glLoader">
+  <div class="gl-loader-track">
+    <span class="gl-loader-ball">⚽</span>
+    <span class="gl-loader-ball">🎾</span>
+    <span class="gl-loader-ball">🪙</span>
+    <span class="gl-loader-ball">🏀</span>
+    <span class="gl-loader-ball">🎰</span>
+  </div>
+  <div class="gl-loader-text">Cargando picks...</div>
+</div>
+<script>
+(function(){
+  // Mostrar loader cuando Streamlit está cargando
+  var loader = document.getElementById('glLoader');
+  if(!loader) return;
+  // Observar cambios en el DOM para detectar re-runs
+  var lastRunning = false;
+  function checkRunning(){
+    var spinner = document.querySelector('[data-testid="stStatusWidget"]');
+    var running = spinner && spinner.innerText && spinner.innerText.includes('Running');
+    if(running && !lastRunning){
+      loader.classList.add('show');
+    } else if(!running && lastRunning){
+      loader.classList.remove('show');
+    }
+    lastRunning = !!running;
+  }
+  setInterval(checkRunning, 200);
+})();
+</script>
+""", unsafe_allow_html=True)
 
 NBA_ESPN = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
 TEN_ESPN = "https://site.api.espn.com/apis/site/v2/sports/tennis"
@@ -893,29 +976,35 @@ for k,v in [("view","cartelera"),("sel",None)]:
 # HEADER
 # ══════════════════════════════════════════════════════════
 st.markdown("""
-<div style='text-align:center;padding:24px 0 8px'>
-  <div style='font-family:Rajdhani,sans-serif;font-size:2.8rem;font-weight:900;
+<div style='text-align:center;padding:16px 0 6px'>
+  <div style='font-family:Rajdhani,sans-serif;font-size:clamp(1.6rem,6vw,2.8rem);font-weight:900;
     background:linear-gradient(135deg,#7c00ff,#00ccff,#FFD700);
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:.06em'>
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:.06em;line-height:1.1'>
     THE GAMBLERS LAYER
   </div>
-  <div style='color:#333!important;font-size:.8rem;letter-spacing:.15em;margin-top:4px'>
+  <div style='color:#555!important;font-size:clamp(.6rem,.9vw,.8rem);letter-spacing:.12em;margin-top:4px'>
     PICKS · PARLAY · TRILAY · PATO · TELEGRAM BOT
   </div>
 </div>""", unsafe_allow_html=True)
 
 # ── Sport selector ──
+st.markdown("""
+<style>
+@media(max-width:480px){
+  div[data-testid="stHorizontalBlock"] .stButton>button{font-size:.72rem!important;padding:8px 2px!important}
+}
+</style>""", unsafe_allow_html=True)
 sp1,sp2,sp3 = st.columns(3)
 with sp1:
     if st.button("⚽ Fútbol", use_container_width=True,
                  type="primary" if st.session_state.get("sport","futbol")=="futbol" else "secondary"):
         st.session_state["sport"]="futbol"; st.session_state["view"]="cartelera"; st.rerun()
 with sp2:
-    if st.button("🎾 Tenis ATP/WTA", use_container_width=True,
+    if st.button("🎾 Tenis", use_container_width=True,
                  type="primary" if st.session_state.get("sport","futbol")=="tenis" else "secondary"):
         st.session_state["sport"]="tenis"; st.session_state["view"]="cartelera"; st.rerun()
 with sp3:
-    if st.button("🏀 NBA Over/Under", use_container_width=True,
+    if st.button("🏀 NBA", use_container_width=True,
                  type="primary" if st.session_state.get("sport","futbol")=="nba" else "secondary"):
         st.session_state["sport"]="nba"; st.session_state["view"]="cartelera"; st.rerun()
 
@@ -950,90 +1039,178 @@ if st.session_state["view"] == "cartelera":
 
     # ─── NBA ─────────────────────────────────────────────
     if deporte == "nba":
-        st.markdown("<div class='shdr'>🏀 NBA — Over / Under</div>", unsafe_allow_html=True)
-        if not nba_games:
-            st.info("No hay juegos NBA hoy.")
-        from collections import defaultdict
-        nba_por_fecha = defaultdict(list)
-        for g in nba_games: nba_por_fecha[g["fecha"]].append(g)
-        def fecha_label_nba(f):
-            try:
-                d=datetime.strptime(f,"%Y-%m-%d")
-                dias=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
-                meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-                return f"🏀 {dias[d.weekday()]} {d.day} {meses[d.month]}"
-            except: return f
-        for fi, fecha in enumerate(sorted(nba_por_fecha.keys())):
-            gs = nba_por_fecha[fecha]
-            label = f"{fecha_label_nba(fecha)}  ·  {len(gs)} juegos"
-            with st.expander(label, expanded=(fi==0)):
-                for g in gs:
-                    live = g["state"]=="in"
-                    sc   = f"{g['score_h']}-{g['score_a']}" if live else g["hora"]
-                    ou   = f" · Línea {g['ou_line']}" if g["ou_line"]>0 else ""
-                    lbl  = f"{'🔴 ' if live else '🏀 '}{g['away']} @ {g['home']}  ·  {sc}{ou}"
-                    if st.button(lbl, key=f"nba_{g['id']}", use_container_width=True):
-                        with st.spinner("Calculando..."):
-                            res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
-                        rec_color = "#ff4444" if "OVER" in res["rec"] else ("#00ccff" if "UNDER" in res["rec"] else "#555")
-                        st.markdown(
-                            f"<div class='acard' style='border-color:{rec_color}'>"
-                            f"<div style='font-size:1.4rem;font-weight:900;color:{rec_color};margin-bottom:12px'>"
-                            f"📊 {res['rec']}</div>"
-                            f"<div style='display:flex;gap:10px;flex-wrap:wrap'>"
-                            f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{res['p_over']*100:.1f}%</div><div class='mlbl'>🔥 Over {res['line']}</div></div>"
-                            f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{res['p_under']*100:.1f}%</div><div class='mlbl'>❄️ Under {res['line']}</div></div>"
-                            f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{res['proj']}</div><div class='mlbl'>Proyección pts</div></div>"
-                            f"</div></div>", unsafe_allow_html=True)
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick"])
+        with tab1:
+            st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
+            if not nba_games:
+                st.info("No hay juegos NBA hoy.")
+            from collections import defaultdict
+            nba_por_fecha = defaultdict(list)
+            for g in nba_games: nba_por_fecha[g["fecha"]].append(g)
+            def fecha_label_nba(f):
+                try:
+                    d=datetime.strptime(f,"%Y-%m-%d")
+                    dias=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+                    meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+                    return f"🏀 {dias[d.weekday()]} {d.day} {meses[d.month]}"
+                except: return f
+            for fi, fecha in enumerate(sorted(nba_por_fecha.keys())):
+                gs = nba_por_fecha[fecha]
+                with st.expander(f"{fecha_label_nba(fecha)}  ·  {len(gs)} juegos", expanded=(fi==0)):
+                    for g in gs:
+                        live = g["state"]=="in"
+                        sc   = f"{g['score_h']}-{g['score_a']}" if live else g["hora"]
+                        ou   = f" · Línea {g['ou_line']}" if g["ou_line"]>0 else ""
+                        lbl  = f"{'🔴 ' if live else '🏀 '}{g['away']} @ {g['home']}  ·  {sc}{ou}"
+                        if st.button(lbl, key=f"nba_{g['id']}", use_container_width=True):
+                            with st.spinner("🤖 IA analizando partido..."):
+                                res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                                ai_prompt = (
+                                    f"Eres analista NBA experto. Analiza:\n"
+                                    f"{g['away']} @ {g['home']}\n"
+                                    f"Proy total: {res['proj']} pts | Línea O/U: {res['line']}\n"
+                                    f"P(Over)={res['p_over']*100:.1f}% P(Under)={res['p_under']*100:.1f}%\n\n"
+                                    f"Responde en español, máximo 4 líneas:\n"
+                                    f"1. ¿Over o Under? razón principal\n"
+                                    f"2. ¿ML quién gana? (local tiene ventaja)\n"
+                                    f"3. Confianza: Alta/Media/Baja"
+                                )
+                                ai_txt = ""
+                                try:
+                                    ai_r = requests.post("https://api.anthropic.com/v1/messages",
+                                        headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+                                        json={"model":"claude-sonnet-4-20250514","max_tokens":300,
+                                              "messages":[{"role":"user","content":ai_prompt}]},timeout=15)
+                                    ai_txt = ai_r.json()["content"][0]["text"]
+                                except: ai_txt = ""
+                            rec_color = "#ff4444" if "OVER" in res["rec"] else ("#00ccff" if "UNDER" in res["rec"] else "#555")
+                            st.markdown(
+                                f"<div class='acard' style='border-color:{rec_color}'>"
+                                f"<div style='font-size:1.4rem;font-weight:900;color:{rec_color};margin-bottom:12px'>📊 {res['rec']}</div>"
+                                f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'>"
+                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{res['p_over']*100:.1f}%</div><div class='mlbl'>🔥 Over {res['line']}</div></div>"
+                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{res['p_under']*100:.1f}%</div><div class='mlbl'>❄️ Under {res['line']}</div></div>"
+                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{res['proj']}</div><div class='mlbl'>Proyección pts</div></div>"
+                                f"</div>"
+                                + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;border-left:3px solid #7c00ff;font-size:.88rem;line-height:1.6'>"
+                                   f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
+                                + f"</div>", unsafe_allow_html=True)
+        with tab2:
+            st.info("El TRILAY multi-deporte está en ⚽ Fútbol → TRILAY.")
+        with tab3:
+            st.info("PATO es exclusivo de fútbol (Under 4.5 goles).")
+        with tab4:
+            st.markdown("<div class='shdr'>🎯 Picks NBA del Día</div>", unsafe_allow_html=True)
+            with st.spinner("Calculando..."):
+                nba_picks = []
+                for g in nba_games[:20]:
+                    if g["state"]!="pre": continue
+                    res = nba_ou_model(g["home_id"],g["away_id"],g["ou_line"])
+                    best_p = max(res["p_over"],res["p_under"])
+                    best_m = f"🔥 Over {res['line']}" if res["p_over"]>res["p_under"] else f"❄️ Under {res['line']}"
+                    if best_p-0.5 > 0.04:
+                        conf = "💎 DIAMANTE" if best_p>0.65 else ("🔥 ALTA" if best_p>0.58 else "⚡ MEDIA")
+                        nba_picks.append({"home":g["home"],"away":g["away"],"hora":g["hora"],"pick":best_m,"prob":best_p,"conf":conf})
+                nba_picks.sort(key=lambda x:-x["prob"])
+            for p in nba_picks:
+                cc = "#FFD700" if "DIAMANTE" in p["conf"] else ("#00ff88" if "ALTA" in p["conf"] else "#aaa")
+                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'><div><div style='font-weight:700'>{p['away']} @ {p['home']}</div><div style='color:#555;font-size:.78rem'>NBA · {p['hora']}</div><div style='margin-top:4px;color:#00ccff;font-weight:700'>{p['pick']}</div></div><div style='text-align:right'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div><div style='font-size:.72rem;color:{cc}'>{p['conf']}</div></div></div>",unsafe_allow_html=True)
+        with tab5:
+            st.info("Bot configurado en ⚽ Fútbol → Bot.")
+        with tab6:
+            st.info("Historial en ⚽ Fútbol → Historial.")
+        with tab7:
+            st.info("Calificador en ⚽ Fútbol → Califica tu Pick.")
 
     # ─── TENIS ───────────────────────────────────────────
     elif deporte == "tenis":
-        st.markdown("<div class='shdr'>🎾 Tenis ATP / WTA</div>", unsafe_allow_html=True)
-        if not ten_matches:
-            st.info("No hay partidos ATP/WTA disponibles para estas fechas.")
-        from collections import defaultdict
-        ten_por_fecha = defaultdict(lambda: defaultdict(list))
-        for m in ten_matches: ten_por_fecha[m["fecha"]][m["tour"]].append(m)
-        def fecha_label_ten(f):
-            try:
-                d=datetime.strptime(f,"%Y-%m-%d")
-                dias=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
-                meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-                return f"🎾 {dias[d.weekday()]} {d.day} {meses[d.month]}"
-            except: return f
-        for fi, fecha in enumerate(sorted(ten_por_fecha.keys())):
-            total_ms = sum(len(v) for v in ten_por_fecha[fecha].values())
-            label = f"{fecha_label_ten(fecha)}  ·  {total_ms} partidos"
-            with st.expander(label, expanded=(fi==0)):
-                for tour in ["ATP","WTA"]:
-                    ms = ten_por_fecha[fecha].get(tour,[])
-                    if not ms: continue
-                    st.markdown(f"<div class='shdr'>{tour} 🎾</div>", unsafe_allow_html=True)
-                    for m in ms:
-                        tm = tennis_model(m["rank1"], m["rank2"], m["odd_1"], m["odd_2"])
-                        fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
-                        fav_p = tm["p1"] if tm["p1"]>=tm["p2"] else tm["p2"]
-                        conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
-                        r1 = f"#{m['rank1']}" if m["rank1"]<900 else "?"
-                        r2 = f"#{m['rank2']}" if m["rank2"]<900 else "?"
-                        st.markdown(
-                            f"<div class='mrow'>"
-                            f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
-                            f"<div>"
-                            f"<div style='font-weight:700'>{m['p1']} <span style='color:#555;font-size:.8rem'>{r1}</span>"
-                            f" vs {m['p2']} <span style='color:#555;font-size:.8rem'>{r2}</span></div>"
-                            f"<div style='color:#555;font-size:.78rem'>{m['torneo']} · {m['hora']} CDMX</div>"
-                            f"</div>"
-                            f"<div style='text-align:right'>"
-                            f"<div style='font-weight:900;color:{conf_color}'>{fav_p*100:.0f}% — {fav[:12]}</div>"
-                            f"<div style='font-size:.75rem;color:#555'>{tm['conf']}</div>"
-                            f"</div></div>"
-                            f"<div style='display:flex;gap:8px;margin-top:8px;flex-wrap:wrap'>"
-                            f"<span style='font-size:.8rem;color:#aaa'>P1: {tm['p1']*100:.0f}%</span>"
-                            f"<span style='font-size:.8rem;color:#aaa'>P2: {tm['p2']*100:.0f}%</span>"
-                            + (f"<span style='font-size:.8rem;color:#00ff88'>Edge P1: +{tm['edge_1']*100:.1f}%</span>" if tm["edge_1"]>0.05 else "")
-                            + (f"<span style='font-size:.8rem;color:#00ff88'>Edge P2: +{tm['edge_2']*100:.1f}%</span>" if tm["edge_2"]>0.05 else "")
-                            + f"</div></div>", unsafe_allow_html=True)
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick"])
+        with tab1:
+            st.markdown("<div class='shdr'>🎾 Tenis ATP / WTA</div>", unsafe_allow_html=True)
+            if not ten_matches:
+                st.info("No hay partidos ATP/WTA disponibles para estas fechas.")
+            from collections import defaultdict
+            ten_por_fecha = defaultdict(lambda: defaultdict(list))
+            for m in ten_matches: ten_por_fecha[m["fecha"]][m["tour"]].append(m)
+            def fecha_label_ten(f):
+                try:
+                    d=datetime.strptime(f,"%Y-%m-%d")
+                    dias=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+                    meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+                    return f"🎾 {dias[d.weekday()]} {d.day} {meses[d.month]}"
+                except: return f
+            for fi, fecha in enumerate(sorted(ten_por_fecha.keys())):
+                total_ms = sum(len(v) for v in ten_por_fecha[fecha].values())
+                with st.expander(f"{fecha_label_ten(fecha)}  ·  {total_ms} partidos", expanded=(fi==0)):
+                    for tour in ["ATP","WTA"]:
+                        ms = ten_por_fecha[fecha].get(tour,[])
+                        if not ms: continue
+                        st.markdown(f"<div class='shdr'>{tour} 🎾</div>", unsafe_allow_html=True)
+                        for m in ms:
+                            tm = tennis_model(m["rank1"], m["rank2"], m["odd_1"], m["odd_2"])
+                            fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
+                            fav_p = max(tm["p1"],tm["p2"])
+                            conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
+                            if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']} CDMX", key=f"ten_{m['id']}", use_container_width=True):
+                                with st.spinner("🤖 IA analizando..."):
+                                    ai_prompt = (
+                                        f"Analista tenis experto. Partido ATP/WTA:\n"
+                                        f"Torneo: {m['torneo']}\n"
+                                        f"{m['p1']} (rank #{m['rank1'] if m['rank1']<900 else '?'}) vs {m['p2']} (rank #{m['rank2'] if m['rank2']<900 else '?'})\n"
+                                        f"Momios: {m['odd_1'] if m['odd_1']>1 else 'N/D'} / {m['odd_2'] if m['odd_2']>1 else 'N/D'}\n"
+                                        f"Modelo: {m['p1']}={tm['p1']*100:.0f}%  {m['p2']}={tm['p2']*100:.0f}%\n\n"
+                                        f"Responde en español, máximo 4 líneas:\n"
+                                        f"1. ML: quién gana y por qué (ranking/superficie/forma)\n"
+                                        f"2. ¿Hay valor en los momios?\n"
+                                        f"3. Confianza: Alta/Media/Baja"
+                                    )
+                                    ai_txt = ""
+                                    try:
+                                        ai_r = requests.post("https://api.anthropic.com/v1/messages",
+                                            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+                                            json={"model":"claude-sonnet-4-20250514","max_tokens":300,
+                                                  "messages":[{"role":"user","content":ai_prompt}]},timeout=15)
+                                        ai_txt = ai_r.json()["content"][0]["text"]
+                                    except: ai_txt = ""
+                                st.markdown(
+                                    f"<div class='acard' style='border-color:{conf_color}'>"
+                                    f"<div style='font-weight:900;font-size:1.1rem;color:{conf_color};margin-bottom:10px'>{fav_p*100:.0f}% → {fav}</div>"
+                                    f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
+                                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{tm['p1']*100:.0f}%</div><div class='mlbl'>{m['p1'][:14]}</div></div>"
+                                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{tm['p2']*100:.0f}%</div><div class='mlbl'>{m['p2'][:14]}</div></div>"
+                                    f"</div>"
+                                    + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;border-left:3px solid #7c00ff;font-size:.88rem;line-height:1.6'>"
+                                       f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
+                                    + f"</div>", unsafe_allow_html=True)
+        with tab2:
+            st.info("El TRILAY multi-deporte está en ⚽ Fútbol → TRILAY.")
+        with tab3:
+            st.info("PATO es exclusivo de fútbol.")
+        with tab4:
+            st.markdown("<div class='shdr'>🎯 Picks Tenis del Día</div>", unsafe_allow_html=True)
+            with st.spinner("Calculando..."):
+                ten_picks = []
+                for m in ten_matches:
+                    if m["state"]!="pre": continue
+                    tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"])
+                    best_p = max(tm["p1"],tm["p2"])
+                    fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
+                    best_odd = m["odd_1"] if tm["p1"]>=tm["p2"] else m["odd_2"]
+                    if best_p >= 0.58:
+                        conf = "💎 DIAMANTE" if best_p>0.68 else ("🔥 ALTA" if best_p>0.62 else "⚡ MEDIA")
+                        ten_picks.append({"p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],"torneo":m["torneo"],"pick":f"🎾 {fav} gana","prob":best_p,"odd":best_odd,"conf":conf})
+                ten_picks.sort(key=lambda x:-x["prob"])
+            if not ten_picks: st.info("No hay picks de tenis con valor hoy.")
+            for p in ten_picks:
+                cc = "#FFD700" if "DIAMANTE" in p["conf"] else ("#00ff88" if "ALTA" in p["conf"] else "#aaa")
+                os_ = f"@{p['odd']}" if p["odd"]>1 else ""
+                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'><div><div style='font-weight:700'>{p['p1']} vs {p['p2']}</div><div style='color:#555;font-size:.78rem'>{p['tour']} · {p['torneo']} · {p['hora']}</div><div style='margin-top:4px;color:#00ccff;font-weight:700'>{p['pick']} {os_}</div></div><div style='text-align:right'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div><div style='font-size:.72rem;color:{cc}'>{p['conf']}</div></div></div>",unsafe_allow_html=True)
+        with tab5:
+            st.info("Bot configurado en ⚽ Fútbol → Bot.")
+        with tab6:
+            st.info("Historial en ⚽ Fútbol → Historial.")
+        with tab7:
+            st.info("Calificador en ⚽ Fútbol → Califica tu Pick.")
 
     # ─── FÚTBOL ──────────────────────────────────────────
     else:
@@ -1381,99 +1558,90 @@ if st.session_state["view"] == "cartelera":
             st.markdown("<div class='shdr'>🎓 Califica tu Pick</div>", unsafe_allow_html=True)
             st.markdown(
                 "<div style='color:#555;font-size:.85rem;margin-bottom:16px'>"
-                "Sube un screenshot de tu apuesta y la IA la califica al instante.</div>",
+                "Sube o fotografía tu apuesta y la IA la califica al instante.</div>",
                 unsafe_allow_html=True)
-    
-            uploaded = st.file_uploader("📸 Sube screenshot de tu apuesta",
-                                        type=["png","jpg","jpeg","webp"],
-                                        label_visibility="collapsed")
+
+            # Selector de fuente — galería o cámara
+            src_opt = st.radio("Fuente de imagen", ["📁 Galería / Archivo", "📷 Tomar foto ahora"],
+                               horizontal=True, label_visibility="collapsed")
+
+            uploaded = None
+            if src_opt == "📁 Galería / Archivo":
+                uploaded = st.file_uploader("Sube screenshot de tu apuesta",
+                                            type=["png","jpg","jpeg","webp"],
+                                            label_visibility="collapsed")
+            else:
+                cam = st.camera_input("Apunta la cámara a tu boleto", label_visibility="collapsed")
+                if cam:
+                    uploaded = cam
     
             if uploaded:
                 import base64
                 img_bytes  = uploaded.read()
                 b64        = base64.b64encode(img_bytes).decode()
-                media_type = uploaded.type or "image/jpeg"
-    
-                col_img, col_res = st.columns([1, 1])
-                with col_img:
-                    st.image(img_bytes, caption="Tu apuesta", use_container_width=True)
-    
-                with col_res:
-                    with st.spinner("🔍 Analizando tu pick..."):
-                        try:
-                            resp = requests.post(
-                                "https://api.anthropic.com/v1/messages",
-                                headers={
-                                    "Content-Type": "application/json",
-                                    "x-api-key": ANTHROPIC_API_KEY,
-                                    "anthropic-version": "2023-06-01"
-                                },
-                                json={
-                                    "model": "claude-sonnet-4-20250514",
-                                    "max_tokens": 1000,
-                                    "messages": [{
-                                        "role": "user",
-                                        "content": [
-                                            {
-                                                "type": "image",
-                                                "source": {
-                                                    "type": "base64",
-                                                    "media_type": media_type,
-                                                    "data": b64
-                                                }
-                                            },
-                                            {
-                                                "type": "text",
-                                                "text": """Eres un experto analista de apuestas deportivas. Analiza esta apuesta y responde SOLO en este formato JSON exacto, sin texto extra ni markdown:
-    
-    {
-      "equipos": "Local vs Visitante",
-      "mercado": "tipo de apuesta detectada",
-      "cuota": "cuota si aparece, si no 'N/A'",
-      "calificacion_letra": "A+/A/A-/B+/B/B-/C+/C/C-/D/F",
-      "puntuacion": 85,
-      "veredicto": "✅ Jugada sólida / ⚠️ Riesgosa / ❌ Evitar",
-      "comentario": "Una sola frase directa y honesta sobre esta apuesta, máximo 20 palabras.",
-      "alternativa_mercado": "mercado alternativo más seguro para el mismo partido",
-      "alternativa_razon": "por qué es mejor en máximo 15 palabras"
-    }
-    
-    Criterios de calificación:
-    - A+/A (90-100): Cuota justa o valor positivo, mercado sólido, baja varianza
-    - B (75-89): Apuesta razonable con riesgo moderado
-    - C (60-74): Cuota baja o mercado volátil
-    - D/F (<60): Cuota baja, mercado difícil, o parlay muy largo"""
+                media_type = getattr(uploaded, "type", None) or "image/jpeg"
+
+                # Mostrar imagen arriba, resultado abajo (mejor en móvil)
+                st.image(img_bytes, caption="Tu apuesta", use_container_width=True)
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                with st.spinner("🔍 Analizando tu pick..."):
+                    try:
+                        resp = requests.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={
+                                "Content-Type": "application/json",
+                                "x-api-key": ANTHROPIC_API_KEY,
+                                "anthropic-version": "2023-06-01"
+                            },
+                            json={
+                                "model": "claude-sonnet-4-20250514",
+                                "max_tokens": 1000,
+                                "messages": [{
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "image",
+                                            "source": {
+                                                "type": "base64",
+                                                "media_type": media_type,
+                                                "data": b64
+                                            }
+                                        },
+                                        {
+                                            "type": "text",
+                                            "text": ("Eres experto en apuestas deportivas. Analiza la imagen y responde SOLO en JSON sin texto extra ni markdown. ""Formato: {equipos, mercado, cuota, calificacion_letra (A+/A/A-/B+/B/B-/C+/C/C-/D/F), puntuacion (0-100), ""veredicto (Solida/Riesgosa/Evitar), comentario (max 20 palabras), alternativa_mercado, alternativa_razon}. ""Criterios: A+(90-100)=valor positivo bajo riesgo; B(75-89)=razonable; C(60-74)=cuota baja; D/F(<60)=evitar"
+                                            ),
                                             }
                                         ]
                                     }]
                                 },
                                 timeout=30
                             )
-                            raw  = resp.json()["content"][0]["text"].strip()
-                            # limpiar posibles backticks
-                            raw  = raw.replace("```json","").replace("```","").strip()
-                            data = __import__("json").loads(raw)
-    
-                            # Calificación visual
-                            letra = data.get("calificacion_letra","?")
-                            pts   = data.get("puntuacion", 0)
-                            color_map = {
+                        raw  = resp.json()["content"][0]["text"].strip()
+                        # limpiar posibles backticks
+                        raw  = raw.replace("```json","").replace("```","").strip()
+                        data = __import__("json").loads(raw)
+
+                        # Calificación visual
+                        letra = data.get("calificacion_letra","?")
+                        pts   = data.get("puntuacion", 0)
+                        color_map = {
                                 "A+":"#00ff88","A":"#00ff88","A-":"#00dd77",
                                 "B+":"#7fff00","B":"#FFD700","B-":"#FFD700",
                                 "C+":"#ff9500","C":"#ff9500","C-":"#ff6600",
                                 "D":"#ff4444","F":"#cc0000"
-                            }
-                            color = color_map.get(letra, "#555")
-    
-                            st.markdown(
+                        }
+                        color = color_map.get(letra, "#555")
+
+                        st.markdown(
                                 f"<div style='background:#0d0d2e;border:2px solid {color};"
                                 f"border-radius:20px;padding:28px 24px;text-align:center;margin-bottom:16px'>"
                                 f"<div style='font-size:5rem;font-weight:900;color:{color};line-height:1'>{letra}</div>"
                                 f"<div style='font-size:1.2rem;font-weight:700;color:{color};margin-top:4px'>{pts}/100</div>"
                                 f"<div style='font-size:1.1rem;margin-top:12px'>{data.get('veredicto','')}</div>"
                                 f"</div>", unsafe_allow_html=True)
-    
-                            st.markdown(
+
+                        st.markdown(
                                 f"<div class='acard'>"
                                 f"<div style='font-size:.8rem;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.1em'>Detalles detectados</div>"
                                 f"<div style='margin:6px 0'><span style='color:#555'>⚽ Partido:</span> <b>{data.get('equipos','?')}</b></div>"
@@ -1482,9 +1650,9 @@ if st.session_state["view"] == "cartelera":
                                 f"<div style='margin-top:14px;padding-top:12px;border-top:1px solid #252555;"
                                 f"font-style:italic;color:#aaa;font-size:.9rem'>💬 {data.get('comentario','')}</div>"
                                 f"</div>", unsafe_allow_html=True)
-    
-                            # Alternativa recomendada
-                            if data.get("alternativa_mercado"):
+
+                        # Alternativa recomendada
+                        if data.get("alternativa_mercado"):
                                 st.markdown(
                                     f"<div style='background:linear-gradient(135deg,#001a10,#0a1a00);"
                                     f"border:2px solid #00ff88;border-radius:16px;padding:20px 24px;margin-top:12px'>"
@@ -1494,9 +1662,9 @@ if st.session_state["view"] == "cartelera":
                                     f"🎯 {data.get('alternativa_mercado','')}</div>"
                                     f"<div style='font-size:.85rem;color:#aaa'>{data.get('alternativa_razon','')}</div>"
                                     f"</div>", unsafe_allow_html=True)
-    
-                        except Exception as e:
-                            st.error(f"Error analizando la imagen: {e}")
+
+                    except Exception as e:
+                        st.error(f"Error al analizar imagen: {e}")
             else:
                 st.markdown(
                     "<div style='background:#0d0d2e;border:2px dashed #252555;border-radius:16px;"
