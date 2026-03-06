@@ -20,13 +20,15 @@ from dotenv import load_dotenv
 load_dotenv()
 # Streamlit Cloud usa st.secrets, local usa .env
 try:
-    BOT_TOKEN        = st.secrets["BOT_TOKEN"]
-    CHAT_ID          = st.secrets["CHAT_ID"]
+    BOT_TOKEN         = st.secrets["BOT_TOKEN"]
+    CHAT_ID           = st.secrets["CHAT_ID"]
     ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", "")
+    TENNIS_API_KEY    = st.secrets.get("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
 except:
     BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
     CHAT_ID           = os.getenv("CHAT_ID", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    TENNIS_API_KEY    = os.getenv("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
 
 LIGAS = {
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -817,8 +819,7 @@ def nba_ou_model(home_id, away_id, ou_line):
 # ══════════════════════════════════════════════════════════
 # TENIS DATA
 # ══════════════════════════════════════════════════════════
-TENNIS_API_KEY = "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc"
-TENNIS_API     = "https://api.api-tennis.com/tennis/"
+TENNIS_API = "https://api.api-tennis.com/tennis/"
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_tennis_cartelera():
