@@ -824,8 +824,8 @@ def get_tennis_cartelera():
     hoy = now.strftime("%Y-%m-%d")
     matches, seen = [], set()
     for ds in dates:
-        for tour in ["atp","wta"]:
-            data = eg(f"{TEN_ESPN}/{tour}/scoreboard", {"dates":ds,"limit":100})
+        for tour, tour_slug in [("ATP","atp-tennis"),("WTA","wta-tennis")]:
+            data = eg(f"{TEN_ESPN}/{tour_slug}/scoreboard", {"dates":ds,"limit":100})
             for ev in data.get("events",[]):
                 eid = ev.get("id","")
                 if eid in seen: continue
