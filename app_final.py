@@ -380,7 +380,7 @@ def get_cartelera():
                         "odd_d":    odd_d,
                         "score_h":  parse_score(hc.get("score", 0)),
                         "score_a":  parse_score(ac.get("score", 0)),
-                        "minute":   (lambda _dc: int(re.sub(r"[^0-9].*","",_dc.split("'")[0].split(":")[0].strip()) or 0))(str(ev.get("status",{}).get("displayClock","0") or "0")),
+                        "minute":   (lambda _dc: int("".join(c for c in _dc.replace("+"," ").split()[0].split("'")[0].split(":")[0] if c.isdigit()) or "0"))(str(ev.get("status",{}).get("displayClock","0") or "0")),
                     })
                 except Exception as _ce: _parse_errs.append(str(_ce)); continue
 
