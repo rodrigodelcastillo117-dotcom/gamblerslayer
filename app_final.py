@@ -6570,20 +6570,38 @@ def render_pach(sport_label: str, context_data: dict):
     """
     api_ok = bool(ANTHROPIC_API_KEY)
 
-    st.markdown("""
+    st.markdown(f"""
     <div style='background:linear-gradient(135deg,#0a0020,#001a10);
-    border:2px solid #bb00ff88;border-radius:16px;padding:14px 18px;
-    margin:16px 0 10px 0;display:flex;align-items:center;gap:12px'>
-    <div style='font-size:2.2rem'>🤖</div>
-    <div>
-      <div style='font-size:1.15rem;font-weight:900;color:#cc44ff;
-      letter-spacing:.08em'>PACH</div>
-      <div style='font-size:.72rem;color:#666'>Analista AI · Busca en la web en tiempo real · Powered by Claude</div>
-    </div>
-    <div style='margin-left:auto;font-size:.65rem;padding:3px 8px;border-radius:20px;
-    background:{"#00ff8820" if api_ok else "#ff000020"};
-    color:{"#00ff88" if api_ok else "#ff4444"};border:1px solid {"#00ff8855" if api_ok else "#ff444455"}'>
-    {"● ONLINE" if api_ok else "● SIN API KEY"}</div>
+    border:2px solid #bb00ff88;border-radius:16px;padding:16px 18px;margin-bottom:10px'>
+      <div style='display:flex;align-items:center;gap:12px;margin-bottom:12px'>
+        <div style='font-size:2.4rem'>🤖</div>
+        <div style='flex:1'>
+          <div style='font-size:1.2rem;font-weight:900;color:#cc44ff;letter-spacing:.08em'>PACH</div>
+          <div style='font-size:.72rem;color:#888'>Analista AI · Powered by Claude · Busca en internet en tiempo real</div>
+        </div>
+        <div style='font-size:.65rem;padding:4px 10px;border-radius:20px;
+        background:{"#00ff8820" if api_ok else "#ff000020"};
+        color:{"#00ff88" if api_ok else "#ff4444"};
+        border:1px solid {"#00ff8855" if api_ok else "#ff444455"};white-space:nowrap'>
+        {"● ONLINE" if api_ok else "● SIN API KEY"}</div>
+      </div>
+      <div style='background:#ffffff08;border-radius:10px;padding:10px 14px;
+      border-left:3px solid #cc44ff;margin-bottom:10px'>
+        <div style='color:#cc44ff;font-size:.72rem;font-weight:700;margin-bottom:4px'>💬 PACH DICE:</div>
+        <div style='color:#ddd;font-size:.88rem;font-style:italic'>
+          "Pregúntame cualquier apuesta deportiva y te ayudo. Analizo handicaps, spreads, 
+          over de sets, player props, triple dobles, corners, parlays... lo que quieras. 
+          Busco la info en internet antes de responderte."
+        </div>
+      </div>
+      <div style='display:flex;gap:6px;flex-wrap:wrap'>
+        <span style='background:#1a0a2e;color:#bb00ff;font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid #bb00ff44'>Handicaps</span>
+        <span style='background:#1a0a2e;color:#bb00ff;font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid #bb00ff44'>Over/Under sets</span>
+        <span style='background:#1a0a2e;color:#bb00ff;font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid #bb00ff44'>Player Props</span>
+        <span style='background:#1a0a2e;color:#bb00ff;font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid #bb00ff44'>Triple dobles</span>
+        <span style='background:#1a0a2e;color:#bb00ff;font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid #bb00ff44'>Corners · Tarjetas</span>
+        <span style='background:#1a0a2e;color:#bb00ff;font-size:.65rem;padding:3px 8px;border-radius:12px;border:1px solid #bb00ff44'>Parlays combinados</span>
+      </div>
     </div>""", unsafe_allow_html=True)
 
     if not api_ok:
@@ -6616,24 +6634,23 @@ def render_pach(sport_label: str, context_data: dict):
                 f"<span style='color:#cc44ff;font-size:.65rem;font-weight:700'>🤖 PACH</span><br>"
                 f"{entry['a']}</div>", unsafe_allow_html=True)
 
-    # Input
-    _pk = f"pach_input_{sport_label}"
-    _bk = f"pach_send_{sport_label}"
+    # Input — form para que Enter dispare sin botón
+    _fk = f"pach_form_{sport_label}"
     _ck = f"pach_clear_{sport_label}"
 
-    col_in, col_btn = st.columns([5, 1])
-    with col_in:
-        pregunta = st.text_input(
-            "Pregúntale a PACH",
-            placeholder="Ej: Alcaraz -1.5 sets vs Ruud hoy · Over 2.5 en City vs Arsenal · Triple doble LeBron...",
-            key=_pk, label_visibility="collapsed")
-    with col_btn:
-        enviar = st.button("▶", key=_bk, use_container_width=True,
-                           help="Enviar a PACH")
+    with st.form(key=_fk, clear_on_submit=True):
+        col_in, col_btn = st.columns([5, 1])
+        with col_in:
+            pregunta = st.text_input(
+                "Pregúntale a PACH",
+                placeholder="Ej: Alcaraz -1.5 sets vs Ruud · Over 2.5 City vs Arsenal · Triple doble LeBron...",
+                label_visibility="collapsed")
+        with col_btn:
+            enviar = st.form_submit_button("▶", use_container_width=True)
 
-    col_hint, col_clear = st.columns([4,1])
+    col_hint, col_clear = st.columns([4, 1])
     with col_hint:
-        st.caption("💡 PACH busca en internet antes de responder · 1 pregunta a la vez")
+        st.caption("💡 Escribe y presiona Enter · PACH busca en internet antes de responder")
     with col_clear:
         if st.button("🗑️", key=_ck, help="Limpiar historial"):
             st.session_state[hist_key] = []
@@ -6648,11 +6665,33 @@ def render_pach(sport_label: str, context_data: dict):
 
 def render_bot_tab(sport_label, scan_fn, scan_args, preview_fn=None):
     """Renderiza el tab de Bot de Telegram reutilizable para cualquier deporte."""
+
+    # ══ PACH PRIMERO — siempre visible, arriba de todo ══
+    _kr_raw  = st.session_state.get("_king_el_pick", {})
+    _vl_raw  = st.session_state.get("_villar_summary", {})
+    _sp_key  = {"⚽ Fútbol":"futbol","🏀 NBA":"nba","🎾 Tenis":"tenis"}.get(sport_label,"futbol")
+    _pach_matches = []
+    try:
+        if _sp_key == "futbol":   _pach_matches = st.session_state.get("_kr_cache_fut", [])
+        elif _sp_key == "nba":    _pach_matches = st.session_state.get("_kr_cache_nba", [])
+        else:                     _pach_matches = st.session_state.get("_kr_cache_ten", [])
+    except: pass
+    _pach_ctx = {
+        "partidos": _pach_matches[:15],
+        "kr_pick":  _kr_raw.get("pick","") if isinstance(_kr_raw, dict) else str(_kr_raw)[:80],
+        "villar":   f"{_vl_raw.get('modelo_ok',0)}✅ {_vl_raw.get('modelo_fail',0)}❌ {_vl_raw.get('modelo_pct',0)}%" if _vl_raw else "",
+    }
+    render_pach(sport_label, _pach_ctx)
+
+    # ══ SEPARADOR ══
+    st.markdown("<div style='margin:20px 0 8px 0'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='shdr'>🤖 BOT TELEGRAM</div>", unsafe_allow_html=True)
+
     bot_ok = bool(BOT_TOKEN and CHAT_ID and BOT_TOKEN != "Pega_Aqui_Tu_Token_De_BotFather")
     icon = {"⚽ Fútbol":"⚽","🏀 NBA":"🏀","🎾 Tenis":"🎾"}.get(sport_label,"🤖")
     st.markdown(
         f"<div class='bot-card'>"
-        f"<div style='font-size:.8rem;color:#229ED9;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>🤖 BOT TELEGRAM — {sport_label.upper()}</div>"
+        f"<div style='font-size:.8rem;color:#229ED9;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>📡 BOT TELEGRAM — {sport_label.upper()}</div>"
         f"<div style='font-size:1.1rem;font-weight:700;margin-bottom:6px'>The Gamblers Layer Bot</div>"
         f"<div style='color:#555;font-size:.85rem'>Estado: {'✅ Configurado' if bot_ok else '⚠️ Sin configurar — agrega BOT_TOKEN y CHAT_ID en Streamlit secrets'}</div>"
         f"</div>", unsafe_allow_html=True)
@@ -6681,28 +6720,6 @@ def render_bot_tab(sport_label, scan_fn, scan_args, preview_fn=None):
         3. Agrega <code>CHAT_ID = "tu_chat_id"</code><br>
         4. Guarda y reinicia la app
         </div>""", unsafe_allow_html=True)
-
-    # ── PACH siempre aparece, independiente del bot Telegram ──
-    st.markdown("<div class='shdr'>🤖 PACH — Analista AI</div>", unsafe_allow_html=True)
-    # Construir contexto con datos disponibles en session_state
-    _kr_raw   = st.session_state.get("_king_el_pick", {})
-    _vl_raw   = st.session_state.get("_villar_summary", {})
-    _sp_key   = {"⚽ Fútbol":"futbol","🏀 NBA":"nba","🎾 Tenis":"tenis"}.get(sport_label,"futbol")
-    _pach_matches = []
-    try:
-        if _sp_key == "futbol":
-            _pach_matches = st.session_state.get("_kr_cache_fut", [])
-        elif _sp_key == "nba":
-            _pach_matches = st.session_state.get("_kr_cache_nba", [])
-        else:
-            _pach_matches = st.session_state.get("_kr_cache_ten", [])
-    except: pass
-    _pach_ctx = {
-        "partidos":  _pach_matches[:15],
-        "kr_pick":   _kr_raw.get("pick","") if isinstance(_kr_raw, dict) else str(_kr_raw)[:80],
-        "villar":    f"{_vl_raw.get('modelo_ok',0)}✅ {_vl_raw.get('modelo_fail',0)}❌ {_vl_raw.get('modelo_pct',0)}%" if _vl_raw else "",
-    }
-    render_pach(sport_label, _pach_ctx)
 
 # ══════════════════════════════════════════════════════════
 # TRILAY / PATO
