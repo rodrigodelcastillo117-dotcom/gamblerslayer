@@ -9749,6 +9749,8 @@ if deporte == "futbol":
                 with open("/tmp/gamblers_diamond_bridge.json","w") as _bf3:
                     _jb3.dump(_bridge, _bf3)
             except: pass
+
+    if not all_matches:
         st.info("⚽ No hay partidos de fútbol disponibles ahora. Intenta refrescar en unos minutos.")
     else:
         liga_opts = ["Todas"] + sorted(set(m["league"] for m in all_matches))
