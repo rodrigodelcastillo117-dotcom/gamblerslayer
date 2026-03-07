@@ -3227,8 +3227,34 @@ def _villar_auto_pick(partido_db):
 
             hf  = get_form(home_id, slug) if home_id and slug else []
             af  = get_form(away_id, slug) if home_id and slug else []
-            hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0) if hf else xg_from_record(home_rec, True)
-            axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0) if af else xg_from_record(away_rec, False)
+
+            # ── xG fallback: si no hay historial, usar odds como prior principal ──
+            def _xg_from_odds(odd_h, odd_a, odd_d, is_home):
+                """Deriva xG desde las odds cuando no hay historial de partidos.
+                Convierte implied prob a xG esperado via Poisson inverso."""
+                if odd_h > 1 and odd_a > 1 and odd_d > 1:
+                    _tot = 1/odd_h + 1/odd_d + 1/odd_a
+                    _ph  = (1/odd_h) / _tot   # prob local sin margen
+                    _pa  = (1/odd_a) / _tot   # prob visitante sin margen
+                    # xG calibrado: ph≈0.60 → hxg≈1.8, ph≈0.30 → hxg≈0.9
+                    _hxg = max(0.35, 0.5 + _ph * 2.2 + (0.15 if is_home else 0))
+                    _axg = max(0.35, 0.5 + _pa * 2.2 + (0.0  if is_home else 0))
+                    return _hxg if is_home else _axg
+                return 1.3 if is_home else 1.0
+
+            if hf:
+                hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0)
+            elif home_rec and home_rec != "5-5-5":
+                hxg = xg_from_record(home_rec, True)
+            else:
+                hxg = _cup_enriched_xg(partido_db, True,  [], [])
+
+            if af:
+                axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0)
+            elif away_rec and away_rec != "5-5-5":
+                axg = xg_from_record(away_rec, False)
+            else:
+                axg = _cup_enriched_xg(partido_db, False, [], [])
             mc  = mc50k(hxg, axg)
 
             p_h   = mc["ph"]
@@ -4559,6 +4585,253 @@ def xg_from_record(record_str, is_home):
         if n > 0: return max(0.35, 0.7 + (w/n)*1.6 + (0.15 if is_home else 0))
     except: pass
     return 1.3 if is_home else 1.0
+
+def _xg_fallback(m, is_home, hf=None, af=None):
+    """xG con prioridad: 1) historial partidos 2) récord W-D-L 3) odds del mercado.
+    Evita el 33/33/33 cuando no hay historial (ej. FA Cup, Copa, torneos cortos)."""
+    form   = hf if is_home else af
+    rec    = m.get("home_rec","5-5-5") if is_home else m.get("away_rec","5-5-5")
+    odd_h  = float(m.get("odd_h", 0) or 0)
+    odd_a  = float(m.get("odd_a", 0) or 0)
+    odd_d  = float(m.get("odd_d", 0) or 0)
+
+    # 1. Historial de partidos (más confiable)
+    if form:
+        op = 1/odd_h if (is_home and odd_h>1) else (1/odd_a if odd_a>1 else 0)
+        return xg_weighted(form, is_home, odds_prior=op)
+
+    # 2. Récord W-D-L (si no es el default 5-5-5)
+    if rec and rec != "5-5-5":
+        return xg_from_record(rec, is_home)
+
+    # 3. Odds como prior (cuando no hay nada más — FA Cup, playoffs, etc.)
+    if odd_h > 1 and odd_a > 1 and odd_d > 1:
+        _tot = 1/odd_h + 1/odd_d + 1/odd_a
+        _ph  = (1/odd_h) / _tot
+        _pa  = (1/odd_a) / _tot
+        if is_home:
+            return max(0.35, 0.50 + _ph * 2.2 + 0.15)
+        else:
+            return max(0.35, 0.50 + _pa * 2.2)
+
+    return 1.3 if is_home else 1.0
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 🏆 CUP ENRICHER — Factor de división para FA Cup, Copas nacionales
+# Cuando dos equipos de distintas divisiones se enfrentan, el modelo
+# necesita saber el nivel real de cada uno, no solo las odds.
+# ══════════════════════════════════════════════════════════════════════
+
+# Slugs ESPN por liga para buscar forma reciente del equipo en SU liga
+_DIVISION_SLUGS = {
+    # Inglaterra
+    "eng.1": ("Premier League", 1.00, 1.55),   # (nombre, factor_xg, xg_base)
+    "eng.2": ("Championship",   0.78, 1.30),
+    "eng.3": ("League One",     0.62, 1.15),
+    "eng.4": ("League Two",     0.50, 1.05),
+    # España
+    "esp.1": ("La Liga",        1.00, 1.50),
+    "esp.2": ("Segunda",        0.76, 1.25),
+    # Alemania
+    "ger.1": ("Bundesliga",     1.00, 1.65),
+    "ger.2": ("2. Bundesliga",  0.77, 1.30),
+    # Italia
+    "ita.1": ("Serie A",        1.00, 1.45),
+    "ita.2": ("Serie B",        0.74, 1.20),
+    # Francia
+    "fra.1": ("Ligue 1",        1.00, 1.50),
+    "fra.2": ("Ligue 2",        0.75, 1.20),
+    # Copa de copas — liga base
+    "eng.fa":   ("FA Cup",       None, None),   # → buscar liga real
+    "eng.lc":   ("Carabao Cup",  None, None),
+    "esp.copa": ("Copa del Rey", None, None),
+    "ger.dfb":  ("DFB Pokal",    None, None),
+    "ita.coppa":("Coppa Italia", None, None),
+    "fra.coupe":("Coupe de France", None, None),
+}
+
+# Equipos conocidos con su liga real (para FA Cup sin historial API)
+# Top 20 PL + Championship completo + League One top (marzo 2026)
+_TEAM_DIVISION: dict = {
+    # Premier League 2025-26
+    "liverpool":      "eng.1", "arsenal":          "eng.1",
+    "chelsea":        "eng.1", "manchester city":  "eng.1",
+    "manchester utd": "eng.1", "man utd":          "eng.1",
+    "newcastle":      "eng.1", "newcastle utd":    "eng.1",
+    "aston villa":    "eng.1", "tottenham":        "eng.1",
+    "spurs":          "eng.1", "bournemouth":      "eng.1",
+    "fulham":         "eng.1", "brentford":        "eng.1",
+    "brighton":       "eng.1", "west ham":         "eng.1",
+    "everton":        "eng.1", "leicester":        "eng.1",
+    "ipswich":        "eng.1", "southampton":      "eng.1",
+    "crystal palace": "eng.1", "nottm forest":     "eng.1",
+    "nottingham forest": "eng.1", "wolves":        "eng.1",
+    "wolverhampton":  "eng.1",
+    # Championship 2025-26
+    "leeds":          "eng.2", "leeds utd":        "eng.2",
+    "burnley":        "eng.2", "sheffield utd":    "eng.2",
+    "norwich":        "eng.2", "millwall":         "eng.2",
+    "coventry":       "eng.2", "bristol city":     "eng.2",
+    "cardiff":        "eng.2", "hull":             "eng.2",
+    "hull city":      "eng.2", "stoke":            "eng.2",
+    "stoke city":     "eng.2", "swansea":          "eng.2",
+    "blackburn":      "eng.2", "sunderland":       "eng.2",
+    "derby":          "eng.2", "derby county":     "eng.2",
+    "portsmouth":     "eng.2", "watford":          "eng.2",
+    "middlesbrough":  "eng.2", "qpr":              "eng.2",
+    "west brom":      "eng.2", "sheffield wed":    "eng.2",
+    "plymouth":       "eng.2", "oxford":           "eng.2",
+    "luton":          "eng.2", "Preston":          "eng.2",
+    # League One 2025-26
+    "birmingham":     "eng.3", "huddersfield":     "eng.3",
+    "wigan":          "eng.3", "charlton":         "eng.3",
+    "rotherham":      "eng.3", "stevenage":        "eng.3",
+    "peterborough":   "eng.3", "wrexham":          "eng.3",
+    "stockport":      "eng.3", "barnsley":         "eng.3",
+    "exeter":         "eng.3", "blackpool":        "eng.3",
+    "burton":         "eng.3", "wycombe":          "eng.3",
+    # League Two
+    "newport":        "eng.4", "grimsby":          "eng.4",
+    "doncaster":      "eng.4", "tranmere":         "eng.4",
+    "notts county":   "eng.4", "colchester":       "eng.4",
+    "nurnberg":       "ger.2", "nürnberg":         "ger.2",
+    "1. fc nurnberg": "ger.2", "1. fc nürnberg":   "ger.2",
+    "fortuna düss":   "ger.2", "fortuna dusseldorf":"ger.2",
+    # La Liga
+    "barcelona":  "esp.1", "real madrid":     "esp.1",
+    "atletico":   "esp.1", "villarreal":      "esp.1",
+    "real sociedad":"esp.1","athletic bilbao":"esp.1",
+    # Bundesliga
+    "bayern":     "ger.1", "dortmund":        "ger.1",
+    "leverkusen": "ger.1", "rb leipzig":      "ger.1",
+    "frankfurt":  "ger.1", "freiburg":        "ger.1",
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cup_get_form_in_league(team_id: str, team_name: str) -> dict:
+    """
+    Para equipos en copas nacionales: busca su forma reciente en SU liga,
+    no en la copa. Devuelve {slug, division_name, factor, xg_base, form[]}.
+    """
+    # 1. Detectar liga del equipo por nombre
+    name_low = (team_name or "").lower().strip()
+    div_slug = None
+    for key, slug in _TEAM_DIVISION.items():
+        if key in name_low or name_low in key:
+            div_slug = slug
+            break
+
+    # 2. Si encontramos su liga, buscar forma en esa liga
+    form_in_league = []
+    if div_slug and div_slug in _DIVISION_SLUGS:
+        try:
+            data  = eg(f"{ESPN}/{div_slug}/teams/{team_id}/schedule")
+            evs   = data.get("events", [])
+            for ev in evs:
+                try:
+                    comp  = ev["competitions"][0]
+                    state = ev.get("status",{}).get("type",{}).get("state","")
+                    if state != "post": continue
+                    # Solo partidos de SU liga (filtrar copa)
+                    ev_name = (ev.get("name","") + ev.get("shortName","")).lower()
+                    if any(c in ev_name for c in ["fa cup","carabao","copa","pokal","coppa","coupe"]):
+                        continue
+                    comps = comp["competitors"]
+                    hc = next(c for c in comps if c["homeAway"]=="home")
+                    ac = next(c for c in comps if c["homeAway"]=="away")
+                    is_home = str(hc["team"]["id"]) == str(team_id)
+                    my  = hc if is_home else ac
+                    opp = ac if is_home else hc
+                    gf = parse_score(my.get("score",0))
+                    gc = parse_score(opp.get("score",0))
+                    form_in_league.append({
+                        "date": ev.get("date","")[:10],
+                        "result": "W" if gf>gc else ("D" if gf==gc else "L"),
+                        "gf": gf, "gc": gc,
+                        "xg_f": 0.0, "xg_c": 0.0,
+                        "opponent": opp["team"]["displayName"],
+                        "is_home": is_home,
+                        "league": div_slug,
+                    })
+                except: continue
+            form_in_league.sort(key=lambda x: x["date"], reverse=True)
+            form_in_league = form_in_league[:10]
+        except: pass
+
+    div_info = _DIVISION_SLUGS.get(div_slug, ("Desconocida", 0.70, 1.10))
+    return {
+        "slug":     div_slug or "unknown",
+        "div_name": div_info[0],
+        "factor":   div_info[1] or 0.70,
+        "xg_base":  div_info[2] or 1.10,
+        "form":     form_in_league,
+    }
+
+
+def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
+    """
+    xG enriquecido para partidos de copa (FA Cup, etc.).
+    Combina:
+      1. Forma reciente en SU liga propia
+      2. Factor de calidad de división
+      3. Odds como calibración final
+    """
+    slug      = m.get("slug","")
+    _cup_slugs = {"eng.fa","eng.lc","esp.copa","ger.dfb","ita.coppa","fra.coupe"}
+    is_cup = slug in _cup_slugs
+
+    # Si no es copa o hay forma directa disponible — usar pipeline normal
+    if not is_cup:
+        return _xg_fallback(m, is_home, hf=hf, af=af)
+
+    team_id   = m.get("home_id","") if is_home else m.get("away_id","")
+    team_name = m.get("home","") if is_home else m.get("away","")
+    odd_h     = float(m.get("odd_h",0) or 0)
+    odd_a     = float(m.get("odd_a",0) or 0)
+    odd_d     = float(m.get("odd_d",0) or 0)
+
+    # Buscar forma en liga propia
+    cup_data  = _cup_get_form_in_league(str(team_id), team_name)
+    league_form = cup_data["form"]
+    div_factor  = cup_data["factor"]   # ej. 0.78 para Championship
+    xg_base     = cup_data["xg_base"]  # xG promedio de esa división
+
+    if league_form:
+        # xG desde forma real en su liga, con decaimiento temporal
+        raw_xg = xg_weighted(league_form, is_home, odds_prior=0)
+        # Aplicar factor de división relativo a Premier (base 1.00)
+        # Si el equipo es de Championship (0.78), su xG se escala down vs PL
+        # Pero si juega EN su nivel, se queda igual — el factor es relativo al rival
+        home_factor = cup_data["factor"] if is_home else \
+                      _cup_get_form_in_league(
+                          str(m.get("away_id","")), m.get("away","")
+                      ).get("factor", 0.70) if not is_home else div_factor
+
+        away_factor = _cup_get_form_in_league(
+            str(m.get("away_id","")), m.get("away","")
+        )["factor"] if is_home else cup_data["factor"]
+
+        # Ajuste relativo: si local es PL (1.0) y visitante Championship (0.78),
+        # el local xG sube +15%, el visitante xG baja -10%
+        rel = (home_factor / max(0.3, away_factor)) if is_home else \
+              (away_factor / max(0.3, home_factor))
+        xg_adj = raw_xg * max(0.6, min(1.6, rel))
+
+    else:
+        # Sin forma en liga propia → usar xG base de su división
+        xg_adj = xg_base * (1.08 if is_home else 1.0)
+
+    # Calibración final con odds (30% mercado, 70% modelo)
+    if odd_h > 1 and odd_a > 1 and odd_d > 1:
+        _tot  = 1/odd_h + 1/odd_d + 1/odd_a
+        _ph   = (1/odd_h) / _tot
+        _pa   = (1/odd_a) / _tot
+        _p    = _ph if is_home else _pa
+        xg_mkt = max(0.3, 0.50 + _p * 2.2 + (0.15 if is_home else 0))
+        xg_adj = 0.70 * xg_adj + 0.30 * xg_mkt
+
+    return round(max(0.20, min(4.5, xg_adj)), 3)
 
 def mc50k(hxg, axg, N=50_000):
     rng = np.random.default_rng(42)
@@ -6219,8 +6492,8 @@ def escanear_y_enviar(matches):
         if m["state"] != "pre": continue
         hf  = get_form(m["home_id"], m["slug"])
         af  = get_form(m["away_id"], m["slug"])
-        hxg = xg_weighted(hf, is_home=True,  odds_prior=1/m.get("odd_h",0) if m.get("odd_h",0)>1 else 0) if hf else xg_from_record(m["home_rec"],True)
-        axg = xg_weighted(af, is_home=False, odds_prior=1/m.get("odd_a",0) if m.get("odd_a",0)>1 else 0) if af else xg_from_record(m["away_rec"],False)
+        hxg = _cup_enriched_xg(m, True,  hf, af)
+        axg = _cup_enriched_xg(m, False, hf, af)
         h2h = get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"])
         h2s = h2h_stats(h2h, m["home"], m["away"])
         mc  = ensemble_football(hxg, axg, h2s, hf, af, m["home_id"], m["away_id"], odd_h=m.get("odd_h",0), odd_a=m.get("odd_a",0), odd_d=m.get("odd_d",0))
@@ -6773,8 +7046,8 @@ def compute_trilay(matches):
         try:
             hf  = get_form(m["home_id"],m["slug"])
             af  = get_form(m["away_id"],m["slug"])
-            hxg = xg_weighted(hf, is_home=True,  odds_prior=1/m.get("odd_h",0) if m.get("odd_h",0)>1 else 0) if hf else xg_from_record(m.get("home_rec","5-5-5"),True)
-            axg = xg_weighted(af, is_home=False, odds_prior=1/m.get("odd_a",0) if m.get("odd_a",0)>1 else 0) if af else xg_from_record(m.get("away_rec","5-5-5"),False)
+            hxg = _cup_enriched_xg(m, True,  hf, af)
+            axg = _cup_enriched_xg(m, False, hf, af)
             mc  = mc50k(hxg,axg)
             _ph = mc["ph"]; _pa = mc["pa"]; _o25 = mc["o25"]; _aa = mc["btts"]
             _best_ml_p = max(_ph,_pa)
@@ -6826,8 +7099,8 @@ def compute_pato(matches):
     for m in matches[:80]:
         hf  = get_form(m["home_id"],m["slug"])
         af  = get_form(m["away_id"],m["slug"])
-        hxg = max(0.2,avg([r["gf"] for r in hf])) if hf else xg_from_record(m["home_rec"],True)
-        axg = max(0.2,avg([r["gf"] for r in af])) if af else xg_from_record(m["away_rec"],False)
+        hxg = _cup_enriched_xg(m, True,  hf, af) if not hf else max(0.2,avg([r["gf"] for r in hf]))
+        axg = _cup_enriched_xg(m, False, hf, af) if not af else max(0.2,avg([r["gf"] for r in af]))
         u45 = poisson_u45(hxg,axg)*100
         h_gc= avg([r["gc"] for r in hf]) if hf else 1.2
         a_gc= avg([r["gc"] for r in af]) if af else 1.2
@@ -7546,9 +7819,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 hf  = get_form(home_id, slug) or []
                 af  = get_form(away_id, slug) or []
                 hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0) \
-                      if hf else xg_from_record(m.get("home_rec","5-5-5"), True)
+                      if hf else _cup_enriched_xg(m, True,  hf, af)
                 axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0) \
-                      if af else xg_from_record(m.get("away_rec","5-5-5"), False)
+                      if af else _cup_enriched_xg(m, False, hf, af)
                 h2h = get_h2h(home_id, away_id, slug, m.get("home","?"), m.get("away","?"))
                 h2s = h2h_stats(h2h, m.get("home","?"), m.get("away","?"))
                 mc  = ensemble_football(hxg, axg, h2s, hf, af,
@@ -8660,8 +8933,8 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                             try:
                                 _fhf = get_form(_fm.get("home_id",""), _fm.get("slug","")) or []
                                 _faf = get_form(_fm.get("away_id",""), _fm.get("slug","")) or []
-                                _fhxg = xg_weighted(_fhf,True) if _fhf else xg_from_record(_fm.get("home_rec","5-5-5"),True)
-                                _faxg = xg_weighted(_faf,False) if _faf else xg_from_record(_fm.get("away_rec","5-5-5"),False)
+                                _fhxg = _cup_enriched_xg(_fm, True,  _fhf, _faf) if not _fhf else xg_weighted(_fhf,True)
+                                _faxg = _cup_enriched_xg(_fm, False, _fhf, _faf) if not _faf else xg_weighted(_faf,False)
                                 _fmc = mc50k(_fhxg, _faxg)
                                 _fph = _fmc["ph"]; _fpa = _fmc["pa"]
                                 _fbest_p = max(_fph,_fpa)
@@ -9584,8 +9857,8 @@ if st.session_state["view"] == "cartelera":
                                     try:
                                         _hf2 = get_form(_m["home_id"], _m["slug"]) or []
                                         _af2 = get_form(_m["away_id"], _m["slug"]) or []
-                                        _hx2 = xg_weighted(_hf2,True) if _hf2 else xg_from_record(_m.get("home_rec","5-5-5"),True)
-                                        _ax2 = xg_weighted(_af2,False) if _af2 else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                                        _hx2 = xg_weighted(_hf2,True) if _hf2 else _cup_enriched_xg(_m, True,  _hf2, _af2)
+                                        _ax2 = xg_weighted(_af2,False) if _af2 else _cup_enriched_xg(_m, False, _hf2, _af2)
                                         _mc2 = mc50k(_hx2, _ax2)
                                         _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
                                     except:
@@ -9653,8 +9926,8 @@ if st.session_state["view"] == "cartelera":
                 try:
                     _hf = get_form(_m["home_id"],_m["slug"]) or []
                     _af = get_form(_m["away_id"],_m["slug"]) or []
-                    _hxg = xg_weighted(_hf,True) if _hf else xg_from_record(_m.get("home_rec","5-5-5"),True)
-                    _axg = xg_weighted(_af,False) if _af else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                    _hxg = xg_weighted(_hf,True) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                    _axg = xg_weighted(_af,False) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                     _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
@@ -9678,8 +9951,8 @@ if st.session_state["view"] == "cartelera":
                 try:
                     _hf = get_form(_m["home_id"],_m["slug"]) or []
                     _af = get_form(_m["away_id"],_m["slug"]) or []
-                    _hxg = xg_weighted(_hf,True) if _hf else xg_from_record(_m.get("home_rec","5-5-5"),True)
-                    _axg = xg_weighted(_af,False) if _af else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                    _hxg = xg_weighted(_hf,True) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                    _axg = xg_weighted(_af,False) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                     _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
@@ -9732,8 +10005,8 @@ if st.session_state["view"] == "cartelera":
                         try:
                             _hf = get_form(_m["home_id"],_m["slug"]) or []
                             _af = get_form(_m["away_id"],_m["slug"]) or []
-                            _hxg = xg_weighted(_hf,True) if _hf else xg_from_record(_m.get("home_rec","5-5-5"),True)
-                            _axg = xg_weighted(_af,False) if _af else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                            _hxg = xg_weighted(_hf,True) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                            _axg = xg_weighted(_af,False) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                             _mc  = ensemble_football(_hxg,_axg,{},_hf,_af,_m["home_id"],_m["away_id"])
                             _dp  = diamond_engine(_mc,{},_hf,_af)
                             _bm  = max([(_dp["ph"],f"🏠 {_m['home']}"),(_dp["pa"],f"✈️ {_m['away']}"),(_mc["o25"],"⚽ Over 2.5")],key=lambda x:x[0])
