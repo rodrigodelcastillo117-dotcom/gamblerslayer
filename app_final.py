@@ -2740,73 +2740,116 @@ def _villar_precache_tomorrow():
 def _villar_match_pick_to_result(pk, partido_db):
     """
     Audita un pick vs resultado real.
+    Soporta todos los formatos: emojis, nombres completos, mercados.
     Devuelve (veredicto_str, color, explicacion)
     """
+    import re as _re
+
     sh = partido_db.get("score_h", -1)
     sa = partido_db.get("score_a", -1)
     if sh < 0 or sa < 0:
         return "⏳ Pendiente", "#555", "Score no disponible aún"
 
-    pick  = pk.get("pick", "").lower()
-    home  = (pk.get("home","") or "").lower()
-    away  = (pk.get("away","") or "").lower()
-    sport = (pk.get("sport", pk.get("deporte","futbol")) or "futbol").lower()
-    total = sh + sa
+    raw_pick = pk.get("pick", "")
+    pick     = raw_pick.lower()
+    # Nombres del partido — primero del partido_db (más confiable), luego del pick
+    home_db  = (partido_db.get("home", partido_db.get("p1","")) or "").lower().strip()
+    away_db  = (partido_db.get("away", partido_db.get("p2","")) or "").lower().strip()
+    home_pk  = (pk.get("home","") or pk.get("p1","") or "").lower().strip()
+    away_pk  = (pk.get("away","") or pk.get("p2","") or "").lower().strip()
+    home     = home_db or home_pk
+    away     = away_db or away_pk
+    sport    = (pk.get("sport", pk.get("deporte","futbol")) or "futbol").lower()
+    total    = sh + sa
+    won_h    = sh > sa
+    won_a    = sa > sh
+    draw     = sh == sa
 
-    won_h = sh > sa; won_a = sa > sh; draw = sh == sa
+    def _apellido(name):
+        parts = [w for w in name.split() if len(w) > 2]
+        return parts[-1] if parts else name[:5]
+
+    def _name_in_pick(name, pick_str):
+        """True si alguna palabra significativa del nombre aparece en el pick."""
+        for w in name.split():
+            if len(w) > 3 and w in pick_str:
+                return True
+        return False
 
     ok = None
-    import re as _re
 
-    if sport in ("tenis","tennis") or "🎾" in pick:
-        # Tenis: sh=sets ganados p1 (home), sa=sets ganados p2 (away)
-        # El pick contiene el nombre/apellido del favorito
-        p1_full = (pk.get("home", pk.get("p1","")) or partido_db.get("home","")).lower()
-        p2_full = (pk.get("away", pk.get("p2","")) or partido_db.get("away","")).lower()
-
-        def _last(name):
-            """Apellido = última palabra de más de 2 letras"""
-            parts = [w for w in name.split() if len(w) > 2]
-            return parts[-1] if parts else name[:5]
-
-        p1_last = _last(p1_full)
-        p2_last = _last(p2_full)
-
-        # Buscar apellido del favorito en el pick
-        pick_mentions_p1 = p1_last and p1_last in pick
-        pick_mentions_p2 = p2_last and p2_last in pick
-
-        if pick_mentions_p1 and not pick_mentions_p2:
-            ok = won_h  # apostamos a p1, ganó si sh > sa
-        elif pick_mentions_p2 and not pick_mentions_p1:
+    # ══ TENIS ══
+    if sport in ("tenis","tennis") or "🎾" in raw_pick:
+        p1 = home_db or home_pk
+        p2 = away_db or away_pk
+        pick_hits_p1 = _name_in_pick(p1, pick) or _apellido(p1) in pick
+        pick_hits_p2 = _name_in_pick(p2, pick) or _apellido(p2) in pick
+        if pick_hits_p1 and not pick_hits_p2:
+            ok = won_h
+        elif pick_hits_p2 and not pick_hits_p1:
             ok = won_a
-        elif won_h or won_a:
-            # Fallback: si no hay nombre claro, tomar al ganador de mayor sets
-            # y ver si el pick menciona algo del ganador
-            winner_name = p1_full if won_h else p2_full
-            winner_last = _last(winner_name)
-            ok = winner_last in pick
-    elif sport == "nba" or "pts" in pick or "over" in pick.lower() or "under" in pick.lower():
-        nums = _re.findall(r'\d+\.?\d*', pick)
-        line = float(nums[0]) if nums else 220
-        if "over" in pick: ok = total > line
-        elif "under" in pick: ok = total < line
-        elif home[:5] in pick: ok = won_h
-        elif away[:5] in pick: ok = won_a
-    else:  # futbol
-        if any(x in pick for x in ["1x","local o emp"]): ok = won_h or draw
-        elif any(x in pick for x in ["x2","visita o emp"]): ok = won_a or draw
-        elif "empate" in pick or " x " in pick: ok = draw
-        elif "over 3.5" in pick: ok = total > 3
-        elif "over 2.5" in pick or "over 2" in pick: ok = total > 2
-        elif "over 1.5" in pick: ok = total > 1
-        elif "under 2.5" in pick: ok = total <= 2
-        elif "under 1.5" in pick: ok = total <= 1
-        elif any(x in pick for x in ["ambos","btts","aa","both"]): ok = sh>0 and sa>0
-        elif home and any(w in pick for w in home.split() if len(w)>2): ok = won_h
-        elif away and any(w in pick for w in away.split() if len(w)>2): ok = won_a
+        else:
+            # último recurso: el pick menciona al ganador?
+            winner = p1 if won_h else p2
+            ok = _name_in_pick(winner, pick) or _apellido(winner) in pick
 
-    sc_fmt = f"{sh}–{sa}" if sport not in ("nba",) else f"{sh}–{sa} pts"
+    # ══ NBA ══
+    elif sport in ("nba","basketball") or "🏀" in raw_pick:
+        nums = _re.findall(r'\d+\.?\d*', pick)
+        if "over" in pick:
+            line = float(nums[0]) if nums else 220
+            ok = total > line
+        elif "under" in pick:
+            line = float(nums[0]) if nums else 220
+            ok = total < line
+        elif _name_in_pick(home, pick) or _apellido(home) in pick:
+            ok = won_h
+        elif _name_in_pick(away, pick) or _apellido(away) in pick:
+            ok = won_a
+
+    # ══ FÚTBOL ══
+    else:
+        pick_clean = pick.replace("🏠","").replace("✈️","").replace("🔵","").replace("🟣","").replace("🤝","").replace("⚽","").replace("⚡","").strip()
+
+        # O/U primero (más específico)
+        if "over 3.5" in pick_clean or "o3.5" in pick_clean:
+            ok = total > 3
+        elif "over 2.5" in pick_clean or "o2.5" in pick_clean:
+            ok = total > 2
+        elif "over 1.5" in pick_clean or "o1.5" in pick_clean:
+            ok = total > 1
+        elif "under 2.5" in pick_clean or "u2.5" in pick_clean:
+            ok = total <= 2
+        elif "under 1.5" in pick_clean or "u1.5" in pick_clean:
+            ok = total <= 1
+        # BTTS
+        elif any(x in pick_clean for x in ["ambos","btts","both","aa "]):
+            ok = sh > 0 and sa > 0
+        # Empate
+        elif any(x in pick_clean for x in ["empate","draw","🤝"," x "]):
+            ok = draw
+        # Doble chance
+        elif any(x in pick_clean for x in ["o emp","o empate","1x","x1"]):
+            if _name_in_pick(home, pick_clean) or "local" in pick_clean:
+                ok = won_h or draw
+            elif _name_in_pick(away, pick_clean) or "visita" in pick_clean or "x2" in pick_clean:
+                ok = won_a or draw
+            else:
+                ok = won_h or draw  # default DC
+        elif any(x in pick_clean for x in ["x2","2x"]):
+            ok = won_a or draw
+        # 1X2 por nombre — buscar en pick el nombre de local o visitante
+        elif _name_in_pick(home, pick_clean) or "local" in pick_clean or "home" in pick_clean:
+            ok = won_h
+        elif _name_in_pick(away, pick_clean) or "visita" in pick_clean or "away" in pick_clean:
+            ok = won_a
+        # Fallback apellido
+        elif home and _apellido(home) in pick_clean:
+            ok = won_h
+        elif away and _apellido(away) in pick_clean:
+            ok = won_a
+
+    sc_fmt = f"{sh}–{sa} pts" if sport in ("nba","basketball") else f"{sh}–{sa}"
     if ok is True:
         return "✅ GANÓ", "#00ff88", f"Score: {sc_fmt}"
     elif ok is False:
@@ -2864,39 +2907,50 @@ def _villar_auto_pick(partido_db):
                     "src": f"🤖 Modelo NBA · {prob*100:.0f}%"}
 
         else:  # futbol — correr ensemble completo
-            home_id = partido_db.get("home_id","")
-            away_id = partido_db.get("away_id","")
-            slug    = partido_db.get("slug","")
-            odd_h   = partido_db.get("odd_h", 0)
-            odd_a   = partido_db.get("odd_a", 0)
+            home_id  = partido_db.get("home_id","")
+            away_id  = partido_db.get("away_id","")
+            slug     = partido_db.get("slug","")
+            odd_h    = partido_db.get("odd_h", 0)
+            odd_a    = partido_db.get("odd_a", 0)
+            odd_d    = partido_db.get("odd_d", 0)
             home_rec = partido_db.get("home_rec","5-5-5")
             away_rec = partido_db.get("away_rec","5-5-5")
 
             hf  = get_form(home_id, slug) if home_id and slug else []
             af  = get_form(away_id, slug) if home_id and slug else []
-            hxg = xg_weighted(hf,is_home=True,  odds_prior=1/odd_h if odd_h>1 else 0) if hf else xg_from_record(home_rec, True)
-            axg = xg_weighted(af,is_home=False, odds_prior=1/odd_a if odd_a>1 else 0) if af else xg_from_record(away_rec, False)
+            hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0) if hf else xg_from_record(home_rec, True)
+            axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0) if af else xg_from_record(away_rec, False)
             mc  = mc50k(hxg, axg)
 
-            # Build all candidate picks with their model prob
-            candidates = [
-                {"pick": f"{home} gana",  "prob": mc["ph"],   "mkt": "1"},
-                {"pick": f"{away} gana",  "prob": mc["pa"],   "mkt": "2"},
-                {"pick": "empate",         "prob": mc["pd"],   "mkt": "X"},
-                {"pick": "over 2.5",       "prob": mc["o25"],  "mkt": "o25"},
-                {"pick": "over 1.5",       "prob": mc["o15"],  "mkt": "o15"},
-                {"pick": "ambos anotan",   "prob": mc["btts"], "mkt": "btts"},
+            # Todos los mercados relevantes con su prob real del modelo
+            all_mkts = [
+                {"pick": f"🏠 {home} gana",       "prob": mc["ph"],   "mkt": "1X2",  "odd": odd_h},
+                {"pick": f"✈️ {away} gana",         "prob": mc["pa"],   "mkt": "1X2",  "odd": odd_a},
+                {"pick": f"🤝 Empate",              "prob": mc["pd"],   "mkt": "1X2",  "odd": odd_d},
+                {"pick": f"🔵 {home[:10]} o Emp",   "prob": mc["ph"]+mc["pd"], "mkt": "DC", "odd": 0},
+                {"pick": f"🟣 {away[:10]} o Emp",   "prob": mc["pd"]+mc["pa"], "mkt": "DC", "odd": 0},
+                {"pick": "⚽ Over 2.5",             "prob": mc["o25"],  "mkt": "O/U",  "odd": 0},
+                {"pick": "⚽ Over 1.5",             "prob": mc["o15"],  "mkt": "O/U",  "odd": 0},
+                {"pick": "⚡ Ambos Anotan",         "prob": mc["btts"], "mkt": "BTTS", "odd": 0},
             ]
-            # Sort by prob — pick the highest
-            candidates.sort(key=lambda x: -x["prob"])
-            best = candidates[0]
+            # Filtrar: solo los que superen 52% de prob
+            strong = [m for m in all_mkts if m["prob"] >= 0.52]
+            if not strong:
+                strong = sorted(all_mkts, key=lambda x: -x["prob"])[:2]
+            # Pick principal = el de mayor prob (o mayor edge si hay cuotas)
+            def _edge_score(m):
+                o = m["odd"]
+                return (m["prob"] - 1/o) if o > 1 else (m["prob"] - 0.50)
+            strong.sort(key=_edge_score, reverse=True)
+            best = strong[0]
             return {
-                "pick":  best["pick"],
-                "prob":  best["prob"],
-                "sport": "futbol",
-                "home":  home,
-                "away":  away,
-                "src":   f"🤖 Modelo MC50K · {best['prob']*100:.0f}%",
+                "pick":      best["pick"],
+                "prob":      best["prob"],
+                "sport":     "futbol",
+                "home":      home,
+                "away":      away,
+                "all_picks": strong,  # todos los mercados para mostrar en UI
+                "src":       f"🤖 MC50K · {best['prob']*100:.0f}%",
             }
     except:
         # Fallback silencioso — no mostramos pick si el modelo falla
@@ -3178,15 +3232,40 @@ def render_resultados_tab():
                                 elif "FALLÓ" in vd: fail_sp+=1
 
                             if auto_pk:
-                                vd,vc,ex = _villar_match_pick_to_result(auto_pk, p)
-                                pick_rows.append({
-                                    "label": auto_pk.get("pick","?"),
-                                    "prob": auto_pk.get("prob",0)*100 if auto_pk.get("prob",0)<=1 else auto_pk.get("prob",0),
-                                    "odd": 0, "src": auto_pk.get("src","🤖 Modelo"),
-                                    "verd": vd, "col": vc, "expl": ex,
-                                })
-                                if "GANÓ" in vd: ok_sp+=1
-                                elif "FALLÓ" in vd: fail_sp+=1
+                                # Tenis: solo mostrar ganador con ✅ — sin score
+                                if sport_key == "tenis":
+                                    _winner = home_n if won_h else away_n
+                                    _loser  = away_n if won_h else home_n
+                                    _fav    = auto_pk.get("pick","").replace("🎾","").replace("gana","").strip()
+                                    _acerto = any(w in _fav.lower() for w in _winner.lower().split() if len(w)>3)
+                                    _icon   = "✅" if _acerto else "❌"
+                                    _col    = "#00ff88" if _acerto else "#ff4444"
+                                    _src    = auto_pk.get("src","🤖 Modelo")
+                                    pick_rows.append({
+                                        "label": auto_pk.get("pick","?"),
+                                        "prob": auto_pk.get("prob",0)*100,
+                                        "odd": 0, "src": _src,
+                                        "verd": "✅ GANÓ" if _acerto else "❌ FALLÓ",
+                                        "col": _col, "expl": f"Ganó: {_winner}",
+                                    })
+                                    if _acerto: ok_sp+=1
+                                    else: fail_sp+=1
+                                else:
+                                    # Fútbol/NBA: mostrar TODOS los mercados de all_picks
+                                    all_picks = auto_pk.get("all_picks", [auto_pk])
+                                    for _apk in all_picks:
+                                        _apk_obj = {**auto_pk, "pick": _apk.get("pick", auto_pk.get("pick","?"))}
+                                        vd,vc,ex = _villar_match_pick_to_result(_apk_obj, p)
+                                        _prob = _apk.get("prob", auto_pk.get("prob",0))
+                                        pick_rows.append({
+                                            "label": _apk.get("pick", auto_pk.get("pick","?")),
+                                            "prob": _prob*100 if _prob<=1 else _prob,
+                                            "odd": _apk.get("odd",0),
+                                            "src": auto_pk.get("src","🤖 Modelo"),
+                                            "verd": vd, "col": vc, "expl": ex,
+                                        })
+                                        if "GANÓ" in vd: ok_sp+=1
+                                        elif "FALLÓ" in vd: fail_sp+=1
 
                             # Render card
                             has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
@@ -3199,42 +3278,51 @@ def render_resultados_tab():
                                 bg   = "#00ff8810" if icon=="✅" else ("#ff444410" if icon=="❌" else "#1a1a3a")
                                 bd   = r["col"] if icon in ("✅","❌") else "#333"
                                 od   = f" · @{r['odd']:.2f}" if r.get("odd",0)>1 else ""
+                                pct  = f" · {r['prob']:.0f}%" if r.get("prob",0)>0 else ""
                                 pick_html += (
                                     f"<div style='margin-top:5px;padding:6px 10px;border-radius:8px;"
                                     f"background:{bg};border:1px solid {bd};"
                                     f"display:flex;align-items:center;gap:8px'>"
-                                    f"<div style='font-size:1.3rem'>{icon}</div>"
+                                    f"<div style='font-size:1.1rem'>{icon}</div>"
                                     f"<div style='flex:1'>"
-                                    f"<div style='font-size:.8rem;font-weight:700;color:{r['col']}'>{r['label']}{od}</div>"
+                                    f"<div style='font-size:.8rem;font-weight:700;color:{r['col']}'>{r['label']}{od}{pct}</div>"
                                     f"<div style='font-size:.65rem;color:#555'>{r['src']} · {r['expl']}</div>"
                                     f"</div>"
-                                    f"<div style='font-size:.75rem;font-weight:900;color:{r['col']}'>"
-                                    f"{r['verd'].replace('✅ ','').replace('❌ ','')}</div>"
                                     f"</div>"
                                 )
 
-                            if sport_key=="tenis":
-                                if sh==0 and sa==0: sc_fmt="N/D"
-                                elif sh<0 or sa<0: sc_fmt="?"
-                                else: sc_fmt=f"Sets {sh}–{sa}"
-                            elif sport_key=="nba": sc_fmt=f"{sh}–{sa} pts"
-                            else: sc_fmt=f"{sh}–{sa}"
-                            st.markdown(
-                                f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
-                                f"margin:4px 0;border:1px solid {border_c}'>"
-                                f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
-                                f"gap:4px;align-items:center'>"
-                                f"<div style='text-align:right'><span style='color:{hc};"
-                                f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
-                                f"<div style='text-align:center;background:#07071a;border-radius:8px;padding:4px 6px'>"
-                                f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
-                                f"<span style='color:#333'> – </span>"
-                                f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
-                                f"<div style='text-align:left'><span style='color:{ac};"
-                                f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
-                                f"</div>"
-                                f"{pick_html}"
-                                f"</div>", unsafe_allow_html=True)
+                            # Score: tenis = solo ganador con ✅, otros = marcador normal
+                            if sport_key == "tenis":
+                                winner_n = home_n if won_h else (away_n if won_a else "?")
+                                loser_n  = away_n if won_h else (home_n if won_a else "?")
+                                st.markdown(
+                                    f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
+                                    f"margin:4px 0;border:1px solid {border_c}'>"
+                                    f"<div style='display:flex;align-items:center;gap:10px'>"
+                                    f"<span style='font-size:1.2rem'>✅</span>"
+                                    f"<span style='color:#00ff88;font-weight:900;font-size:.9rem'>{winner_n}</span>"
+                                    f"<span style='color:#444;font-size:.8rem'>ganó vs</span>"
+                                    f"<span style='color:#666;font-size:.85rem'>{loser_n}</span>"
+                                    f"</div>"
+                                    f"{pick_html}"
+                                    f"</div>", unsafe_allow_html=True)
+                            else:
+                                st.markdown(
+                                    f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
+                                    f"margin:4px 0;border:1px solid {border_c}'>"
+                                    f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
+                                    f"gap:4px;align-items:center'>"
+                                    f"<div style='text-align:right'><span style='color:{hc};"
+                                    f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
+                                    f"<div style='text-align:center;background:#07071a;border-radius:8px;padding:4px 6px'>"
+                                    f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
+                                    f"<span style='color:#333'> – </span>"
+                                    f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
+                                    f"<div style='text-align:left'><span style='color:{ac};"
+                                    f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
+                                    f"</div>"
+                                    f"{pick_html}"
+                                    f"</div>", unsafe_allow_html=True)
 
             total_sp = ok_sp+fail_sp
             pct_sp = round(ok_sp/total_sp*100) if total_sp>0 else 0
@@ -6536,7 +6624,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     # ── 🏀 NBA ────────────────────────────────────────────────────────────
     try:
         for g in (nba_games or [])[:20]:
-            if g.get("state") != "pre": continue
+            if g.get("state") == "post": continue  # acepta pre/scheduled/None
             try:
                 res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
                 p_h = res.get("p_h_win", 0.55); p_a = 1-p_h
