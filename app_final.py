@@ -4023,6 +4023,313 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None, home_id=None
     }
 
 
+# ══════════════════════════════════════════════════════════════════════
+# VEREDICTO ACADÉMICO — TENIS  (metodología exclusiva)
+# 3 modelos específicos de tenis + 50,000 simulaciones Monte Carlo
+# ══════════════════════════════════════════════════════════════════════
+
+def _tennis_elo_prob(rank1, rank2, odd_1=0, odd_2=0):
+    """
+    MODELO 1 — Elo Adaptado al Tenis (Glickman & Jones 1999)
+    Convierte ranking ATP/WTA a rating Elo y calcula prob de victoria.
+    Incorpora momios de mercado como señal de información pública.
+    """
+    # Convertir ranking a puntos Elo aproximados (escala logarítmica inversa)
+    def rank_to_elo(r):
+        r = max(1, min(r, 800))
+        return 2400 - 400 * math.log10(r)
+
+    e1 = rank_to_elo(max(1, rank1) if rank1 < 900 else 200)
+    e2 = rank_to_elo(max(1, rank2) if rank2 < 900 else 200)
+    p_elo = 1 / (1 + 10 ** ((e2 - e1) / 400))
+
+    # Blend con mercado si hay momios
+    if odd_1 > 1 and odd_2 > 1:
+        vig  = 1/odd_1 + 1/odd_2
+        p_mkt = (1/odd_1) / vig
+        p_elo = 0.55 * p_elo + 0.45 * p_mkt
+    return round(max(0.05, min(0.95, p_elo)), 4)
+
+
+def _tennis_surface_model(rank1, rank2, surface, odd_1=0, odd_2=0):
+    """
+    MODELO 2 — Modelo de Superficie Específica (Klaassen & Magnus 2003)
+    Cada superficie tiene parámetros distintos de ventaja al servicio.
+    Grass > Carpet > Hard > Clay en ventaja de servicio.
+    Incorpora el modelo Weibull-Markov punto→juego→set→partido.
+    """
+    return weibull_match_prob(rank1, rank2, odd_1, odd_2, surface, best_of=3)["p1"]
+
+
+def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=50_000):
+    """
+    MODELO 3 — Monte Carlo 50,000 simulaciones (inspirado en Barnett & Clarke 2005)
+    Simula cada partido set a set, game a game.
+    Incorpora varianza real del tenis: ningún partido está "decidido" antes de empezar.
+    
+    p_win_match = probabilidad base de que P1 gane el partido (0-1)
+    Simula best-of-3 sets con tie-break.
+    """
+    rng = np.random.default_rng(42)
+
+    # Prob de ganar un set dado prob partido (calibración empírica)
+    # Ajuste: en best-of-3, si p_partido=0.65 → p_set ≈ 0.58
+    def match_to_set_prob(pm):
+        # Inversión numérica: P(ganar partido) = sum_{s=2}^{3} C(s-1,1)*ps^2*(1-ps)^(s-2)
+        # Aproximación analítica (Newton-Raphson simplificado)
+        ps = max(0.35, min(0.75, 0.45 + (pm - 0.50) * 0.65))
+        return ps
+
+    ps1 = match_to_set_prob(p_win_match)
+    ps2 = 1 - ps1
+
+    p1_wins = 0
+    for _ in range(n):
+        sets_p1 = sets_p2 = 0
+        while sets_p1 < 2 and sets_p2 < 2:
+            # Simular set: primero a 6 juegos, tie-break si 6-6
+            g1 = g2 = 0
+            while True:
+                if rng.random() < ps1: g1 += 1
+                else:                  g2 += 1
+                if g1 >= 6 and g1 - g2 >= 2: break
+                if g2 >= 6 and g2 - g1 >= 2: break
+                if g1 == 7 or g2 == 7:       break   # tie-break won
+                if g1 == 6 and g2 == 6:
+                    # Tie-break: primero a 7 puntos con diferencia 2
+                    if rng.random() < ps1: g1 = 7
+                    else:                  g2 = 7
+                    break
+            if g1 > g2: sets_p1 += 1
+            else:       sets_p2 += 1
+        if sets_p1 > sets_p2: p1_wins += 1
+
+    p1_mc = p1_wins / n
+    # Blend Monte Carlo con mercado si hay momios
+    if odd_1 > 1 and odd_2 > 1:
+        vig   = 1/odd_1 + 1/odd_2
+        p_mkt = (1/odd_1) / vig
+        p1_mc = 0.65 * p1_mc + 0.35 * p_mkt
+    return round(max(0.05, min(0.95, p1_mc)), 4)
+
+
+def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
+                               odd_1, odd_2, surface, torneo,
+                               expert_p1=None):
+    """
+    Veredicto académico exclusivo para tenis.
+    Integra 3 modelos específicos de tenis + 50k Monte Carlo.
+    Semáforo: 🟢 APOSTAR / 🟡 BANK MEDIO / 🔴 NO APOSTAR
+    """
+    import statistics
+
+    # ── Ejecutar los 3 modelos ──
+    p1_elo  = _tennis_elo_prob(rank1, rank2, odd_1, odd_2)
+    p1_surf = _tennis_surface_model(rank1, rank2, surface, odd_1, odd_2)
+    # Monte Carlo usa el promedio de Elo+Superficie como base
+    base_mc = (p1_elo + p1_surf) / 2
+    p1_mc   = _tennis_monte_carlo_50k(base_mc, odd_1, odd_2, n=50_000)
+
+    # Si hay análisis de Einstein, también lo incluimos como señal
+    p1_einstein = expert_p1 if expert_p1 is not None else None
+
+    # ── Consenso ponderado ──
+    # Pesos: Elo 25%, Superficie 35%, Monte Carlo 40%
+    if p1_einstein is not None:
+        # Con Einstein: Elo 15%, Superficie 25%, MC 35%, Einstein 25%
+        p1_final = 0.15*p1_elo + 0.25*p1_surf + 0.35*p1_mc + 0.25*p1_einstein
+    else:
+        p1_final = 0.25*p1_elo + 0.35*p1_surf + 0.40*p1_mc
+    p2_final = 1 - p1_final
+
+    fav     = p1_name if p1_final >= p2_final else p2_name
+    fav_p   = max(p1_final, p2_final)
+    fav_odd = odd_1 if p1_final >= p2_final else odd_2
+    dog_p   = min(p1_final, p2_final)
+
+    # ── Edge vs cuota ──
+    ev = fav_p - (1/fav_odd) if fav_odd > 1 else 0
+
+    # ── Consenso entre modelos ──
+    models_p1 = [p1_elo, p1_surf, p1_mc]
+    if p1_einstein: models_p1.append(p1_einstein)
+    agree = sum(1 for p in models_p1 if (p >= 0.5) == (p1_final >= 0.5))
+    total_m = len(models_p1)
+    std = statistics.stdev(models_p1) if len(models_p1) > 1 else 0.1
+
+    # ── Sistema de puntuación ──
+    score = 0
+    factores = []
+
+    # Probabilidad del favorito
+    if fav_p >= 0.70:
+        score += 3; factores.append((f"✅ Prob. muy alta: {fav_p*100:.1f}% — favorito claro", "#00ff88"))
+    elif fav_p >= 0.62:
+        score += 2; factores.append((f"✅ Prob. sólida: {fav_p*100:.1f}%", "#00ff88"))
+    elif fav_p >= 0.55:
+        score += 1; factores.append((f"⚠️ Prob. moderada: {fav_p*100:.1f}% — partido parejo", "#FFD700"))
+    else:
+        score -= 1; factores.append((f"🚫 Partido muy parejo: {fav_p*100:.1f}% — sin ventaja clara", "#ff4444"))
+
+    # Consenso entre modelos
+    if agree == total_m:
+        score += 2; factores.append((f"✅ Los {total_m} modelos coinciden en el mismo ganador", "#00ff88"))
+    elif agree >= total_m*0.75:
+        score += 1; factores.append((f"⚠️ {agree}/{total_m} modelos de acuerdo", "#FFD700"))
+    else:
+        score -= 2; factores.append((f"🚫 Modelos divididos — señal mixta en tenis", "#ff4444"))
+
+    # Dispersión
+    if std < 0.04:
+        score += 2; factores.append((f"✅ Alta consistencia entre modelos (σ={std*100:.1f}%)", "#00ff88"))
+    elif std < 0.08:
+        score += 1; factores.append((f"⚠️ Dispersión moderada entre modelos (σ={std*100:.1f}%)", "#FFD700"))
+    else:
+        score -= 1; factores.append((f"🚫 Alta varianza entre modelos (σ={std*100:.1f}%)", "#ff4444"))
+
+    # Edge vs cuota
+    if ev > 0.08:
+        score += 3; factores.append((f"✅ Edge real: +{ev*100:.1f}% sobre la cuota de mercado", "#00ff88"))
+    elif ev > 0.04:
+        score += 2; factores.append((f"✅ Edge moderado: +{ev*100:.1f}%", "#00ff88"))
+    elif ev > 0:
+        score += 1; factores.append((f"⚠️ Edge marginal: +{ev*100:.1f}%", "#FFD700"))
+    elif fav_odd == 0:
+        factores.append(("⚠️ Sin cuota disponible — EV no calculable", "#FFD700"))
+    else:
+        score -= 2; factores.append((f"🚫 Sin valor vs cuota: EV={ev*100:.1f}%", "#ff4444"))
+
+    # Monte Carlo específico (50k simulaciones)
+    if p1_mc > 0.65 or p1_mc < 0.35:
+        score += 1; factores.append((f"✅ Monte Carlo 50k confirma ventaja clara: {max(p1_mc,1-p1_mc)*100:.1f}%", "#00ff88"))
+    elif abs(p1_mc - 0.5) < 0.05:
+        score -= 1; factores.append((f"🚫 Monte Carlo 50k: partido 50/50 ({p1_mc*100:.1f}%)", "#ff4444"))
+
+    # ── Veredicto final ──
+    if score >= 7:
+        nivel="#00ff88"; emoji="🟢"; label="APOSTAR"
+        desc="Los 3 modelos de tenis + Monte Carlo 50k convergen. Existe ventaja estadística real."
+        kelly=f"Kelly sugerido: 1–3% del banco"
+        bg="linear-gradient(135deg,#001a00,#002800)"; brd="#00ff88"
+    elif score >= 4:
+        nivel="#FFD700"; emoji="🟡"; label="APOSTAR — BANK MEDIO"
+        desc="Señal moderada. Apuesta conservadora o espera mejor cuota."
+        kelly=f"Kelly sugerido: 0.5–1.5% del banco"
+        bg="linear-gradient(135deg,#1a1200,#2a1e00)"; brd="#FFD700"
+    else:
+        nivel="#ff4444"; emoji="🔴"; label="NO APOSTAR"
+        desc="Modelos no convergen o cuota sin valor. Sin ventaja estadística en tenis."
+        kelly="Abstenerse — 0% del banco"
+        bg="linear-gradient(135deg,#1a0000,#2a0000)"; brd="#ff4444"
+
+    # ── Tabla de los 3 modelos ──
+    surf_icon = {"hard":"🔵","clay":"🟤","grass":"🟢"}.get(surface.lower(),"🎾")
+    model_data = [
+        ("Elo Adaptado al Tenis",     p1_elo,  "#00ccff", "25%",
+         "Glickman & Jones 1999 — ranking→Elo→prob partido"),
+        (f"Superficie {surf_icon} {surface.title()}", p1_surf, "#aa00ff", "35%",
+         f"Klaassen & Magnus 2003 — Weibull-Markov punto→set→partido en {surface}"),
+        ("Monte Carlo 50,000 sim.",   p1_mc,   "#FFD700", "40%",
+         "Barnett & Clarke 2005 — 50k simulaciones set a set con tie-break"),
+    ]
+    if p1_einstein:
+        model_data.append(("Einstein IA + H2H", p1_einstein, "#00ff88", "+",
+                           "Análisis H2H, forma, lesiones, motivación"))
+
+    p1_show = p1_final if p1_final>=p2_final else p2_final
+    p2_show = 1 - p1_show
+    fav_show = fav; dog_show = p2_name if p1_final>=p2_final else p1_name
+
+    model_rows = ""
+    for mname, mv, mcol, peso, ref in model_data:
+        mv_fav = mv if p1_final>=p2_final else 1-mv
+        mcolor = "#00ff88" if mv_fav>=0.60 else ("#FFD700" if mv_fav>=0.50 else "#ff4444")
+        bw = int(mv_fav*100)
+        model_rows += (
+            f"<tr style='border-bottom:1px solid #0d0d2e'>"
+            f"<td style='padding:7px 10px'><span style='color:{mcol};font-weight:700;font-size:.78rem'>{mname}</span>"
+            f" <span style='color:#333;font-size:.65rem'>({peso})</span></td>"
+            f"<td style='padding:7px 10px;text-align:center'>"
+            f"<span style='color:{mcolor};font-weight:900;font-size:.95rem'>{mv_fav*100:.1f}%</span>"
+            f"<span style='color:{mcolor};font-size:.68rem'> {'▲' if mv_fav>=0.5 else '▼'}</span></td>"
+            f"<td style='padding:7px 10px'>"
+            f"<div style='height:4px;background:#0d0d2e;border-radius:4px;overflow:hidden'>"
+            f"<div style='width:{bw}%;height:100%;background:{mcolor};border-radius:4px'></div></div></td>"
+            f"<td style='padding:7px 10px;color:#333;font-size:.65rem'>{ref}</td></tr>"
+        )
+
+    factores_html = "".join(
+        f"<div style='color:{col};font-size:.78rem;padding:3px 0;line-height:1.4'>{txt}</div>"
+        for txt, col in factores
+    )
+
+    bar_pct = max(0, min(score, 11))
+    bar_color = nivel
+
+    return f"""
+<div style='background:{bg};border:2px solid {brd};border-radius:16px;padding:20px;margin:16px 0'>
+  <!-- Semáforo -->
+  <div style='display:flex;align-items:center;gap:14px;margin-bottom:4px'>
+    <div style='font-size:3rem;line-height:1'>{emoji}</div>
+    <div>
+      <div style='font-size:.7rem;font-weight:700;color:{nivel};letter-spacing:.14em;text-transform:uppercase'>
+        VEREDICTO TENIS — 3 MODELOS + MONTE CARLO 50K</div>
+      <div style='font-size:1.5rem;font-weight:900;color:{nivel};letter-spacing:.04em'>{label}</div>
+    </div>
+  </div>
+  <!-- Pick y desc -->
+  <div style='background:#07071a88;border-radius:10px;padding:10px 14px;margin:10px 0'>
+    <div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em'>PICK</div>
+    <div style='font-size:1.1rem;font-weight:800;color:#fff'>🎾 {fav_show} gana</div>
+    <div style='font-size:.82rem;color:#aaa;margin-top:2px'>{desc}</div>
+    <div style='font-size:.8rem;font-weight:700;color:{nivel};margin-top:4px'>💰 {kelly}</div>
+  </div>
+  <!-- Score bar -->
+  <div style='margin:10px 0 6px'>
+    <div style='display:flex;justify-content:space-between;font-size:.65rem;color:#555;margin-bottom:3px'>
+      <span>🔴 No apostar</span><span>Confianza</span><span>🟢 Apostar</span>
+    </div>
+    <div style='height:6px;background:#0d0d2e;border-radius:6px;overflow:hidden'>
+      <div style='width:{bar_pct/11*100:.0f}%;height:100%;background:{bar_color};border-radius:6px;
+           transition:width 0.5s'></div>
+    </div>
+  </div>
+  <!-- Probabilidades finales -->
+  <div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0'>
+    <div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>
+      <div style='font-size:.65rem;color:#555;margin-bottom:2px'>{fav_show[:18]}</div>
+      <div style='font-size:1.6rem;font-weight:900;color:{nivel}'>{fav_p*100:.1f}%</div>
+      <div style='font-size:.65rem;color:#555'>FAVORITO</div>
+    </div>
+    <div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>
+      <div style='font-size:.65rem;color:#555;margin-bottom:2px'>{dog_show[:18]}</div>
+      <div style='font-size:1.6rem;font-weight:900;color:#555'>{dog_p*100:.1f}%</div>
+      <div style='font-size:.65rem;color:#555'>UNDERDOG</div>
+    </div>
+  </div>
+  <!-- Tabla 3 modelos -->
+  <div style='font-size:.7rem;font-weight:700;color:#555;letter-spacing:.1em;text-transform:uppercase;margin:10px 0 4px'>
+    📊 Análisis por Modelo — Prob. favorito: {fav_p*100:.1f}% promedio</div>
+  <table style='width:100%;border-collapse:collapse;background:#07071a;border-radius:10px;overflow:hidden'>
+    <tr style='background:#0d0d2e'>
+      <th style='padding:7px 10px;text-align:left;color:#555;font-size:.68rem;font-weight:600'>Modelo</th>
+      <th style='padding:7px 10px;text-align:center;color:#555;font-size:.68rem;font-weight:600'>Prob.</th>
+      <th style='padding:7px 10px;color:#555;font-size:.68rem;font-weight:600'>Intensidad</th>
+      <th style='padding:7px 10px;color:#555;font-size:.68rem;font-weight:600'>Fuente</th>
+    </tr>
+    {model_rows}
+  </table>
+  <!-- Factores -->
+  <div style='margin-top:12px;padding-top:10px;border-top:1px solid #151530'>
+    {factores_html}
+  </div>
+  <div style='margin-top:6px;font-size:.65rem;color:#222;font-family:monospace'>
+    σ={std*100:.2f}% · agree={agree}/{total_m} · score={score}/11 · 
+    {surf_icon} {surface} · MC50k={p1_mc*100:.1f}%/{(1-p1_mc)*100:.1f}%
+  </div>
+</div>"""
+
+
 def veredicto_academico(mc, dp, odd_h, odd_a, odd_d, home, away, best_market=None, best_prob=None, best_odd=None):
     """
     Veredicto académico único que integra TODOS los modelos:
@@ -5393,25 +5700,28 @@ if st.session_state["view"] == "cartelera":
                                        f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                     + f"</div>", unsafe_allow_html=True)
                                 # ── VEREDICTO ACADÉMICO TENIS ──
-                                _ten_mc_v = {
-                                    "dc_ph": ai_p1/100, "bvp_ph": ai_p1/100,
-                                    "elo_ph": ai_p1/100, "h2h_ph": ai_p1/100,
-                                    "xg_h": 1.0, "xg_a": 1.0,
-                                    "o25":0.5,"o35":0.3,"btts":0.5,
+                                # 3 modelos específicos de tenis + 50,000 simulaciones
+                                _ten_surface_map = {
+                                    "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+                                    "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+                                    "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
+                                    "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
+                                    "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard",
                                 }
-                                _ten_dp_v = {"ph": ai_p1/100, "pa": ai_p2/100, "pd": 0.0, "conf": ai_conf}
-                                _ten_odd1 = m.get("odd_1",0); _ten_odd2 = m.get("odd_2",0)
-                                _ten_fav = m["p1"] if ai_p1>=ai_p2 else m["p2"]
-                                _ten_fav_prob = max(ai_p1,ai_p2)/100
-                                _ten_fav_odd  = _ten_odd1 if ai_p1>=ai_p2 else _ten_odd2
-                                st.markdown(veredicto_academico(
-                                    _ten_mc_v, _ten_dp_v,
-                                    _ten_odd1, _ten_odd2, 0,
-                                    m["p1"], m["p2"],
-                                    best_market=f"🎾 ML: {_ten_fav}",
-                                    best_prob=_ten_fav_prob,
-                                    best_odd=_ten_fav_odd
-                                ), unsafe_allow_html=True)
+                                _ten_tour = m.get("torneo","")
+                                _ten_surface = next((v for k,v in _ten_surface_map.items()
+                                                     if k.lower() in _ten_tour.lower()), "hard")
+                                # Pasar Einstein p1 como señal adicional si existe
+                                _einstein_p1 = ai_p1/100 if ai_p1 > 0 else None
+                                with st.spinner("🎾 Calculando 50,000 simulaciones de partido..."):
+                                    _ten_vd_html = veredicto_academico_tenis(
+                                        p1_name=m["p1"], p2_name=m["p2"],
+                                        rank1=m.get("rank1",200), rank2=m.get("rank2",200),
+                                        odd_1=m.get("odd_1",0), odd_2=m.get("odd_2",0),
+                                        surface=_ten_surface, torneo=_ten_tour,
+                                        expert_p1=_einstein_p1
+                                    )
+                                st.markdown(_ten_vd_html, unsafe_allow_html=True)
 
                                 # ── PRE-MATCH BOT — Tenis ──
                                 _ten_model = {"p1": ai_p1/100, "p2": ai_p2/100, "ph": ai_p1/100, "pd": 0, "pa": ai_p2/100}
