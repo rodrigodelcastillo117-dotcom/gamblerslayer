@@ -7076,119 +7076,106 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         st.rerun()
 
     # ══════════════════════════════════════════════════════
+    # AUTO-SCAN al abrir la pestaña por primera vez
+    # ══════════════════════════════════════════════════════
+    if not st.session_state.get("_king_scanned") and not do_scan:
+        do_scan = True  # corona gira automáticamente al entrar
+
+    # ══════════════════════════════════════════════════════
     # SCAN + RESULTADOS
     # ══════════════════════════════════════════════════════
     if do_scan or st.session_state.get("_king_scanned"):
 
         if do_scan:
-            # ── ANIMACIÓN CORONA — usa components.v1.html para que corra independiente ──
-            _kr_slot = st.empty()
-            _KR_LOADER_HTML = """
+            # ── CORONA ANIMADA (CSS en markdown — se renderiza antes del scan) ──
+            _crown_slot = st.empty()
+            _crown_slot.markdown("""
 <style>
-  body{margin:0;padding:0;background:transparent}
-  @keyframes spin{
-    0%  {transform:rotate(0deg)   scale(1.0);filter:drop-shadow(0 0 8px #FFD700cc)}
-    25% {transform:rotate(90deg)  scale(1.12);filter:drop-shadow(0 0 22px #ff9500ff)}
-    50% {transform:rotate(180deg) scale(1.06);filter:drop-shadow(0 0 30px #FFD700ff)}
-    75% {transform:rotate(270deg) scale(1.15);filter:drop-shadow(0 0 24px #7c00ffcc)}
-    100%{transform:rotate(360deg) scale(1.0);filter:drop-shadow(0 0 8px #FFD700cc)}
-  }
-  @keyframes shimmer{
-    0%  {background-position:-300px 0}
-    100%{background-position: 300px 0}
-  }
-  @keyframes pulse-border{
-    0%,100%{opacity:.4} 50%{opacity:1}
-  }
-  @keyframes fade-up{
-    from{opacity:0;transform:translateY(8px)}
-    to  {opacity:1;transform:translateY(0)}
-  }
-  .wrap{
-    background:linear-gradient(160deg,#0e0028 0%,#001608 50%,#0e0028 100%);
-    border:1px solid #FFD70044;border-radius:20px;
-    padding:28px 24px 24px;text-align:center;position:relative;
-    overflow:hidden;font-family:'Inter',sans-serif;
-    animation:fade-up .3s ease;
-  }
-  .wrap::before{
-    content:'';position:absolute;top:0;left:0;right:0;height:3px;
-    background:linear-gradient(90deg,transparent,#FFD700,#ff9500,transparent);
-    animation:pulse-border 1.4s ease-in-out infinite;
-  }
-  .wrap::after{
-    content:'';position:absolute;bottom:0;left:0;right:0;height:2px;
-    background:linear-gradient(90deg,transparent,#7c00ff,transparent);
-    animation:pulse-border 1.8s ease-in-out infinite reverse;
-  }
-  .crown{font-size:3.6rem;display:inline-block;animation:spin 1.5s cubic-bezier(.4,0,.2,1) infinite;line-height:1;margin-bottom:12px}
-  .title{font-size:.95rem;font-weight:900;letter-spacing:.2em;
-    background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700);
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
-  .badge{font-size:1.1rem;margin-bottom:8px}
-  .msg{font-size:.8rem;color:#777;margin-bottom:16px;letter-spacing:.03em}
-  .bar-wrap{background:#080820;border-radius:99px;height:7px;overflow:hidden;
-    margin:0 auto 6px;border:1px solid #1a1a3a;width:100%}
-  .bar{height:100%;border-radius:99px;
-    background:linear-gradient(90deg,#7c00ff,#FFD700,#ff9500);
-    background-size:200% 100%;
-    animation:shimmer 1.1s linear infinite;transition:width .5s ease}
-  .pct{font-size:.7rem;color:#FFD700;font-weight:700;letter-spacing:.08em}
+@keyframes kr-spin{
+  0%  {transform:rotate(0deg)  scale(1.0);filter:drop-shadow(0 0 10px #FFD700bb)}
+  25% {transform:rotate(90deg) scale(1.14);filter:drop-shadow(0 0 24px #ff9500ff)}
+  50% {transform:rotate(180deg)scale(1.07);filter:drop-shadow(0 0 32px #FFD700ff)}
+  75% {transform:rotate(270deg)scale(1.16);filter:drop-shadow(0 0 26px #7c00ffcc)}
+  100%{transform:rotate(360deg)scale(1.0);filter:drop-shadow(0 0 10px #FFD700bb)}
+}
+@keyframes kr-shimmer{
+  0%  {background-position:-300px 0}
+  100%{background-position: 300px 0}
+}
+@keyframes kr-glow{
+  0%,100%{opacity:.5} 50%{opacity:1}
+}
+.kr-wrap{
+  background:linear-gradient(160deg,#0e0028,#001608,#0e0028);
+  border:1px solid #FFD70055;border-radius:20px;
+  padding:30px 24px 26px;text-align:center;
+  position:relative;overflow:hidden;margin:8px 0;
+}
+.kr-wrap::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:linear-gradient(90deg,transparent,#FFD700,#ff9500,transparent);
+  animation:kr-glow 1.4s ease-in-out infinite;}
+.kr-wrap::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,#7c00ff,transparent);
+  animation:kr-glow 1.8s ease-in-out infinite reverse;}
+.kr-crown{font-size:4rem;display:inline-block;
+  animation:kr-spin 1.4s cubic-bezier(.4,0,.2,1) infinite;
+  line-height:1;margin-bottom:14px;}
+.kr-title{font-size:1rem;font-weight:900;letter-spacing:.2em;
+  background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:4px;}
+.kr-bar-wrap{background:#080820;border-radius:99px;height:8px;
+  overflow:hidden;margin:14px auto 0;border:1px solid #1a1a3a;}
+.kr-bar{height:100%;border-radius:99px;width:100%;
+  background:linear-gradient(90deg,#7c00ff,#FFD700,#ff9500,#FFD700);
+  background-size:300% 100%;
+  animation:kr-shimmer 1.2s linear infinite;}
 </style>
-<div class="wrap">
-  <div class="crown" id="crown">👑</div>
-  <div class="title">KING RONGO</div>
-  <div class="badge" id="badge">⚽🏀🎾</div>
-  <div class="msg"  id="msg">Iniciando escaneo...</div>
-  <div class="bar-wrap"><div class="bar" id="bar" style="width:2%"></div></div>
-  <div class="pct"  id="pct">2% completado</div>
+<div class="kr-wrap">
+  <div class="kr-crown">👑</div>
+  <div class="kr-title">KING RONGO — ESCANEANDO</div>
+  <div style="font-size:.8rem;color:#666;margin-top:6px;letter-spacing:.06em">
+    ⚽ Fútbol · 🏀 NBA · 🎾 Tenis · 🧠 Modelos
+  </div>
+  <div class="kr-bar-wrap"><div class="kr-bar"></div></div>
 </div>
-<script>
-  // Escucha mensajes del padre para actualizar
-  window.addEventListener('message', function(e){
-    try{
-      var d = e.data;
-      if(d && d.kr){
-        var bar = document.getElementById('bar');
-        var msg = document.getElementById('msg');
-        var pct = document.getElementById('pct');
-        var badge = document.getElementById('badge');
-        if(bar)   bar.style.width = d.pct + '%';
-        if(msg)   msg.textContent  = d.msg;
-        if(pct)   pct.textContent  = d.pct + '% completado';
-        if(badge) badge.textContent = d.badge;
-      }
-    }catch(ex){}
-  });
-</script>
-"""
-            _st_components.html(_KR_LOADER_HTML, height=240)
+""", unsafe_allow_html=True)
 
-            try:
-                _mf = matches_fut
+            # ── SCAN REAL con st.status (actualiza en tiempo real) ──
+            with st.status("👑 King Rongo escaneando...", expanded=False) as _kr_status:
                 try:
-                    if _mf is None: _mf = get_cartelera()
-                except: _mf = []
+                    _kr_status.update(label="⚽ Cargando cartelera de fútbol...")
+                    _mf = matches_fut
+                    try:
+                        if _mf is None: _mf = get_cartelera()
+                    except: _mf = []
 
-                _nbg = nba_games
-                try:
-                    if _nbg is None: _nbg = get_nba_cartelera()
-                except: _nbg = []
+                    _kr_status.update(label="🏀 Cargando partidos NBA...")
+                    _nbg = nba_games
+                    try:
+                        if _nbg is None: _nbg = get_nba_cartelera()
+                    except: _nbg = []
 
-                _ten = ten_matches
-                try:
-                    if _ten is None: _ten = get_tennis_cartelera()
-                except: _ten = []
+                    _kr_status.update(label="🎾 Cargando torneos de tenis...")
+                    _ten = ten_matches
+                    try:
+                        if _ten is None: _ten = get_tennis_cartelera()
+                    except: _ten = []
 
-                el_pick, contradicciones, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
+                    _kr_status.update(label="🧠 Corriendo modelos xG · Elo · Monte Carlo...")
+                    el_pick, contradicciones, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
 
-                st.session_state["_king_el_pick"]  = el_pick
-                st.session_state["_king_contras"]  = contradicciones
-                st.session_state["_king_todos"]    = todos
-                st.session_state["_king_scanned"]  = True
-                st.session_state["_king_ts"]       = datetime.now(CDMX).strftime("%H:%M")
-            except Exception as e:
-                st.error(f"Error en escaneo: {e}")
+                    _kr_status.update(label=f"💎 Pick supremo encontrado entre {len(todos)} candidatos", state="complete")
+                    st.session_state["_king_el_pick"]  = el_pick
+                    st.session_state["_king_contras"]  = contradicciones
+                    st.session_state["_king_todos"]    = todos
+                    st.session_state["_king_scanned"]  = True
+                    st.session_state["_king_ts"]       = datetime.now(CDMX).strftime("%H:%M")
+                except Exception as e:
+                    _kr_status.update(label=f"❌ Error: {e}", state="error")
+                    st.error(f"Error en escaneo: {e}")
+
+            _crown_slot.empty()  # quitar la corona una vez terminado
 
         el_pick        = st.session_state.get("_king_el_pick")
         contradicciones= st.session_state.get("_king_contras", [])
