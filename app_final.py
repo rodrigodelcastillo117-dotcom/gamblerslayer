@@ -10132,7 +10132,8 @@ else:
             f"<div class='mbox'><div class='mval' style='color:#00ccff'>{_vd['_p1_elo']*100:.0f}%</div><div class='mlbl'>Elo</div></div>"
             f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{_vd['_p1_surf']*100:.0f}%</div><div class='mlbl'>Superficie</div></div>"
             f"<div class='mbox'><div class='mval' style='color:#00ff88'>{_vd['_p1_mc']*100:.0f}%</div><div class='mlbl'>Monte Carlo</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#FFD700'>{_vd['_p1_einstein']*100:.0f}%</div><div class='mlbl'>Einstein</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#FFD700'>{(_vd.get('_p1_einstein') or _vd.get('_p1_mom', _vd.get('p1',0.5)))*100:.0f}%</div>"
+            f"<div class='mlbl'>{'Einstein' if _vd.get('_p1_einstein') else 'Momentum'}</div></div>"
             f"</div></div>", unsafe_allow_html=True)
 
         # Veredicto
