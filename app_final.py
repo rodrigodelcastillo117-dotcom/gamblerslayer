@@ -2288,14 +2288,14 @@ def _save_picks_snap(snap):
         with open(PICKS_SNAP_F,"w") as f: json.dump(snap, f, ensure_ascii=False, indent=2)
     except: pass
 
-def _snap_auto_pick(partido_id, pick_data, state="pre"):
+def _snap_auto_pick(partido_id, pick_data, state="pre", force=False):
     """Guarda pick automático en snapshot.
-    REGLA: si el partido ya terminó (state=post/in), NO sobrescribir el pick original.
-    El pick se congela en el momento pre-partido y no cambia nunca."""
+    force=True: sobreescribe siempre (usado por la cartelera con datos completos).
+    force=False: no sobreescribe partidos ya terminados (comportamiento por defecto)."""
     if not partido_id or not pick_data: return
     snap = _load_picks_snap()
-    # Si ya existe un pick guardado Y el partido ya empezó/terminó → no tocar
-    if partido_id in snap and state in ("in", "post"):
+    # Sin force: no tocar partidos que ya empezaron/terminaron
+    if not force and partido_id in snap and state in ("in", "post"):
         return
     snap[partido_id] = {
         "pick":      pick_data.get("pick",""),
@@ -2304,6 +2304,10 @@ def _snap_auto_pick(partido_id, pick_data, state="pre"):
         "odd":       pick_data.get("odd",0),
         "src":       pick_data.get("src","🤖 Modelo"),
         "all_picks": pick_data.get("all_picks", []),
+        "home":      pick_data.get("home",""),
+        "away":      pick_data.get("away",""),
+        "sport":     pick_data.get("sport","futbol"),
+        "fecha":     pick_data.get("fecha",""),
         "fecha_gen": datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
         "frozen":    state in ("in","post"),
     }
@@ -3685,33 +3689,35 @@ def render_resultados_tab():
                             # 1. Pick manual guardado por usuario
                             manual_pks = [pk for pk in pick_history
                                           if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — prioridad: cache → snap → recalcular
+                            # 2. Pick automático — snap de cartelera es la fuente de verdad
                             _mid = p.get("id","")
                             auto_pk = None
                             if not manual_pks:
                                 _p_state = p.get("state","pre")
-                                # PRIORIDAD 1: cache de esta sesión (calculado arriba, mismo modelo)
-                                auto_pk = _auto_pk_cache.get(_mid)
-                                # PRIORIDAD 2: snap persistente (de sesiones anteriores)
-                                if not auto_pk:
-                                    _snap_all = _load_picks_snap()
-                                    _frozen_snap = _snap_all.get(_mid)
-                                    if not _frozen_snap:
-                                        _alt_gid = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
-                                        _frozen_snap = _snap_all.get(_alt_gid)
-                                    if _frozen_snap:
-                                        auto_pk = dict(_frozen_snap)
-                                        auto_pk.setdefault("home",  p.get("home",""))
-                                        auto_pk.setdefault("away",  p.get("away",""))
-                                        auto_pk.setdefault("sport", p.get("deporte","futbol"))
-                                # PRIORIDAD 3: recalcular solo si no hay nada (partidos sin cache)
-                                if not auto_pk:
-                                    try:
-                                        auto_pk = _villar_auto_pick(_p_fixed)
-                                        if auto_pk:
-                                            _auto_pk_cache[_mid] = auto_pk
-                                            _snap_auto_pick(_mid, auto_pk, state=_p_state)
-                                    except: pass
+                                _snap_all = _load_picks_snap()
+                                # PRIORIDAD 1: snap de cartelera (tiene home_id, slug, get_form real)
+                                _frozen_snap = _snap_all.get(_mid)
+                                if not _frozen_snap:
+                                    _alt_gid = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
+                                    _frozen_snap = _snap_all.get(_alt_gid)
+                                if _frozen_snap:
+                                    auto_pk = dict(_frozen_snap)
+                                    auto_pk.setdefault("home",  p.get("home",""))
+                                    auto_pk.setdefault("away",  p.get("away",""))
+                                    auto_pk.setdefault("sport", p.get("deporte","futbol"))
+                                else:
+                                    # PRIORIDAD 2: cache de sesión
+                                    auto_pk = _auto_pk_cache.get(_mid)
+                                    # PRIORIDAD 3: recalcular sin score
+                                    if not auto_pk:
+                                        try:
+                                            _fp2 = {k:v for k,v in p.items() if k not in ("score_h","score_a")}
+                                            _fp2["score_h"] = 0
+                                            auto_pk = _villar_auto_pick(_fp2)
+                                            if auto_pk:
+                                                _auto_pk_cache[_mid] = auto_pk
+                                                _snap_auto_pick(_mid, auto_pk, state=_p_state)
+                                        except: pass
 
                             pick_rows = []
                             for pk in manual_pks:
@@ -9472,21 +9478,27 @@ if deporte == "futbol":
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
 
     # ── PRE-SNAP BACKGROUND: calcular y guardar pick de cada partido ──
-    # Solo si aún no tiene snap guardado. Silencioso, sin mostrar nada.
+    # Para partidos PRE: guardar solo si no existe snap.
+    # Para partidos POST: siempre recalcular con datos limpios (sin score) y guardar.
+    # Esto garantiza que Resultados use el MISMO pick que la cartelera.
     if all_matches:
         _snap_existing = _load_picks_snap()
         for _pm in all_matches:
             try:
                 _pid  = _pm.get("id","")
                 _pid2 = f"{_pm.get('home_id','')}_{_pm.get('away_id','')}_{_pm.get('fecha','')}"
-                # Si ya tiene snap con cualquiera de los 2 IDs → saltar
-                if _pid in _snap_existing or _pid2 in _snap_existing: continue
-                # Calcular pick automático
-                _bk_pk = _villar_auto_pick(_pm)
+                _pst  = _pm.get("state","pre")
+                # Para pre-partido: saltar si ya hay snap
+                if _pst == "pre" and (_pid in _snap_existing or _pid2 in _snap_existing):
+                    continue
+                # Calcular pick con datos limpios (sin score para no contaminar)
+                _pm_clean = {k: v for k, v in _pm.items() if k not in ("score_h","score_a")}
+                _pm_clean["score_h"] = 0  # _villar_auto_pick necesita score_h >= 0
+                _bk_pk = _villar_auto_pick(_pm_clean)
                 if _bk_pk:
-                    _st = _pm.get("state","pre")
-                    if _pid:  _snap_auto_pick(_pid,  _bk_pk, state=_st)
-                    if _pid2: _snap_auto_pick(_pid2, _bk_pk, state=_st)
+                    _force = (_pst == "post")  # forzar sobreescritura para terminados
+                    if _pid:  _snap_auto_pick(_pid,  _bk_pk, state=_pst, force=_force)
+                    if _pid2: _snap_auto_pick(_pid2, _bk_pk, state=_pst, force=_force)
             except: continue
     if not all_matches:
         st.info("⚽ No hay partidos de fútbol disponibles ahora. Intenta refrescar en unos minutos.")
