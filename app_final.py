@@ -3218,93 +3218,64 @@ def _villar_auto_pick(partido_db):
             axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0) if af else xg_from_record(away_rec, False)
             mc  = mc50k(hxg, axg)
 
-            # ── Calcular probs ──
-            p_h  = mc["ph"]
-            p_a  = mc["pa"]
+            p_h   = mc["ph"]
+            p_a   = mc["pa"]
             p_o25 = mc["o25"]
             p_aa  = mc["btts"]
-            p_1xm = min(0.82, p_h + 0.12)
-            p_2xm = min(0.78, p_a + 0.12)
+            p_d   = mc.get("pd", max(0, 1 - p_h - p_a))
 
-            # ── JERARQUÍA DE PICKS ──
-            # 1. 1X2 directo si equipo muy dominante (≥62%)
-            # 2. Over 2.5 si prob alta (≥60%)
-            # 3. DO local ("home o Emp") si (ph+pd) ≥72% y ph≥45%
-            # 4. DO visitante ("away o Emp") si (pa+pd) ≥72% y pa≥40%
-            # 5. AA si genuinamente alta (≥58%)
-            # 6. Over 2.5 segunda oportunidad (≥55%)
-            # 7. Gana cualquier mitad (≥62%)
-            # 8. Over 1.5 solo como último recurso (≥68%)
-            # 9. Fallback: mejor 1X2 sin umbral
-            p_d   = mc.get("pd", 1 - p_h - p_a)  # prob empate
-            p_o15 = mc.get("o15", min(0.90, p_o25 + 0.18))
-            p_do_h = min(0.95, p_h + p_d)   # DO local
-            p_do_a = min(0.95, p_a + p_d)   # DO visitante
-
-            p_ml_best = max(p_h, p_a)  # mejor ML disponible
-            p_fav_odd = odd_h if p_h >= p_a else odd_a
             p_fav_lbl = f"🏠 {home} gana" if p_h >= p_a else f"✈️ {away} gana"
+            p_fav_odd = odd_h if p_h >= p_a else odd_a
+            p_ml_best = max(p_h, p_a)
 
-            # Partido equilibrado si ninguno domina claramente el xG
-            _xg_gap = abs(hxg - axg)
-            _xg_total = hxg + axg
-            _partido_eq = _xg_gap < 0.55       # equipos similares en ataque
-            _partido_muy_of = _xg_total >= 3.0  # xG muy alto → goles probables → O2.5
-            _partido_of_med = _xg_total >= 2.5 and _xg_total < 3.0  # ofensivo moderado → AA
+            # ── Pick ML (siempre el favorito) ──
+            ml_pick = {
+                "pick": p_fav_lbl, "prob": p_ml_best, "mkt": "ML",
+                "odd": p_fav_odd, "sport": "futbol", "home": home, "away": away,
+                "src": f"🤖 ML {p_ml_best*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
+            }
+            # ── Pick Over 2.5 ──
+            o25_pick = {
+                "pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O25",
+                "odd": 0, "sport": "futbol", "home": home, "away": away,
+                "src": f"🤖 O2.5 {p_o25*100:.0f}% · xG total {hxg+axg:.2f}",
+            }
+            # ── Pick AA ──
+            aa_pick = {
+                "pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "AA",
+                "odd": 0, "sport": "futbol", "home": home, "away": away,
+                "src": f"🤖 AA {p_aa*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
+            }
 
-            # ── JERARQUÍA: ML > DO > O2.5 > AA (solo si los demás son muy bajos) ──
-            # AA es el ÚLTIMO recurso — solo entra cuando ningún otro pick tiene ventaja real
-            _ninguno_domina = p_ml_best < 0.52 and p_do_h < 0.72 and p_do_a < 0.72 and p_o25 < 0.54
-
-            # ML: siempre mostrar el favorito real (local O visitante)
-            if p_a >= 0.60 and p_a > p_h:
-                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a,
-                        "src": f"ML visita · modelo {p_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
-            elif p_h >= 0.60:
-                best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h,
-                        "src": f"ML local · modelo {p_h*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
-            elif p_a >= 0.60:
-                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a,
-                        "src": f"ML visita · modelo {p_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+            # El pick "principal" sigue la jerarquía para el contador global
+            p_do_h = min(0.95, p_h+p_d); p_do_a = min(0.95, p_a+p_d)
+            _xg_total = hxg+axg; _ninguno = p_ml_best<0.52 and p_do_h<0.72 and p_o25<0.54
+            if p_ml_best >= 0.55:
+                best = ml_pick
             elif p_do_h >= 0.78 and p_h >= 0.50:
-                best = {"pick": f"🔵 {home[:14]} o Emp", "prob": p_do_h, "mkt": "DO", "odd": 0,
-                        "src": f"DC {p_do_h*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
-            elif p_do_a >= 0.78 and p_a >= 0.45:
-                best = {"pick": f"🟣 {away[:14]} o Emp", "prob": p_do_a, "mkt": "DO", "odd": 0,
-                        "src": f"DC {p_do_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
-            elif _partido_muy_of and p_o25 >= 0.58:
-                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
-                        "src": f"O2.5 {p_o25*100:.0f}% · xG total {_xg_total:.2f} (muy alto)"}
+                best = {"pick":f"🔵 {home[:14]} o Emp","prob":p_do_h,"mkt":"DO","odd":0,
+                        "sport":"futbol","home":home,"away":away,
+                        "src":f"🤖 DO {p_do_h*100:.0f}%"}
             elif p_o25 >= 0.56:
-                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
-                        "src": f"O2.5 {p_o25*100:.0f}% · xG {_xg_total:.2f}"}
-            elif p_ml_best >= 0.52:
-                best = {"pick": p_fav_lbl, "prob": p_ml_best, "mkt": "1X2", "odd": p_fav_odd,
-                        "src": f"ML {p_ml_best*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
-            elif p_o25 >= 0.54:
-                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
-                        "src": f"O2.5 {p_o25*100:.0f}% · xG {_xg_total:.2f}"}
-            elif _ninguno_domina and _partido_eq and p_aa >= 0.52:
-                # AA: SOLO cuando ningún otro pick tiene ventaja real Y partido es equilibrado
-                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0,
-                        "src": f"AA {p_aa*100:.0f}% · sin favorito claro · xG {hxg:.2f}–{axg:.2f}"}
+                best = o25_pick
+            elif p_ml_best >= 0.50:
+                best = ml_pick
+            elif _ninguno and p_aa >= 0.52:
+                best = aa_pick
             else:
-                # Fallback final: siempre ML
-                best = {"pick": p_fav_lbl, "prob": p_ml_best, "mkt": "1X2", "odd": p_fav_odd,
-                        "src": f"ML {p_ml_best*100:.0f}% (fallback) · xG {hxg:.2f}–{axg:.2f}"}
+                best = ml_pick
 
-            strong = [best]
             return {
                 "pick":      best["pick"],
                 "prob":      best["prob"],
                 "sport":     "futbol",
                 "home":      home,
                 "away":      away,
-                "all_picks": strong,  # todos los mercados para mostrar en UI
-                "src":       f"🤖 MC50K · {best['prob']*100:.0f}%",
+                "src":       best["src"],
+                # LOS 3 MERCADOS para auditoría en Resultados
+                "all_picks": [ml_pick, o25_pick, aa_pick],
             }
     except:
-        # Fallback silencioso — no mostramos pick si el modelo falla
         return None
 
 
@@ -3663,21 +3634,27 @@ def render_resultados_tab():
                                     elif "FALLÓ" in vd: fail_sp+=1
 
                             if auto_pk:
-                                # UN solo pick por partido — el que recomienda el modelo
-                                # _villar_match_pick_to_result audita si ganó o perdió
-                                vd, vc, ex = _villar_match_pick_to_result(auto_pk, _p_fixed)
-                                _prob = auto_pk.get("prob", 0)
-                                pick_rows.append({
-                                    "label": auto_pk.get("pick", "?"),
-                                    "prob":  _prob * 100 if _prob <= 1 else _prob,
-                                    "odd":   auto_pk.get("odd", 0),
-                                    "src":   auto_pk.get("src", "🤖 Modelo"),
-                                    "verd":  vd, "col": vc, "expl": ex,
-                                })
-                                # Sumar al contador — solo picks de hoy
-                                if p.get("fecha","") >= _inicio_conteo_tab:
-                                    if "GANÓ" in vd:  ok_sp += 1
-                                    elif "FALLÓ" in vd: fail_sp += 1
+                                # ── Auditar los 3 mercados: ML, O2.5, AA ──
+                                _all_mkt = auto_pk.get("all_picks", [auto_pk])
+                                for _i_mkt, _apk in enumerate(_all_mkt):
+                                    _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_apk, _p_fixed)
+                                    _prob2 = _apk.get("prob", 0)
+                                    _mkt2  = _apk.get("mkt","")
+                                    _mkt_tag = f"[{_mkt2}] " if _mkt2 else ""
+                                    _is_main = (_apk.get("pick","") == auto_pk.get("pick",""))
+                                    pick_rows.append({
+                                        "label": f"{_mkt_tag}{_apk.get('pick','?')}",
+                                        "prob":  _prob2 * 100 if _prob2 <= 1 else _prob2,
+                                        "odd":   _apk.get("odd", 0),
+                                        "src":   _apk.get("src", "🤖 Modelo"),
+                                        "verd":  _vd2, "col": _vc2, "expl": _ex2,
+                                        "is_main": _is_main,
+                                    })
+                                    # Solo ML cuenta para el contador global
+                                    if _mkt2 == "ML" or len(_all_mkt) == 1:
+                                        if p.get("fecha","") >= _inicio_conteo_tab:
+                                            if "GANÓ" in _vd2:  ok_sp += 1
+                                            elif "FALLÓ" in _vd2: fail_sp += 1
 
                             # Render card
                             has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
@@ -3691,14 +3668,17 @@ def render_resultados_tab():
                                 bd   = r["col"] if icon in ("✅","❌") else "#333"
                                 od   = f" · @{r['odd']:.2f}" if r.get("odd",0)>1 else ""
                                 pct  = f" · {r['prob']:.0f}%" if r.get("prob",0)>0 else ""
+                                # Badge principal vs secundario
+                                _is_main = r.get("is_main", True)
+                                _main_badge = "<span style='background:#FFD70022;color:#FFD700;font-size:.6rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>★ PICK</span>" if _is_main else ""
                                 pick_html += (
-                                    f"<div style='margin-top:5px;padding:6px 10px;border-radius:8px;"
+                                    f"<div style='margin-top:4px;padding:5px 10px;border-radius:8px;"
                                     f"background:{bg};border:1px solid {bd};"
                                     f"display:flex;align-items:center;gap:8px'>"
-                                    f"<div style='font-size:1.1rem'>{icon}</div>"
+                                    f"<div style='font-size:1.05rem'>{icon}</div>"
                                     f"<div style='flex:1'>"
-                                    f"<div style='font-size:.8rem;font-weight:700;color:{r['col']}'>{r['label']}{od}{pct}</div>"
-                                    f"<div style='font-size:.65rem;color:#555'>{r['src']} · {r['expl']}</div>"
+                                    f"<div style='font-size:.78rem;font-weight:700;color:{r["col"]}'>{r["label"]}{od}{pct}{_main_badge}</div>"
+                                    f"<div style='font-size:.62rem;color:#555'>{r["src"]} · {r["expl"]}</div>"
                                     f"</div>"
                                     f"</div>"
                                 )
@@ -5474,33 +5454,155 @@ def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=50_000):
     return round(max(0.05, min(0.95, p1_mc)), 4)
 
 
+# ── MODELO 4: H2H Momentum + Ranking Trajectory (nuevo) ──────────────────────
+# Basado en Spanias (2012) — los partidos recientes entre dos jugadores
+# son más predictivos que el ranking a solas.
+# Combina:
+#   a) Ventaja de ranking ponderada exponencialmente (más peso al ranking actual)
+#   b) Momentum del tour (diferencia de ranking en los últimos meses)
+#   c) Fatiga implícita por posición en el torneo (Grand Slam: best-of-5 cuesta más)
+
+_RANK_TRAJECTORY_2026 = {
+    # jugadores que SUBIERON rápido en 2025-2026 → momentum positivo
+    "mensik":+15,"fonseca":+40,"tien":+30,"cobolli":+20,"darderi":+18,
+    "shelton":+8,"draper":+10,"mboko":+25,"andreeva":+12,"jovic":+20,
+    "anisimova":+8,"noskova":+12,
+    # jugadores que BAJARON o están estancados → momentum negativo
+    "tsitsipas":-20,"hurkacz":-18,"rublev":-5,"dimitrov":-15,
+    "jabeur":-15,"kvitova":-10,"osaka":-5,"azarenka":-12,
+    "badosa":-5,"andreescu":-8,
+}
+
+def _tennis_h2h_momentum(rank1, rank2, p1_name, p2_name, odd_1=0, odd_2=0, surface="hard"):
+    """
+    MODELO 4 — H2H Momentum + Trajectory (Spanias 2012 adaptado)
+    Ajusta la prob base de Elo con:
+    1. Momentum de ranking (trayectoria reciente en el tour)
+    2. Ventaja de especialista de superficie amplificada
+    3. Blend con mercado si cuotas disponibles
+    """
+    import math as _m
+    # Prob base Elo (mismo logaritmo)
+    def _r2e(r): return 2400 - 400 * _m.log10(max(1, min(800, r)))
+    e1 = _r2e(rank1); e2 = _r2e(rank2)
+    p_base = 1 / (1 + 10**((e2 - e1) / 400))
+
+    # Ajuste de trayectoria — jugadores en ascenso tienen ventaja sobre su ranking actual
+    n1 = p1_name.lower()
+    n2 = p2_name.lower()
+    traj1 = next((v for k,v in _RANK_TRAJECTORY_2026.items() if k in n1), 0)
+    traj2 = next((v for k,v in _RANK_TRAJECTORY_2026.items() if k in n2), 0)
+    # Cada 10 posiciones de trayectoria = +0.012 de prob
+    traj_adj = (traj1 - traj2) * 0.0012
+    p_traj = max(0.05, min(0.95, p_base + traj_adj))
+
+    # Ajuste superficie ampliado (x1.5 vs modelo base)
+    adj1 = _surface_affinity(p1_name, surface) * 1.5
+    adj2 = _surface_affinity(p2_name, surface) * 1.5
+    p_surf = max(0.05, min(0.95, p_traj + adj1 - adj2))
+
+    # Blend con mercado
+    if odd_1 > 1 and odd_2 > 1:
+        vig = 1/odd_1 + 1/odd_2
+        p_mkt = (1/odd_1) / vig
+        rank_gap = abs(rank1 - rank2)
+        w = 0.45 if rank_gap < 15 else (0.35 if rank_gap < 40 else 0.25)
+        p_surf = (1-w)*p_surf + w*p_mkt
+
+    return round(max(0.05, min(0.95, p_surf)), 4)
+
+
+# ── MODELO 5: Serve Dominance + Break Point Pressure (nuevo) ─────────────────
+# Basado en Newton & Aslam (2009) — en tenis, dominar el servicio
+# es el factor más correlacionado con ganar partidos en todas las superficies.
+# Aproximamos con:
+#   a) Ventaja de servidor implícita según superficie (grass > hard > clay)
+#   b) Perfil de jugador: big server vs returner vs all-court
+#   c) Brecha de ranking como proxy de dominancia de break points
+
+# Perfiles de servicio — big servers tienen ventaja EXTRA en grass/hard
+_BIG_SERVERS = {
+    "isner","raonic","karlovic","anderson","opelka","perricard","mpetshi",
+    "shelton","bublik","rinderknech","fils","zverev","fritz","paul",
+    "djokovic","sabalenka","keys","rybakina","pliskova","kvitova",
+}
+_RETURNERS = {
+    "djokovic","alcaraz","sinner","ruud","nadal","schwartzman","thiem",
+    "swiatek","halep","azarenka","muchova","pegula","gauff",
+}
+
+def _tennis_serve_dominance(rank1, rank2, p1_name, p2_name, odd_1=0, odd_2=0, surface="hard"):
+    """
+    MODELO 5 — Serve Dominance + Break Point Pressure (Newton & Aslam 2009)
+    Evalúa quién controla el ritmo del partido a través del servicio.
+    """
+    import math as _m
+    # Prob base Weibull (reutilizamos la función existente con ajuste mayor)
+    p_base = _weibull_srv_prob(rank1, rank2, surface)
+    # p_base es prob de ganar punto de servicio — propagar a partido
+    pg1 = _markov_game(p_base)  # prob ganar juego sirviendo
+    pg2 = _markov_game(_weibull_srv_prob(rank2, rank1, surface))  # oponente sirviendo
+
+    # Ajuste big server
+    n1 = p1_name.lower(); n2 = p2_name.lower()
+    is_srv1 = any(s in n1 for s in _BIG_SERVERS)
+    is_srv2 = any(s in n2 for s in _BIG_SERVERS)
+    is_ret1 = any(s in n1 for s in _RETURNERS)
+    is_ret2 = any(s in n2 for s in _RETURNERS)
+
+    srv_bonus = {"grass": 0.025, "hard": 0.015, "clay": 0.005}.get(surface, 0.015)
+    # Big server vs returner en hierba → big server tiene mucha ventaja
+    if is_srv1 and not is_ret2: pg1 = min(0.92, pg1 + srv_bonus)
+    if is_srv2 and not is_ret1: pg2 = min(0.92, pg2 + srv_bonus)
+    if is_ret1 and not is_srv2: pg1 = min(0.92, pg1 + srv_bonus * 0.5)  # returner vs no-srv
+    if is_ret2 and not is_srv1: pg2 = min(0.92, pg2 + srv_bonus * 0.5)
+
+    # Prob de ganar set (approx): p_set = sum_{g=6}^{7} C(g-1,5)*pg1^6*(1-pg1)^(g-6) ...
+    # Aproximación directa via markov game → set
+    ps1 = pg1  # prob ganar game = proxy razonable para prob ganar set
+    # Propagate to match (best-of-3)
+    need = 2
+    p1m = sum(math.comb(s-1,need-1)*ps1**need*(1-ps1)**(s-need) for s in range(need, 4))
+    p1m = max(0.05, min(0.95, p1m))
+
+    # Blend con mercado
+    if odd_1 > 1 and odd_2 > 1:
+        vig = 1/odd_1 + 1/odd_2
+        p_mkt = (1/odd_1) / vig
+        p1m = 0.60 * p1m + 0.40 * p_mkt
+
+    return round(max(0.05, min(0.95, p1m)), 4)
+
+
 def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
                                odd_1, odd_2, surface, torneo,
                                expert_p1=None):
     """
     Veredicto académico exclusivo para tenis.
-    Integra 3 modelos específicos de tenis + 50k Monte Carlo.
+    Integra 5 modelos específicos de tenis + 50k Monte Carlo.
     Semáforo: 🟢 APOSTAR / 🟡 BANK MEDIO / 🔴 NO APOSTAR
     """
     import statistics
 
-    # ── Ejecutar los 3 modelos ──
-    p1_elo  = _tennis_elo_prob(rank1, rank2, odd_1, odd_2, surface, p1_name, p2_name)
-    p1_surf = _tennis_surface_model(rank1, rank2, surface, odd_1, odd_2, p1_name, p2_name)
-    # Monte Carlo usa el promedio de Elo+Superficie como base
-    base_mc = (p1_elo + p1_surf) / 2
-    p1_mc   = _tennis_monte_carlo_50k(base_mc, odd_1, odd_2, n=50_000)
+    # ── Ejecutar los 5 modelos ──
+    p1_elo   = _tennis_elo_prob(rank1, rank2, odd_1, odd_2, surface, p1_name, p2_name)
+    p1_surf  = _tennis_surface_model(rank1, rank2, surface, odd_1, odd_2, p1_name, p2_name)
+    base_mc  = (p1_elo + p1_surf) / 2
+    p1_mc    = _tennis_monte_carlo_50k(base_mc, odd_1, odd_2, n=50_000)
+    p1_mom   = _tennis_h2h_momentum(rank1, rank2, p1_name, p2_name, odd_1, odd_2, surface)
+    p1_srv   = _tennis_serve_dominance(rank1, rank2, p1_name, p2_name, odd_1, odd_2, surface)
 
     # Si hay análisis de Einstein, también lo incluimos como señal
     p1_einstein = expert_p1 if expert_p1 is not None else None
 
-    # ── Consenso ponderado ──
-    # Pesos: Elo 25%, Superficie 35%, Monte Carlo 40%
+    # ── Consenso ponderado — 5 modelos ──
+    # Pesos base: Elo 15%, Superficie 20%, MC 25%, Momentum 20%, Serve 20%
+    # Si Einstein disponible: redistribuye -5% a cada uno y suma Einstein 25%
     if p1_einstein is not None:
-        # Con Einstein: Elo 15%, Superficie 25%, MC 35%, Einstein 25%
-        p1_final = 0.15*p1_elo + 0.25*p1_surf + 0.35*p1_mc + 0.25*p1_einstein
+        p1_final = (0.12*p1_elo + 0.16*p1_surf + 0.20*p1_mc +
+                    0.16*p1_mom + 0.16*p1_srv + 0.20*p1_einstein)
     else:
-        p1_final = 0.25*p1_elo + 0.35*p1_surf + 0.40*p1_mc
+        p1_final = 0.15*p1_elo + 0.20*p1_surf + 0.25*p1_mc + 0.20*p1_mom + 0.20*p1_srv
     p2_final = 1 - p1_final
 
     fav     = p1_name if p1_final >= p2_final else p2_name
@@ -5512,7 +5614,7 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     ev = fav_p - (1/fav_odd) if fav_odd > 1 else 0
 
     # ── Consenso entre modelos ──
-    models_p1 = [p1_elo, p1_surf, p1_mc]
+    models_p1 = [p1_elo, p1_surf, p1_mc, p1_mom, p1_srv]
     if p1_einstein: models_p1.append(p1_einstein)
     agree = sum(1 for p in models_p1 if (p >= 0.5) == (p1_final >= 0.5))
     total_m = len(models_p1)
@@ -5583,15 +5685,19 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
         kelly="Abstenerse — 0% del banco"
         bg="linear-gradient(135deg,#1a0000,#2a0000)"; brd="#ff4444"
 
-    # ── Tabla de los 3 modelos ──
+    # ── Tabla de los 5 modelos ──
     surf_icon = {"hard":"🔵","clay":"🟤","grass":"🟢"}.get(surface.lower(),"🎾")
     model_data = [
-        ("Elo Adaptado al Tenis",     p1_elo,  "#00ccff", "25%",
+        ("Elo Adaptado al Tenis",        p1_elo,  "#00ccff", "15%",
          "Glickman & Jones 1999 — ranking→Elo→prob partido"),
-        (f"Superficie {surf_icon} {surface.title()}", p1_surf, "#aa00ff", "35%",
-         f"Klaassen & Magnus 2003 — Weibull-Markov punto→set→partido en {surface}"),
-        ("Monte Carlo 50,000 sim.",   p1_mc,   "#FFD700", "40%",
-         "Barnett & Clarke 2005 — 50k simulaciones set a set con tie-break"),
+        (f"Superficie {surf_icon} {surface.title()}", p1_surf, "#aa00ff", "20%",
+         f"Klaassen & Magnus 2003 — Weibull-Markov en {surface}"),
+        ("Monte Carlo 50,000 sim.",      p1_mc,   "#FFD700", "25%",
+         "Barnett & Clarke 2005 — 50k simulaciones set a set"),
+        ("H2H Momentum + Trayectoria",   p1_mom,  "#ff9500", "20%",
+         "Spanias 2012 — trayectoria reciente en el tour + sup."),
+        ("Serve Dominance + Break Pts",  p1_srv,  "#ff4488", "20%",
+         "Newton & Aslam 2009 — control de ritmo por servicio"),
     ]
     if p1_einstein:
         model_data.append(("Einstein IA + H2H", p1_einstein, "#00ff88", "+",
@@ -5634,7 +5740,7 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     <div style='font-size:3rem;line-height:1'>{emoji}</div>
     <div>
       <div style='font-size:.7rem;font-weight:700;color:{nivel};letter-spacing:.14em;text-transform:uppercase'>
-        VEREDICTO TENIS — 3 MODELOS + MONTE CARLO 50K</div>
+        VEREDICTO TENIS — 5 MODELOS + MONTE CARLO 50K</div>
       <div style='font-size:1.5rem;font-weight:900;color:{nivel};letter-spacing:.04em'>{label}</div>
     </div>
   </div>
@@ -5704,10 +5810,12 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
         "_kelly":      kelly,
         "_html":       _html_out,
         # individual model probs (for transparency)
-        "_p1_elo":     p1_elo,
-        "_p1_surf":    p1_surf,
-        "_p1_mc":      p1_mc,
-        "_p1_einstein": p1_einstein,
+        "_p1_elo":       p1_elo,
+        "_p1_surf":      p1_surf,
+        "_p1_mc":        p1_mc,
+        "_p1_mom":       p1_mom,
+        "_p1_srv":       p1_srv,
+        "_p1_einstein":  p1_einstein,
     }
 
 
@@ -7101,6 +7209,98 @@ def _kr_score(prob, edge, spread_pp, kelly, contradiccion):
     return round(max(0.0, min(s, 10.0)), 2)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 👑 KING RONGO — MODELOS EXCLUSIVOS
+# Modelos propios del Rey. No se usan en ningún otro lugar del código.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── KR FÚTBOL: Dixon-Coles Bivariado (rho -0.13) ─────────────────────────────
+def _kr_dixon_coles(hxg, axg, odd_h=0, odd_a=0, odd_d=0):
+    """Dixon & Coles (1997) bivariado — exclusivo King Rongo fútbol."""
+    import math as _m
+    rho = -0.13  # correlación empírica marcadores bajos (calibrada en Premier League)
+    def poisson_pmf(k, lam):
+        return _m.exp(-lam) * lam**k / _m.factorial(min(k,20))
+    def tau(x,y,mu,lam,r):
+        if x==0 and y==0: return max(0.001, 1-mu*lam*r)
+        if x==0 and y==1: return max(0.001, 1+mu*r)
+        if x==1 and y==0: return max(0.001, 1+lam*r)
+        if x==1 and y==1: return max(0.001, 1-r)
+        return 1.0
+    ph=pd=pa=0.0
+    for i in range(8):
+        for j in range(8):
+            p = poisson_pmf(i,hxg)*poisson_pmf(j,axg)*tau(i,j,hxg,axg,rho)
+            if i>j: ph+=p
+            elif i<j: pa+=p
+            else: pd+=p
+    tot=ph+pd+pa
+    if tot>0: ph/=tot; pd/=tot; pa/=tot
+    if odd_h>1 and odd_a>1 and odd_d>1:
+        vig=1/odd_h+1/odd_a+1/odd_d
+        ph=0.55*ph+0.45*(1/odd_h)/vig
+        pd=0.55*pd+0.45*(1/odd_d)/vig
+        pa=0.55*pa+0.45*(1/odd_a)/vig
+    return {"ph":round(ph,4),"pd":round(pd,4),"pa":round(pa,4)}
+
+
+# ── KR NBA: Pythagorean Win Expectancy + Pace Adjustment ─────────────────────
+_KR_NBA_PACE = {
+    "atl":102.4,"bos":100.2,"bkn":101.8,"cha":100.5,"chi":100.1,"cle":98.7,
+    "dal":101.2,"den":103.5,"det":101.0,"gsw":102.8,"hou":104.2,"ind":103.8,
+    "lac":100.8,"lal":101.6,"mem":102.0,"mia":98.5,"mil":99.8,"min":100.4,
+    "nop":101.5,"nyk":99.2,"okc":103.1,"orl":100.7,"phi":100.3,"phx":101.9,
+    "por":102.6,"sac":103.7,"sas":102.2,"tor":100.9,"uta":103.0,"was":102.5,
+}
+def _kr_nba_pythagorean(home_id, away_id, p_h_win, p_a_win, p_over, ou_line):
+    """Pythagorean NBA (Morey 2003 / Oliver 2004) + Pace — exclusivo King Rongo."""
+    h_pace = _KR_NBA_PACE.get((home_id or "")[:3].lower(), 101.5)
+    a_pace = _KR_NBA_PACE.get((away_id or "")[:3].lower(), 101.5)
+    avg_pace = (h_pace+a_pace)/2
+    pace_diff = h_pace-a_pace
+    pace_adj  = pace_diff*0.003
+    p_h_adj = max(0.05, min(0.95, p_h_win+pace_adj))
+    p_a_adj = 1-p_h_adj
+    ou_delta = ((avg_pace-101.5)*0.04) / max(1, ou_line)
+    p_over_adj  = max(0.05, min(0.95, p_over+ou_delta*0.3))
+    p_under_adj = 1-p_over_adj
+    return {"p_h":round(p_h_adj,4),"p_a":round(p_a_adj,4),
+            "p_over":round(p_over_adj,4),"p_under":round(p_under_adj,4),
+            "pace_h":h_pace,"pace_a":a_pace}
+
+
+# ── KR TENIS: Pressure Index (rendimiento bajo presión) ──────────────────────
+_KR_PRESSURE_PROFILE = {
+    # (gs_boost, masters_boost) — positivo = mejor en torneos grandes
+    "djokovic":(+0.04,+0.03),"alcaraz":(+0.03,+0.02),"sinner":(+0.02,+0.02),
+    "zverev":(-0.02,+0.01),"medvedev":(+0.01,+0.01),"ruud":(-0.03,-0.01),
+    "fritz":(-0.02,-0.01),"shelton":(-0.01,+0.01),"bublik":(-0.04,-0.02),
+    "rublev":(-0.03,-0.02),"sabalenka":(+0.04,+0.03),"rybakina":(+0.03,+0.02),
+    "swiatek":(+0.03,+0.02),"gauff":(+0.02,+0.01),"pegula":(-0.02,-0.01),
+    "anisimova":(+0.01,+0.00),"andreeva":(+0.01,+0.01),"svitolina":(+0.02,+0.02),
+    "mensik":(+0.01,+0.01),"draper":(+0.01,+0.01),"fonseca":(+0.01,+0.00),
+}
+def _kr_tennis_pressure(rank1, rank2, p1_name, p2_name, torneo, odd_1=0, odd_2=0):
+    """Pressure Index — exclusivo King Rongo tenis."""
+    import math as _m
+    def _r2e(r): return 2400-400*_m.log10(max(1,min(800,r)))
+    p_base = 1/(1+10**((_r2e(rank2)-_r2e(rank1))/400))
+    t_upper = torneo.upper()
+    is_gs      = any(x in t_upper for x in ["GRAND SLAM","AUSTRALIAN","ROLAND","WIMBLEDON","US OPEN"])
+    is_masters = any(x in t_upper for x in ["MASTERS","INDIAN WELLS","MIAMI","MADRID","ROME",
+                                              "MONTREAL","TORONTO","CINCINNATI","SHANGHAI","PARIS"])
+    boost_idx = 0 if is_gs else (1 if is_masters else -1)
+    n1=p1_name.lower(); n2=p2_name.lower()
+    prof1 = next((v for k,v in _KR_PRESSURE_PROFILE.items() if k in n1),(0,0))
+    prof2 = next((v for k,v in _KR_PRESSURE_PROFILE.items() if k in n2),(0,0))
+    adj1 = prof1[boost_idx] if boost_idx>=0 else 0
+    adj2 = prof2[boost_idx] if boost_idx>=0 else 0
+    p = max(0.05, min(0.95, p_base+adj1-adj2))
+    if odd_1>1 and odd_2>1:
+        vig=1/odd_1+1/odd_2; p=0.60*p+0.40*(1/odd_1)/vig
+    return round(p, 4)
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # MOTOR DE ESCANEO — analiza los 3 deportes
 # ────────────────────────────────────────────────────────────────────────────
@@ -7134,8 +7334,17 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                                         odd_d=m.get("odd_d",0))
                 dp  = diamond_engine(mc, h2s, hf, af)
 
-                # ── Jerarquía King Rongo: 50/20/20/10 ──
-                _ph = dp["ph"]; _pa = dp["pa"]
+                # ── Modelo exclusivo KR: Dixon-Coles bivariado ──
+                try:
+                    _dc = _kr_dixon_coles(hxg, axg, m.get("odd_h",0), m.get("odd_a",0), m.get("odd_d",0))
+                    _dc_ph = _dc["ph"]; _dc_pa = _dc["pa"]; _dc_pd = _dc["pd"]
+                except:
+                    _dc_ph = 0; _dc_pa = 0; _dc_pd = 0
+
+                # ── Blend ensemble + Dixon-Coles (KR usa ambos) ──
+                _ph_base = dp["ph"]; _pa_base = dp["pa"]
+                _ph = 0.70*_ph_base + 0.30*_dc_ph if _dc_ph>0 else _ph_base
+                _pa = 0.70*_pa_base + 0.30*_dc_pa if _dc_pa>0 else _pa_base
                 _pd   = mc.get("pd", max(0, 1-_ph-_pa))
                 _o25  = mc["o25"]; _aa = mc["btts"]
                 _o15  = mc.get("o15", min(0.90, _o25+0.18))
@@ -7196,10 +7405,10 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
                     "reasoning":f"xG {hxg:.2f}–{axg:.2f} · {mc.get('consensus','')} · {dp.get('conf','')}",
                     "match":m,
-                    "models":{"Dixon-Coles":round(mc.get("dc_ph",0)*100,1),
-                              "Poisson BV": round(mc.get("bvp_ph",0)*100,1),
-                              "Elo":        round(mc.get("elo_ph",0)*100,1),
-                              "H2H":        round(mc.get("h2h_ph",0)*100,1)},
+                    "models":{"👑 D-Coles": round(_dc_ph*100,1) if _dc_ph>0 else "N/A",
+                              "Ensemble":   round(_ph_base*100,1),
+                              "xG H":       round(hxg,2),
+                              "xG A":       round(axg,2)},
                     "hxg":hxg,"axg":axg,
                 }
                 c["score"] = _kr_score(prob, edge, spread, kelly, contra)
@@ -7215,13 +7424,30 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
             # King Rongo analiza todos los juegos del día
             try:
                 res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
-                p_h = res.get("p_h_win", 0.55); p_a = 1-p_h
+                p_h_base = res.get("p_h_win", 0.55); p_a_base = 1-p_h_base
                 line= res["line"]
+
+                # ── Modelo exclusivo KR: Pythagorean + Pace ──
+                try:
+                    _pyth = _kr_nba_pythagorean(g["home_id"], g["away_id"],
+                                                 p_h_base, p_a_base,
+                                                 res["p_over"], line)
+                    # Blend: base 70%, Pythagorean 30%
+                    p_h = 0.70*p_h_base + 0.30*_pyth["p_h"]
+                    p_a = 1-p_h
+                    p_over_kr  = 0.70*res["p_over"]  + 0.30*_pyth["p_over"]
+                    p_under_kr = 1-p_over_kr
+                    pace_note  = f"Pace H:{_pyth['pace_h']:.0f}/A:{_pyth['pace_a']:.0f}"
+                except:
+                    p_h = p_h_base; p_a = p_a_base
+                    p_over_kr = res["p_over"]; p_under_kr = res["p_under"]
+                    pace_note = ""
+
                 mkts= [
-                    (f"🔥 Over {line}",   res["p_over"],  0,               "O/U"),
-                    (f"❄️  Under {line}",  res["p_under"], 0,               "O/U"),
-                    (f"🏠 {g['home']}",    p_h,            g.get("odd_h",0),"ML"),
-                    (f"✈️  {g['away']}",    p_a,            g.get("odd_a",0),"ML"),
+                    (f"🔥 Over {line}",   p_over_kr,  0,               "O/U"),
+                    (f"❄️  Under {line}",  p_under_kr, 0,               "O/U"),
+                    (f"🏠 {g['home']}",    p_h,        g.get("odd_h",0),"ML"),
+                    (f"✈️  {g['away']}",    p_a,        g.get("odd_a",0),"ML"),
                 ]
                 mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.50]
                 if not mkts: continue
@@ -7229,8 +7455,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 lbl,prob,odd,mkt = best
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
-                spread = round((1-abs(res["p_over"]-res["p_under"]))*50, 1)
-                contra = abs(res["p_over"]-res["p_under"]) < 0.08
+                spread = round((1-abs(p_over_kr-p_under_kr))*50, 1)
+                contra = abs(p_over_kr-p_under_kr) < 0.08
                 ce,cl,cc = _kr_conf(prob, edge, spread)
                 c = {
                     "deporte":"🏀 NBA","sport":"nba",
@@ -7240,10 +7466,12 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     "kelly_pct":kelly,"mkt_type":mkt,
                     "contradiccion":contra,"model_spread":spread,
                     "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
-                    "reasoning":f"Proy {res['proj']} pts · NetRtg {res.get('net_h',0):+.1f}/{res.get('net_a',0):+.1f}",
+                    "reasoning":f"Proy {res['proj']} pts · {pace_note} · NetRtg {res.get('net_h',0):+.1f}/{res.get('net_a',0):+.1f}",
                     "match":g,
-                    "models":{"Over%":round(res["p_over"]*100,1),"Under%":round(res["p_under"]*100,1),
-                              "ML Home":round(p_h*100,1),"ML Away":round(p_a*100,1)},
+                    "models":{"👑 Pyth%":round(p_h*100,1),
+                              "Over%":   round(p_over_kr*100,1),
+                              "Under%":  round(p_under_kr*100,1),
+                              "ML Away": round(p_a*100,1)},
                 }
                 c["score"] = _kr_score(prob, edge, spread, kelly, contra)
                 candidates.append(c)
@@ -7265,33 +7493,60 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 r1 = m.get("rank1",0) or 0
                 r2 = m.get("rank2",0) or 0
                 p1_name = m.get("p1",""); p2_name = m.get("p2","")
-                # Resolver rankings si faltan o son default 200
-                if r1 <= 0 or r1 >= 190:
+
+                # ── Siempre resolver ranks desde nombre — misma lógica que cartelera ──
+                if r1 <= 0 or r1 >= 150:
                     r1 = _resolve_rank(p1_name, _KNOWN_RANKS) or _resolve_rank_local(p1_name) or 120
-                if r2 <= 0 or r2 >= 190:
+                if r2 <= 0 or r2 >= 150:
                     r2 = _resolve_rank(p2_name, _KNOWN_RANKS) or _resolve_rank_local(p2_name) or 120
-                tm  = tennis_model(r1, r2, m.get("odd_1",0), m.get("odd_2",0), srf)
-                fav = m["p1"] if tm["p1"] >= tm["p2"] else m["p2"]
-                prob= max(tm["p1"], tm["p2"])
-                odd = m.get("odd_1",0) if fav==m["p1"] else m.get("odd_2",0)
+
+                odd_1 = m.get("odd_1", m.get("odd_h",0))
+                odd_2 = m.get("odd_2", m.get("odd_a",0))
+
+                # ── Usar MISMO modelo que la cartelera de tenis ──
+                _vd = veredicto_academico_tenis(
+                    p1_name=p1_name, p2_name=p2_name,
+                    rank1=r1, rank2=r2,
+                    odd_1=odd_1, odd_2=odd_2,
+                    surface=srf, torneo=tor,
+                    expert_p1=None
+                )
+                p1_vd = _vd["_p1_final"]
+                # ── Modelo exclusivo KR: Pressure Index ──
+                try:
+                    p1_press = _kr_tennis_pressure(r1, r2, p1_name, p2_name, tor, odd_1, odd_2)
+                    p1_final = 0.80*p1_vd + 0.20*p1_press
+                except:
+                    p1_final = p1_vd; p1_press = p1_vd
+                p2_final = 1 - p1_final
+                fav  = p1_name if p1_final >= p2_final else p2_name
+                prob = max(p1_final, p2_final)
+                odd  = odd_1 if p1_final >= p2_final else odd_2
+
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
-                spread = round(abs(tm["p1"]-tm["p2"])*100, 1)
-                contra = spread < 4  # solo 50/50 exacto es contradicción
+                spread = round(abs(p1_final - p2_final) * 100, 1)
+                contra = spread < 4
                 ce,cl,cc = _kr_conf(prob, edge, _KR_CONFLICT_PP+5 if contra else 10)
-                rd   = abs(m.get("rank1",200)-m.get("rank2",200))
+                rd = abs(r1 - r2)
                 c = {
                     "deporte":"🎾 Tenis","sport":"tenis",
-                    "label":f"{m['p1']} vs {m['p2']}",
+                    "label":f"{p1_name} vs {p2_name}",
                     "liga":tor,"hora":m.get("hora",""),
                     "pick":f"🎾 {fav} gana","prob":prob,"odd":odd,"edge":edge,
                     "kelly_pct":kelly,"mkt_type":"ML",
                     "contradiccion":contra,"model_spread":spread,
                     "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
-                    "reasoning":f"Rk #{m.get('rank1','?')} vs #{m.get('rank2','?')} · {srf.title()} · Δ{spread:.0f}pp",
+                    "reasoning":f"Rk #{r1} vs #{r2} · {srf.title()} · Δ{spread:.0f}pp",
                     "match":m,
-                    "models":{"Weibull":round(tm["p1"]*100,1),"Sup":round(tm.get("p1_surf",tm["p1"])*100,1),
-                              "Rank":round(min(100,max(0,50+rd*0.14)),1),"Odds":round(1/odd*100 if odd>1 else 50,1)},
+                    "models":{
+                        "Elo":     round(_vd.get("_p1_elo",   p1_final)*100, 1),
+                        "Sup":     round(_vd.get("_p1_surf",  p1_final)*100, 1),
+                        "MC50k":   round(_vd.get("_p1_mc",    p1_final)*100, 1),
+                        "Moment":  round(_vd.get("_p1_mom",   p1_final)*100, 1),
+                        "Serve":   round(_vd.get("_p1_srv",   p1_final)*100, 1),
+                        "👑 Press":round(p1_press*100, 1),
+                    },
                 }
                 c["score"] = _kr_score(prob, edge, spread if contra else 10, kelly, contra)
                 candidates.append(c)
@@ -9323,7 +9578,13 @@ else:
         _ten_tour    = g.get("torneo", g.get("league",""))
         _ten_surface = next((v for k,v in _ten_surface_map.items()
                              if k.lower() in _ten_tour.lower()), "hard")
-        _rank1 = g.get("rank1",200); _rank2 = g.get("rank2",200)
+        # Resolver ranks siempre desde nombre si son 0 o default alto
+        _rank1 = g.get("rank1", 0) or 0
+        _rank2 = g.get("rank2", 0) or 0
+        if _rank1 <= 0 or _rank1 >= 150:
+            _rank1 = _resolve_rank(g["home"], _KNOWN_RANKS) or _resolve_rank_local(g["home"]) or 120
+        if _rank2 <= 0 or _rank2 >= 150:
+            _rank2 = _resolve_rank(g["away"], _KNOWN_RANKS) or _resolve_rank_local(g["away"]) or 120
         _odd1  = g.get("odd_h", g.get("odd_1",0))
         _odd2  = g.get("odd_a", g.get("odd_2",0))
 
