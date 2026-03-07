@@ -3249,7 +3249,7 @@ def render_resultados_tab():
     # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
     _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
     _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-    _inicio_conteo = "2026-03-07"   # contar solo desde hoy 7 marzo 2026
+    _inicio_conteo = datetime.now(CDMX).strftime("%Y-%m-%d")  # contar solo desde hoy
     _fut_c = 0
     for _fp in [p for p in partidos if p.get("state")=="post"]:
         _sp = _fp.get("deporte","")
@@ -3323,8 +3323,7 @@ def render_resultados_tab():
         with tab_obj:
             sport_p     = [p for p in partidos if p.get("deporte")==sport_key]
             finalizados = sorted(
-                [p for p in sport_p
-                 if p.get("state")=="post" and p.get("fecha","") >= "2026-03-07"],
+                [p for p in sport_p if p.get("state")=="post"],
                 key=lambda x:x.get("fecha",""), reverse=True)
             en_juego    = [p for p in sport_p if p.get("state")=="in"]
 
@@ -3388,13 +3387,14 @@ def render_resultados_tab():
             # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
             # NBA/Tenis: hasta 14 días atrás
             _catorce_dias = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
+            _inicio_picks = datetime.now(CDMX).strftime("%Y-%m-%d")  # solo picks de HOY
             _auto_pk_cache = {}
             _fut_count = 0
             for _fp in finalizados:
                 _mid = _fp.get("id","")
                 _fp_sport = _fp.get("deporte","")
                 _fp_fecha = _fp.get("fecha","")
-                if _fp_fecha < "2026-03-07": continue  # ignorar antes del 7 marzo 2026
+                if _fp_fecha < _inicio_picks: continue  # solo picks desde hoy
                 if _fp_sport == "futbol":
                     if _fut_count >= 30: continue
                     _fut_count += 1
