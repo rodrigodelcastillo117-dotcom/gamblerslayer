@@ -3412,14 +3412,6 @@ def render_resultados_tab():
     """VILLAR — Auditoría automática pick vs resultado real."""
     from collections import defaultdict
 
-    # ── Cargar bridge diamante persistido ──
-    if "_diamond_bridge" not in st.session_state or not st.session_state["_diamond_bridge"]:
-        try:
-            import json as _json
-            with open("/tmp/gamblers_diamond_bridge.json") as _bf:
-                st.session_state["_diamond_bridge"] = _json.load(_bf)
-        except: st.session_state["_diamond_bridge"] = {}
-
     # ── AUTO-AUDITORÍA al entrar al tab ──
     # Villar corre solo, sin que el usuario tenga que picar nada
     _villar_key = "villar_last_auto"
@@ -4733,14 +4725,13 @@ _TEAM_DIVISION: dict = {
     "birmingham":     "eng.3", "huddersfield":     "eng.3",
     "wigan":          "eng.3", "charlton":         "eng.3",
     "rotherham":      "eng.3", "stevenage":        "eng.3",
-    "peterborough":   "eng.3", "wrexham":          "eng.3",
-    "stockport":      "eng.3", "barnsley":         "eng.3",
-    "exeter":         "eng.3", "blackpool":        "eng.3",
-    "burton":         "eng.3", "wycombe":          "eng.3",
+    "peterborough":   "eng.3", "bristol rovers":   "eng.3",
     # League Two
     "newport":        "eng.4", "grimsby":          "eng.4",
     "doncaster":      "eng.4", "tranmere":         "eng.4",
     "notts county":   "eng.4", "colchester":       "eng.4",
+    "mansfield":      "eng.4", "mansfield town":   "eng.4",
+    "wrexham":        "eng.2",
     "nurnberg":       "ger.2", "nürnberg":         "ger.2",
     "1. fc nurnberg": "ger.2", "1. fc nürnberg":   "ger.2",
     "fortuna düss":   "ger.2", "fortuna dusseldorf":"ger.2",
@@ -4846,23 +4837,28 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
     if league_form:
         # xG desde forma real en su liga, con decaimiento temporal
         raw_xg = xg_weighted(league_form, is_home, odds_prior=0)
-        # Aplicar factor de división relativo a Premier (base 1.00)
-        # Si el equipo es de Championship (0.78), su xG se escala down vs PL
-        # Pero si juega EN su nivel, se queda igual — el factor es relativo al rival
-        home_factor = cup_data["factor"] if is_home else \
-                      _cup_get_form_in_league(
-                          str(m.get("away_id","")), m.get("away","")
-                      ).get("factor", 0.70) if not is_home else div_factor
 
-        away_factor = _cup_get_form_in_league(
-            str(m.get("away_id","")), m.get("away","")
-        )["factor"] if is_home else cup_data["factor"]
+        home_cup = _cup_get_form_in_league(str(m.get("home_id","")), m.get("home",""))
+        away_cup = _cup_get_form_in_league(str(m.get("away_id","")), m.get("away",""))
+        home_factor = home_cup["factor"]
+        away_factor = away_cup["factor"]
 
-        # Ajuste relativo: si local es PL (1.0) y visitante Championship (0.78),
-        # el local xG sube +15%, el visitante xG baja -10%
-        rel = (home_factor / max(0.3, away_factor)) if is_home else \
-              (away_factor / max(0.3, home_factor))
-        xg_adj = raw_xg * max(0.6, min(1.6, rel))
+        # Factor relativo: calidad del equipo que calculamos vs su rival
+        this_factor  = home_factor if is_home else away_factor
+        rival_factor = away_factor if is_home else home_factor
+        rel = this_factor / max(0.3, rival_factor)
+
+        # Cuando la diferencia es grande (ej PL vs L2: 1.0/0.50=2.0),
+        # el equipo inferior no se beneficia de jugar en casa
+        div_gap = abs(home_factor - away_factor)
+        if div_gap >= 0.40:
+            # Diferencia de 2+ divisiones: factor de casa casi nulo para el inferior
+            home_bonus = 0.03 if (is_home and home_factor < away_factor) else 0.0
+            raw_xg_adj = raw_xg * (1.0 + home_bonus)
+        else:
+            raw_xg_adj = raw_xg
+
+        xg_adj = raw_xg_adj * max(0.5, min(2.0, rel))
 
     else:
         # Sin forma en liga propia → usar xG base de su división
@@ -9425,6 +9421,14 @@ with sp3:
 
 if "sport" not in st.session_state: st.session_state["sport"]="futbol"
 deporte = st.session_state["sport"]
+
+# ── Cargar bridge diamante al inicio de cada sesión ──
+if "_diamond_bridge" not in st.session_state:
+    try:
+        import json as _jb
+        with open("/tmp/gamblers_diamond_bridge.json") as _bf:
+            st.session_state["_diamond_bridge"] = _jb.load(_bf)
+    except: st.session_state["_diamond_bridge"] = {}
 
 # ── KING RONGO — Banner de presencia permanente ──
 _king_pick = st.session_state.get("_king_el_pick")
