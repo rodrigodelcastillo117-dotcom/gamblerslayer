@@ -9341,24 +9341,52 @@ else:
             f"<span style='color:#00ff88'>{g['home'][:14]}: {src_h}</span>"
             f"<span style='color:#00ff88'>{g['away'][:14]}: {src_a}</span></div>",unsafe_allow_html=True)
 
-        # ── JUGADA DIAMANTE — pick = mercado con mayor probabilidad ──
+        # ── JUGADA DIAMANTE — jerarquía correcta ML > DO > O2.5 > AA ──
         _all_markets = [
             (f"🏠 {g['home'][:16]} gana",      dp["ph"],  g.get("odd_h",0)),
             ("🤝 Empate",                        dp["pd"],  g.get("odd_d",0)),
             (f"✈️ {g['away'][:16]} gana",        dp["pa"],  g.get("odd_a",0)),
-            # Doble Oportunidad eliminada
             ("⚽ Over 2.5",                       mc["o25"],  0),
             ("⚽ Over 3.5",                       mc["o35"],  0),
             ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
         ]
-        # DIAMANTE = mercado con mayor edge (si hay cuota) o mayor prob
         def _mkt_edge(t):
             lbl, prob, odd = t
             return (prob - 1/odd) if odd > 1 else (prob - 0.50)
-        main_mkt = max(_all_markets, key=_mkt_edge)
+
+        # Jerarquía: ML > DO > O2.5 > AA (solo si los demás son bajos)
+        _ph_d = dp["ph"]; _pa_d = dp["pa"]; _pd_d = dp.get("pd", max(0,1-_ph_d-_pa_d))
+        _o25_d = mc["o25"]; _aa_d = mc["btts"]
+        _do_h_d = min(0.95, _ph_d+_pd_d); _do_a_d = min(0.95, _pa_d+_pd_d)
+        _xg_tot_d = hxg + axg
+        _ninguno_d = max(_ph_d,_pa_d) < 0.52 and _do_h_d < 0.72 and _do_a_d < 0.72 and _o25_d < 0.54
+        _eq_d = abs(hxg - axg) < 0.55
+
+        if _ph_d >= 0.60:
+            main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, g.get("odd_h",0))
+        elif _pa_d >= 0.60:
+            main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
+        elif _do_h_d >= 0.78 and _ph_d >= 0.50:
+            main_mkt = (f"🔵 {g['home'][:14]} o Emp", _do_h_d, 0)
+        elif _do_a_d >= 0.78 and _pa_d >= 0.45:
+            main_mkt = (f"🟣 {g['away'][:14]} o Emp", _do_a_d, 0)
+        elif _xg_tot_d >= 2.8 and _o25_d >= 0.56:
+            main_mkt = ("⚽ Over 2.5", _o25_d, 0)
+        elif max(_ph_d,_pa_d) >= 0.52:
+            if _ph_d >= _pa_d: main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, g.get("odd_h",0))
+            else:              main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
+        elif _o25_d >= 0.54:
+            main_mkt = ("⚽ Over 2.5", _o25_d, 0)
+        elif _ninguno_d and _eq_d and _aa_d >= 0.52:
+            main_mkt = ("⚡ Ambos Anotan (AA)", _aa_d, 0)
+        else:
+            # Fallback: ML siempre — nunca AA por defecto
+            if _ph_d >= _pa_d: main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, g.get("odd_h",0))
+            else:              main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
+
         main_lbl, main_prob, main_odd = main_mkt
 
-        # Badges de todos los mercados ordenados por prob
+        # Badges de todos los mercados ordenados por prob — incluye ML
         _mkt_sorted = sorted(_all_markets, key=lambda x:-x[1])
         top3 = _mkt_sorted[:4]  # mostrar top 4 en la card
 
@@ -9455,8 +9483,22 @@ else:
 
         # ── MERCADOS ──
         st.markdown("<div class='shdr'>📊 Todos los Mercados</div>",unsafe_allow_html=True)
-        cols=st.columns(6)
-        for col,(label,val) in zip(cols,[("Over 1.5",mc["o15"]),("Over 2.5",mc["o25"]),
+        # Fila 1: ML (1X2) — los más importantes
+        _odd_h_lbl = f" @{g['odd_h']:.2f}" if g.get("odd_h",0)>1 else ""
+        _odd_a_lbl = f" @{g['odd_a']:.2f}" if g.get("odd_a",0)>1 else ""
+        _odd_d_lbl = f" @{g['odd_d']:.2f}" if g.get("odd_d",0)>1 else ""
+        cols_ml = st.columns(3)
+        for col, (label, val, odd_lbl, color_hi) in zip(cols_ml, [
+            (f"🏠 {g['home'][:12]} ML", dp["ph"], _odd_h_lbl, "#00ff88"),
+            ("🤝 Empate ML",             dp["pd"], _odd_d_lbl, "#FFD700"),
+            (f"✈️ {g['away'][:12]} ML",  dp["pa"], _odd_a_lbl, "#aa00ff"),
+        ]):
+            with col:
+                color = color_hi if val>=0.45 else "#555"
+                st.markdown(f"<div class='mbox'><div class='mval' style='color:{color}'>{val*100:.0f}%</div><div class='mlbl'>{label}{odd_lbl}</div></div>",unsafe_allow_html=True)
+        # Fila 2: Totales
+        cols2 = st.columns(6)
+        for col,(label,val) in zip(cols2,[("Over 1.5",mc["o15"]),("Over 2.5",mc["o25"]),
             ("Over 3.5",mc["o35"]),("Ambos Anotan",mc["btts"]),("CS Local",mc["cs_h"]),("CS Visit.",mc["cs_a"])]):
             with col:
                 color="#00ff88" if val>=0.58 else ("#FFD700" if val>=0.45 else "#666")
