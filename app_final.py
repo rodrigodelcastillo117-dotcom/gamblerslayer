@@ -3177,6 +3177,10 @@ def render_resultados_tab():
     # ════════════════════════════════════════════════════════
     st.markdown("<div class='shdr'>📊 Resultados + Pick del Modelo Auditado</div>", unsafe_allow_html=True)
 
+    # ── PRE-CALCULAR contadores globales del modelo para el header ──
+    _global_ok = 0; _global_fail = 0
+    # (se acumularán mientras se renderizan los tabs, luego se muestran abajo)
+
     rt1,rt2,rt3 = st.tabs(["⚽ Fútbol","🏀 NBA","🎾 Tenis"])
 
     for tab_obj, sport_key, sport_emoji in [
@@ -3244,22 +3248,21 @@ def render_resultados_tab():
             dias_  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
             meses_ = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
 
-            # Pre-calcular auto_picks FUERA de los expanders para no bloquear UI
-            # Fútbol: get_form() es lento → solo los 5 más recientes
-            # NBA/Tenis: rápidos → hasta 3 días
-            _tres_dias = (datetime.now(CDMX)-timedelta(days=3)).strftime("%Y-%m-%d")
+            # Pre-calcular auto_picks — corre modelos sobre todos los partidos finalizados
+            # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
+            # NBA/Tenis: hasta 14 días atrás
+            _catorce_dias = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
             _auto_pk_cache = {}
             _fut_count = 0
             for _fp in finalizados:
                 _mid = _fp.get("id","")
                 _fp_sport = _fp.get("deporte","")
                 _fp_fecha = _fp.get("fecha","")
-                # Fútbol: solo los 5 más recientes (get_form es lento)
                 if _fp_sport == "futbol":
-                    if _fut_count >= 5: continue
+                    if _fut_count >= 30: continue
                     _fut_count += 1
-                elif _fp_fecha < _tres_dias:
-                    continue  # NBA/tenis: solo últimos 3 días
+                elif _fp_fecha < _catorce_dias:
+                    continue  # NBA/tenis: últimos 14 días
                 _manual = [pk for pk in pick_history if _villar_find_result(pk,[_fp]) is not None]
                 if not _manual:
                     try: _auto_pk_cache[_mid] = _villar_auto_pick(_fp)
@@ -3437,18 +3440,52 @@ def render_resultados_tab():
 
             total_sp = ok_sp+fail_sp
             pct_sp = round(ok_sp/total_sp*100) if total_sp>0 else 0
+            _global_ok   += ok_sp
+            _global_fail += fail_sp
             if total_sp>0:
+                bar_w = int(pct_sp)
+                bar_c = "#00ff88" if pct_sp>=55 else ("#FFD700" if pct_sp>=45 else "#ff4444")
                 st.markdown(
-                    f"<div style='background:#07071a;border-radius:10px;padding:10px 14px;"
-                    f"margin-top:10px;display:flex;gap:16px;align-items:center'>"
-                    f"<span style='color:#00ff88;font-weight:900'>{ok_sp}✅</span>"
-                    f"<span style='color:#ff4444;font-weight:900'>{fail_sp}❌</span>"
-                    f"<span style='color:#00ccff;font-weight:900'>{pct_sp}% acierto {sport_emoji}</span>"
+                    f"<div style='background:#07071a;border-radius:12px;padding:12px 16px;"
+                    f"margin-top:12px;border:1px solid #1a1a30'>"
+                    f"<div style='display:flex;gap:16px;align-items:center;margin-bottom:8px'>"
+                    f"<span style='font-size:1.4rem'>{sport_emoji}</span>"
+                    f"<span style='color:#00ff88;font-weight:900;font-size:1.1rem'>{ok_sp}✅</span>"
+                    f"<span style='color:#ff4444;font-weight:900;font-size:1.1rem'>{fail_sp}❌</span>"
+                    f"<span style='color:{bar_c};font-weight:900;font-size:1.1rem'>{pct_sp}% acierto</span>"
+                    f"<span style='color:#555;font-size:.75rem;margin-left:auto'>{total_sp} picks auditados</span>"
+                    f"</div>"
+                    f"<div style='background:#0d0d2e;border-radius:6px;height:8px;overflow:hidden'>"
+                    f"<div style='width:{bar_w}%;height:100%;background:{bar_c};border-radius:6px;"
+                    f"transition:width .5s ease'></div></div>"
                     f"</div>", unsafe_allow_html=True)
+
+    # Banner global del modelo Villar
+    _gtotal = _global_ok + _global_fail
+    _gpct   = round(_global_ok/_gtotal*100) if _gtotal > 0 else 0
+    _gbar_c = "#00ff88" if _gpct>=55 else ("#FFD700" if _gpct>=45 else "#ff4444")
+    if _gtotal > 0:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#07071a,#0a0a2e);"
+            f"border-radius:14px;padding:14px 18px;margin-top:16px;"
+            f"border:1px solid {_gbar_c}44'>"
+            f"<div style='font-size:.72rem;font-weight:700;color:#FFD700;"
+            f"letter-spacing:.12em;margin-bottom:10px'>🤖 VILLAR — MODELO AUDITADO (TODOS LOS DEPORTES)</div>"
+            f"<div style='display:flex;gap:20px;align-items:center;flex-wrap:wrap'>"
+            f"<span style='color:#00ff88;font-weight:900;font-size:1.3rem'>{_global_ok}✅</span>"
+            f"<span style='color:#ff4444;font-weight:900;font-size:1.3rem'>{_global_fail}❌</span>"
+            f"<span style='color:{_gbar_c};font-weight:900;font-size:1.5rem'>{_gpct}%</span>"
+            f"<span style='color:#555;font-size:.8rem'>acierto global · {_gtotal} picks auditados</span>"
+            f"</div>"
+            f"<div style='background:#0d0d2e;border-radius:6px;height:10px;overflow:hidden;margin-top:10px'>"
+            f"<div style='width:{_gpct}%;height:100%;background:{_gbar_c};border-radius:6px'></div>"
+            f"</div>"
+            f"</div>", unsafe_allow_html=True)
 
     # Guardar en session para KING RONGO
     st.session_state["_villar_summary"] = {
-        "ok": total_g, "fail": total_f, "pct": pct, "roi": roi
+        "ok": total_g, "fail": total_f, "pct": pct, "roi": roi,
+        "modelo_ok": _global_ok, "modelo_fail": _global_fail, "modelo_pct": _gpct,
     }
 
 
@@ -7522,14 +7559,27 @@ def _kr_sync_session_from_cache():
     st.session_state["_king_target"]   = cache.get("target_date","")
 
 def _kr_filter_by_date(matches, target_date):
-    """Filtra partidos por fecha objetivo. Excluye solo terminados."""
+    """Filtra partidos por fecha objetivo ±1 día. Excluye solo terminados."""
+    from datetime import datetime as _dt2, timedelta as _td2
     out = []
+    try:
+        _tf = _dt2.strptime(target_date, "%Y-%m-%d")
+    except:
+        _tf = None
     for m in (matches or []):
-        if m.get("state") == "post": continue  # excluir solo terminados
+        if m.get("state") == "post": continue
         fecha = m.get("fecha","")
-        if fecha and fecha != target_date:
-            continue
-        out.append(m)
+        if not fecha:
+            out.append(m); continue
+        if _tf:
+            try:
+                _mf = _dt2.strptime(fecha, "%Y-%m-%d")
+                if abs((_mf - _tf).days) <= 1:
+                    out.append(m)
+                continue
+            except: pass
+        if fecha == target_date:
+            out.append(m)
     return out
 
 def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
@@ -7742,8 +7792,12 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     })
 
                 except Exception as e:
+                    import traceback as _tb_mod
+                    _tb_str = _tb_mod.format_exc()
                     _kr_status.update(label=f"❌ Error: {e}", state="error")
                     st.error(f"Error en escaneo: {e}")
+                    with st.expander("🔍 Traceback"):
+                        st.code(_tb_str)
 
             _crown_slot.empty()
 
