@@ -2541,16 +2541,16 @@ def _fetch_tennis_results_web(desde, hoy):
                 fecha  = str(p.get("fecha", now_str))[:10]
                 if not p1 or not p2: continue
                 if sc1 == 0 and sc2 == 0: continue
-                # El ganador tiene más sets — asegurar consistencia
-                if sc1 < sc2:
-                    p1, p2, sc1, sc2 = p2, p1, sc2, sc1  # winner always p1/home
+                # Guardar tal cual — p1/home = como vino del JSON
+                # score_h = sets de p1, score_a = sets de p2
+                r1 = _resolve_rank_local(p1)
+                r2 = _resolve_rank_local(p2)
                 out.append({
                     "deporte":"tenis", "home":p1, "away":p2, "p1":p1, "p2":p2,
                     "liga":f"{tour} · {torneo}", "tour":tour, "torneo":torneo,
                     "fecha":fecha, "hora":"00:00", "state":"post",
                     "score_h":sc1, "score_a":sc2,
-                    "rank1": _resolve_rank_local(p1),
-                    "rank2": _resolve_rank_local(p2),
+                    "rank1": r1, "rank2": r2,
                 })
             except:
                 continue
@@ -2952,32 +2952,27 @@ def _villar_auto_pick(partido_db):
 
     try:
         if sport == "tenis":
-            r1   = partido_db.get("rank1") or 0
-            r2   = partido_db.get("rank2") or 0
-            o1   = partido_db.get("odd_1", 0)
-            o2   = partido_db.get("odd_2", 0)
-            # Si no hay rankings, resolver desde nombre
-            if r1 <= 0:
-                r1 = _resolve_rank(home, {}) or 150
-            if r2 <= 0:
-                r2 = _resolve_rank(away, {}) or 150
-            # Asegurar que tenemos ranks distintos — si ambos 150 usar posición
-            # El ganador real es quien tiene score_h > score_a
-            sh2 = partido_db.get("score_h", 0)
-            sa2 = partido_db.get("score_a", 0)
-            tm  = tennis_model(r1, r2, o1, o2)
-            # Usar prob del modelo pero verificar contra resultado real para label
+            r1 = partido_db.get("rank1") or 0
+            r2 = partido_db.get("rank2") or 0
+            o1 = partido_db.get("odd_1", 0)
+            o2 = partido_db.get("odd_2", 0)
+            # Resolver rankings desde nombre si no los hay
+            if r1 <= 0: r1 = _resolve_rank(home, _KNOWN_RANKS) or 150
+            if r2 <= 0: r2 = _resolve_rank(away, _KNOWN_RANKS) or 150
+            # Weibull: p1 = prob de que home (p1) gane
+            tm = tennis_model(r1, r2, o1, o2)
+            # El modelo elige al favorito por prob — completamente ciego al resultado
             if tm["p1"] >= tm["p2"]:
                 fav, prob = home, tm["p1"]
             else:
                 fav, prob = away, tm["p2"]
-            # Si prob es exactamente 50% (ranks iguales) y tenemos score, usar ganador real
-            if abs(tm["p1"] - tm["p2"]) < 0.01 and (sh2 > 0 or sa2 > 0):
-                fav  = home if sh2 >= sa2 else away
-                prob = 0.55  # prob estimada
+            # Desempate si muy parejo (< 2pp de diferencia): menor rank gana
+            if abs(tm["p1"] - tm["p2"]) < 0.02:
+                fav  = home if r1 <= r2 else away
+                prob = 0.53
             return {"pick": f"🎾 {fav} gana", "prob": prob, "sport": "tenis",
                     "home": home, "away": away,
-                    "src": f"🤖 Weibull #{r1} vs #{r2} · {prob*100:.0f}%"}
+                    "src": f"🤖 Weibull #{r1} vs #{r2}"}
 
         elif sport == "nba":
             home_id = partido_db.get("home_id","")
@@ -3267,23 +3262,8 @@ def render_resultados_tab():
                     continue  # NBA/tenis: solo últimos 3 días
                 _manual = [pk for pk in pick_history if _villar_find_result(pk,[_fp]) is not None]
                 if not _manual:
-                    if _fp_sport == "tenis":
-                        # Tenis: NO correr modelo (sin rankings → 50% siempre)
-                        # Solo mostrar ganador real del partido
-                        _p1 = _fp.get("p1") or _fp.get("home","?")
-                        _p2 = _fp.get("p2") or _fp.get("away","?")
-                        _sh = _fp.get("score_h",0); _sa = _fp.get("score_a",0)
-                        _winner = _p1 if _sh >= _sa else _p2
-                        _auto_pk_cache[_mid] = {
-                            "pick": f"🎾 {_winner} gana",
-                            "prob": 1.0,  # certeza — ya ocurrió
-                            "sport": "tenis",
-                            "home": _p1, "away": _p2,
-                            "src": "📊 Resultado real",
-                        }
-                    else:
-                        try: _auto_pk_cache[_mid] = _villar_auto_pick(_fp)
-                        except: _auto_pk_cache[_mid] = None
+                    try: _auto_pk_cache[_mid] = _villar_auto_pick(_fp)
+                    except: _auto_pk_cache[_mid] = None
 
             for fecha in sorted(por_fecha.keys(), reverse=True):
                 dia_ps = por_fecha[fecha]
@@ -8814,8 +8794,11 @@ else:
             ("⚽ Over 3.5",                       mc["o35"],  0),
             ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
         ]
-        # El pick DIAMANTE = el mercado con probabilidad más alta
-        main_mkt = max(_all_markets, key=lambda x: x[1])
+        # DIAMANTE = mercado con mayor edge (si hay cuota) o mayor prob
+        def _mkt_edge(t):
+            lbl, prob, odd = t
+            return (prob - 1/odd) if odd > 1 else (prob - 0.50)
+        main_mkt = max(_all_markets, key=_mkt_edge)
         main_lbl, main_prob, main_odd = main_mkt
 
         # Badges de todos los mercados ordenados por prob
@@ -8850,10 +8833,6 @@ else:
             f"</div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div>"
             f"</div></div>",
             unsafe_allow_html=True)
-
-        # ── VEREDICTO ACADÉMICO — semáforo ──
-        v_html = veredicto_academico(mc, dp, g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0), g["home"], g["away"], best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
-        st.markdown(v_html, unsafe_allow_html=True)
 
         # ── GUARDAR PICK ──
         sc1, sc2, sc3 = st.columns(3)
