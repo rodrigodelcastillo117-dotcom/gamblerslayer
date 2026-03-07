@@ -8789,6 +8789,70 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     _kr_render_bankroll(bk)
 
     # ══════════════════════════════════════════════════════
+    # 👑 AUDITORÍA KING RONGO — solo sus propios picks
+    # ══════════════════════════════════════════════════════
+    _kr_picks = [p for p in pick_history if str(p.get("pick","")).startswith("👑")]
+    _kr_win  = sum(1 for p in _kr_picks if p.get("result") == "✅")
+    _kr_loss = sum(1 for p in _kr_picks if p.get("result") == "❌")
+    _kr_pend = sum(1 for p in _kr_picks if p.get("result") == "⏳")
+    _kr_tot  = _kr_win + _kr_loss
+    _kr_pct  = round(_kr_win / _kr_tot * 100) if _kr_tot > 0 else 0
+    _kr_bar_c = "#FFD700" if _kr_pct >= 60 else ("#00ff88" if _kr_pct >= 50 else ("#FFD700" if _kr_pct >= 45 else "#ff4444"))
+
+    # También auditar automáticamente contra results_db (igual que Villar)
+    _rdb = get_results_db()
+    _rdb_partidos = _rdb.get("partidos", [])
+    _kr_auto_ok = 0; _kr_auto_fail = 0
+    for _kp in _kr_picks:
+        if _kp.get("result") in ("✅","❌"): continue  # ya calificado manualmente
+        _res = _villar_find_result(_kp, _rdb_partidos)
+        if _res:
+            _vd2, _, _ = _villar_match_pick_to_result(_kp, _res)
+            if   "GANÓ"  in _vd2: _kr_auto_ok   += 1
+            elif "FALLÓ" in _vd2: _kr_auto_fail += 1
+
+    _kr_total_ok   = _kr_win + _kr_auto_ok
+    _kr_total_fail = _kr_loss + _kr_auto_fail
+    _kr_total_all  = _kr_total_ok + _kr_total_fail
+    _kr_total_pct  = round(_kr_total_ok / _kr_total_all * 100) if _kr_total_all > 0 else 0
+    _kr_bc2 = "#FFD700" if _kr_total_pct >= 60 else ("#00ff88" if _kr_total_pct >= 55 else ("#FFD700" if _kr_total_pct >= 45 else "#ff4444"))
+
+    if _kr_total_all > 0 or _kr_pend > 0:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,#100020,#0a1500);"
+            f"border:2px solid #FFD70066;border-radius:14px;padding:14px 18px;margin-bottom:14px'>"
+            f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
+            f"letter-spacing:.12em;margin-bottom:10px'>👑 KING RONGO — AUDITORÍA DE SUS PICKS</div>"
+            f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
+            f"<div style='text-align:center;background:#00ff8810;border-radius:10px;padding:8px 4px'>"
+            f"<div style='font-size:1.8rem;font-weight:900;color:#00ff88'>{_kr_total_ok}</div>"
+            f"<div style='font-size:.68rem;color:#555'>✅ Ganados</div></div>"
+            f"<div style='text-align:center;background:#ff444410;border-radius:10px;padding:8px 4px'>"
+            f"<div style='font-size:1.8rem;font-weight:900;color:#ff4444'>{_kr_total_fail}</div>"
+            f"<div style='font-size:.68rem;color:#555'>❌ Fallados</div></div>"
+            f"<div style='text-align:center;background:{_kr_bc2}18;border-radius:10px;padding:8px 4px'>"
+            f"<div style='font-size:1.8rem;font-weight:900;color:{_kr_bc2}'>{_kr_total_pct}%</div>"
+            f"<div style='font-size:.68rem;color:#555'>Acierto</div></div>"
+            f"<div style='text-align:center;background:#FFD70010;border-radius:10px;padding:8px 4px'>"
+            f"<div style='font-size:1.8rem;font-weight:900;color:#FFD700'>{_kr_pend}</div>"
+            f"<div style='font-size:.68rem;color:#555'>⏳ Pendientes</div></div>"
+            f"</div>"
+            f"<div style='background:#0d0d2e;border-radius:6px;height:8px;overflow:hidden'>"
+            f"<div style='width:{_kr_total_pct}%;height:100%;"
+            f"background:linear-gradient(90deg,#FFD700,#ff9500);border-radius:6px'></div></div>"
+            f"<div style='font-size:.65rem;color:#444;margin-top:6px;text-align:right'>"
+            f"{_kr_total_all} picks auditados · {_kr_pend} pendientes de resultado</div>"
+            f"</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f"<div style='background:#0a0a20;border:1px solid #FFD70033;border-radius:12px;"
+            f"padding:12px 16px;margin-bottom:14px;text-align:center'>"
+            f"<div style='font-size:.7rem;color:#FFD700;font-weight:700;margin-bottom:4px'>"
+            f"👑 AUDITORÍA KING RONGO</div>"
+            f"<div style='color:#555;font-size:.8rem'>Guarda picks de KR para ver tu historial de aciertos</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════
     # SINCRONIZAR cache de disco → session_state (al cargar)
     # ══════════════════════════════════════════════════════
     if not st.session_state.get("_king_scanned"):
