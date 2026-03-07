@@ -2289,23 +2289,18 @@ def _save_picks_snap(snap):
     except: pass
 
 def _snap_auto_pick(partido_id, pick_data):
-    """Guarda pick automático en snapshot. Sobrescribe solo si el pick cambió de mercado."""
+    """Guarda pick automático en snapshot. Siempre sobrescribe — el modelo es determinístico."""
     if not partido_id or not pick_data: return
     snap = _load_picks_snap()
-    existing = snap.get(partido_id, {})
-    old_mkt = existing.get("mkt","")
-    new_mkt = pick_data.get("mkt","")
-    # Sobrescribir si: no existe, o si el mercado cambió (ej: AA → 1X2 por corrección de jerarquía)
-    if partido_id not in snap or (old_mkt in ("BTTS","") and new_mkt not in ("BTTS","")):
-        snap[partido_id] = {
-            "pick":  pick_data.get("pick",""),
-            "prob":  pick_data.get("prob",0),
-            "mkt":   pick_data.get("mkt",""),
-            "odd":   pick_data.get("odd",0),
-            "src":   pick_data.get("src","🤖 Modelo"),
-            "fecha_gen": datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
-        }
-        _save_picks_snap(snap)
+    snap[partido_id] = {
+        "pick":     pick_data.get("pick",""),
+        "prob":     pick_data.get("prob",0),
+        "mkt":      pick_data.get("mkt", pick_data.get("src","🤖 Modelo")),
+        "odd":      pick_data.get("odd",0),
+        "src":      pick_data.get("src","🤖 Modelo"),
+        "fecha_gen": datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
+    }
+    _save_picks_snap(snap)
 
 def _needs_update():
     """Returns True if last update was >2 hours ago or never."""
@@ -3639,16 +3634,17 @@ def render_resultados_tab():
                             # 1. Pick manual guardado por usuario
                             manual_pks = [pk for pk in pick_history
                                           if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — primero busca snapshot guardado (pick original)
-                            # Si no hay snapshot, usa el cache recalculado
+                            # 2. Pick automático — SIEMPRE recalcular con jerarquía Diamante
+                            # (ML > DO > O2.5 > AA) — igual que Jugada Diamante en analisis
                             _mid = p.get("id","")
-                            _snap = _load_picks_snap()
                             auto_pk = None
                             if not manual_pks:
-                                if _mid in _snap:
-                                    # Usar pick original snapshot — NO el recalculado con lógica nueva
-                                    auto_pk = _snap[_mid]
-                                else:
+                                # Recalcular fresh con jerarquía correcta
+                                try:
+                                    auto_pk = _villar_auto_pick(_p_fixed)
+                                    if auto_pk:
+                                        _snap_auto_pick(_mid, auto_pk)  # actualizar snap
+                                except:
                                     auto_pk = _auto_pk_cache.get(_mid)
 
                             pick_rows = []
@@ -7260,7 +7256,15 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
             try:
                 tor = m.get("torneo", m.get("tour",""))
                 srf = next((v for k,v in _smap.items() if k.lower() in tor.lower()), "hard")
-                tm  = tennis_model(m["rank1"], m["rank2"], m.get("odd_1",0), m.get("odd_2",0), srf)
+                r1 = m.get("rank1",0) or 0
+                r2 = m.get("rank2",0) or 0
+                p1_name = m.get("p1",""); p2_name = m.get("p2","")
+                # Resolver rankings si faltan o son default 200
+                if r1 <= 0 or r1 >= 190:
+                    r1 = _resolve_rank(p1_name, _KNOWN_RANKS) or _resolve_rank_local(p1_name) or 120
+                if r2 <= 0 or r2 >= 190:
+                    r2 = _resolve_rank(p2_name, _KNOWN_RANKS) or _resolve_rank_local(p2_name) or 120
+                tm  = tennis_model(r1, r2, m.get("odd_1",0), m.get("odd_2",0), srf)
                 fav = m["p1"] if tm["p1"] >= tm["p2"] else m["p2"]
                 prob= max(tm["p1"], tm["p2"])
                 odd = m.get("odd_1",0) if fav==m["p1"] else m.get("odd_2",0)
@@ -8346,7 +8350,8 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
 
         # ── EL PICK DEL DÍA ──
         if el_pick:
-            _kr_render_pick_card(el_pick, bk, todos)
+            _kr_narr = _kr_ia_narracion(el_pick, bk, todos) if todos else ""
+            _kr_render_pick_card(el_pick, bk, _kr_narr)
 
             # ── TOP 3 DEL REY ──
             if top3 and len(top3) > 0:
@@ -9096,10 +9101,13 @@ if st.session_state["view"] == "cartelera":
                     _total = sum(len(v) for v in _ligas.values())
                     _is_hoy = _fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
                     with st.expander(f"{_fecha_lbl_fut(_fecha)}  ·  {_total} partidos", expanded=(_fi==0)):
-                        for _liga, _lms in sorted(_ligas.items()):
-                            st.markdown(f"<div style='font-size:.72rem;font-weight:700;color:#FFD700;text-transform:uppercase;letter-spacing:.1em;margin:10px 0 6px'>⚽ {_liga}</div>", unsafe_allow_html=True)
-                            _post_ms = [m for m in _lms if m["state"]=="post"]
-                            _pre_ms  = [m for m in _lms if m["state"]!="post"]
+                        for _li, (_liga, _lms) in enumerate(sorted(_ligas.items())):
+                            _n_pre  = sum(1 for m in _lms if m["state"]!="post")
+                            _n_post = sum(1 for m in _lms if m["state"]=="post")
+                            _liga_badge = f"{'🔴 ' if any(m['state']=='in' for m in _lms) else ''}{'✅ ' if _n_post and not _n_pre else ''}{_liga}  ·  {len(_lms)} partidos"
+                            with st.expander(_liga_badge, expanded=(_li==0 and _fi==0)):
+                                _post_ms = [m for m in _lms if m["state"]=="post"]
+                                _pre_ms  = [m for m in _lms if m["state"]!="post"]
                             # Finalizados — clickeables
                             for _m in _post_ms:
                                 _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
