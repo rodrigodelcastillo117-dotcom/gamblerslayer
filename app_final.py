@@ -2548,6 +2548,20 @@ def fetch_tennis_results(days_back=10):
         for wr in web_results:
             eid = f"ten_web_{wr['p1'][:6]}_{wr['p2'][:6]}_{wr['fecha']}"
             if eid in seen_ids: continue
+            # Dedup: si ya existe un resultado con los mismos jugadores (en cualquier orden)
+            # y la misma fecha → saltar (el seed tiene prioridad sobre web search)
+            _wr_p1 = wr.get("p1","").lower().strip()
+            _wr_p2 = wr.get("p2","").lower().strip()
+            _wr_f  = wr.get("fecha","")
+            _duplicate = False
+            for _ex in results:
+                _ex_p1 = _ex.get("p1","").lower().strip()
+                _ex_p2 = _ex.get("p2","").lower().strip()
+                _ex_f  = _ex.get("fecha","")
+                if _ex_f == _wr_f and {_ex_p1,_ex_p2} == {_wr_p1,_wr_p2}:
+                    _duplicate = True
+                    break
+            if _duplicate: continue
             seen_ids.add(eid)
             wr["id"] = eid
             results.append(wr)
@@ -7918,11 +7932,12 @@ def _kr_conf(prob, edge, spread_pp):
 
 
 def _kr_score(prob, edge, spread_pp, kelly, contradiccion):
-    """Score compuesto 0-10 para rankear candidatos."""
-    s  = min(prob * 5.5,  4.0)       # probabilidad base         0-4.0
-    s += min(max(edge * 28, 0), 2.8) # edge real positivo        0-2.8
-    s += min(kelly / 6.0, 1.5)       # kelly: cuánto apostar     0-1.5
-    s -= min(spread_pp / 16.0, 1.5)  # penalizar dispersión      0-1.5
+    """Score compuesto 0-10 para rankear candidatos.
+    Prob tiene peso dominante — un 80% siempre supera a un 50% aunque tenga menos edge."""
+    s  = min(prob * 7.0,  5.5)       # probabilidad base — peso dominante  0-5.5
+    s += min(max(edge * 20, 0), 2.0) # edge real positivo (menos peso)      0-2.0
+    s += min(kelly / 8.0, 1.0)       # kelly                                0-1.0
+    s -= min(spread_pp / 20.0, 1.0)  # penalizar dispersión                 0-1.0
     if contradiccion: s -= 2.2       # penalización conflicto
     return round(max(0.0, min(s, 10.0)), 2)
 
@@ -8275,11 +8290,16 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     candidates.sort(key=lambda x: -x.get("score",0))
     contras = [c for c in candidates if c.get("contradiccion")]
 
+    # Regla de probabilidad dominante: si hay candidato ≥70%, no elegir ninguno <60%
+    _high_prob = [c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.70]
+    _normal    = [c for c in candidates if not c.get("contradiccion")]
+    _pool      = _high_prob if _high_prob else _normal
+
     # Cascada — siempre retorna algo si hay candidatos
     el_pick = (
-        next((c for c in candidates if not c.get("contradiccion") and c.get("edge",0) > 0), None) or
-        next((c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.45), None) or
-        next((c for c in candidates if not c.get("contradiccion")), None) or
+        next((c for c in _pool if c.get("edge",0) > 0), None) or
+        next((c for c in _pool if c.get("prob",0) >= 0.45), None) or
+        next((c for c in _pool), None) or
         (candidates[0] if candidates else None)
     )
     if el_pick:
