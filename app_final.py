@@ -4706,9 +4706,9 @@ def _weibull_srv_prob(rank_srv, rank_ret, surface="hard"):
     def _r2e(r): return 2400 - 550 * _m.log(max(1,min(500,r))) / _m.log(200)
     elo_srv = _r2e(rank_srv)
     elo_ret = _r2e(rank_ret)
-    # Mejor servidor (mayor Elo) gana más puntos de servicio
-    adj = (elo_srv - elo_ret) * 0.00030   # 100 Elo pts → +0.030
-    return max(0.35, min(0.78, base + adj))
+    # Factor amplificado: 100 Elo pts → +0.042 (antes era 0.030 — demasiado conservador)
+    adj = (elo_srv - elo_ret) * 0.00042
+    return max(0.32, min(0.80, base + adj))
 
 def _markov_game(p):
     """P(ganar juego) dado p(ganar punto) — fórmula cerrada exacta."""
@@ -6738,6 +6738,7 @@ _ATP_RANK_CACHE: dict = {}
 _ATP_RANK_DATE: str   = ""
 
 @st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _fetch_atp_rankings_raw(tour="ATP"):
     """
     Descarga el ranking ATP/WTA actual desde la tennis API.
@@ -6769,31 +6770,36 @@ def _fetch_atp_rankings_raw(tour="ATP"):
     except:
         return {}
 
-# Tabla de jugadores conocidos como fallback (top 30 ATP/WTA a agosto 2025)
+# Rankings reales ATP/WTA — actualizados 7 marzo 2026 (fuente AP / WTA oficial)
 _KNOWN_RANKS = {
-    # ATP
-    "sinner":1,"alcaraz":2,"djokovic":3,"medvedev":4,"zverev":5,
-    "ruud":6,"hurkacz":7,"fritz":8,"de minaur":9,"minaur":9,
-    "rublev":10,"tsitsipas":11,"musetti":12,"draper":13,"rune":14,
-    "shelton":15,"tiafoe":16,"norrie":17,"khachanov":18,"dimitrov":19,
-    "paul":20,"arnaldi":21,"struff":22,"popyrin":23,"berrettini":24,
-    "davidovich fokina":25,"fokina":25,"cobolli":26,"jarry":27,
-    "navone":28,"cerundolo":29,"etcheverry":30,"mensik":31,
-    "korda":32,"giron":40,"mpetshi perricard":35,"perricard":35,
-    "fils":36,"van de zandschulp":38,"zandschulp":38,
-    "bublik":42,"baez":44,"monfils":60,"wawrinka":120,
-    # WTA top 50 (ranking actual 2025)
-    "swiatek":1,"sabalenka":2,"gauff":3,"zheng":4,"rybakina":5,
-    "keys":6,"pegula":7,"paolini":8,"navarro":9,"kostyuk":10,
-    "badosa":11,"andreescu":12,"bencic":13,"collins":14,
-    "jabeur":15,"muchova":16,"samsonova":17,"kalinskaya":18,
-    "kasatkina":19,"andreeva":20,"shnaider":21,"boulter":22,
-    "tauson":23,"svitolina":24,"haddad maia":25,"haddad":25,
-    "pliskova":26,"alexandrova":27,"putintseva":28,"fruhvirtova":29,
-    "siniakova":30,"linette":31,"sorribes tormo":32,"sorribes":32,
-    "volynets":33,"tomova":34,"noskova":35,"sherif":36,
-    "kvitova":37,"azarenka":38,"osaka":40,"wozniacki":80,
-    "halep":200,"williams":500,"henin":500,"clijsters":500,
+    # ── ATP top 60 (marzo 2026) ──
+    "alcaraz":1,"sinner":2,"djokovic":3,"zverev":4,"musetti":5,
+    "de minaur":6,"minaur":6,"fritz":7,"shelton":8,
+    "auger-aliassime":9,"auger aliassime":9,"aliassime":9,
+    "bublik":10,"medvedev":11,"mensik":12,"ruud":13,
+    "draper":14,"cobolli":15,"khachanov":16,"rublev":17,
+    "rune":18,"davidovich fokina":19,"fokina":19,
+    "cerundolo":20,"darderi":21,"tiafoe":22,"lehecka":23,
+    "paul":24,"griekspoor":25,"vacherot":26,"norrie":27,
+    "nakashima":28,"rinderknech":29,"machac":30,
+    "baez":32,"fonseca":33,"tien":34,
+    "mpetshi perricard":35,"perricard":35,"fils":36,
+    "korda":38,"struff":42,"berrettini":48,
+    "tsitsipas":52,"dimitrov":56,"hurkacz":60,
+    "popyrin":62,"jarry":65,"etcheverry":70,
+    "wawrinka":150,"monfils":180,
+    # ── WTA top 40 (marzo 2026) ──
+    "sabalenka":1,"swiatek":2,"rybakina":3,"gauff":4,"pegula":5,
+    "anisimova":6,"paolini":7,"andreeva":8,"mirra andreeva":8,
+    "svitolina":9,"mboko":10,"alexandrova":11,"bencic":12,
+    "muchova":13,"noskova":14,"keys":15,"osaka":16,
+    "tauson":17,"jovic":18,"iva jovic":18,"samsonova":19,
+    "shnaider":20,"mertens":21,"kalinskaya":22,"zheng":23,
+    "qinwen":23,"zheng qinwen":23,"navarro":24,"badosa":25,
+    "kostyuk":26,"andreescu":27,"haddad maia":28,"haddad":28,
+    "kasatkina":29,"raducanu":30,"sorribes tormo":32,"sorribes":32,
+    "putintseva":34,"fruhvirtova":36,"linette":38,
+    "kvitova":45,"azarenka":50,"halep":200,"williams":500,
 }
 
 def _resolve_rank(player_name: str, api_ranks: dict) -> int:
@@ -6829,7 +6835,7 @@ def _resolve_rank(player_name: str, api_ranks: dict) -> int:
                 if part in key or key in part:
                     return rank
 
-    return 200   # jugador fuera del top — rank conservador
+    return 120   # jugador fuera del top conocido — rank conservador
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -7562,166 +7568,118 @@ def _kr_render_bankroll(bk):
 
 def _kr_render_pick_card(el_pick, bk, narracion=""):
     """La card principal del pick del día — RONGO PICK supremo."""
-    prob  = el_pick["prob"]
-    edge  = el_pick["edge"]
-    odd   = el_pick.get("odd",0)
-    kelly = el_pick.get("kelly_pct", bk["kelly_rec"])
-    ce    = el_pick.get("conf_emoji","⚡")
-    cl    = el_pick.get("conf_label","")
-    cc    = el_pick.get("conf_color","#FFD700")
-    score = el_pick.get("score",0)
+    prob  = el_pick.get("prob", 0)
+    edge  = el_pick.get("edge", 0)
+    odd   = el_pick.get("odd", 0)
+    kelly = el_pick.get("kelly_pct", bk.get("kelly_rec", 0))
+    ce    = el_pick.get("conf_emoji", "⚡")
+    cl    = el_pick.get("conf_label", "MEDIA")
+    cc    = el_pick.get("conf_color", "#FFD700")
+    score = el_pick.get("score", 0)
+    odd_txt  = f"@{odd:.2f}" if odd > 1 else "S/C"
+    edge_c   = "#00ff88" if edge >= 0 else "#ff4444"
+    units    = round(kelly / 100 * 10, 1)
+    meter_w  = min(int(prob * 100), 100)
 
-    odd_txt = f"@{odd:.2f}" if odd>1 else "S/C"
-    meter_w = min(int(prob*100), 100)
-    edge_c  = "#00ff88" if edge>=0 else "#ff4444"
-    units   = round(kelly/100*10, 1)
-
-    models = el_pick.get("models",{})
-    pills  = "".join(
-        f"<div style='background:#0a0a1e;border:1px solid {cc}22;border-radius:20px;"
-        f"padding:4px 10px;text-align:center'>"
-        f"<div style='font-size:.78rem;font-weight:700;color:{cc}'>{v}%</div>"
-        f"<div style='font-size:.58rem;color:#444'>{k}</div></div>"
-        for k,v in models.items()
-    )
-    narr_html = (
-        f"<div style='background:#07071a;border-left:3px solid #FFD700;"
-        f"border-radius:0 10px 10px 0;padding:10px 14px;margin-bottom:12px;"
-        f"font-size:.82rem;color:#aaa;line-height:1.7;font-style:italic'>"
-        f"💬 &ldquo;{narracion}&rdquo;</div>"
-    ) if narracion else ""
-
+    # ── 1. PICK PRINCIPAL — siempre visible primero ──
     st.markdown(f"""
 <style>
-@keyframes rp-glow{{
-  0%,100%{{box-shadow:0 0 30px #FFD70033,0 0 60px #FFD70011,inset 0 0 40px #ffffff03}}
-  50%{{box-shadow:0 0 55px #FFD70066,0 0 100px #ff950022,inset 0 0 60px #ffffff06}}
-}}
-@keyframes rp-bar-shine{{
-  0%{{background-position:-200px 0}} 100%{{background-position:200px 0}}
-}}
-@keyframes rp-badge-pulse{{
-  0%,100%{{opacity:.85;transform:translateX(-50%) scale(1)}}
-  50%{{opacity:1;transform:translateX(-50%) scale(1.04)}}
-}}
-.rongo-card{{
-  position:relative;margin:16px 0;
-  background:linear-gradient(155deg,#120030 0%,#001a08 45%,#1a0800 100%);
-  border:2px solid #FFD700;
-  border-radius:22px;
-  animation:rp-glow 2.8s ease-in-out infinite;
-  overflow:hidden;
-}}
-.rongo-card::before{{
-  content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,transparent,#FFD700,#ff9500,#FFD700,transparent);
-}}
-.rongo-card::after{{
-  content:'';position:absolute;bottom:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent,#7c00ff,#FFD700,#7c00ff,transparent);
-}}
-.rp-badge{{
-  position:absolute;top:0;left:50%;transform:translateX(-50%);
-  background:linear-gradient(135deg,#FFD700,#ff9500);
-  padding:5px 20px;border-radius:0 0 16px 16px;
-  font-size:.65rem;font-weight:900;color:#0a0010;
-  letter-spacing:.16em;white-space:nowrap;
-  animation:rp-badge-pulse 2s ease-in-out infinite;
-}}
-.rp-body{{padding:26px 18px 18px}}
-.rp-shine-bar{{
-  height:10px;border-radius:8px;overflow:hidden;
-  background:linear-gradient(90deg,{cc}55,{cc},#FFD700,{cc});
-  background-size:200px 100%;
-  animation:rp-bar-shine 1.8s linear infinite;
+@keyframes rp-glow{{0%,100%{{box-shadow:0 0 24px #FFD70033}}50%{{box-shadow:0 0 48px #FFD70066}}}}
+@keyframes rp-bar{{0%{{background-position:-200px 0}}100%{{background-position:200px 0}}}}
+.rp-bar-shine{{
+  height:8px;border-radius:6px;
+  background:linear-gradient(90deg,{cc}44,{cc},#FFD700,{cc});
+  background-size:200px 100%;animation:rp-bar 1.8s linear infinite;
   width:{meter_w}%;
 }}
 </style>
-<div class="rongo-card">
-  <div class="rp-badge">👑 RONGO PICK · {ce} {cl}</div>
-  <div class="rp-body">
+<div style='background:linear-gradient(145deg,#0d0028,#001208,#180800);
+  border:2px solid #FFD700;border-radius:20px;padding:20px 16px 16px;
+  animation:rp-glow 3s ease-in-out infinite;margin:8px 0;position:relative'>
 
-    <!-- Partido -->
-    <div style='text-align:center;margin-bottom:14px'>
-      <div style='font-size:.66rem;color:#555;letter-spacing:.1em'>
-        {el_pick['deporte']} · {el_pick.get('liga','')[:34]} · {el_pick.get('hora','')} CDMX
-      </div>
-      <div style='font-size:1rem;font-weight:700;color:#aaa;margin:5px 0'>
-        {el_pick['label']}
-      </div>
-    </div>
-
-    <!-- EL PICK en enorme -->
-    <div style='text-align:center;background:linear-gradient(135deg,#07071a,#0a0014);
-      border-radius:16px;padding:18px 12px;margin-bottom:16px;
-      border:1px solid #FFD70033;position:relative;overflow:hidden'>
-      <div style='position:absolute;top:0;left:0;right:0;bottom:0;
-        background:radial-gradient(ellipse at center,#FFD70008,transparent 70%)'></div>
-      <div style='font-size:.65rem;font-weight:700;color:#FFD700;
-        letter-spacing:.2em;margin-bottom:6px;text-transform:uppercase'>
-        ✦ PICK DEFINITIVO DEL DÍA ✦
-      </div>
-      <div style='font-size:2rem;font-weight:900;color:#FFD700;line-height:1.15;
-        text-shadow:0 0 30px #FFD70088,0 0 60px #FFD70033'>
-        {el_pick['pick']}
-      </div>
-      <div style='font-size:.72rem;color:#555;margin-top:6px'>
-        {odd_txt}
-      </div>
-    </div>
-
-    <!-- Barra probabilidad -->
-    <div style='margin-bottom:16px'>
-      <div style='display:flex;justify-content:space-between;margin-bottom:6px'>
-        <span style='font-size:.62rem;color:#444'>Probabilidad del modelo</span>
-        <span style='font-size:.75rem;font-weight:900;color:#FFD700'>{prob*100:.1f}%</span>
-      </div>
-      <div style='background:#0a0a1e;border-radius:8px;height:10px;overflow:hidden;border:1px solid #1a1a30'>
-        <div class="rp-shine-bar"></div>
-      </div>
-    </div>
-
-    <!-- Stats 4 cols -->
-    <div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px'>
-      <div class='mbox' style='border-color:#FFD70033'>
-        <div class='mval' style='color:#FFD700'>{prob*100:.1f}%</div>
-        <div class='mlbl'>Prob</div>
-      </div>
-      <div class='mbox' style='border-color:{edge_c}33'>
-        <div class='mval' style='color:{edge_c}'>{edge*100:+.1f}%</div>
-        <div class='mlbl'>Edge</div>
-      </div>
-      <div class='mbox' style='border-color:#ff950033'>
-        <div class='mval' style='color:#ff9500'>{odd_txt}</div>
-        <div class='mlbl'>Cuota</div>
-      </div>
-      <div class='mbox' style='border-color:#00ccff33'>
-        <div class='mval' style='color:#00ccff'>{units}u</div>
-        <div class='mlbl'>Kelly</div>
-      </div>
-    </div>
-
-    <!-- Modelos -->
-    <div style='background:#07071a;border-radius:10px;padding:10px 12px;margin-bottom:12px;
-      border:1px solid #FFD70011'>
-      <div style='font-size:.58rem;color:#333;letter-spacing:.12em;
-        margin-bottom:8px;text-transform:uppercase'>✦ Consenso de modelos</div>
-      <div style='display:grid;grid-template-columns:repeat(4,1fr);gap:6px'>{pills}</div>
-    </div>
-
-    {narr_html}
-
-    <!-- Reasoning -->
-    <div style='font-size:.68rem;color:#333;line-height:1.6;
-      border-top:1px solid #1a1a30;padding-top:8px'>
-      🧠 {el_pick.get('reasoning','')}
-    </div>
-
+  <div style='position:absolute;top:0;left:50%;transform:translateX(-50%);
+    background:linear-gradient(135deg,#FFD700,#ff9500);
+    padding:4px 18px;border-radius:0 0 12px 12px;
+    font-size:.6rem;font-weight:900;color:#0a0010;letter-spacing:.15em;white-space:nowrap'>
+    👑 RONGO PICK · {ce} {cl}
   </div>
-  <div style='position:absolute;bottom:10px;right:14px;
-    font-size:.58rem;color:#FFD70033'>KR {score:.1f}/10</div>
+
+  <div style='text-align:center;margin:10px 0 14px'>
+    <div style='font-size:.62rem;color:#444;letter-spacing:.08em'>
+      {el_pick.get("deporte","")} · {el_pick.get("liga","")[:32]} · {el_pick.get("hora","")} CDMX
+    </div>
+    <div style='font-size:.9rem;font-weight:700;color:#888;margin:4px 0'>
+      {el_pick.get("label","")}
+    </div>
+  </div>
+
+  <div style='text-align:center;background:#07071a;border:1px solid #FFD70033;
+    border-radius:14px;padding:16px 10px;margin-bottom:14px'>
+    <div style='font-size:1.9rem;font-weight:900;color:#FFD700;
+      text-shadow:0 0 28px #FFD70099'>
+      {el_pick.get("pick","")}
+    </div>
+    <div style='font-size:.68rem;color:#555;margin-top:4px'>{odd_txt}</div>
+  </div>
+
+  <div style='margin-bottom:12px'>
+    <div style='display:flex;justify-content:space-between;margin-bottom:4px'>
+      <span style='font-size:.6rem;color:#333'>Probabilidad</span>
+      <span style='font-size:.72rem;font-weight:900;color:#FFD700'>{prob*100:.1f}%</span>
+    </div>
+    <div style='background:#0a0a1e;border-radius:6px;height:8px;overflow:hidden'>
+      <div class='rp-bar-shine'></div>
+    </div>
+  </div>
+
+  <div style='display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px'>
+    <div class='mbox'><div class='mval' style='color:#FFD700'>{prob*100:.1f}%</div><div class='mlbl'>Prob</div></div>
+    <div class='mbox'><div class='mval' style='color:{edge_c}'>{edge*100:+.1f}%</div><div class='mlbl'>Edge</div></div>
+    <div class='mbox'><div class='mval' style='color:#ff9500'>{odd_txt}</div><div class='mlbl'>Cuota</div></div>
+    <div class='mbox'><div class='mval' style='color:#00ccff'>{units}u</div><div class='mlbl'>Kelly</div></div>
+  </div>
+
 </div>
 """, unsafe_allow_html=True)
+
+    # ── 2. MODELOS — pills separadas ──
+    models = el_pick.get("models", {})
+    if models:
+        cols_m = st.columns(len(models))
+        for i, (k, v) in enumerate(models.items()):
+            with cols_m[i]:
+                st.markdown(
+                    f"<div style='background:#0a0a1e;border:1px solid {cc}22;border-radius:10px;"
+                    f"padding:6px 4px;text-align:center'>"
+                    f"<div style='font-size:.82rem;font-weight:700;color:{cc}'>{v}%</div>"
+                    f"<div style='font-size:.58rem;color:#444'>{k}</div></div>",
+                    unsafe_allow_html=True)
+
+    # ── 3. VEREDICTO DE KING RONGO — texto de análisis abajo ──
+    if narracion and isinstance(narracion, str) and len(narracion) > 10:
+        st.markdown(
+            f"<div style='background:#07071a;border-left:3px solid #FFD700;"
+            f"border-radius:0 10px 10px 0;padding:10px 14px;margin:10px 0;"
+            f"font-size:.82rem;color:#aaa;line-height:1.7;font-style:italic'>"
+            f"💬 {narracion}</div>",
+            unsafe_allow_html=True)
+    else:
+        # Veredicto automático sin API — basado en los datos del pick
+        _razon = el_pick.get("reasoning", "")
+        _dep   = el_pick.get("deporte", "")
+        _conf_txt = "Señal fuerte" if prob >= 0.60 else ("Señal media" in cl and "señal de valor" or "jugada de valor")
+        _edge_txt = f"edge real de {edge*100:+.1f}%" if edge != 0 else "sin cuota disponible para calcular edge"
+        _veredicto = (
+            f"El modelo encuentra {_conf_txt} en {el_pick.get('label','')}. "
+            f"Probabilidad calculada: {prob*100:.1f}% con {_edge_txt}. "
+            f"{'Confianza alta — bankroll al ' + str(units) + ' unidades.' if units > 0 else 'Sin apuesta recomendada por Kelly.'}"
+        )
+        st.markdown(
+            f"<div style='background:#07071a;border-left:3px solid #555;"
+            f"border-radius:0 10px 10px 0;padding:10px 14px;margin:10px 0;"
+            f"font-size:.78rem;color:#666;line-height:1.6'>"
+            f"🧠 {_veredicto}</div>",
+            unsafe_allow_html=True)
 
 
 def _kr_render_parlay(parlay):
@@ -8350,10 +8308,10 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
 
         # ── EL PICK DEL DÍA ──
         if el_pick:
-            _kr_narr = _kr_ia_narracion(el_pick, bk, todos) if todos else ""
-            _kr_render_pick_card(el_pick, bk, _kr_narr)
+            # Mostrar pick primero — sin esperar API
+            _kr_render_pick_card(el_pick, bk, "")
 
-            # ── TOP 3 DEL REY ──
+            # TOP 3 del Rey
             if top3 and len(top3) > 0:
                 st.markdown(
                     "<div style='font-size:.72rem;font-weight:700;color:#FFD700;"
@@ -8428,6 +8386,29 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     st.session_state["sel"]  = sel
                     st.session_state["view"] = "analisis"
                     st.rerun()
+
+            # ── VEREDICTO DE KING RONGO ──
+            with st.expander("💬 Veredicto de King Rongo", expanded=True):
+                with st.spinner("👑 King Rongo analizando..."):
+                    _kr_narr = _kr_ia_narracion(el_pick, bk, todos) if todos else ""
+                if _kr_narr:
+                    st.markdown(
+                        f"<div style='font-size:.86rem;color:#ccc;line-height:1.8;"
+                        f"font-style:italic;padding:6px 0'>{_kr_narr}</div>",
+                        unsafe_allow_html=True)
+                else:
+                    _p  = el_pick.get("prob",0)
+                    _e  = el_pick.get("edge",0)
+                    _lbl = el_pick.get("pick","")
+                    _match = el_pick.get("label","")
+                    st.markdown(
+                        f"<div style='font-size:.84rem;color:#888;line-height:1.7'>"
+                        f"El modelo encuentra <b style='color:#FFD700'>{_p*100:.1f}%</b> de probabilidad "
+                        f"en <b style='color:#ccc'>{_lbl}</b> para el partido <i>{_match}</i>. "
+                        f"Edge calculado: <b style='color:{'#00ff88' if _e>=0 else '#ff4444'}'>{_e*100:+.1f}%</b>. "
+                        f"{'Apostar con criterio.' if _e < 0 else 'Ventaja real detectada — jugar con confianza.'}"
+                        f"</div>",
+                        unsafe_allow_html=True)
 
             # ── CONTRADICCIONES ──
             _kr_render_contradictions(contradicciones)
@@ -9105,72 +9086,68 @@ if st.session_state["view"] == "cartelera":
                             _n_pre  = sum(1 for m in _lms if m["state"]!="post")
                             _n_post = sum(1 for m in _lms if m["state"]=="post")
                             _liga_badge = f"{'🔴 ' if any(m['state']=='in' for m in _lms) else ''}{'✅ ' if _n_post and not _n_pre else ''}{_liga}  ·  {len(_lms)} partidos"
-                            with st.expander(_liga_badge, expanded=(_li==0 and _fi==0)):
+                            with st.expander(_liga_badge, expanded=False):
                                 _post_ms = [m for m in _lms if m["state"]=="post"]
                                 _pre_ms  = [m for m in _lms if m["state"]!="post"]
-                            # Finalizados — clickeables
-                            for _m in _post_ms:
-                                _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
-                                _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
-                                _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
-                                if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}", key=f"fut_post_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
-                                    st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                    st.session_state["view"] = "analisis"
-                                    st.rerun()
-                            # Pre/live — tarjetas con prob local/empate/visitante
-                            for _m in _pre_ms:
-                                _live = _m["state"] == "in"
-                                _sc   = f"  🔴 {_m['score_h']}-{_m['score_a']}" if _live else f"  🕐 {_m.get('hora','')}"
-                                # Calcular probs rápidas (mc50k es ligero)
-                                try:
-                                    _hf2 = get_form(_m["home_id"], _m["slug"]) or []
-                                    _af2 = get_form(_m["away_id"], _m["slug"]) or []
-                                    _hx2 = xg_weighted(_hf2,True) if _hf2 else xg_from_record(_m.get("home_rec","5-5-5"),True)
-                                    _ax2 = xg_weighted(_af2,False) if _af2 else xg_from_record(_m.get("away_rec","5-5-5"),False)
-                                    _mc2 = mc50k(_hx2, _ax2)
-                                    _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
-                                except:
-                                    _ph2 = _m.get("odd_h",0); _pa2 = _m.get("odd_a",0); _pd2 = _m.get("odd_d",0)
-                                    # Si tenemos odds, convertir a prob implícita
-                                    if _ph2 > 1 and _pa2 > 1:
-                                        _tot = 1/_ph2 + 1/_pd2 + 1/_pa2
-                                        _ph2 = (1/_ph2)/_tot; _pd2 = (1/_pd2)/_tot; _pa2 = (1/_pa2)/_tot
-                                    else:
-                                        _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
-                                # Color del favorito
-                                _fav_color_h = "#00ff88" if _ph2 == max(_ph2,_pd2,_pa2) else "#888"
-                                _fav_color_d = "#FFD700" if _pd2 == max(_ph2,_pd2,_pa2) else "#888"
-                                _fav_color_a = "#00ff88" if _pa2 == max(_ph2,_pd2,_pa2) else "#888"
-                                # Bold el favorito
-                                _bh = "900" if _ph2 == max(_ph2,_pd2,_pa2) else "400"
-                                _bd = "900" if _pd2 == max(_ph2,_pd2,_pa2) else "400"
-                                _ba = "900" if _pa2 == max(_ph2,_pd2,_pa2) else "400"
-                                st.markdown(f"""
-<div style='background:#0d0d1a;border:1px solid #1e1e3a;border-radius:12px;padding:10px 12px;margin:4px 0;cursor:pointer'>
-  <div style='font-size:.72rem;color:#555;margin-bottom:6px'>{_sc}</div>
-  <div style='display:flex;justify-content:space-between;align-items:center;gap:6px'>
-    <div style='flex:2;font-size:.78rem;color:#ccc;font-weight:600'>{_m["home"]}</div>
-    <div style='display:flex;gap:5px;flex-shrink:0'>
-      <div style='background:#111;border:1px solid #222;border-radius:8px;padding:5px 8px;text-align:center;min-width:48px'>
-        <div style='font-size:.82rem;font-weight:{_bh};color:{_fav_color_h}'>{_ph2*100:.0f}%</div>
-        <div style='font-size:.58rem;color:#555'>🏠</div>
+                                # Finalizados — clickeables
+                                for _m in _post_ms:
+                                    _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
+                                    _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
+                                    _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
+                                    if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}", key=f"fut_post_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
+                                        st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                        st.session_state["view"] = "analisis"
+                                        st.rerun()
+                                # Pre/live — tarjetas con prob local/empate/visitante
+                                for _m in _pre_ms:
+                                    _live = _m["state"] == "in"
+                                    _sc   = f"🔴 {_m['score_h']}-{_m['score_a']}" if _live else f"🕐 {_m.get('hora','')}"
+                                    try:
+                                        _hf2 = get_form(_m["home_id"], _m["slug"]) or []
+                                        _af2 = get_form(_m["away_id"], _m["slug"]) or []
+                                        _hx2 = xg_weighted(_hf2,True) if _hf2 else xg_from_record(_m.get("home_rec","5-5-5"),True)
+                                        _ax2 = xg_weighted(_af2,False) if _af2 else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                                        _mc2 = mc50k(_hx2, _ax2)
+                                        _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
+                                    except:
+                                        _ph2 = _m.get("odd_h",0); _pa2 = _m.get("odd_a",0); _pd2 = _m.get("odd_d",0)
+                                        if _ph2 > 1 and _pa2 > 1:
+                                            _tot = 1/_ph2 + (1/_pd2 if _pd2>1 else 0.25) + 1/_pa2
+                                            _ph2 = (1/_ph2)/_tot; _pd2 = 0.25; _pa2 = (1/_pa2)/_tot
+                                        else:
+                                            _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
+                                    _mx = max(_ph2,_pd2,_pa2)
+                                    _ch = "#00ff88" if _ph2==_mx else "#555"
+                                    _cd = "#FFD700" if _pd2==_mx else "#555"
+                                    _ca = "#00ff88" if _pa2==_mx else "#555"
+                                    _wh = "800" if _ph2==_mx else "400"
+                                    _wd = "800" if _pd2==_mx else "400"
+                                    _wa = "800" if _pa2==_mx else "400"
+                                    st.markdown(f"""<div style='background:#0a0a18;border:1px solid #1a1a30;border-radius:10px;padding:8px 10px;margin:3px 0'>
+  <div style='font-size:.65rem;color:#444;margin-bottom:5px'>{_sc}</div>
+  <div style='display:flex;align-items:center;gap:4px'>
+    <div style='flex:2;font-size:.75rem;color:#bbb;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{_m["home"]}</div>
+    <div style='display:flex;gap:3px;flex-shrink:0'>
+      <div style='background:#0f0f20;border:1px solid {_ch}44;border-radius:6px;padding:4px 6px;text-align:center;min-width:42px'>
+        <div style='font-size:.78rem;font-weight:{_wh};color:{_ch}'>{_ph2*100:.0f}%</div>
+        <div style='font-size:.55rem;color:#333'>🏠</div>
       </div>
-      <div style='background:#111;border:1px solid #222;border-radius:8px;padding:5px 8px;text-align:center;min-width:48px'>
-        <div style='font-size:.82rem;font-weight:{_bd};color:{_fav_color_d}'>{_pd2*100:.0f}%</div>
-        <div style='font-size:.58rem;color:#555'>🤝</div>
+      <div style='background:#0f0f20;border:1px solid {_cd}44;border-radius:6px;padding:4px 6px;text-align:center;min-width:42px'>
+        <div style='font-size:.78rem;font-weight:{_wd};color:{_cd}'>{_pd2*100:.0f}%</div>
+        <div style='font-size:.55rem;color:#333'>🤝</div>
       </div>
-      <div style='background:#111;border:1px solid #222;border-radius:8px;padding:5px 8px;text-align:center;min-width:48px'>
-        <div style='font-size:.82rem;font-weight:{_ba};color:{_fav_color_a}'>{_pa2*100:.0f}%</div>
-        <div style='font-size:.58rem;color:#555'>✈️</div>
+      <div style='background:#0f0f20;border:1px solid {_ca}44;border-radius:6px;padding:4px 6px;text-align:center;min-width:42px'>
+        <div style='font-size:.78rem;font-weight:{_wa};color:{_ca}'>{_pa2*100:.0f}%</div>
+        <div style='font-size:.55rem;color:#333'>✈️</div>
       </div>
     </div>
-    <div style='flex:2;font-size:.78rem;color:#ccc;font-weight:600;text-align:right'>{_m["away"]}</div>
+    <div style='flex:2;font-size:.75rem;color:#bbb;font-weight:600;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{_m["away"]}</div>
   </div>
 </div>""", unsafe_allow_html=True)
-                                if st.button("📊 Analizar", key=f"fut_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
-                                    st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                    st.session_state["view"] = "analisis"
-                                    st.rerun()
+                                    if st.button("📊 Analizar", key=f"fut_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
+                                        st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                        st.session_state["view"] = "analisis"
+                                        st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
             with st.spinner("Calculando TRILAY..."):
