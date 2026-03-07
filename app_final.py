@@ -3259,6 +3259,8 @@ def render_resultados_tab():
         if _sp == "futbol":
             if _fut_c >= 30: continue
             _fut_c += 1
+        # Solo contar desde hoy
+        if _fd < _inicio_conteo: continue
         # Tenis: skip si score inválido (0-0 imposible, -1 no disponible)
         if _sp == "tenis":
             _sh2 = _fp.get("score_h", -1)
@@ -3387,14 +3389,12 @@ def render_resultados_tab():
             # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
             # NBA/Tenis: hasta 14 días atrás
             _catorce_dias = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
-            _inicio_picks = datetime.now(CDMX).strftime("%Y-%m-%d")  # solo picks de HOY
+            _inicio_conteo_tab = datetime.now(CDMX).strftime("%Y-%m-%d")  # contar desde hoy
             _auto_pk_cache = {}
             _fut_count = 0
             for _fp in finalizados:
                 _mid = _fp.get("id","")
                 _fp_sport = _fp.get("deporte","")
-                _fp_fecha = _fp.get("fecha","")
-                if _fp_fecha < _inicio_picks: continue  # solo picks desde hoy
                 if _fp_sport == "futbol":
                     if _fut_count >= 30: continue
                     _fut_count += 1
@@ -3478,8 +3478,10 @@ def render_resultados_tab():
                                     "prob": prob_v, "odd": pk.get("odd",0),
                                     "src": "💾 Tu pick", "verd": vd, "col": vc, "expl": ex,
                                 })
-                                if "GANÓ" in vd: ok_sp+=1
-                                elif "FALLÓ" in vd: fail_sp+=1
+                                _fecha_p = p.get("fecha","")
+                                if _fecha_p >= _inicio_conteo_tab:
+                                    if "GANÓ" in vd: ok_sp+=1
+                                    elif "FALLÓ" in vd: fail_sp+=1
 
                             if auto_pk:
                                 # UN solo pick por partido — el que recomienda el modelo
@@ -3493,9 +3495,10 @@ def render_resultados_tab():
                                     "src":   auto_pk.get("src", "🤖 Modelo"),
                                     "verd":  vd, "col": vc, "expl": ex,
                                 })
-                                # Sumar al contador del deporte
-                                if "GANÓ" in vd:  ok_sp += 1
-                                elif "FALLÓ" in vd: fail_sp += 1
+                                # Sumar al contador — solo picks de hoy
+                                if p.get("fecha","") >= _inicio_conteo_tab:
+                                    if "GANÓ" in vd:  ok_sp += 1
+                                    elif "FALLÓ" in vd: fail_sp += 1
 
                             # Render card
                             has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
