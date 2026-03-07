@@ -9109,19 +9109,60 @@ if st.session_state["view"] == "cartelera":
                                     st.session_state["sel"]  = {**_m, "_sport":"futbol"}
                                     st.session_state["view"] = "analisis"
                                     st.rerun()
-                            # Pre/live en 2 columnas
-                            for _gi in range(0, len(_pre_ms), 2):
-                                _pair = _pre_ms[_gi:_gi+2]
-                                _ncols = st.columns(len(_pair))
-                                for _ncol, _m in zip(_ncols, _pair):
-                                    with _ncol:
-                                        _live = _m["state"]=="in"
-                                        _sc = f"{_m['score_h']}-{_m['score_a']}" if _live else _m.get("hora","")
-                                        _lbl = f"{'🔴 ' if _live else '⚽ '}{_m['home']} vs {_m['away']}  ·  {_sc}"
-                                        if st.button(_lbl, key=f"fut_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
-                                            st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                            st.session_state["view"] = "analisis"
-                                            st.rerun()
+                            # Pre/live — tarjetas con prob local/empate/visitante
+                            for _m in _pre_ms:
+                                _live = _m["state"] == "in"
+                                _sc   = f"  🔴 {_m['score_h']}-{_m['score_a']}" if _live else f"  🕐 {_m.get('hora','')}"
+                                # Calcular probs rápidas (mc50k es ligero)
+                                try:
+                                    _hf2 = get_form(_m["home_id"], _m["slug"]) or []
+                                    _af2 = get_form(_m["away_id"], _m["slug"]) or []
+                                    _hx2 = xg_weighted(_hf2,True) if _hf2 else xg_from_record(_m.get("home_rec","5-5-5"),True)
+                                    _ax2 = xg_weighted(_af2,False) if _af2 else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                                    _mc2 = mc50k(_hx2, _ax2)
+                                    _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
+                                except:
+                                    _ph2 = _m.get("odd_h",0); _pa2 = _m.get("odd_a",0); _pd2 = _m.get("odd_d",0)
+                                    # Si tenemos odds, convertir a prob implícita
+                                    if _ph2 > 1 and _pa2 > 1:
+                                        _tot = 1/_ph2 + 1/_pd2 + 1/_pa2
+                                        _ph2 = (1/_ph2)/_tot; _pd2 = (1/_pd2)/_tot; _pa2 = (1/_pa2)/_tot
+                                    else:
+                                        _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
+                                # Color del favorito
+                                _fav_color_h = "#00ff88" if _ph2 == max(_ph2,_pd2,_pa2) else "#888"
+                                _fav_color_d = "#FFD700" if _pd2 == max(_ph2,_pd2,_pa2) else "#888"
+                                _fav_color_a = "#00ff88" if _pa2 == max(_ph2,_pd2,_pa2) else "#888"
+                                # Bold el favorito
+                                _bh = "900" if _ph2 == max(_ph2,_pd2,_pa2) else "400"
+                                _bd = "900" if _pd2 == max(_ph2,_pd2,_pa2) else "400"
+                                _ba = "900" if _pa2 == max(_ph2,_pd2,_pa2) else "400"
+                                st.markdown(f"""
+<div style='background:#0d0d1a;border:1px solid #1e1e3a;border-radius:12px;padding:10px 12px;margin:4px 0;cursor:pointer'>
+  <div style='font-size:.72rem;color:#555;margin-bottom:6px'>{_sc}</div>
+  <div style='display:flex;justify-content:space-between;align-items:center;gap:6px'>
+    <div style='flex:2;font-size:.78rem;color:#ccc;font-weight:600'>{_m["home"]}</div>
+    <div style='display:flex;gap:5px;flex-shrink:0'>
+      <div style='background:#111;border:1px solid #222;border-radius:8px;padding:5px 8px;text-align:center;min-width:48px'>
+        <div style='font-size:.82rem;font-weight:{_bh};color:{_fav_color_h}'>{_ph2*100:.0f}%</div>
+        <div style='font-size:.58rem;color:#555'>🏠</div>
+      </div>
+      <div style='background:#111;border:1px solid #222;border-radius:8px;padding:5px 8px;text-align:center;min-width:48px'>
+        <div style='font-size:.82rem;font-weight:{_bd};color:{_fav_color_d}'>{_pd2*100:.0f}%</div>
+        <div style='font-size:.58rem;color:#555'>🤝</div>
+      </div>
+      <div style='background:#111;border:1px solid #222;border-radius:8px;padding:5px 8px;text-align:center;min-width:48px'>
+        <div style='font-size:.82rem;font-weight:{_ba};color:{_fav_color_a}'>{_pa2*100:.0f}%</div>
+        <div style='font-size:.58rem;color:#555'>✈️</div>
+      </div>
+    </div>
+    <div style='flex:2;font-size:.78rem;color:#ccc;font-weight:600;text-align:right'>{_m["away"]}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+                                if st.button("📊 Analizar", key=f"fut_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
+                                    st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                    st.session_state["view"] = "analisis"
+                                    st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
             with st.spinner("Calculando TRILAY..."):
