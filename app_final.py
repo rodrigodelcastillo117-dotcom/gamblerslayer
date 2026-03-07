@@ -11873,10 +11873,67 @@ else:
         axg = xg_weighted(aform, is_home=False, odds_prior=1/g.get("odd_a",0) if g.get("odd_a",0)>1 else 0, slug=g.get("slug","")) if aform else xg_from_record(g.get("away_rec","5-5-5"),False)
         h2h   = get_h2h(g["home_id"],g["away_id"],g["slug"],g["home"],g["away"])
         h2s   = h2h_stats(h2h, g["home"], g["away"])
-        mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"], odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0))
-        dp    = diamond_engine(mc, h2s, hform, aform)
-        pls   = smart_parlay(mc, dp, g["home"], g["away"])
+
+        # ── Ajuste jugadores estrella ──
+        try:
+            _delta_h, _ = _star_xg_adjustment(g["home"], [], "", False, "")
+            _delta_a, _ = _star_xg_adjustment(g["away"], [], "", False, "")
+            hxg = max(0.05, hxg + _delta_h)
+            axg = max(0.05, axg + _delta_a)
+        except: pass
+
+        mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"],
+                    odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0))
+
+        # ── En vivo: Poisson condicional si hay marcador ──
+        _is_live = g.get("state") == "in"
+        _score_h = int(g.get("score_h", 0) or 0)
+        _score_a = int(g.get("score_a", 0) or 0)
+        _minute  = int(g.get("minute",  0) or 0)
+        _inplay_applied = False
+
+        # diamond_engine recibe match=g para activar in-play automáticamente
+        dp = diamond_engine(mc, h2s, hform, aform, match=g)
+
+        # En análisis manual: blend más agresivo 75% inplay / 25% pre
+        if _is_live and _score_h >= 0 and _score_a >= 0 and _minute > 0:
+            try:
+                _, _, _iph, _ipd, _ipa = _inplay_poisson(hxg, axg, _score_h, _score_a, _minute)
+                if _iph is not None:
+                    _bh = 0.75*_iph + 0.25*dp["ph"]
+                    _bd = 0.75*_ipd + 0.25*dp["pd"]
+                    _ba = 0.75*_ipa + 0.25*dp["pa"]
+                    _s  = _bh+_bd+_ba
+                    if _s > 0:
+                        dp = {**dp, "ph":_bh/_s, "pd":_bd/_s, "pa":_ba/_s}
+                        _inplay_applied = True
+            except: pass
+
+        pls = smart_parlay(mc, dp, g["home"], g["away"])
         prog.progress(100,"✅ Listo"); prog.empty()
+
+        # ── Banner en vivo ──
+        if _is_live and _inplay_applied:
+            _min_str  = f"Min {_minute}'" if _minute > 0 else "En curso"
+            _score_str = f"{_score_h} – {_score_a}"
+            _lead_team = g["away"] if _score_a > _score_h else (g["home"] if _score_h > _score_a else "")
+            _lead_txt  = f" · {_lead_team[:14]} ganando" if _lead_team else " · Empate"
+            st.markdown(
+                f"<div style='background:linear-gradient(90deg,#1a0000,#0a0014,#1a0000);"
+                f"border:1.5px solid #ff4444;border-radius:10px;padding:10px 16px;"
+                f"margin:0 0 14px;display:flex;align-items:center;gap:12px'>"
+                f"<div style='font-size:1.1rem'>🔴</div>"
+                f"<div style='flex:1'>"
+                f"<div style='font-size:.7rem;color:#ff4444;font-weight:900;letter-spacing:.1em'>"
+                f"EN VIVO · {_min_str}{_lead_txt} · POISSON CONDICIONAL ACTIVO</div>"
+                f"<div style='font-size:.95rem;font-weight:900;color:#fff'>"
+                f"{g['home']} <span style='color:#ff4444'>{_score_str}</span> {g['away']}</div>"
+                f"</div>"
+                f"<div style='text-align:right'>"
+                f"<div style='font-size:.72rem;color:#555'>Modelo ajustado al marcador</div>"
+                f"<div style='font-size:.8rem;color:#00ff88'>75% live · 25% pre-partido</div>"
+                f"</div></div>",
+                unsafe_allow_html=True)
 
         # fuente
         src_h = f"✅ ESPN ({len(hform)}P)" if hform else f"📊 Récord {g['home_rec']}"
