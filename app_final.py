@@ -342,7 +342,7 @@ def get_cartelera():
                     state = ev["status"]["type"]["state"]
                     # Solo partidos de hoy en adelante en hora CDMX
                     if fecha < hoy: continue
-                    # Solo hasta lunes 9 Mar
+                    # Solo hasta 4 días adelante (dinámico)
                     if fecha > (now + timedelta(days=4)).strftime("%Y-%m-%d"): continue
                     odd_h = odd_a = odd_d = 0.0
                     try:
@@ -379,7 +379,7 @@ def get_cartelera():
                         "odd_d":    odd_d,
                         "score_h":  parse_score(hc.get("score", 0)),
                         "score_a":  parse_score(ac.get("score", 0)),
-                         "minute":   int(ev.get("status",{}).get("clock",0) or ev.get("status",{}).get("displayClock","0:00").split(":")[0] or 0),
+                        "minute":   int((str(ev.get("status",{}).get("displayClock","0") or "0").split(":")[0] or "0").replace("+","") or 0),
                     })
                 except: continue
 
