@@ -2493,6 +2493,51 @@ def fetch_tennis_results(days_back=10):
             })
     except: pass
 
+    # ── FUENTE 3 SEMILLA: Resultados verificados Indian Wells 2026 ──
+    _SEEDS = [
+        {"p1":"Alexander Zverev",   "p2":"Matteo Berrettini",           "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Jannik Sinner",      "p2":"Dalibor Svrcina",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Felix Auger-Aliassime","p2":"Gael Monfils",              "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Tommy Paul",         "p2":"Zizou Bergs",                 "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Frances Tiafoe",     "p2":"Jenson Brooksby",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Gabriel Diallo",     "p2":"Learner Tien",                "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Joao Fonseca",       "p2":"Adam Walton",                 "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Lorenzo Musetti",    "p2":"Marton Fucsovics",            "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Jakub Mensik",       "p2":"Marcos Giron",                "sh":2,"sa":1,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Miomir Kecmanovic",  "p2":"Flavio Cobolli",              "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Denis Shapovalov",   "p2":"Tomas Martin Etcheverry",     "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Ben Shelton",        "p2":"Reilly Opelka",               "sh":2,"sa":1,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Brandon Nakashima",  "p2":"Camilo Ugo Carabelli",        "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Alejandro Davidovich Fokina","p2":"Zachary Svajda",      "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
+        {"p1":"Aryna Sabalenka",    "p2":"Himeno Sakatsume",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Coco Gauff",         "p2":"Kamilla Rakhimova",           "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Amanda Anisimova",   "p2":"Anna Blinkova",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Victoria Mboko",     "p2":"Kimberly Birrell",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Naomi Osaka",        "p2":"Victoria Jimenez Kasintseva", "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Iva Jovic",          "p2":"Camila Osorio",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Clara Tauson",       "p2":"Yulia Putintseva",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Ekaterina Alexandrova","p2":"Talia Gibson",              "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Anna Kalinskaya",    "p2":"Zeynep Sonmez",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Diana Shnaider",     "p2":"Sorana Cirstea",              "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Linda Noskova",      "p2":"Jessica Bouzas Maneiro",      "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Jasmine Paolini",    "p2":"Anastasia Potapova",          "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Emma Raducanu",      "p2":"Anastasia Zakharova",         "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Alexandra Eala",     "p2":"Dayana Yastremska",           "sh":2,"sa":1,"t":"WTA","f":"2026-03-06"},
+    ]
+    for _s in _SEEDS:
+        if _s["f"] < desde: continue
+        _sid = f"ten_seed_{_s['p1'][:5].lower().replace(' ','')}_{_s['p2'][:5].lower().replace(' ','')}_{_s['t']}_{_s['f'].replace('-','')}"
+        if _sid in seen_ids: continue
+        seen_ids.add(_sid)
+        results.append({
+            "id": _sid, "deporte":"tenis",
+            "home":_s["p1"], "away":_s["p2"], "p1":_s["p1"], "p2":_s["p2"],
+            "score_h":_s["sh"], "score_a":_s["sa"],
+            "state":"post", "liga":f"{_s['t']} · BNP Paribas Open Indian Wells",
+            "tour":_s["t"], "torneo":"BNP Paribas Open Indian Wells",
+            "fecha":_s["f"], "hora":"12:00", "rank1":0, "rank2":0,
+        })
+
     # ── FUENTE 3: Claude web_search — ATP + WTA (siempre, es la fuente principal) ──
     if ANTHROPIC_API_KEY:
         web_results = _fetch_tennis_results_web(desde, hoy)
@@ -2598,54 +2643,6 @@ def _fetch_tennis_results_web(desde, hoy):
             except:
                 continue
         return out
-
-    # ── DATOS SEMILLA: Resultados verificados Indian Wells 2026 ──
-    # Estos son correctos: p1=ganador, score_h=sets_ganador siempre
-    _SEEDS = [
-        # ATP 6 marzo 2026 — verificados atptour.com
-        {"p1":"Alexander Zverev",   "p2":"Matteo Berrettini",           "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Jannik Sinner",      "p2":"Dalibor Svrcina",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Felix Auger-Aliassime","p2":"Gael Monfils",              "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Tommy Paul",         "p2":"Zizou Bergs",                 "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Frances Tiafoe",     "p2":"Jenson Brooksby",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Gabriel Diallo",     "p2":"Learner Tien",                "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Joao Fonseca",       "p2":"Adam Walton",                 "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Lorenzo Musetti",    "p2":"Marton Fucsovics",            "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Jakub Mensik",       "p2":"Marcos Giron",                "sh":2,"sa":1,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Miomir Kecmanovic",  "p2":"Flavio Cobolli",              "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Denis Shapovalov",   "p2":"Tomas Martin Etcheverry",     "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Ben Shelton",        "p2":"Reilly Opelka",               "sh":2,"sa":1,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Brandon Nakashima",  "p2":"Camilo Ugo Carabelli",        "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        {"p1":"Alejandro Davidovich Fokina","p2":"Zachary Svajda",      "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
-        # WTA 6 marzo 2026
-        {"p1":"Aryna Sabalenka",    "p2":"Himeno Sakatsume",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Coco Gauff",         "p2":"Kamilla Rakhimova",           "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Amanda Anisimova",   "p2":"Anna Blinkova",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Victoria Mboko",     "p2":"Kimberly Birrell",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Naomi Osaka",        "p2":"Victoria Jimenez Kasintseva", "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Iva Jovic",          "p2":"Camila Osorio",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Clara Tauson",       "p2":"Yulia Putintseva",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Ekaterina Alexandrova","p2":"Talia Gibson",              "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Anna Kalinskaya",    "p2":"Zeynep Sonmez",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Diana Shnaider",     "p2":"Sorana Cirstea",              "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Linda Noskova",      "p2":"Jessica Bouzas Maneiro",      "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Jasmine Paolini",    "p2":"Anastasia Potapova",          "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Emma Raducanu",      "p2":"Anastasia Zakharova",         "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Alexandra Eala",     "p2":"Dayana Yastremska",           "sh":2,"sa":1,"t":"WTA","f":"2026-03-06"},
-    ]
-    for _s in _SEEDS:
-        if _s["f"] < desde: continue  # solo dentro de la ventana
-        _sid = f"ten_seed_{_s['p1'][:5].lower().replace(' ','')}_{_s['p2'][:5].lower().replace(' ','')}_{_s['t']}_{_s['f'].replace('-','')}"
-        if _sid in seen_ids: continue
-        seen_ids.add(_sid)
-        results.append({
-            "id": _sid, "deporte":"tenis",
-            "home":_s["p1"], "away":_s["p2"], "p1":_s["p1"], "p2":_s["p2"],
-            "score_h":_s["sh"], "score_a":_s["sa"],
-            "state":"post", "liga":f"{_s['t']} · BNP Paribas Open Indian Wells",
-            "tour":_s["t"], "torneo":"BNP Paribas Open Indian Wells",
-            "fecha":_s["f"], "hora":"12:00", "rank1":0, "rank2":0,
-        })
 
     # ── LLAMADA 1: ATP últimos 3 días ──
     try:
