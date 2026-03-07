@@ -3707,27 +3707,26 @@ def render_resultados_tab():
                                     elif "FALLÓ" in vd: fail_sp+=1
 
                             if auto_pk:
-                                # ── Auditar los 3 mercados: ML, O2.5, AA ──
-                                _all_mkt = auto_pk.get("all_picks", [auto_pk])
-                                for _i_mkt, _apk in enumerate(_all_mkt):
-                                    _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_apk, _p_fixed)
-                                    _prob2 = _apk.get("prob", 0)
-                                    _mkt2  = _apk.get("mkt","")
-                                    _mkt_tag = f"[{_mkt2}] " if _mkt2 else ""
-                                    _is_main = (_apk.get("pick","") == auto_pk.get("pick",""))
-                                    pick_rows.append({
-                                        "label": f"{_mkt_tag}{_apk.get('pick','?')}",
-                                        "prob":  _prob2 * 100 if _prob2 <= 1 else _prob2,
-                                        "odd":   _apk.get("odd", 0),
-                                        "src":   _apk.get("src", "🤖 Modelo"),
-                                        "verd":  _vd2, "col": _vc2, "expl": _ex2,
-                                        "is_main": _is_main,
-                                    })
-                                    # Solo ML cuenta para el contador global
-                                    if _mkt2 == "ML" or len(_all_mkt) == 1:
-                                        if p.get("fecha","") >= _inicio_conteo_tab:
-                                            if "GANÓ" in _vd2:  ok_sp += 1
-                                            elif "FALLÓ" in _vd2: fail_sp += 1
+                                # ── Auditar SOLO el pick principal que el modelo eligió ──
+                                # Usar snap congelado si existe, si no usar auto_pk directo
+                                _snap_data = _load_picks_snap().get(p.get("id",""), {})
+                                _main_pick = auto_pk  # ya viene congelado del flujo arriba
+
+                                _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_main_pick, _p_fixed)
+                                _prob2 = _main_pick.get("prob", 0)
+                                _mkt2  = _main_pick.get("mkt", "")
+                                pick_rows.append({
+                                    "label":   _main_pick.get("pick","?"),
+                                    "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
+                                    "odd":     _main_pick.get("odd", 0),
+                                    "src":     _main_pick.get("src", "🤖 Modelo"),
+                                    "verd":    _vd2, "col": _vc2, "expl": _ex2,
+                                    "is_main": True,
+                                })
+                                # Contar para el contador global
+                                if p.get("fecha","") >= _inicio_conteo_tab:
+                                    if   "GANÓ"  in _vd2: ok_sp   += 1
+                                    elif "FALLÓ" in _vd2: fail_sp += 1
 
                             # Render card
                             has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
