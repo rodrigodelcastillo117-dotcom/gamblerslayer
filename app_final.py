@@ -2251,6 +2251,7 @@ def get_memory_context():
 # ══════════════════════════════════════════════════════════
 RESULTS_FILE   = "/tmp/gamblers_results.json"
 LAST_UPDATE_F  = "/tmp/gamblers_last_update.txt"
+PICKS_SNAP_F   = "/tmp/gamblers_picks_snap.json"  # snapshot de picks automáticos
 
 def _load_results_db():
     try:
@@ -2274,6 +2275,33 @@ def _save_results_db(db):
     try:
         with open(RESULTS_FILE,"w") as f: _json_mem.dump(db,f,ensure_ascii=False,indent=2)
     except: pass
+
+def _load_picks_snap():
+    """Carga snapshot de picks automáticos generados (por partido_id)."""
+    try:
+        with open(PICKS_SNAP_F,"r") as f: return json.load(f)
+    except: return {}
+
+def _save_picks_snap(snap):
+    """Guarda snapshot de picks. snap = {partido_id: {pick, prob, mkt, src, fecha_gen}}"""
+    try:
+        with open(PICKS_SNAP_F,"w") as f: json.dump(snap, f, ensure_ascii=False, indent=2)
+    except: pass
+
+def _snap_auto_pick(partido_id, pick_data):
+    """Guarda pick automático en snapshot si no existe aún para ese partido."""
+    if not partido_id or not pick_data: return
+    snap = _load_picks_snap()
+    if partido_id not in snap:  # NO sobrescribir — conservar el pick original
+        snap[partido_id] = {
+            "pick":  pick_data.get("pick",""),
+            "prob":  pick_data.get("prob",0),
+            "mkt":   pick_data.get("mkt",""),
+            "odd":   pick_data.get("odd",0),
+            "src":   pick_data.get("src","🤖 Modelo"),
+            "fecha_gen": datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
+        }
+        _save_picks_snap(snap)
 
 def _needs_update():
     """Returns True if last update was >2 hours ago or never."""
@@ -3214,33 +3242,62 @@ def _villar_auto_pick(partido_db):
             p_do_h = min(0.95, p_h + p_d)   # DO local
             p_do_a = min(0.95, p_a + p_d)   # DO visitante
 
-            # Candidatos permitidos (NUNCA Over 1.5)
-            _opts = [
-                {"pick": f"🏠 {home} gana",           "prob": p_h,    "mkt": "1X2",  "odd": odd_h},
-                {"pick": f"✈️ {away} gana",            "prob": p_a,    "mkt": "1X2",  "odd": odd_a},
-                {"pick": "⚽ Over 2.5",               "prob": p_o25,  "mkt": "O/U",  "odd": 0},
-                {"pick": "⚡ Ambos Anotan",            "prob": p_aa,   "mkt": "BTTS", "odd": 0},
-                {"pick": f"🔵 {home[:14]} o Emp",     "prob": p_do_h if p_h>=0.40 else 0, "mkt":"DO","odd":0},
-                {"pick": f"🟣 {away[:14]} o Emp",     "prob": p_do_a if p_a>=0.35 else 0, "mkt":"DO","odd":0},
-            ]
+            p_ml_best = max(p_h, p_a)  # mejor ML disponible
+            p_fav_odd = odd_h if p_h >= p_a else odd_a
+            p_fav_lbl = f"🏠 {home} gana" if p_h >= p_a else f"✈️ {away} gana"
 
-            if p_h >= 0.62:
-                best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h}
-            elif p_a >= 0.62:
-                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a}
-            elif p_o25 >= 0.60:
-                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0}
-            elif p_do_h >= 0.72 and p_h >= 0.45:
-                best = {"pick": f"🔵 {home[:14]} o Emp", "prob": p_do_h, "mkt": "DO", "odd": 0}
-            elif p_do_a >= 0.72 and p_a >= 0.40:
-                best = {"pick": f"🟣 {away[:14]} o Emp", "prob": p_do_a, "mkt": "DO", "odd": 0}
-            elif p_aa >= 0.58:
-                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0}
-            elif p_o25 >= 0.55:
-                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0}
+            # Partido equilibrado si ninguno domina claramente el xG
+            _xg_gap = abs(hxg - axg)
+            _xg_total = hxg + axg
+            _partido_eq = _xg_gap < 0.55       # equipos similares en ataque
+            _partido_muy_of = _xg_total >= 3.0  # xG muy alto → goles probables → O2.5
+            _partido_of_med = _xg_total >= 2.5 and _xg_total < 3.0  # ofensivo moderado → AA
+
+            # ── JERARQUÍA 50/20/20/10 ──
+            if p_h >= 0.60:
+                # ML claro favorito local
+                best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h,
+                        "src": f"ML local · modelo {p_h*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+            elif p_a >= 0.60:
+                # ML claro favorito visitante
+                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a,
+                        "src": f"ML visita · modelo {p_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+            elif p_do_h >= 0.78 and p_h >= 0.50:
+                # DO local solo cuando favorito es muy claro
+                best = {"pick": f"🔵 {home[:14]} o Emp", "prob": p_do_h, "mkt": "DO", "odd": 0,
+                        "src": f"DC {p_do_h*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+            elif p_do_a >= 0.78 and p_a >= 0.45:
+                # DO visitante
+                best = {"pick": f"🟣 {away[:14]} o Emp", "prob": p_do_a, "mkt": "DO", "odd": 0,
+                        "src": f"DC {p_do_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+            elif _partido_muy_of and p_o25 >= 0.58:
+                # O2.5: xG total muy alto (≥3.0) — partido ultra-ofensivo
+                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
+                        "src": f"O2.5 {p_o25*100:.0f}% · xG total {_xg_total:.2f} (muy alto)"}
+            elif _partido_eq and _partido_of_med and p_aa >= 0.54:
+                # AA: equilibrado Y ofensivo moderado — ambos van a anotar
+                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0,
+                        "src": f"AA {p_aa*100:.0f}% · xG {hxg:.2f}–{axg:.2f} · equilibrado"}
+            elif p_o25 >= 0.56:
+                # O2.5 cuando hay dominio ofensivo claro (no equilibrado)
+                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
+                        "src": f"O2.5 {p_o25*100:.0f}% · xG {_xg_total:.2f}"}
+            elif p_ml_best >= 0.52:
+                # ML con ventaja mínima
+                best = {"pick": p_fav_lbl, "prob": p_ml_best, "mkt": "1X2", "odd": p_fav_odd,
+                        "src": f"ML {p_ml_best*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+            elif _partido_eq and p_aa >= 0.50:
+                # AA segunda oportunidad — partido parejo sin favorito claro
+                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0,
+                        "src": f"AA {p_aa*100:.0f}% · partido parejo xG {hxg:.2f}–{axg:.2f}"}
+            elif p_o25 >= 0.54:
+                # O2.5 segunda oportunidad
+                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
+                        "src": f"O2.5 {p_o25*100:.0f}% · xG {_xg_total:.2f}"}
             else:
-                # Fallback: el mejor entre 1X2, AA, O2.5 — nunca Over 1.5
-                best = max(_opts, key=lambda x: x["prob"])
+                # Fallback final: siempre ML
+                best = {"pick": p_fav_lbl, "prob": p_ml_best, "mkt": "1X2", "odd": p_fav_odd,
+                        "src": f"ML {p_ml_best*100:.0f}% (fallback) · xG {hxg:.2f}–{axg:.2f}"}
 
             strong = [best]
             return {
@@ -3516,7 +3573,10 @@ def render_resultados_tab():
                     _fut_count += 1
                 _manual = [pk for pk in pick_history if _villar_find_result(pk,[_fp]) is not None]
                 if not _manual:
-                    try: _auto_pk_cache[_mid] = _villar_auto_pick(_fp)
+                    try:
+                        _apk = _villar_auto_pick(_fp)
+                        _auto_pk_cache[_mid] = _apk
+                        _snap_auto_pick(_mid, _apk)  # guardar snapshot primera vez
                     except: _auto_pk_cache[_mid] = None
 
             for fecha in sorted(por_fecha.keys(), reverse=True):
@@ -3580,9 +3640,17 @@ def render_resultados_tab():
                             # 1. Pick manual guardado por usuario
                             manual_pks = [pk for pk in pick_history
                                           if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — del cache pre-calculado (no llamadas API dentro del loop)
+                            # 2. Pick automático — primero busca snapshot guardado (pick original)
+                            # Si no hay snapshot, usa el cache recalculado
                             _mid = p.get("id","")
-                            auto_pk = _auto_pk_cache.get(_mid) if not manual_pks else None
+                            _snap = _load_picks_snap()
+                            auto_pk = None
+                            if not manual_pks:
+                                if _mid in _snap:
+                                    # Usar pick original snapshot — NO el recalculado con lógica nueva
+                                    auto_pk = _snap[_mid]
+                                else:
+                                    auto_pk = _auto_pk_cache.get(_mid)
 
                             pick_rows = []
                             for pk in manual_pks:
@@ -6334,7 +6402,7 @@ def _ventana_22h(matches):
     """
     Filtra partidos en la ventana activa de 24 horas:
     10pm CDMX de hoy → 10pm CDMX de mañana.
-    Garantiza que TRILAY y PATO siempre tengan contenido.
+    Incluye pre, in Y post — PATO/TRILAY necesitan ver también los ya jugados.
     """
     now    = datetime.now(CDMX)
     inicio = now.replace(hour=22, minute=0, second=0, microsecond=0)
@@ -6344,8 +6412,7 @@ def _ventana_22h(matches):
 
     result = []
     for m in matches:
-        if m.get("state", "pre") not in ("pre", "in"):
-            continue
+        # Incluir todos los estados — PATO muestra U4.5 de toda la jornada
         try:
             hora_str = m.get("hora", "00:00") or "00:00"
             dt = CDMX.localize(
@@ -7022,37 +7089,48 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                                         odd_d=m.get("odd_d",0))
                 dp  = diamond_engine(mc, h2s, hf, af)
 
-                # ── Jerarquía King Rongo: igual a _villar_auto_pick ──
+                # ── Jerarquía King Rongo: 50/20/20/10 ──
                 _ph = dp["ph"]; _pa = dp["pa"]
                 _pd   = mc.get("pd", max(0, 1-_ph-_pa))
                 _o25  = mc["o25"]; _aa = mc["btts"]
                 _o15  = mc.get("o15", min(0.90, _o25+0.18))
                 _1xm  = min(0.82, _ph+0.12); _2xm = min(0.78, _pa+0.12)
                 _do_h = min(0.95, _ph+_pd); _do_a = min(0.95, _pa+_pd)
+                # Partido equilibrado si xG similares
+                _xg_gap_kr = abs(hxg - axg)
+                _xg_total_kr = hxg + axg
+                _eq_kr = _xg_gap_kr < 0.55
+                _muy_of_kr = _xg_total_kr >= 3.0
+                _of_med_kr = 2.5 <= _xg_total_kr < 3.0
 
-                if _ph >= 0.62:
+                if _ph >= 0.60:
                     lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
-                elif _pa >= 0.62:
+                elif _pa >= 0.60:
                     lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
-                elif _o25 >= 0.60:
-                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif _do_h >= 0.72 and _ph >= 0.45:
+                elif _do_h >= 0.78 and _ph >= 0.50:
                     lbl, prob, odd, mkt = f"🔵 {m['home'][:14]} o Emp", _do_h, 0, "DO"
-                elif _do_a >= 0.72 and _pa >= 0.40:
+                elif _do_a >= 0.78 and _pa >= 0.45:
                     lbl, prob, odd, mkt = f"🟣 {m['away'][:14]} o Emp", _do_a, 0, "DO"
-                elif _aa >= 0.58:
+                elif _muy_of_kr and _o25 >= 0.58:
+                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
+                elif _eq_kr and _of_med_kr and _aa >= 0.54:
                     lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
-                elif _o25 >= 0.55:
+                elif _o25 >= 0.56:
+                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
+                elif max(_ph,_pa) >= 0.52:
+                    if _ph >= _pa:
+                        lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
+                    else:
+                        lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
+                elif _eq_kr and _aa >= 0.50:
+                    lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
+                elif _o25 >= 0.54:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
                 else:
-                    # Fallback: mejor entre 1X2, AA, O2.5 — nunca Over 1.5
-                    _kr_opts = [
-                        (f"🏠 {m['home']} gana", _ph,  m.get("odd_h",0), "1X2"),
-                        (f"✈️ {m['away']} gana", _pa,  m.get("odd_a",0), "1X2"),
-                        ("⚽ Over 2.5",          _o25, 0,                "O/U"),
-                        ("⚡ Ambos Anotan",       _aa,  0,                "BTTS"),
-                    ]
-                    lbl, prob, odd, mkt = max(_kr_opts, key=lambda x: x[1])
+                    if _ph >= _pa:
+                        lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
+                    else:
+                        lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
 
                 if prob < 0.48: continue
                 edge   = _kr_edge(prob, odd)
@@ -7883,7 +7961,7 @@ def _kr_sync_session_from_cache():
     st.session_state["_king_target"]   = cache.get("target_date","")
 
 def _kr_filter_by_date(matches, target_date):
-    """Filtra partidos por fecha objetivo ±1 día. Excluye solo terminados."""
+    """Filtra partidos por fecha objetivo ±1 día. Incluye pre, in y post."""
     from datetime import datetime as _dt2, timedelta as _td2
     out = []
     try:
@@ -7891,7 +7969,7 @@ def _kr_filter_by_date(matches, target_date):
     except:
         _tf = None
     for m in (matches or []):
-        if m.get("state") == "post": continue
+        # NO excluir post — KR necesita ver el día completo incluyendo ya jugados
         fecha = m.get("fecha","")
         if not fecha:
             out.append(m); continue
@@ -8410,6 +8488,16 @@ if _king_pick:
 matches     = []
 nba_games   = []
 ten_matches = []
+
+# ── AUTO-SYNC resultados en background — cada 30 min silenciosamente ──
+_auto_sync_key = "last_auto_sync"
+_now_ts2 = datetime.now(CDMX).timestamp()
+if _now_ts2 - st.session_state.get(_auto_sync_key, 0) > 1800:  # cada 30 min
+    try:
+        update_results_db(force=False)
+        st.session_state["results_db"] = _load_results_db()
+    except: pass
+    st.session_state[_auto_sync_key] = _now_ts2
 
 if deporte == "futbol":
     with st.spinner("Cargando cartelera..."):
@@ -9272,7 +9360,13 @@ else:
             f"</div></div>",
             unsafe_allow_html=True)
 
-        # ── GUARDAR PICK ──
+        # ── GUARDAR PICK — y snapshot automático ──
+        # El snapshot captura la Jugada Diamante real que se mostró
+        _gid = g.get("id", f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}")
+        _snap_auto_pick(_gid, {
+            "pick": main_lbl, "prob": main_prob, "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
+            "odd": main_odd, "src": f"💎 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}"
+        })
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
