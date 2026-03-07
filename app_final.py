@@ -3261,7 +3261,11 @@ def _villar_auto_pick(partido_db):
             # AA es el ÚLTIMO recurso — solo entra cuando ningún otro pick tiene ventaja real
             _ninguno_domina = p_ml_best < 0.52 and p_do_h < 0.72 and p_do_a < 0.72 and p_o25 < 0.54
 
-            if p_h >= 0.60:
+            # ML: siempre mostrar el favorito real (local O visitante)
+            if p_a >= 0.60 and p_a > p_h:
+                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a,
+                        "src": f"ML visita · modelo {p_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+            elif p_h >= 0.60:
                 best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h,
                         "src": f"ML local · modelo {p_h*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
             elif p_a >= 0.60:
@@ -7147,7 +7151,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 _ninguno_kr = max(_ph,_pa) < 0.52 and _do_h < 0.72 and _do_a < 0.72 and _o25 < 0.54
                 _best_ml_kr = max(_ph, _pa)
 
-                if _ph >= 0.55:
+                if _pa >= 0.55 and _pa > _ph:
+                    lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
+                elif _ph >= 0.55:
                     lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
                 elif _pa >= 0.55:
                     lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
@@ -8176,30 +8182,19 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
 
             with st.status("👑 King Rongo escaneando...", expanded=False) as _kr_status:
                 try:
-                    # Cargar partidos hoy + mañana
-                    _kr_status.update(label="⚽ Cargando cartelera de fútbol...")
-                    _mf = matches_fut
-                    try:
-                        if _mf is None: _mf = get_cartelera()
-                    except: _mf = []
-                    # Filtrar por fecha objetivo
+                    # Usar datos pasados directamente — ya vienen cargados del bridge
+                    _kr_status.update(label="⚽ Preparando cartelera de fútbol...")
+                    _mf = matches_fut or []
                     _mf_target = _kr_filter_by_date(_mf, _target_date)
-                    if not _mf_target:
-                        _mf_target = _mf  # fallback: todos si no hay de target_date
+                    if not _mf_target: _mf_target = _mf
 
-                    _kr_status.update(label="🏀 Cargando partidos NBA...")
-                    _nbg = nba_games
-                    try:
-                        if _nbg is None: _nbg = get_nba_cartelera()
-                    except: _nbg = []
+                    _kr_status.update(label="🏀 Preparando partidos NBA...")
+                    _nbg = nba_games or []
                     _nbg_target = _kr_filter_by_date(_nbg, _target_date)
                     if not _nbg_target: _nbg_target = _nbg
 
-                    _kr_status.update(label="🎾 Cargando torneos de tenis...")
-                    _ten = ten_matches
-                    try:
-                        if _ten is None: _ten = get_tennis_cartelera()
-                    except: _ten = []
+                    _kr_status.update(label="🎾 Preparando torneos de tenis...")
+                    _ten = ten_matches or []
                     _ten_target = _kr_filter_by_date(_ten, _target_date)
                     if not _ten_target: _ten_target = _ten
 
@@ -8215,13 +8210,82 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     _ts_now = datetime.now(CDMX).strftime("%H:%M")
                     _ts_full = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
 
-                    # Si no hay pick a pesar del scan, registrar para debug
+                    # Si no hay candidatos — construir picks directamente de cartelera
+                    if not todos:
+                        # Bridge directo: 1 pick por deporte de la cartelera disponible
+                        _fallback_cands = []
+                        # Fútbol: mejor ML del día
+                        for _fm in (_mf_target or [])[:20]:
+                            try:
+                                _fhf = get_form(_fm.get("home_id",""), _fm.get("slug","")) or []
+                                _faf = get_form(_fm.get("away_id",""), _fm.get("slug","")) or []
+                                _fhxg = xg_weighted(_fhf,True) if _fhf else xg_from_record(_fm.get("home_rec","5-5-5"),True)
+                                _faxg = xg_weighted(_faf,False) if _faf else xg_from_record(_fm.get("away_rec","5-5-5"),False)
+                                _fmc = mc50k(_fhxg, _faxg)
+                                _fph = _fmc["ph"]; _fpa = _fmc["pa"]
+                                _fbest_p = max(_fph,_fpa)
+                                _fbest_lbl = f"🏠 {_fm.get('home','?')} gana" if _fph>=_fpa else f"✈️ {_fm.get('away','?')} gana"
+                                _fbest_odd = _fm.get("odd_h",0) if _fph>=_fpa else _fm.get("odd_a",0)
+                                _fallback_cands.append({
+                                    "deporte":"⚽ Fútbol","sport":"futbol",
+                                    "label":f"{_fm.get('home','?')} vs {_fm.get('away','?')}",
+                                    "liga":_fm.get("league",""),"hora":_fm.get("hora",""),
+                                    "pick":_fbest_lbl,"prob":_fbest_p,"odd":_fbest_odd,
+                                    "edge":(_fbest_p-1/_fbest_odd) if _fbest_odd>1 else (_fbest_p-0.50),
+                                    "kelly_pct":0,"mkt_type":"1X2","contradiccion":False,
+                                    "model_spread":10,"conf_emoji":"⚡","conf_label":"MEDIA","conf_color":"#aaa",
+                                    "reasoning":f"xG {_fhxg:.2f}–{_faxg:.2f}","match":_fm,
+                                    "hxg":_fhxg,"axg":_faxg,
+                                    "score":_fbest_p * 5,
+                                })
+                                break
+                            except: continue
+                        # NBA
+                        for _ng in (_nbg_target or [])[:10]:
+                            try:
+                                _nr = nba_ou_model(_ng.get("home_id",""), _ng.get("away_id",""), _ng.get("ou_line",220))
+                                _np = max(_nr["p_over"],_nr["p_under"])
+                                _nm = f"🔥 Over {_nr['line']}" if _nr["p_over"]>=_nr["p_under"] else f"❄️ Under {_nr['line']}"
+                                _fallback_cands.append({
+                                    "deporte":"🏀 NBA","sport":"nba",
+                                    "label":f"{_ng.get('away','?')} @ {_ng.get('home','?')}",
+                                    "liga":"NBA","hora":_ng.get("hora",""),
+                                    "pick":_nm,"prob":_np,"odd":0,
+                                    "edge":_np-0.50,"kelly_pct":0,"mkt_type":"O/U",
+                                    "contradiccion":False,"model_spread":5,
+                                    "conf_emoji":"⚡","conf_label":"MEDIA","conf_color":"#aaa",
+                                    "reasoning":f"Proy {_nr['proj']} pts","match":_ng,
+                                    "score":_np * 5,
+                                })
+                                break
+                            except: continue
+                        # Tenis
+                        for _tm in (_ten_target or [])[:15]:
+                            try:
+                                _tt = tennis_model(_tm.get("rank1",100), _tm.get("rank2",150), _tm.get("odd_1",0), _tm.get("odd_2",0))
+                                _tp = max(_tt["p1"],_tt["p2"])
+                                _tfav = _tm.get("p1","?") if _tt["p1"]>=_tt["p2"] else _tm.get("p2","?")
+                                _fallback_cands.append({
+                                    "deporte":"🎾 Tenis","sport":"tenis",
+                                    "label":f"{_tm.get('p1','?')} vs {_tm.get('p2','?')}",
+                                    "liga":_tm.get("torneo","Tennis"),"hora":_tm.get("hora",""),
+                                    "pick":f"🎾 {_tfav} gana","prob":_tp,"odd":0,
+                                    "edge":_tp-0.50,"kelly_pct":0,"mkt_type":"ML",
+                                    "contradiccion":False,"model_spread":5,
+                                    "conf_emoji":"⚡","conf_label":"MEDIA","conf_color":"#aaa",
+                                    "reasoning":f"Rk #{_tm.get('rank1','?')} vs #{_tm.get('rank2','?')}","match":_tm,
+                                    "score":_tp * 5,
+                                })
+                                break
+                            except: continue
+                        todos = _fallback_cands
+                        el_pick = todos[0] if todos else None
+                        if el_pick: el_pick = {**el_pick, "is_rongo_pick": True}
+                        top3 = [{**c, "is_rongo_pick": True} for c in todos[:3]]
+                        contradicciones = []
+
                     if not el_pick and todos:
-                        st.warning(f"⚠️ {len(todos)} candidatos encontrados pero ninguno pasó filtros. Mostrando el mejor disponible.")
-                        el_pick = todos[0]  # forzar el mejor absoluto
-                        el_pick = {**el_pick, "is_rongo_pick": True}
-                    elif not el_pick and not todos:
-                        st.warning("⚠️ No se encontraron partidos para analizar. Verifica que hay cartelera disponible.")
+                        el_pick = {**todos[0], "is_rongo_pick": True}
 
                     st.session_state["_king_el_pick"]  = el_pick
                     st.session_state["_king_contras"]  = contradicciones
@@ -8821,7 +8885,23 @@ if st.session_state["view"] == "cartelera":
         with tab8:
             render_resultados_tab()
         with tab_king:
-            render_king_rongo(matches_fut=None, nba_games=nba_games, ten_matches=None)
+            # KR siempre necesita los 3 deportes — cargar lo que falte
+            _kr_fut = matches if matches else st.session_state.get("_kr_cache_fut") or []
+            _kr_nba = nba_games if nba_games else st.session_state.get("_kr_cache_nba") or []
+            _kr_ten = st.session_state.get("_kr_cache_ten") or []
+            if not _kr_ten:
+                try: _kr_ten = get_tennis_cartelera()
+                except: _kr_ten = []
+            if not _kr_nba:
+                try: _kr_nba = get_nba_cartelera()
+                except: _kr_nba = []
+            if not _kr_fut:
+                try: _kr_fut = get_cartelera()
+                except: _kr_fut = []
+            st.session_state["_kr_cache_fut"] = _kr_fut
+            st.session_state["_kr_cache_nba"] = _kr_nba
+            st.session_state["_kr_cache_ten"] = _kr_ten
+            render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
     # ─── TENIS ───────────────────────────────────────────
     elif deporte == "tenis":
@@ -8978,7 +9058,19 @@ if st.session_state["view"] == "cartelera":
         with tab8:
             render_resultados_tab()
         with tab_king:
-            render_king_rongo(matches_fut=None, nba_games=None, ten_matches=ten_matches)
+            _kr_fut = st.session_state.get("_kr_cache_fut") or []
+            _kr_nba = st.session_state.get("_kr_cache_nba") or []
+            _kr_ten = ten_matches if ten_matches else st.session_state.get("_kr_cache_ten") or []
+            if not _kr_fut:
+                try: _kr_fut = get_cartelera()
+                except: _kr_fut = []
+            if not _kr_nba:
+                try: _kr_nba = get_nba_cartelera()
+                except: _kr_nba = []
+            st.session_state["_kr_cache_fut"] = _kr_fut
+            st.session_state["_kr_cache_nba"] = _kr_nba
+            st.session_state["_kr_cache_ten"] = _kr_ten
+            render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
     # ─── FÚTBOL ──────────────────────────────────────────
     elif deporte == "futbol":
@@ -9157,7 +9249,22 @@ if st.session_state["view"] == "cartelera":
         with tab8:
             render_resultados_tab()
         with tab_king:
-            render_king_rongo(matches_fut=matches, nba_games=None, ten_matches=None)
+            _kr_fut = matches if matches else st.session_state.get("_kr_cache_fut") or []
+            _kr_nba = st.session_state.get("_kr_cache_nba") or []
+            _kr_ten = st.session_state.get("_kr_cache_ten") or []
+            if not _kr_nba:
+                try: _kr_nba = get_nba_cartelera()
+                except: _kr_nba = []
+            if not _kr_ten:
+                try: _kr_ten = get_tennis_cartelera()
+                except: _kr_ten = []
+            if not _kr_fut:
+                try: _kr_fut = get_cartelera()
+                except: _kr_fut = []
+            st.session_state["_kr_cache_fut"] = _kr_fut
+            st.session_state["_kr_cache_nba"] = _kr_nba
+            st.session_state["_kr_cache_ten"] = _kr_ten
+            render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
 else:
     g = st.session_state["sel"]
@@ -9400,7 +9507,10 @@ else:
         _edge_ml_a = (_pa_d - 1/_odd_a) if _odd_a > 1 else (_pa_d - 0.50)
         _best_ml_edge = max(_edge_ml_h, _edge_ml_a)
 
-        if _ph_d >= 0.55 or (_has_odds and _edge_ml_h >= 0.03):
+        if _pa_d > _ph_d and (_pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03)):
+            # Visitante es favorito — mostrar ML visitante
+            main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
+        elif _ph_d >= 0.55 or (_has_odds and _edge_ml_h >= 0.03):
             main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, _odd_h)
         elif _pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03):
             main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
