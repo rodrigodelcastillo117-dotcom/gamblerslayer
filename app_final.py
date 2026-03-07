@@ -2148,7 +2148,8 @@ def render_history():
 # ══════════════════════════════════════════════════════════
 import json as _json_mem, collections as _col
 
-MEMORY_FILE = "/tmp/gamblers_brain.json"
+MEMORY_FILE   = "/tmp/gamblers_brain.json"
+KR_CACHE_FILE = "/tmp/king_rongo_cache.json"
 
 def _load_brain():
     try:
@@ -2423,8 +2424,8 @@ def fetch_tennis_results(days_back=10):
             })
     except: pass
 
-    # ── FUENTE 3: Búsqueda web con Claude (si tenemos pocos resultados) ──
-    if len(results) < 3 and ANTHROPIC_API_KEY:
+    # ── FUENTE 3: Claude web_search — ATP + WTA (siempre, es la fuente principal) ──
+    if ANTHROPIC_API_KEY:
         web_results = _fetch_tennis_results_web(desde, hoy)
         for wr in web_results:
             eid = f"ten_web_{wr['p1'][:6]}_{wr['p2'][:6]}_{wr['fecha']}"
@@ -2436,83 +2437,124 @@ def fetch_tennis_results(days_back=10):
     return results
 
 
+
 def _fetch_tennis_results_web(desde, hoy):
     """
-    Usa Claude con web_search para obtener resultados reales de tenis
-    de los últimos días. Retorna lista de partidos finalizados.
+    Usa la API de Claude con web_search para obtener resultados reales de
+    ATP (atptour.com) y WTA (wtatennis.com). Es la ÚNICA fuente que funciona
+    en Streamlit Cloud porque el servidor no tiene acceso directo a internet.
+    Hace dos llamadas: una para ATP Indian Wells, otra para WTA del día.
     """
     if not ANTHROPIC_API_KEY:
         return []
-    try:
-        prompt = (
-            f"Busca en internet los resultados de los partidos de tenis ATP y WTA "
-            f"del {desde} al {hoy}. "
-            f"Dame SOLO los partidos finalizados con: ganador, perdedor y sets (ej: 6-3 6-4). "
-            f"Responde ÚNICAMENTE con JSON, sin texto extra, sin markdown, este formato exacto:\n"
-            f'[{{"p1":"Nombre Apellido","p2":"Nombre Apellido","sets_p1":2,"sets_p2":0,'
-            f'"torneo":"Nombre Torneo","tour":"ATP","fecha":"YYYY-MM-DD"}}]\n'
-            f"Incluye mínimo 5 partidos reales y máximo 20. Solo ATP y WTA principales."
-        )
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 1500,
-                "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=30,
-        )
-        if resp.status_code != 200:
+
+    import json as _j, re as _re
+
+    results = []
+    now_str = datetime.now(CDMX).strftime("%Y-%m-%d")
+
+    def _call_claude(user_msg):
+        """
+        Llama a Claude con web_search_20250305 (server-side tool).
+        Con server-side tools el modelo maneja el loop internamente —
+        solo necesitamos UNA llamada y Claude devuelve el texto final.
+        """
+        try:
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 2000,
+                    "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+                    "messages": [{"role": "user", "content": user_msg}],
+                },
+                timeout=60,
+            )
+            if resp.status_code != 200:
+                return ""
+            content = resp.json().get("content", [])
+            return "".join(b.get("text","") for b in content if b.get("type")=="text")
+        except:
+            return ""
+
+    def _parse_json_matches(text, tour_default, torneo_default):
+        """Extrae array JSON de partidos del texto de Claude."""
+        if not text:
             return []
-
-        # Extraer texto de la respuesta (puede tener bloques tool_use + text)
-        raw_text = ""
-        for block in resp.json().get("content", []):
-            if block.get("type") == "text":
-                raw_text += block.get("text", "")
-
-        # Parsear JSON — limpiar markdown si viene
-        import re as _re, json as _j
-        clean = _re.sub(r"```[a-z]*", "", raw_text).strip()
-        # Encontrar el array JSON
-        m = _re.search(r'\[.*\]', clean, _re.DOTALL)
+        clean = _re.sub(r"```[a-z]*|```", "", text).strip()
+        m = _re.search(r"\[.*?\]", clean, _re.DOTALL)
         if not m:
             return []
-        partidos_raw = _j.loads(m.group())
-
-        results = []
-        for p in partidos_raw:
+        try:
+            raw = _j.loads(m.group())
+        except:
+            return []
+        out = []
+        for p in raw:
             try:
-                p1    = str(p.get("p1","")).strip()
-                p2    = str(p.get("p2","")).strip()
-                sc1   = int(p.get("sets_p1", 0))
-                sc2   = int(p.get("sets_p2", 0))
-                fecha = str(p.get("fecha", hoy))[:10]
-                tour  = str(p.get("tour","ATP")).upper()
-                torneo= str(p.get("torneo",""))
-                if not p1 or not p2 or (sc1 == 0 and sc2 == 0):
+                p1  = str(p.get("p1","")).strip()
+                p2  = str(p.get("p2","")).strip()
+                sc1 = int(p.get("sets_p1", p.get("sc1", 0)))
+                sc2 = int(p.get("sets_p2", p.get("sc2", 0)))
+                tour   = str(p.get("tour", tour_default)).upper()
+                torneo = str(p.get("torneo", torneo_default))
+                fecha  = str(p.get("fecha", now_str))[:10]
+                if not p1 or not p2:
                     continue
-                results.append({
-                    "deporte": "tenis",
-                    "home": p1, "away": p2, "p1": p1, "p2": p2,
-                    "liga": f"{tour} · {torneo}",
-                    "tour": tour, "torneo": torneo,
-                    "fecha": fecha, "hora": "00:00",
-                    "state": "post",
-                    "score_h": sc1, "score_a": sc2,
+                if sc1 == 0 and sc2 == 0:
+                    continue
+                out.append({
+                    "deporte":"tenis", "home":p1, "away":p2, "p1":p1, "p2":p2,
+                    "liga":f"{tour} · {torneo}", "tour":tour, "torneo":torneo,
+                    "fecha":fecha, "hora":"00:00", "state":"post",
+                    "score_h":sc1, "score_a":sc2,
                 })
             except:
                 continue
-        return results
-    except:
-        return []
+        return out
 
+    # ── LLAMADA 1: ATP Indian Wells ──
+    try:
+        atp_prompt = (
+            f"Ve a esta URL y extrae TODOS los partidos completados: "
+            f"https://www.atptour.com/es/scores/current/indian-wells/404/results\n"
+            f"Para cada partido dame: ganador, perdedor, sets ganados por cada uno.\n"
+            f"Responde SOLO con un JSON array sin markdown ni texto extra:\n"
+            f'[{{"p1":"Nombre completo ganador","p2":"Nombre completo perdedor",'
+            f'"sets_p1":2,"sets_p2":0,"torneo":"BNP Paribas Open Indian Wells",'
+            f'"tour":"ATP","fecha":"{now_str}"}}]'
+        )
+        atp_text = _call_claude(atp_prompt)
+        atp_matches = _parse_json_matches(atp_text, "ATP", "BNP Paribas Open Indian Wells")
+        results.extend(atp_matches)
+    except:
+        pass
+
+    # ── LLAMADA 2: WTA del día ──
+    try:
+        wta_prompt = (
+            f"Ve a esta URL y extrae TODOS los partidos completados: "
+            f"https://www.wtatennis.com/scores?status=All&date={now_str}\n"
+            f"Si no hay partidos hoy, prueba también: "
+            f"https://www.wtatennis.com/scores?status=All&date={hoy}\n"
+            f"Para cada partido dame: jugadora 1, jugadora 2, sets ganados.\n"
+            f"Responde SOLO con un JSON array sin markdown ni texto extra:\n"
+            f'[{{"p1":"Nombre completo","p2":"Nombre completo",'
+            f'"sets_p1":2,"sets_p2":1,"torneo":"Nombre del torneo",'
+            f'"tour":"WTA","fecha":"{now_str}"}}]'
+        )
+        wta_text = _call_claude(wta_prompt)
+        wta_matches = _parse_json_matches(wta_text, "WTA", "WTA Tour")
+        results.extend(wta_matches)
+    except:
+        pass
+
+    return results
 
 def update_results_db(force=False):
     """Main update function — fetches results and merges into DB."""
@@ -7131,6 +7173,119 @@ def _kr_render_memory(pick_history):
 # ────────────────────────────────────────────────────────────────────────────
 
 
+
+# ══════════════════════════════════════════════════════════════════════
+# KING RONGO — SISTEMA DE ESCANEO AUTOMÁTICO 3x DÍA
+# Horarios CDMX: 08:00, 14:00, 22:00
+# Antes de 22h → target = HOY | Desde 22h → target = MAÑANA
+# Persiste en /tmp/king_rongo_cache.json para sobrevivir entre sesiones
+# ══════════════════════════════════════════════════════════════════════
+
+_KR_SCAN_HOURS = [8, 14, 22]   # horas CDMX en que se dispara auto-scan
+
+def _kr_target_date():
+    """
+    Retorna la fecha objetivo para King Rongo.
+    Antes de 22h → hoy. Desde 22h → mañana.
+    """
+    now = datetime.now(CDMX)
+    if now.hour >= 22:
+        return (now + timedelta(days=1)).strftime("%Y-%m-%d"), "mañana"
+    return now.strftime("%Y-%m-%d"), "hoy"
+
+def _kr_next_scan_time():
+    """Retorna la próxima hora de escaneo automático como string HH:MM."""
+    now = datetime.now(CDMX)
+    for h in _KR_SCAN_HOURS:
+        if now.hour < h:
+            return f"{h:02d}:00"
+    return f"{_KR_SCAN_HOURS[0]:02d}:00 (mañana)"
+
+def _kr_should_auto_scan():
+    """
+    True si corresponde hacer un scan automático ahora.
+    Ventana: dentro de los 15 minutos posteriores a la hora programada
+    Y no se ha hecho ya un scan en esta ventana.
+    """
+    now  = datetime.now(CDMX)
+    hour = now.hour
+    minute = now.minute
+    # ¿Estamos en ventana de scan? (HH:00 → HH:14)
+    in_window = hour in _KR_SCAN_HOURS and minute < 15
+    if not in_window:
+        return False
+    # ¿Ya escaneamos en esta ventana hoy?
+    cache = _kr_load_cache()
+    last_ts = cache.get("scan_ts","")
+    if last_ts:
+        try:
+            last_dt = datetime.strptime(last_ts, "%Y-%m-%d %H:%M")
+            last_dt = CDMX.localize(last_dt) if last_dt.tzinfo is None else last_dt
+            diff_min = (datetime.now(CDMX) - last_dt).total_seconds() / 60
+            if diff_min < 15:
+                return False  # ya escaneamos hace menos de 15 min
+        except: pass
+    return True
+
+def _kr_load_cache():
+    """Carga el cache de King Rongo desde disco."""
+    try:
+        import json as _jkr
+        with open(KR_CACHE_FILE, "r") as f:
+            return _jkr.load(f)
+    except:
+        return {}
+
+def _kr_save_cache(data):
+    """Guarda el cache de King Rongo en disco."""
+    try:
+        import json as _jkr
+        with open(KR_CACHE_FILE, "w") as f:
+            _jkr.dump(data, f, ensure_ascii=False, indent=2)
+    except: pass
+
+def _kr_sync_session_from_cache():
+    """
+    Al iniciar la sesión, carga el último scan del disco a session_state.
+    Solo si el cache es del mismo target_date y no está expirado (< 8h).
+    """
+    cache = _kr_load_cache()
+    if not cache or not cache.get("el_pick"):
+        return
+    target_date, _ = _kr_target_date()
+    if cache.get("target_date","") != target_date:
+        return  # cache de otra fecha — no cargar
+    # Verificar que no sea demasiado viejo (máx 8h)
+    ts = cache.get("scan_ts","")
+    if ts:
+        try:
+            last_dt = datetime.strptime(ts, "%Y-%m-%d %H:%M")
+            last_dt = CDMX.localize(last_dt) if last_dt.tzinfo is None else last_dt.astimezone(CDMX)
+            age_h = (datetime.now(CDMX) - last_dt).total_seconds() / 3600
+            if age_h > 8:
+                return  # muy viejo
+        except: pass
+    # Cargar a session_state
+    st.session_state["_king_el_pick"]  = cache.get("el_pick")
+    st.session_state["_king_contras"]  = cache.get("contradicciones", [])
+    st.session_state["_king_todos"]    = cache.get("todos", [])
+    st.session_state["_king_scanned"]  = True
+    st.session_state["_king_ts"]       = cache.get("hora_scan","")
+    st.session_state["_king_target"]   = cache.get("target_date","")
+
+def _kr_filter_by_date(matches, target_date):
+    """Filtra partidos por fecha objetivo. Solo pre-match."""
+    out = []
+    for m in (matches or []):
+        if m.get("state") not in ("pre","scheduled","upcoming",None,""):
+            # Incluir también si state es None/empty (algunos no tienen state)
+            if m.get("state") == "post": continue
+        fecha = m.get("fecha","")
+        if fecha and fecha != target_date:
+            continue
+        out.append(m)
+    return out
+
 def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     """
     👑 KING RONGO — El Cerebro Supremo de The Gamblers Layer.
@@ -7179,14 +7334,40 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     _kr_render_bankroll(bk)
 
     # ══════════════════════════════════════════════════════
+    # SINCRONIZAR cache de disco → session_state (al cargar)
+    # ══════════════════════════════════════════════════════
+    if not st.session_state.get("_king_scanned"):
+        _kr_sync_session_from_cache()
+
+    # ══════════════════════════════════════════════════════
+    # FECHA OBJETIVO y próximo scan
+    # ══════════════════════════════════════════════════════
+    _target_date, _target_label = _kr_target_date()
+    _next_scan = _kr_next_scan_time()
+
+    # Banner de contexto
+    _hora_actual = datetime.now(CDMX).strftime("%H:%M")
+    st.markdown(
+        f"<div style='background:#0a0020;border:1px solid #FFD70033;border-radius:12px;"
+        f"padding:10px 16px;margin-bottom:8px;display:flex;justify-content:space-between;"
+        f"align-items:center;flex-wrap:wrap;gap:6px'>"
+        f"<span style='color:#FFD700;font-size:.82rem;font-weight:700'>"
+        f"🎯 Escaneando partidos de <b>{_target_label.upper()}</b> ({_target_date})</span>"
+        f"<span style='color:#555;font-size:.75rem'>⏰ Scans automáticos: 08:00 · 14:00 · 22:00 CDMX"
+        f" &nbsp;|&nbsp; próximo: {_next_scan}</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+    # ══════════════════════════════════════════════════════
     # BOTONES DE ACCIÓN
     # ══════════════════════════════════════════════════════
     c1, c2, c3 = st.columns([3, 1, 1])
     with c1:
         do_scan = st.button(
-            "👑 ESCANEAR — ⚽ Fútbol + 🏀 NBA + 🎾 Tenis",
+            f"👑 ESCANEAR {_target_label.upper()} — ⚽ Fútbol + 🏀 NBA + 🎾 Tenis",
             use_container_width=True, key="king_scan",
-            help="King Rongo analiza todos los partidos del día y elige EL pick con mayor edge real"
+            help=f"King Rongo analiza partidos de {_target_label} y elige EL pick con mayor edge real"
         )
     with c2:
         do_tg = st.button("📡 Telegram", use_container_width=True, key="king_tg")
@@ -7194,15 +7375,17 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         do_reset = st.button("🔄 Reset", use_container_width=True, key="king_reset")
 
     if do_reset:
-        for k in ["_king_el_pick","_king_contras","_king_todos","_king_scanned","_king_ts"]:
+        for k in ["_king_el_pick","_king_contras","_king_todos","_king_scanned","_king_ts","_king_target"]:
             st.session_state.pop(k, None)
+        _kr_save_cache({})
         st.rerun()
 
     # ══════════════════════════════════════════════════════
-    # AUTO-SCAN al abrir la pestaña por primera vez
+    # AUTO-SCAN: al abrir sin cache, o cuando toca por horario
     # ══════════════════════════════════════════════════════
-    if not st.session_state.get("_king_scanned") and not do_scan:
-        do_scan = True  # corona gira automáticamente al entrar
+    _auto = _kr_should_auto_scan()
+    if (not st.session_state.get("_king_scanned") and not do_scan) or _auto:
+        do_scan = True
 
     # ══════════════════════════════════════════════════════
     # SCAN + RESULTADOS
@@ -7210,7 +7393,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     if do_scan or st.session_state.get("_king_scanned"):
 
         if do_scan:
-            # ── CORONA ANIMADA (CSS en markdown — se renderiza antes del scan) ──
+            # ── CORONA ANIMADA ──
             _crown_slot = st.empty()
             _crown_slot.markdown("""
 <style>
@@ -7221,19 +7404,11 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
   75% {transform:rotate(270deg)scale(1.16);filter:drop-shadow(0 0 26px #7c00ffcc)}
   100%{transform:rotate(360deg)scale(1.0);filter:drop-shadow(0 0 10px #FFD700bb)}
 }
-@keyframes kr-shimmer{
-  0%  {background-position:-300px 0}
-  100%{background-position: 300px 0}
-}
-@keyframes kr-glow{
-  0%,100%{opacity:.5} 50%{opacity:1}
-}
-.kr-wrap{
-  background:linear-gradient(160deg,#0e0028,#001608,#0e0028);
-  border:1px solid #FFD70055;border-radius:20px;
-  padding:30px 24px 26px;text-align:center;
-  position:relative;overflow:hidden;margin:8px 0;
-}
+@keyframes kr-shimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
+@keyframes kr-glow{0%,100%{opacity:.5}50%{opacity:1}}
+.kr-wrap{background:linear-gradient(160deg,#0e0028,#001608,#0e0028);
+  border:1px solid #FFD70055;border-radius:20px;padding:30px 24px 26px;
+  text-align:center;position:relative;overflow:hidden;margin:8px 0;}
 .kr-wrap::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
   background:linear-gradient(90deg,transparent,#FFD700,#ff9500,transparent);
   animation:kr-glow 1.4s ease-in-out infinite;}
@@ -7241,18 +7416,15 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
   background:linear-gradient(90deg,transparent,#7c00ff,transparent);
   animation:kr-glow 1.8s ease-in-out infinite reverse;}
 .kr-crown{font-size:4rem;display:inline-block;
-  animation:kr-spin 1.4s cubic-bezier(.4,0,.2,1) infinite;
-  line-height:1;margin-bottom:14px;}
+  animation:kr-spin 1.4s cubic-bezier(.4,0,.2,1) infinite;line-height:1;margin-bottom:14px;}
 .kr-title{font-size:1rem;font-weight:900;letter-spacing:.2em;
   background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  margin-bottom:4px;}
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px;}
 .kr-bar-wrap{background:#080820;border-radius:99px;height:8px;
   overflow:hidden;margin:14px auto 0;border:1px solid #1a1a3a;}
 .kr-bar{height:100%;border-radius:99px;width:100%;
   background:linear-gradient(90deg,#7c00ff,#FFD700,#ff9500,#FFD700);
-  background-size:300% 100%;
-  animation:kr-shimmer 1.2s linear infinite;}
+  background-size:300% 100%;animation:kr-shimmer 1.2s linear infinite;}
 </style>
 <div class="kr-wrap">
   <div class="kr-crown">👑</div>
@@ -7264,46 +7436,76 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
 </div>
 """, unsafe_allow_html=True)
 
-            # ── SCAN REAL con st.status (actualiza en tiempo real) ──
             with st.status("👑 King Rongo escaneando...", expanded=False) as _kr_status:
                 try:
+                    # Cargar partidos hoy + mañana
                     _kr_status.update(label="⚽ Cargando cartelera de fútbol...")
                     _mf = matches_fut
                     try:
                         if _mf is None: _mf = get_cartelera()
                     except: _mf = []
+                    # Filtrar por fecha objetivo
+                    _mf_target = _kr_filter_by_date(_mf, _target_date)
+                    if not _mf_target:
+                        _mf_target = _mf  # fallback: todos si no hay de target_date
 
                     _kr_status.update(label="🏀 Cargando partidos NBA...")
                     _nbg = nba_games
                     try:
                         if _nbg is None: _nbg = get_nba_cartelera()
                     except: _nbg = []
+                    _nbg_target = _kr_filter_by_date(_nbg, _target_date)
+                    if not _nbg_target: _nbg_target = _nbg
 
                     _kr_status.update(label="🎾 Cargando torneos de tenis...")
                     _ten = ten_matches
                     try:
                         if _ten is None: _ten = get_tennis_cartelera()
                     except: _ten = []
+                    _ten_target = _kr_filter_by_date(_ten, _target_date)
+                    if not _ten_target: _ten_target = _ten
 
-                    _kr_status.update(label="🧠 Corriendo modelos xG · Elo · Monte Carlo...")
-                    el_pick, contradicciones, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
+                    _kr_status.update(label=f"🧠 Modelos xG · Elo · Monte Carlo · {_target_label}...")
+                    el_pick, contradicciones, todos = _king_rongo_scan_all(
+                        _mf_target, _nbg_target, _ten_target
+                    )
 
-                    _kr_status.update(label=f"💎 Pick supremo encontrado entre {len(todos)} candidatos", state="complete")
+                    _kr_status.update(
+                        label=f"💎 {len(todos)} candidatos analizados — pick de {_target_label} listo",
+                        state="complete"
+                    )
+                    _ts_now = datetime.now(CDMX).strftime("%H:%M")
+                    _ts_full = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
+
                     st.session_state["_king_el_pick"]  = el_pick
                     st.session_state["_king_contras"]  = contradicciones
                     st.session_state["_king_todos"]    = todos
                     st.session_state["_king_scanned"]  = True
-                    st.session_state["_king_ts"]       = datetime.now(CDMX).strftime("%H:%M")
+                    st.session_state["_king_ts"]       = _ts_now
+                    st.session_state["_king_target"]   = _target_date
+
+                    # Persistir en disco para sobrevivir entre sesiones
+                    _kr_save_cache({
+                        "el_pick":        el_pick,
+                        "contradicciones":contradicciones,
+                        "todos":          todos,
+                        "target_date":    _target_date,
+                        "target_label":   _target_label,
+                        "hora_scan":      _ts_now,
+                        "scan_ts":        _ts_full,
+                    })
+
                 except Exception as e:
                     _kr_status.update(label=f"❌ Error: {e}", state="error")
                     st.error(f"Error en escaneo: {e}")
 
-            _crown_slot.empty()  # quitar la corona una vez terminado
+            _crown_slot.empty()
 
         el_pick        = st.session_state.get("_king_el_pick")
         contradicciones= st.session_state.get("_king_contras", [])
         todos          = st.session_state.get("_king_todos", [])
         scan_ts        = st.session_state.get("_king_ts","")
+        scan_target    = st.session_state.get("_king_target", _target_date)
 
         # Meta-stats del escaneo
         n_fut  = sum(1 for c in todos if "Fútbol" in c["deporte"])
@@ -7324,7 +7526,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         )
 
         if scan_ts:
-            st.caption(f"👑 Escaneo completado a las {scan_ts} CDMX")
+            st.caption(f"👑 Último scan: {scan_ts} CDMX · Partidos de {scan_target}")
 
         # ── EL PICK DEL DÍA ──
         if el_pick:
