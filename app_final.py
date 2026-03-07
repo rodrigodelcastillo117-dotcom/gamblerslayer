@@ -5630,6 +5630,38 @@ def render_bot_tab(sport_label, scan_fn, scan_args, preview_fn=None):
 # ══════════════════════════════════════════════════════════
 # TRILAY / PATO
 # ══════════════════════════════════════════════════════════
+
+def _ventana_22h(matches):
+    """
+    Filtra partidos en la ventana activa de 24 horas:
+    10pm CDMX de hoy → 10pm CDMX de mañana.
+    Garantiza que TRILAY y PATO siempre tengan contenido.
+    """
+    now    = datetime.now(CDMX)
+    inicio = now.replace(hour=22, minute=0, second=0, microsecond=0)
+    if now.hour < 22:
+        inicio = inicio - timedelta(days=1)   # ventana empezó ayer a las 22h
+    fin = inicio + timedelta(hours=24)
+
+    result = []
+    for m in matches:
+        if m.get("state", "pre") not in ("pre", "in"):
+            continue
+        try:
+            hora_str = m.get("hora", "00:00") or "00:00"
+            dt = CDMX.localize(
+                datetime.strptime(f"{m['fecha']} {hora_str}", "%Y-%m-%d %H:%M")
+            )
+            if inicio <= dt < fin:
+                result.append(m)
+        except:
+            hoy = now.strftime("%Y-%m-%d")
+            man = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+            if m.get("fecha", "") in (hoy, man):
+                result.append(m)
+    return result
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def compute_trilay(matches):
     # Ventana 22h: 10pm CDMX hoy → 10pm CDMX mañana — siempre hay partidos
