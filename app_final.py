@@ -3412,6 +3412,14 @@ def render_resultados_tab():
     """VILLAR — Auditoría automática pick vs resultado real."""
     from collections import defaultdict
 
+    # ── Cargar bridge diamante persistido ──
+    if "_diamond_bridge" not in st.session_state or not st.session_state["_diamond_bridge"]:
+        try:
+            import json as _json
+            with open("/tmp/gamblers_diamond_bridge.json") as _bf:
+                st.session_state["_diamond_bridge"] = _json.load(_bf)
+        except: st.session_state["_diamond_bridge"] = {}
+
     # ── AUTO-AUDITORÍA al entrar al tab ──
     # Villar corre solo, sin que el usuario tenga que picar nada
     _villar_key = "villar_last_auto"
@@ -3689,34 +3697,29 @@ def render_resultados_tab():
                             # 1. Pick manual guardado por usuario
                             manual_pks = [pk for pk in pick_history
                                           if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — snap de cartelera es la fuente de verdad
+                            # 2. Pick automático — BRIDGE DIAMANTE es la fuente de verdad
                             _mid = p.get("id","")
                             auto_pk = None
                             if not manual_pks:
                                 _p_state = p.get("state","pre")
-                                _snap_all = _load_picks_snap()
-                                # PRIORIDAD 1: snap de cartelera (tiene home_id, slug, get_form real)
-                                _frozen_snap = _snap_all.get(_mid)
-                                if not _frozen_snap:
-                                    _alt_gid = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
-                                    _frozen_snap = _snap_all.get(_alt_gid)
-                                if _frozen_snap:
-                                    auto_pk = dict(_frozen_snap)
-                                    auto_pk.setdefault("home",  p.get("home",""))
-                                    auto_pk.setdefault("away",  p.get("away",""))
-                                    auto_pk.setdefault("sport", p.get("deporte","futbol"))
+                                _bridge = st.session_state.get("_diamond_bridge", {})
+                                # Buscar en bridge por ID directo
+                                _bp = _bridge.get(_mid)
+                                # Fallback: home_id+away_id+fecha
+                                if not _bp:
+                                    _alt = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
+                                    _bp = _bridge.get(_alt)
+                                if _bp:
+                                    auto_pk = dict(_bp)
                                 else:
-                                    # PRIORIDAD 2: cache de sesión
+                                    # Sin bridge: usar cache o recalcular sin score
                                     auto_pk = _auto_pk_cache.get(_mid)
-                                    # PRIORIDAD 3: recalcular sin score
                                     if not auto_pk:
                                         try:
                                             _fp2 = {k:v for k,v in p.items() if k not in ("score_h","score_a")}
                                             _fp2["score_h"] = 0
                                             auto_pk = _villar_auto_pick(_fp2)
-                                            if auto_pk:
-                                                _auto_pk_cache[_mid] = auto_pk
-                                                _snap_auto_pick(_mid, auto_pk, state=_p_state)
+                                            if auto_pk: _auto_pk_cache[_mid] = auto_pk
                                         except: pass
 
                             pick_rows = []
@@ -9478,28 +9481,49 @@ if deporte == "futbol":
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
 
     # ── PRE-SNAP BACKGROUND: calcular y guardar pick de cada partido ──
-    # Para partidos PRE: guardar solo si no existe snap.
-    # Para partidos POST: siempre recalcular con datos limpios (sin score) y guardar.
-    # Esto garantiza que Resultados use el MISMO pick que la cartelera.
+    # Corre diamond_engine para todos los partidos (pre y post) y llena el bridge.
+    # El bridge persiste en archivo — Resultados siempre encuentra el pick correcto.
     if all_matches:
-        _snap_existing = _load_picks_snap()
+        if "_diamond_bridge" not in st.session_state:
+            # Cargar bridge persistido de sesiones anteriores
+            try:
+                import json as _json
+                with open("/tmp/gamblers_diamond_bridge.json") as _bf:
+                    st.session_state["_diamond_bridge"] = _json.load(_bf)
+            except: st.session_state["_diamond_bridge"] = {}
+        _bridge = st.session_state["_diamond_bridge"]
+        _bridge_dirty = False
         for _pm in all_matches:
             try:
                 _pid  = _pm.get("id","")
                 _pid2 = f"{_pm.get('home_id','')}_{_pm.get('away_id','')}_{_pm.get('fecha','')}"
                 _pst  = _pm.get("state","pre")
-                # Para pre-partido: saltar si ya hay snap
-                if _pst == "pre" and (_pid in _snap_existing or _pid2 in _snap_existing):
+                # Pre-partido: saltar si ya está en bridge
+                if _pst == "pre" and (_pid in _bridge or _pid2 in _bridge):
                     continue
-                # Calcular pick con datos limpios (sin score para no contaminar)
+                # Calcular con datos limpios (sin score)
                 _pm_clean = {k: v for k, v in _pm.items() if k not in ("score_h","score_a")}
-                _pm_clean["score_h"] = 0  # _villar_auto_pick necesita score_h >= 0
+                _pm_clean["score_h"] = 0
                 _bk_pk = _villar_auto_pick(_pm_clean)
                 if _bk_pk:
-                    _force = (_pst == "post")  # forzar sobreescritura para terminados
-                    if _pid:  _snap_auto_pick(_pid,  _bk_pk, state=_pst, force=_force)
-                    if _pid2: _snap_auto_pick(_pid2, _bk_pk, state=_pst, force=_force)
+                    _entry = {
+                        "pick": _bk_pk.get("pick",""), "prob": _bk_pk.get("prob",0),
+                        "odd":  _bk_pk.get("odd",0),  "src":  _bk_pk.get("src","🤖"),
+                        "home": _pm.get("home",""),    "away": _pm.get("away",""),
+                        "sport": "futbol",             "fecha": _pm.get("fecha",""),
+                        "mkt":  _bk_pk.get("mkt",""),
+                    }
+                    if _pid:  _bridge[_pid]  = _entry
+                    if _pid2: _bridge[_pid2] = _entry
+                    _bridge_dirty = True
             except: continue
+        # Persistir a archivo si hubo cambios
+        if _bridge_dirty:
+            try:
+                import json as _json
+                with open("/tmp/gamblers_diamond_bridge.json","w") as _bf:
+                    _json.dump(_bridge, _bf)
+            except: pass
     if not all_matches:
         st.info("⚽ No hay partidos de fútbol disponibles ahora. Intenta refrescar en unos minutos.")
     else:
@@ -10506,22 +10530,22 @@ else:
             f"</div></div>",
             unsafe_allow_html=True)
 
-        # ── GUARDAR PICK — y snapshot automático ──
-        # Guardar con TODOS los IDs posibles para que Resultados lo encuentre
-        _pick_data = {
-            "pick": main_lbl, "prob": main_prob,
-            "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
-            "odd": main_odd, "src": f"💎 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
+        # ── BRIDGE DIAMANTE → RESULTADOS ──
+        # Guardar el pick exacto que se mostró, indexado por ID del partido
+        if "_diamond_bridge" not in st.session_state:
+            st.session_state["_diamond_bridge"] = {}
+        _bridge_key = g.get("id","") or f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}"
+        st.session_state["_diamond_bridge"][_bridge_key] = {
+            "pick": main_lbl, "prob": main_prob, "odd": main_odd,
             "home": g.get("home",""), "away": g.get("away",""),
             "sport": "futbol", "fecha": g.get("fecha",""),
+            "src": f"💎 Diamante · {main_prob*100:.0f}%",
+            "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
         }
-        _state_g = g.get("state","pre")
-        # ID 1: ESPN event ID directo (lo que usa results_db)
-        _gid = g.get("id", "")
-        if _gid: _snap_auto_pick(_gid, _pick_data, state=_state_g)
-        # ID 2: home_id+away_id+fecha (fallback)
-        _gid2 = f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}"
-        if _gid2 != _gid: _snap_auto_pick(_gid2, _pick_data, state=_state_g)
+        # También guardar por home_id+away_id+fecha como alias
+        _bridge_key2 = f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}"
+        if _bridge_key2 != _bridge_key:
+            st.session_state["_diamond_bridge"][_bridge_key2] = st.session_state["_diamond_bridge"][_bridge_key]
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
@@ -10535,6 +10559,19 @@ else:
             if st.button(f"💾 AA ({mc['btts']*100:.0f}%)", use_container_width=True, key="save_btts"):
                 add_pick(g, "⚡ Ambos Anotan", mc["btts"], 0)
                 st.success("✅ Pick guardado")
+
+        # ── SMART PARLAY ──
+        if pls:
+            best=pls[0]; legs=[x for x in [best.get("l1"),best.get("l2")] if x]
+            st.markdown(
+                f"<div class='parlay-hero'>"
+                f"<div style='font-size:.8rem;color:#00ccff;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>✦ SMART PLAY — PARLAY RECOMENDADO</div>"
+                +"".join(f"<div style='font-size:1.1rem;font-weight:700;margin:4px 0'>✓ {l}</div>" for l in legs)
+                +f"<div style='display:flex;gap:12px;margin-top:16px;flex-wrap:wrap'>"
+                +"".join(f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{p*100:.1f}%</div><div class='mlbl'>{l}</div></div>" for l,p in [(best.get("l1",""),best.get("p1",0)),(best.get("l2",""),best.get("p2",0))])
+                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['cp']*100:.1f}%</div><div class='mlbl'>Combinada</div></div>"
+                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['odds']}x</div><div class='mlbl'>Cuota</div></div>"
+                +f"</div></div>",unsafe_allow_html=True)
 
         # ══════════════════════════════════════════════════════════
         # VEREDICTO ACADÉMICO — Semáforo 🟢🟡🔴
@@ -10599,20 +10636,6 @@ else:
             with col:
                 color="#00ff88" if val>=0.58 else ("#FFD700" if val>=0.45 else "#666")
                 st.markdown(f"<div class='mbox'><div class='mval' style='color:{color}'>{val*100:.0f}%</div><div class='mlbl'>{label}</div></div>",unsafe_allow_html=True)
-
-        # ── SMART PARLAY ──
-        if pls:
-            st.markdown("<div class='shdr'>🎰 Smart Parlay</div>",unsafe_allow_html=True)
-            best=pls[0]; legs=[x for x in [best.get("l1"),best.get("l2")] if x]
-            st.markdown(
-                f"<div class='parlay-hero'>"
-                f"<div style='font-size:.8rem;color:#00ccff;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>✦ PARLAY RECOMENDADO</div>"
-                +"".join(f"<div style='font-size:1.1rem;font-weight:700;margin:4px 0'>✓ {l}</div>" for l in legs)
-                +f"<div style='display:flex;gap:12px;margin-top:16px;flex-wrap:wrap'>"
-                +"".join(f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{p*100:.1f}%</div><div class='mlbl'>{l}</div></div>" for l,p in [(best.get("l1",""),best.get("p1",0)),(best.get("l2",""),best.get("p2",0))])
-                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['cp']*100:.1f}%</div><div class='mlbl'>Combinada</div></div>"
-                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['odds']}x</div><div class='mlbl'>Cuota</div></div>"
-                +f"</div></div>",unsafe_allow_html=True)
 
         # ── STATS ──
         st.markdown("<div class='shdr'>📈 Estadísticas Comparativas</div>",unsafe_allow_html=True)
