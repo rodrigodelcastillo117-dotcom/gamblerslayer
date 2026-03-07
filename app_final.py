@@ -2497,7 +2497,36 @@ def fetch_tennis_results(days_back=10):
             })
     except: pass
 
-    # ── FUENTE 3 SEMILLA: Resultados verificados Indian Wells 2026 ──
+    # ── FUENTE 3: Claude web_search — ATP + WTA — PRIORIDAD MÁXIMA ──
+    # Web search va PRIMERO. Los seeds son solo fallback para lo que la web no encontró.
+    _web_pairs = set()  # jugadores ya cubiertos por web search (para no sobreescribir con seeds)
+    if ANTHROPIC_API_KEY:
+        web_results = _fetch_tennis_results_web(desde, hoy)
+        for wr in web_results:
+            eid = f"ten_web_{wr['p1'][:6]}_{wr['p2'][:6]}_{wr['fecha']}"
+            if eid in seen_ids: continue
+            _wr_p1 = wr.get("p1","").lower().strip()
+            _wr_p2 = wr.get("p2","").lower().strip()
+            _wr_f  = wr.get("fecha","")
+            # Dedup contra fuentes 1 y 2 (API histórico + cartelera live)
+            _duplicate = False
+            for _ex in results:
+                _ex_p1 = _ex.get("p1","").lower().strip()
+                _ex_p2 = _ex.get("p2","").lower().strip()
+                _ex_f  = _ex.get("fecha","")
+                if _ex_f == _wr_f and {_ex_p1,_ex_p2} == {_wr_p1,_wr_p2}:
+                    _duplicate = True
+                    break
+            if _duplicate: continue
+            seen_ids.add(eid)
+            wr["id"] = eid
+            results.append(wr)
+            # Registrar que este par ya está cubierto por web
+            _web_pairs.add(frozenset([_wr_p1, _wr_p2, _wr_f]))
+
+    # ── FUENTE 4 SEMILLA: Fallback hardcodeado — solo si web search no encontró el partido ──
+    # A medida que avanza el torneo estos seeds se vuelven obsoletos automáticamente
+    # porque la web search los cubre. Solo sirven si la web falla completamente.
     _SEEDS = [
         {"p1":"Alexander Zverev",   "p2":"Matteo Berrettini",           "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
         {"p1":"Jannik Sinner",      "p2":"Dalibor Svrcina",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
@@ -2515,12 +2544,12 @@ def fetch_tennis_results(days_back=10):
         {"p1":"Alejandro Davidovich Fokina","p2":"Zachary Svajda",      "sh":2,"sa":0,"t":"ATP","f":"2026-03-06"},
         {"p1":"Aryna Sabalenka",    "p2":"Himeno Sakatsume",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
         {"p1":"Coco Gauff",         "p2":"Kamilla Rakhimova",           "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Amanda Anisimova",   "p2":"Anna Blinkova",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Amanda Anisimova",   "p2":"Anna Blinkova",               "sh":2,"sa":1,"t":"WTA","f":"2026-03-06"},
         {"p1":"Victoria Mboko",     "p2":"Kimberly Birrell",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
         {"p1":"Naomi Osaka",        "p2":"Victoria Jimenez Kasintseva", "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Iva Jovic",          "p2":"Camila Osorio",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Camila Osorio",      "p2":"Iva Jovic",                   "sh":2,"sa":1,"t":"WTA","f":"2026-03-06"},
         {"p1":"Clara Tauson",       "p2":"Yulia Putintseva",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
-        {"p1":"Ekaterina Alexandrova","p2":"Talia Gibson",              "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
+        {"p1":"Talia Gibson",       "p2":"Ekaterina Alexandrova",       "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
         {"p1":"Anna Kalinskaya",    "p2":"Zeynep Sonmez",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
         {"p1":"Diana Shnaider",     "p2":"Sorana Cirstea",              "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
         {"p1":"Linda Noskova",      "p2":"Jessica Bouzas Maneiro",      "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
@@ -2532,6 +2561,17 @@ def fetch_tennis_results(days_back=10):
         if _s["f"] < desde: continue
         _sid = f"ten_seed_{_s['p1'][:5].lower().replace(' ','')}_{_s['p2'][:5].lower().replace(' ','')}_{_s['t']}_{_s['f'].replace('-','')}"
         if _sid in seen_ids: continue
+        # Saltar si web search ya cubre este par de jugadores en esta fecha
+        _sp1 = _s["p1"].lower().strip()
+        _sp2 = _s["p2"].lower().strip()
+        _sf  = _s["f"]
+        if frozenset([_sp1, _sp2, _sf]) in _web_pairs: continue
+        # También verificar contra resultados existentes (fuente 1/2)
+        _dup = any(
+            r.get("fecha","") == _sf and {r.get("p1","").lower(), r.get("p2","").lower()} == {_sp1, _sp2}
+            for r in results
+        )
+        if _dup: continue
         seen_ids.add(_sid)
         results.append({
             "id": _sid, "deporte":"tenis",
@@ -2542,34 +2582,11 @@ def fetch_tennis_results(days_back=10):
             "fecha":_s["f"], "hora":"12:00", "rank1":0, "rank2":0,
         })
 
-    # ── FUENTE 3: Claude web_search — ATP + WTA (siempre, es la fuente principal) ──
-    if ANTHROPIC_API_KEY:
-        web_results = _fetch_tennis_results_web(desde, hoy)
-        for wr in web_results:
-            eid = f"ten_web_{wr['p1'][:6]}_{wr['p2'][:6]}_{wr['fecha']}"
-            if eid in seen_ids: continue
-            # Dedup: si ya existe un resultado con los mismos jugadores (en cualquier orden)
-            # y la misma fecha → saltar (el seed tiene prioridad sobre web search)
-            _wr_p1 = wr.get("p1","").lower().strip()
-            _wr_p2 = wr.get("p2","").lower().strip()
-            _wr_f  = wr.get("fecha","")
-            _duplicate = False
-            for _ex in results:
-                _ex_p1 = _ex.get("p1","").lower().strip()
-                _ex_p2 = _ex.get("p2","").lower().strip()
-                _ex_f  = _ex.get("fecha","")
-                if _ex_f == _wr_f and {_ex_p1,_ex_p2} == {_wr_p1,_wr_p2}:
-                    _duplicate = True
-                    break
-            if _duplicate: continue
-            seen_ids.add(eid)
-            wr["id"] = eid
-            results.append(wr)
-
     return results
 
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
 def _fetch_tennis_results_web(desde, hoy):
     """
     Usa la API de Claude con web_search para obtener resultados reales de
