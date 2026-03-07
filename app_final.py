@@ -3326,40 +3326,20 @@ def render_resultados_tab():
                                 elif "FALLÓ" in vd: fail_sp+=1
 
                             if auto_pk:
-                                # Tenis: solo mostrar ganador con ✅ — sin score
-                                if sport_key == "tenis":
-                                    _winner = home_n if won_h else away_n
-                                    _loser  = away_n if won_h else home_n
-                                    _fav    = auto_pk.get("pick","").replace("🎾","").replace("gana","").strip()
-                                    _acerto = any(w in _fav.lower() for w in _winner.lower().split() if len(w)>3)
-                                    _icon   = "✅" if _acerto else "❌"
-                                    _col    = "#00ff88" if _acerto else "#ff4444"
-                                    _src    = auto_pk.get("src","🤖 Modelo")
-                                    pick_rows.append({
-                                        "label": auto_pk.get("pick","?"),
-                                        "prob": auto_pk.get("prob",0)*100,
-                                        "odd": 0, "src": _src,
-                                        "verd": "✅ GANÓ" if _acerto else "❌ FALLÓ",
-                                        "col": _col, "expl": f"Ganó: {_winner}",
-                                    })
-                                    if _acerto: ok_sp+=1
-                                    else: fail_sp+=1
-                                else:
-                                    # Fútbol/NBA: mostrar TODOS los mercados de all_picks
-                                    all_picks = auto_pk.get("all_picks", [auto_pk])
-                                    for _apk in all_picks:
-                                        _apk_obj = {**auto_pk, "pick": _apk.get("pick", auto_pk.get("pick","?"))}
-                                        vd,vc,ex = _villar_match_pick_to_result(_apk_obj, p)
-                                        _prob = _apk.get("prob", auto_pk.get("prob",0))
-                                        pick_rows.append({
-                                            "label": _apk.get("pick", auto_pk.get("pick","?")),
-                                            "prob": _prob*100 if _prob<=1 else _prob,
-                                            "odd": _apk.get("odd",0),
-                                            "src": auto_pk.get("src","🤖 Modelo"),
-                                            "verd": vd, "col": vc, "expl": ex,
-                                        })
-                                        if "GANÓ" in vd: ok_sp+=1
-                                        elif "FALLÓ" in vd: fail_sp+=1
+                                # UN solo pick por partido — el que recomienda el modelo
+                                # _villar_match_pick_to_result audita si ganó o perdió
+                                vd, vc, ex = _villar_match_pick_to_result(auto_pk, p)
+                                _prob = auto_pk.get("prob", 0)
+                                pick_rows.append({
+                                    "label": auto_pk.get("pick", "?"),
+                                    "prob":  _prob * 100 if _prob <= 1 else _prob,
+                                    "odd":   auto_pk.get("odd", 0),
+                                    "src":   auto_pk.get("src", "🤖 Modelo"),
+                                    "verd":  vd, "col": vc, "expl": ex,
+                                })
+                                # Sumar al contador del deporte
+                                if "GANÓ" in vd:  ok_sp += 1
+                                elif "FALLÓ" in vd: fail_sp += 1
 
                             # Render card
                             has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
@@ -6744,9 +6724,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     ("⚽ Over 2.5",                        mc["o25"],         0, "O/U"),
                     ("⚡ Ambos Anotan",                    mc["btts"],        0, "BTTS"),
                 ]
-                # Sin odds: bajar umbral, siempre tomar el mejor disponible
-                _min_p = _KR_MIN_PROB if any(o>1 for _,_,o,_ in mkts) else 0.50
-                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= _min_p]
+                # Sin odds: aceptar cualquier prob >= 50%
+                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.50]
                 if not mkts: continue
 
                 best = max(mkts, key=lambda x: _kr_edge(x[1],x[2]) if x[2]>1 else x[1]-0.48)
@@ -6777,8 +6756,10 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 }
                 c["score"] = _kr_score(prob, edge, spread, kelly, contra)
                 candidates.append(c)
-            except: continue
-    except: pass
+            except Exception as _e_fut:
+                continue  # partido fallido, continuar con el siguiente
+    except Exception as _e_fut_outer:
+        pass
 
     # ── 🏀 NBA ────────────────────────────────────────────────────────────
     try:
@@ -6794,8 +6775,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     (f"🏠 {g['home']}",    p_h,            g.get("odd_h",0),"ML"),
                     (f"✈️  {g['away']}",    p_a,            g.get("odd_a",0),"ML"),
                 ]
-                _min_p_nba = _KR_MIN_PROB if any(o>1 for _,_,o,_ in mkts) else 0.50
-                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= _min_p_nba]
+                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.50]
                 if not mkts: continue
                 best = max(mkts, key=lambda x: _kr_edge(x[1],x[2]) if x[2]>1 else x[1]-0.48)
                 lbl,prob,odd,mkt = best
@@ -6865,18 +6845,18 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     # ── Rankear ──
     candidates.sort(key=lambda x: -x.get("score",0))
     contras = [c for c in candidates if c.get("contradiccion")]
-    # El pick: cascada de calidad — siempre retorna algo si hay candidatos
+
+    # El pick: cascada — siempre retorna algo si hay candidatos
     el_pick = (
-        # 1º: sin contradicción + edge positivo (ideal)
-        next((c for c in candidates if not c.get("contradiccion") and c.get("edge",0) >= _KR_MIN_EDGE), None) or
-        # 2º: sin contradicción + mejor prob (aunque edge sea bajo/0)
+        # 1º: sin contradicción + edge positivo
+        next((c for c in candidates if not c.get("contradiccion") and c.get("edge",0) > 0), None) or
+        # 2º: sin contradicción, prob >= 52%
         next((c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.52), None) or
-        # 3º: cualquier candidato sin contradicción
+        # 3º: cualquiera sin contradicción
         next((c for c in candidates if not c.get("contradiccion")), None) or
-        # 4º: el mejor absoluto aunque tenga contradicción (Rongo decide igual)
+        # 4º: el mejor aunque tenga contradicción
         (candidates[0] if candidates else None)
     )
-    # Marcar si es el "Rongo Pick" supremo — siempre hay uno
     if el_pick:
         el_pick = {**el_pick, "is_rongo_pick": True}
     return el_pick, contras, candidates[:20]
@@ -7677,10 +7657,13 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         st.rerun()
 
     # ══════════════════════════════════════════════════════
-    # AUTO-SCAN: al abrir sin cache, o cuando toca por horario
+    # AUTO-SCAN: marcar en session y dejar que el if de abajo lo tome
     # ══════════════════════════════════════════════════════
     _auto = _kr_should_auto_scan()
-    if (not st.session_state.get("_king_scanned") and not do_scan) or _auto:
+    if _auto and not st.session_state.get("_king_scanned"):
+        do_scan = True
+    # Si no hay cache y el usuario no presionó el botón, forzar scan
+    if not st.session_state.get("_king_scanned") and not do_scan:
         do_scan = True
 
     # ══════════════════════════════════════════════════════
@@ -7772,6 +7755,14 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     )
                     _ts_now = datetime.now(CDMX).strftime("%H:%M")
                     _ts_full = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
+
+                    # Si no hay pick a pesar del scan, registrar para debug
+                    if not el_pick and todos:
+                        st.warning(f"⚠️ {len(todos)} candidatos encontrados pero ninguno pasó filtros. Mostrando el mejor disponible.")
+                        el_pick = todos[0]  # forzar el mejor absoluto
+                        el_pick = {**el_pick, "is_rongo_pick": True}
+                    elif not el_pick and not todos:
+                        st.warning("⚠️ No se encontraron partidos para analizar. Verifica que hay cartelera disponible.")
 
                     st.session_state["_king_el_pick"]  = el_pick
                     st.session_state["_king_contras"]  = contradicciones
