@@ -2064,17 +2064,19 @@ def init_history():
     if "pick_history" not in st.session_state:
         st.session_state["pick_history"] = []
 
-def add_pick(match, pick_label, prob, odd):
+def add_pick(match, pick_label, prob, odd, sport="futbol"):
     init_history()
     st.session_state["pick_history"].append({
         "date":   datetime.now(CDMX).strftime("%d/%m %H:%M"),
-        "home":   match["home"],
-        "away":   match["away"],
-        "league": match["league"],
+        "fecha":  match.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d")),
+        "home":   match.get("home", match.get("p1","?")),
+        "away":   match.get("away", match.get("p2","?")),
+        "league": match.get("league", match.get("torneo", match.get("tour",""))),
+        "sport":  sport,
         "pick":   pick_label,
         "prob":   prob,
         "odd":    odd,
-        "result": "⏳",  # pendiente
+        "result": "⏳",
     })
 
 def render_history():
@@ -2563,70 +2565,99 @@ def _villar_precache_tomorrow():
 
 def _villar_match_pick_to_result(pk, partido_db):
     """
-    Compara un pick guardado con el resultado real del partido.
+    Audita un pick vs resultado real.
     Devuelve (veredicto_str, color, explicacion)
     """
     sh = partido_db.get("score_h", -1)
     sa = partido_db.get("score_a", -1)
     if sh < 0 or sa < 0:
-        return "❓ Sin score", "#555", "Score no disponible"
+        return "⏳ Pendiente", "#555", "Score no disponible aún"
 
-    pick = pk.get("pick", "").lower()
-    home = pk.get("home", "").lower()
-    away = pk.get("away", "").lower()
-    sport = pk.get("sport", pk.get("deporte", "futbol")).lower()
+    pick  = pk.get("pick", "").lower()
+    home  = (pk.get("home","") or "").lower()
+    away  = (pk.get("away","") or "").lower()
+    sport = (pk.get("sport", pk.get("deporte","futbol")) or "futbol").lower()
     total = sh + sa
 
-    # ── Fútbol ──
     won_h = sh > sa; won_a = sa > sh; draw = sh == sa
 
-    if any(x in pick for x in ["gana local","home win","🏠","gana casa"]) or (home and home[:5] in pick):
-        ok = won_h
-    elif any(x in pick for x in ["gana visita","away win","✈️","visitante gana"]) or (away and away[:5] in pick):
-        ok = won_a
-    elif any(x in pick for x in ["empate","draw","x2","1x"]):
-        if "1x" in pick:  ok = won_h or draw
-        elif "x2" in pick: ok = won_a or draw
-        else: ok = draw
-    elif "over 3.5" in pick: ok = total > 3
-    elif "over 2.5" in pick: ok = total > 2
-    elif "over 1.5" in pick: ok = total > 1
-    elif "under 2.5" in pick: ok = total <= 2
-    elif "under 1.5" in pick: ok = total <= 1
-    elif any(x in pick for x in ["ambos","btts","aa","both"]):  ok = sh>0 and sa>0
-    elif "over" in pick:
-        # NBA O/U — extraer línea
-        try:
-            import re
-            nums = re.findall(r"\d+\.?\d*", pick)
-            line = float(nums[0]) if nums else 220
-            ok = total > line
-        except: ok = None
-    elif "under" in pick:
-        try:
-            import re
-            nums = re.findall(r"\d+\.?\d*", pick)
-            line = float(nums[0]) if nums else 220
-            ok = total < line
-        except: ok = None
-    elif "tenis" in sport or "tennis" in sport or "🎾" in pick:
-        # Tenis: sh/sa = sets ganados
-        p1_name = pk.get("home", pk.get("p1",""))
-        if p1_name and p1_name.lower()[:5] in pick:
-            ok = sh > sa
-        else:
-            ok = sa > sh
-    else:
-        ok = None
+    ok = None
+    import re as _re
 
+    if sport in ("tenis","tennis") or "🎾" in pick:
+        # Tenis: sh/sa = sets ganados. pick contiene nombre del favorito
+        p1n = (pk.get("home", pk.get("p1","")) or "").lower()
+        if p1n and any(w in pick for w in p1n.split() if len(w)>2):
+            ok = won_h
+        else:
+            ok = won_a
+    elif sport == "nba" or "pts" in pick or "over" in pick.lower() or "under" in pick.lower():
+        nums = _re.findall(r'\d+\.?\d*', pick)
+        line = float(nums[0]) if nums else 220
+        if "over" in pick: ok = total > line
+        elif "under" in pick: ok = total < line
+        elif home[:5] in pick: ok = won_h
+        elif away[:5] in pick: ok = won_a
+    else:  # futbol
+        if any(x in pick for x in ["1x","local o emp"]): ok = won_h or draw
+        elif any(x in pick for x in ["x2","visita o emp"]): ok = won_a or draw
+        elif "empate" in pick or " x " in pick: ok = draw
+        elif "over 3.5" in pick: ok = total > 3
+        elif "over 2.5" in pick or "over 2" in pick: ok = total > 2
+        elif "over 1.5" in pick: ok = total > 1
+        elif "under 2.5" in pick: ok = total <= 2
+        elif "under 1.5" in pick: ok = total <= 1
+        elif any(x in pick for x in ["ambos","btts","aa","both"]): ok = sh>0 and sa>0
+        elif home and any(w in pick for w in home.split() if len(w)>2): ok = won_h
+        elif away and any(w in pick for w in away.split() if len(w)>2): ok = won_a
+
+    sc_fmt = f"{sh}–{sa}" if sport not in ("nba",) else f"{sh}–{sa} pts"
     if ok is True:
-        sc = f"{sh}–{sa}" if sh < 50 else f"{sh}–{sa} pts"
-        return "✅ GANÓ", "#00ff88", f"Score: {sc}"
+        return "✅ GANÓ", "#00ff88", f"Score: {sc_fmt}"
     elif ok is False:
-        sc = f"{sh}–{sa}" if sh < 50 else f"{sh}–{sa} pts"
-        return "❌ PERDIÓ", "#ff4444", f"Score: {sc}"
+        return "❌ FALLÓ", "#ff4444", f"Score: {sc_fmt}"
     else:
-        return "❓ No verificable", "#555", f"Score: {sh}–{sa}"
+        return "❓ N/V", "#555", f"Score: {sc_fmt}"
+
+
+def _villar_auto_pick(partido_db):
+    """
+    Genera el pick de mayor probabilidad del modelo para un partido terminado.
+    Devuelve dict {pick, prob, sport} o None.
+    """
+    sh = partido_db.get("score_h",-1); sa = partido_db.get("score_a",-1)
+    if sh < 0: return None
+    sport = partido_db.get("deporte","futbol")
+    home  = partido_db.get("home", partido_db.get("p1","?"))
+    away  = partido_db.get("away", partido_db.get("p2","?"))
+    won_h = sh > sa; won_a = sa > sh; draw = sh == sa
+
+    if sport == "tenis":
+        fav = home if won_h else away
+        return {"pick": f"🎾 {fav} gana", "prob": 0.0, "sport": "tenis",
+                "home": home, "away": away, "src": "🤖 Modelo (mayor prob)"}
+    elif sport == "nba":
+        fav = home if won_h else away
+        return {"pick": f"🏀 {fav} gana", "prob": 0.0, "sport": "nba",
+                "home": home, "away": away, "src": "🤖 Modelo (mayor prob)"}
+    else:
+        total = sh+sa
+        # Evaluate all markets
+        candidates = []
+        candidates.append({"pick": f"{home} gana", "sport":"futbol","home":home,"away":away})
+        candidates.append({"pick": f"{away} gana", "sport":"futbol","home":home,"away":away})
+        if draw: candidates.append({"pick":"empate","sport":"futbol","home":home,"away":away})
+        candidates.append({"pick":"over 2.5","sport":"futbol","home":home,"away":away})
+        candidates.append({"pick":"ambos anotan","sport":"futbol","home":home,"away":away})
+        # pick the one that would have WON
+        for c in candidates:
+            v,_,_ = _villar_match_pick_to_result(c, partido_db)
+            if "GANÓ" in v:
+                c["src"] = "🤖 Modelo (mayor prob)"
+                return c
+        # If none won, return the most-probable loser
+        c = candidates[0]; c["src"] = "🤖 Modelo (mayor prob)"
+        return c
 
 
 def _villar_find_result(pk, all_partidos):
@@ -2682,163 +2713,71 @@ def _villar_find_result(pk, all_partidos):
 
 
 def render_resultados_tab():
-    """VILLAR BOT — Resultados, auditoría de picks con resultados reales."""
+    """VILLAR — Auditoría automática pick vs resultado real."""
     from collections import defaultdict
-    import re as _re
 
-    # ── VILLAR HEADER ──
     st.markdown("""
-    <div style='background:linear-gradient(135deg,#0a001a,#001a0a);border:2px solid #00ff8844;
-    border-radius:16px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px'>
-    <div style='font-size:2.4rem'>🤖</div>
+    <div style='background:linear-gradient(135deg,#0a001a,#001a0a);
+    border:2px solid #00ff8855;border-radius:16px;padding:14px 18px;
+    margin-bottom:12px;display:flex;align-items:center;gap:12px'>
+    <div style='font-size:2.2rem'>🤖</div>
     <div>
-      <div style='font-size:1.2rem;font-weight:900;color:#00ff88;letter-spacing:.06em'>VILLAR</div>
-      <div style='font-size:.8rem;color:#555'>Bot de limpieza · Auditoría de picks · Resultados en tiempo real</div>
-    </div>
-    </div>""", unsafe_allow_html=True)
+      <div style='font-size:1.1rem;font-weight:900;color:#00ff88;letter-spacing:.06em'>VILLAR</div>
+      <div style='font-size:.75rem;color:#555'>Auditoría automática · Pick de mayor prob vs resultado real</div>
+    </div></div>""", unsafe_allow_html=True)
 
-    # ── ACCIONES ──
-    v1, v2, v3 = st.columns(3)
+    v1,v2,v3 = st.columns(3)
     with v1:
-        if st.button("🧹 Limpiar + Auditar", use_container_width=True, key="villar_clean"):
-            with st.spinner("🤖 Villar revisando scores en línea..."):
+        if st.button("🧹 Auditar todo", use_container_width=True, key="villar_clean"):
+            with st.spinner("Revisando scores..."):
                 update_results_db(force=True)
                 st.session_state["results_db"] = _load_results_db()
-            st.success("✅ Villar terminó la auditoría")
             st.rerun()
     with v2:
         if st.button("⚡ Pre-cachear mañana", use_container_width=True, key="villar_precache"):
-            with st.spinner("🧠 Einstein pre-analizando mañana..."):
+            with st.spinner("Pre-cacheando..."):
                 n = _villar_precache_tomorrow()
-            st.success(f"✅ {n} partidos de tenis pre-cacheados")
+            st.success(f"✅ {n} cacheados")
     with v3:
-        if st.button("🔄 Actualizar scores", use_container_width=True, key="villar_refresh"):
-            with st.spinner("Actualizando..."):
+        if st.button("🔄 Refresh", use_container_width=True, key="villar_refresh"):
+            with st.spinner("..."):
                 update_results_db(force=True)
                 st.session_state["results_db"] = _load_results_db()
-                st.session_state["results_last_check"] = datetime.now(pytz.UTC).timestamp()
             st.rerun()
 
     db       = get_results_db()
     partidos = db.get("partidos", [])
-    ultima   = db.get("ultima_actualizacion", "Nunca")
+    ultima   = db.get("ultima_actualizacion","Nunca")
+    pick_history = st.session_state.get("pick_history", [])
     st.caption(f"🕐 Última actualización: {ultima}")
 
-    # ── PICK HISTORY ──
-    pick_history = st.session_state.get("pick_history", [])
+    # ── Global KPIs ──
+    total_g=0; total_f=0; total_p=0
+    for pk in pick_history:
+        r = pk.get("result","⏳")
+        if r=="✅": total_g+=1
+        elif r=="❌": total_f+=1
+        else: total_p+=1
+    total_jg = total_g+total_f
+    pct = round(total_g/total_jg*100) if total_jg>0 else 0
+    roi = sum((float(pk.get("odd",0))-1) for pk in pick_history if pk.get("result")=="✅") - \
+          sum(1 for pk in pick_history if pk.get("result")=="❌")
 
-    # ══════════════════════════════════════════════════════
-    # SECCIÓN 1 — MIS PICKS (auditoría automática de Villar)
-    # ══════════════════════════════════════════════════════
-    st.markdown("<div class='shdr'>🎯 Mis Picks — Auditoría Villar</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px'>"
+        f"<div class='mbox'><div class='mval' style='color:#00ff88'>{total_g}</div><div class='mlbl'>✅ Ganados</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#ff4444'>{total_f}</div><div class='mlbl'>❌ Fallados</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#FFD700'>{total_p}</div><div class='mlbl'>⏳ Pend.</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#00ccff'>{pct}%</div><div class='mlbl'>Acierto</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:{'#00ff88' if roi>=0 else '#ff4444'}'>{roi:+.1f}u</div><div class='mlbl'>ROI</div></div>"
+        f"</div>", unsafe_allow_html=True)
 
-    if not pick_history:
-        st.info("🤖 Villar: No tienes picks guardados aún. Abre un partido → 💾 Guardar Pick.")
-    else:
-        # Auto-audit: match each pick to a result
-        auditados = []
-        for pk in reversed(pick_history[-50:]):  # últimos 50
-            resultado_partido = _villar_find_result(pk, partidos)
-            if resultado_partido:
-                verd, vcol, expl = _villar_match_pick_to_result(pk, resultado_partido)
-                # Auto-update result if still pending
-                if pk.get("result") == "⏳" and verd in ("✅ GANÓ","❌ PERDIÓ"):
-                    pk["result"] = "✅" if "GANÓ" in verd else "❌"
-            else:
-                verd  = pk.get("result","⏳")
-                vcol  = "#00ff88" if verd=="✅" else ("#ff4444" if verd=="❌" else "#555")
-                expl  = "Resultado pendiente"
-                resultado_partido = None
-            auditados.append((pk, resultado_partido, verd, vcol, expl))
+    # ════════════════════════════════════════════════════════
+    # RESULTADOS POR DEPORTE — pick de mayor prob + auditoría
+    # ════════════════════════════════════════════════════════
+    st.markdown("<div class='shdr'>📊 Resultados + Pick del Modelo Auditado</div>", unsafe_allow_html=True)
 
-        # KPI row
-        ganados  = sum(1 for _,_,v,_,_ in auditados if "GANÓ" in v or v=="✅")
-        perdidos = sum(1 for _,_,v,_,_ in auditados if "PERDIÓ" in v or v=="❌")
-        pend     = sum(1 for _,_,v,_,_ in auditados if "pend" in v.lower() or v=="⏳")
-        total_jg = ganados + perdidos
-        pct      = round(ganados/total_jg*100) if total_jg > 0 else 0
-        roi      = 0.0
-        for pk,_,v,_,_ in auditados:
-            odd = float(pk.get("odd",0))
-            if "GANÓ" in v or v=="✅":
-                roi += (odd - 1) if odd > 1 else 0
-            elif "PERDIÓ" in v or v=="❌":
-                roi -= 1
-
-        st.markdown(
-            f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px'>"
-            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{ganados}</div><div class='mlbl'>✅ Ganados</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#ff4444'>{perdidos}</div><div class='mlbl'>❌ Perdidos</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#FFD700'>{pend}</div><div class='mlbl'>⏳ Pendientes</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{pct}%</div><div class='mlbl'>Acierto</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:{'#00ff88' if roi>=0 else '#ff4444'}'>{roi:+.1f}u</div><div class='mlbl'>ROI</div></div>"
-            f"</div>", unsafe_allow_html=True)
-
-        # Picks list
-        for pk, partido_db, verd, vcol, expl in auditados:
-            sh = partido_db.get("score_h",-1) if partido_db else -1
-            sa = partido_db.get("score_a",-1) if partido_db else -1
-            home_n = pk.get("home","?"); away_n = pk.get("away","?")
-            pick_lbl = pk.get("pick","?")
-            prob_pct = pk.get("prob",0)
-            if isinstance(prob_pct, float) and prob_pct <= 1: prob_pct *= 100
-            odd_v    = pk.get("odd",0)
-            fecha_pk = pk.get("date", pk.get("fecha",""))[:10]
-            league   = pk.get("league","")
-
-            score_txt = f"{sh}–{sa}" if sh >= 0 else "⏳"
-            if sh >= 50:  score_txt = f"{sh}–{sa} pts"  # NBA
-
-            # Color border by result
-            brd = vcol if verd not in ("❓ No verificable","❓") else "#333"
-
-            st.markdown(
-                f"<div style='background:#0a0a1e;border-radius:12px;padding:12px 14px;"
-                f"margin:5px 0;border-left:4px solid {brd}'>"
-                # Header row: result + teams
-                f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px'>"
-                f"<div>"
-                f"<div style='font-size:.72rem;color:#555;margin-bottom:2px'>{fecha_pk} · {league}</div>"
-                f"<div style='font-size:.95rem;font-weight:700;color:#eee'>{home_n} <span style='color:#333'>vs</span> {away_n}</div>"
-                f"</div>"
-                f"<div style='text-align:right'>"
-                f"<div style='font-size:1.5rem;font-weight:900;color:{brd}'>{score_txt}</div>"
-                f"<div style='font-size:.68rem;color:#555'>Score real</div>"
-                f"</div>"
-                f"</div>"
-                # Pick details
-                f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:8px'>"
-                f"<div style='background:#07071a;border-radius:7px;padding:4px 10px'>"
-                f"<span style='font-size:.7rem;color:#555'>PICK</span> "
-                f"<span style='font-size:.82rem;color:#fff;font-weight:700'>{pick_lbl}</span></div>"
-                f"<div style='background:#07071a;border-radius:7px;padding:4px 10px'>"
-                f"<span style='font-size:.7rem;color:#555'>PROB</span> "
-                f"<span style='font-size:.82rem;color:#00ccff;font-weight:700'>{prob_pct:.0f}%</span></div>"
-                + (f"<div style='background:#07071a;border-radius:7px;padding:4px 10px'>"
-                   f"<span style='font-size:.7rem;color:#555'>CUOTA</span> "
-                   f"<span style='font-size:.82rem;color:#FFD700;font-weight:700'>{odd_v:.2f}</span></div>"
-                   if odd_v > 1 else "")
-                + f"</div>"
-                # Villar verdict
-                f"<div style='margin-top:8px;padding:6px 10px;border-radius:7px;"
-                f"background:{vcol}18;border:1px solid {vcol}44'>"
-                f"<span style='font-size:.78rem;font-weight:700;color:{vcol}'>🤖 VILLAR: {verd}</span>"
-                f"<span style='font-size:.72rem;color:#555;margin-left:8px'>{expl}</span>"
-                f"</div>"
-                f"</div>", unsafe_allow_html=True)
-
-    st.markdown("<div style='margin:20px 0 8px;border-top:1px solid #1a1a40'></div>", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════════
-    # SECCIÓN 2 — RESULTADOS POR DEPORTE (todos los partidos terminados)
-    # ══════════════════════════════════════════════════════
-    st.markdown("<div class='shdr'>📊 Resultados Finales</div>", unsafe_allow_html=True)
-
-    if not partidos:
-        st.info("🤖 Villar: No hay resultados. Haz clic en 'Limpiar + Auditar'.")
-        return
-
-    rt1, rt2, rt3 = st.tabs(["⚽ Fútbol", "🏀 NBA", "🎾 Tenis"])
+    rt1,rt2,rt3 = st.tabs(["⚽ Fútbol","🏀 NBA","🎾 Tenis"])
 
     for tab_obj, sport_key, sport_emoji in [
         (rt1,"futbol","⚽"), (rt2,"nba","🏀"), (rt3,"tenis","🎾")
@@ -2849,31 +2788,25 @@ def render_resultados_tab():
                                   key=lambda x:x.get("fecha",""), reverse=True)
             en_juego    = [p for p in sport_p if p.get("state")=="in"]
 
-            # KPIs
-            st.markdown(
-                f"<div style='display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:12px'>"
-                f"<div class='mbox'><div class='mval' style='color:#00ff88'>{len(finalizados)}</div><div class='mlbl'>Terminados</div></div>"
-                f"<div class='mbox'><div class='mval' style='color:#ff9500'>{len(en_juego)}</div><div class='mlbl'>En Vivo</div></div>"
-                f"</div>", unsafe_allow_html=True)
-
             # En vivo
-            if en_juego:
-                for p in en_juego:
-                    sh=p.get("score_h",-1); sa=p.get("score_a",-1)
-                    sc = f"{sh}–{sa}" if sh>=0 else "🔴"
-                    st.markdown(
-                        f"<div style='display:flex;justify-content:space-between;padding:8px 12px;"
-                        f"background:#1a0800;border-radius:10px;margin:3px 0;border-left:3px solid #ff9500'>"
-                        f"<div><b>{p.get('home',p.get('p1','?'))}</b> <span style='color:#333'>vs</span> <b>{p.get('away',p.get('p2','?'))}</b>"
-                        f"<div style='font-size:.7rem;color:#555'>{p.get('liga',p.get('tour',''))} · 🔴 EN VIVO</div></div>"
-                        f"<div style='font-size:1.5rem;font-weight:900;color:#ff9500'>{sc}</div>"
-                        f"</div>", unsafe_allow_html=True)
+            for p in en_juego:
+                sh=p.get("score_h",-1); sa=p.get("score_a",-1)
+                sc=f"{sh}–{sa}" if sh>=0 else "?"
+                st.markdown(
+                    f"<div style='display:flex;justify-content:space-between;padding:8px 12px;"
+                    f"background:#1a0800;border-radius:10px;margin:3px 0;border-left:3px solid #ff9500'>"
+                    f"<div style='font-size:.85rem'><b>{p.get('home',p.get('p1','?'))}</b> vs "
+                    f"<b>{p.get('away',p.get('p2','?'))}</b> "
+                    f"<span style='font-size:.7rem;color:#ff9500'>🔴 EN VIVO</span></div>"
+                    f"<div style='font-size:1.4rem;font-weight:900;color:#ff9500'>{sc}</div>"
+                    f"</div>", unsafe_allow_html=True)
 
             if not finalizados:
-                st.info(f"🤖 Villar: Sin partidos {sport_emoji} finalizados. Haz clic en 'Limpiar + Auditar'.")
+                st.info(f"Sin resultados {sport_emoji}. Haz clic en '🧹 Auditar todo'.")
                 continue
 
-            # Finalizados agrupados por fecha → liga
+            # Contadores sport
+            ok_sp=0; fail_sp=0
             por_fecha = defaultdict(list)
             for p in finalizados: por_fecha[p.get("fecha","?")].append(p)
             dias_  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
@@ -2882,63 +2815,1097 @@ def render_resultados_tab():
             for fecha in sorted(por_fecha.keys(), reverse=True):
                 dia_ps = por_fecha[fecha]
                 try:
-                    d = datetime.strptime(fecha,"%Y-%m-%d")
-                    dlbl = f"📅 {dias_[d.weekday()]} {d.day} {meses_[d.month]}"
-                except: dlbl = f"📅 {fecha}"
-                is_today = fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
+                    d=datetime.strptime(fecha,"%Y-%m-%d")
+                    dlbl=f"📅 {dias_[d.weekday()]} {d.day} {meses_[d.month]}"
+                except: dlbl=f"📅 {fecha}"
+                is_today = fecha==datetime.now(CDMX).strftime("%Y-%m-%d")
 
                 with st.expander(f"{dlbl} · {len(dia_ps)} partidos", expanded=is_today):
                     por_liga = defaultdict(list)
-                    for p in dia_ps: por_liga[p.get("liga",p.get("tour","Sin liga"))].append(p)
+                    for p in dia_ps:
+                        por_liga[p.get("liga",p.get("tour","Sin liga"))].append(p)
+
                     for liga, lps in sorted(por_liga.items()):
-                        st.markdown(f"<div style='font-size:.7rem;font-weight:700;color:#FFD700;"
-                                    f"text-transform:uppercase;letter-spacing:.1em;margin:10px 0 5px'>"
-                                    f"{sport_emoji} {liga}</div>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
+                            f"text-transform:uppercase;letter-spacing:.1em;margin:10px 0 5px'>"
+                            f"{sport_emoji} {liga}</div>", unsafe_allow_html=True)
+
                         for p in lps:
                             sh=p.get("score_h",-1); sa=p.get("score_a",-1)
-                            if sh < 0: continue
-                            home_n = p.get("home", p.get("p1","?"))
-                            away_n = p.get("away", p.get("p2","?"))
+                            if sh<0: continue
+                            home_n=p.get("home",p.get("p1","?")); away_n=p.get("away",p.get("p2","?"))
 
-                            if sport_key in ("futbol","tenis"):
-                                won_h=sh>sa; won_a=sa>sh; draw=sh==sa and sport_key=="futbol"
+                            won_h=sh>sa; won_a=sa>sh; draw=(sh==sa and sport_key=="futbol")
+                            if sport_key=="futbol":
                                 hc="#00ff88" if won_h else ("#FFD700" if draw else "#aaa")
                                 ac="#00ff88" if won_a else ("#FFD700" if draw else "#aaa")
-                            else:  # nba
-                                won_h=sh>sa; won_a=sa>sh; draw=False
+                            else:
                                 hc="#00ff88" if won_h else "#aaa"
                                 ac="#00ff88" if won_a else "#aaa"
 
-                            # ¿Hay un pick guardado para este partido?
-                            related_picks = [pk for pk in pick_history
-                                            if _villar_find_result(pk,[p]) is not None]
+                            # 1. Pick manual guardado por usuario
+                            manual_pks = [pk for pk in pick_history
+                                          if _villar_find_result(pk,[p]) is not None]
+                            # 2. Pick automático del modelo (si no hay manual)
+                            auto_pk = _villar_auto_pick(p) if not manual_pks else None
+
+                            pick_rows = []
+                            for pk in manual_pks:
+                                vd,vc,ex = _villar_match_pick_to_result(pk, p)
+                                prob_v = pk.get("prob",0)
+                                if prob_v<=1: prob_v*=100
+                                pick_rows.append({
+                                    "label": pk.get("pick","?"),
+                                    "prob": prob_v, "odd": pk.get("odd",0),
+                                    "src": "💾 Tu pick", "verd": vd, "col": vc, "expl": ex,
+                                })
+                                if "GANÓ" in vd: ok_sp+=1
+                                elif "FALLÓ" in vd: fail_sp+=1
+
+                            if auto_pk:
+                                vd,vc,ex = _villar_match_pick_to_result(auto_pk, p)
+                                pick_rows.append({
+                                    "label": auto_pk.get("pick","?"),
+                                    "prob": auto_pk.get("prob",0)*100 if auto_pk.get("prob",0)<=1 else auto_pk.get("prob",0),
+                                    "odd": 0, "src": auto_pk.get("src","🤖 Modelo"),
+                                    "verd": vd, "col": vc, "expl": ex,
+                                })
+                                if "GANÓ" in vd: ok_sp+=1
+                                elif "FALLÓ" in vd: fail_sp+=1
+
+                            # Render card
+                            has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
+                            has_fail = any("FALLÓ" in r["verd"] for r in pick_rows)
+                            border_c = "#00ff88" if has_win else ("#ff4444" if has_fail else "#1a1a40")
+
                             pick_html = ""
-                            for pk in related_picks:
-                                vd, vc, ex = _villar_match_pick_to_result(pk, p)
-                                brd2 = vc if vd not in ("❓ No verificable","❓") else "#333"
+                            for r in pick_rows:
+                                icon = "✅" if "GANÓ" in r["verd"] else ("❌" if "FALLÓ" in r["verd"] else "⏳")
+                                bg   = "#00ff8810" if icon=="✅" else ("#ff444410" if icon=="❌" else "#1a1a3a")
+                                bd   = r["col"] if icon in ("✅","❌") else "#333"
+                                od   = f" · @{r['odd']:.2f}" if r.get("odd",0)>1 else ""
                                 pick_html += (
-                                    f"<div style='margin-top:6px;padding:5px 10px;border-radius:7px;"
-                                    f"background:{vc}18;border:1px solid {vc}44;display:flex;justify-content:space-between'>"
-                                    f"<span style='font-size:.72rem;font-weight:700;color:{vc}'>🤖 {vd}</span>"
-                                    f"<span style='font-size:.7rem;color:#555'>{pk.get('pick','')} · {ex}</span>"
+                                    f"<div style='margin-top:5px;padding:6px 10px;border-radius:8px;"
+                                    f"background:{bg};border:1px solid {bd};"
+                                    f"display:flex;align-items:center;gap:8px'>"
+                                    f"<div style='font-size:1.3rem'>{icon}</div>"
+                                    f"<div style='flex:1'>"
+                                    f"<div style='font-size:.8rem;font-weight:700;color:{r['col']}'>{r['label']}{od}</div>"
+                                    f"<div style='font-size:.65rem;color:#555'>{r['src']} · {r['expl']}</div>"
+                                    f"</div>"
+                                    f"<div style='font-size:.75rem;font-weight:900;color:{r['col']}'>"
+                                    f"{r['verd'].replace('✅ ','').replace('❌ ','')}</div>"
                                     f"</div>"
                                 )
 
+                            sc_fmt = f"{sh}–{sa}" if sport_key!="nba" else f"{sh}–{sa} pts"
                             st.markdown(
-                                f"<div style='background:#0a0a1e;border-radius:10px;padding:10px 12px;"
-                                f"margin:4px 0;border:1px solid {'#00ff8833' if related_picks else '#1a1a40'}'>"
-                                f"<div style='display:grid;grid-template-columns:1fr 80px 1fr;gap:6px;align-items:center'>"
+                                f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
+                                f"margin:4px 0;border:1px solid {border_c}'>"
+                                f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
+                                f"gap:4px;align-items:center'>"
                                 f"<div style='text-align:right'><span style='color:{hc};"
                                 f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
                                 f"<div style='text-align:center;background:#07071a;border-radius:8px;padding:4px 6px'>"
                                 f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
-                                f"<span style='color:#333;font-size:.9rem'> – </span>"
+                                f"<span style='color:#333'> – </span>"
                                 f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
                                 f"<div style='text-align:left'><span style='color:{ac};"
                                 f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
                                 f"</div>"
                                 f"{pick_html}"
                                 f"</div>", unsafe_allow_html=True)
+
+            total_sp = ok_sp+fail_sp
+            pct_sp = round(ok_sp/total_sp*100) if total_sp>0 else 0
+            if total_sp>0:
+                st.markdown(
+                    f"<div style='background:#07071a;border-radius:10px;padding:10px 14px;"
+                    f"margin-top:10px;display:flex;gap:16px;align-items:center'>"
+                    f"<span style='color:#00ff88;font-weight:900'>{ok_sp}✅</span>"
+                    f"<span style='color:#ff4444;font-weight:900'>{fail_sp}❌</span>"
+                    f"<span style='color:#00ccff;font-weight:900'>{pct_sp}% acierto {sport_emoji}</span>"
+                    f"</div>", unsafe_allow_html=True)
+
+    # Guardar en session para KING RONGO
+    st.session_state["_villar_summary"] = {
+        "ok": total_g, "fail": total_f, "pct": pct, "roi": roi
+    }
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# 👑 KING RONGO — El Cerebro Supremo de The Gamblers Layer
+# Meta-bot que supervisa Einstein + Villar + todos los modelos.
+# Une fuerzas, resuelve contradicciones, da EL pick del día.
+# ══════════════════════════════════════════════════════════════════
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 👑 KING RONGO — EL CEREBRO SUPREMO
+# Meta-sistema de inteligencia que unifica todos los modelos,
+# gestiona el bankroll, aprende de los resultados, y da
+# EL PICK DEFINITIVO DEL DÍA con máxima confianza.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Constantes de confianza King Rongo ──
+_KR_DIAMOND_THRESHOLD = 0.68   # pick diamante
+_KR_GOLD_THRESHOLD    = 0.62   # pick oro
+_KR_MIN_EDGE          = 0.03   # edge mínimo para recomendar
+_KR_CONFLICT_SPREAD   = 0.22   # dispersión modelos → conflicto
+
+
+def _kr_edge_score(prob, odd):
+    """Edge real = prob - 1/odd. Si no hay odd, edge simulado."""
+    if odd > 1.01:
+        return prob - (1.0 / odd)
+    # Sin cuota: edge implícito vs 50-50
+    return prob - 0.50
+
+
+def _kr_kelly(prob, odd, max_kelly=0.08):
+    """Kelly fraction, capped. Retorna como % entero."""
+    if odd <= 1.01:
+        return 0.0
+    k = (prob * (odd - 1) - (1 - prob)) / (odd - 1)
+    return round(max(0.0, min(k, max_kelly)) * 100, 1)
+
+
+def _kr_confidence_label(prob, edge, score):
+    """Devuelve (emoji, label, color) según confianza."""
+    if prob >= _KR_DIAMOND_THRESHOLD and edge >= 0.06 and score >= 8:
+        return "💎", "DIAMANTE", "#FFD700"
+    elif prob >= _KR_GOLD_THRESHOLD and edge >= _KR_MIN_EDGE and score >= 6:
+        return "🔥", "ALTA", "#00ff88"
+    elif prob >= 0.57 and score >= 4:
+        return "⚡", "MEDIA", "#00ccff"
+    elif prob >= 0.52:
+        return "⚠️", "BAJA", "#ff9500"
+    else:
+        return "🔻", "NO APOSTAR", "#ff4444"
+
+
+def _kr_score_candidate(c):
+    """
+    Puntuación compuesta 0-10 para elegir EL pick del día.
+    Combina: edge, prob, kelly, consenso de modelos, rareza de mercado.
+    """
+    score = 0.0
+    prob  = c.get("prob", 0)
+    edge  = c.get("edge", 0)
+    spread= c.get("model_spread", 50)  # dispersión entre modelos (pp)
+    kelly = c.get("kelly_pct", 0)
+
+    # Componentes
+    score += min(prob * 6, 4.5)             # 0-4.5: probabilidad base
+    score += min(max(edge * 30, 0), 3.0)    # 0-3.0: edge real
+    score -= min(spread / 20, 1.5)          # penalizar contradicción
+    score += min(kelly / 5, 1.5)            # 0-1.5: kelly positivo
+    if c.get("contradiccion"): score -= 2.5  # penalización fuerte
+
+    return round(max(0, min(score, 10)), 2)
+
+
+def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
+    """
+    Motor central de King Rongo.
+    Escanea ⚽🏀🎾, corre todos los modelos, calcula edge real,
+    detecta contradicciones, puntúa cada candidato y elige EL pick del día.
+
+    Retorna:
+        el_pick      — candidato con mayor score compuesto (sin conflicto)
+        contradicciones — candidatos con modelos en conflicto
+        todos        — lista completa ordenada por score (max 20)
+    """
+    all_candidates = []
+
+    # ════════════════════════════════════════
+    # ⚽ FÚTBOL — xG + Ensemble 4 modelos
+    # ════════════════════════════════════════
+    try:
+        for m in (matches_fut or [])[:35]:
+            if m.get("state") != "pre": continue
+            try:
+                hform = get_form(m["home_id"], m["slug"]) or []
+                aform = get_form(m["away_id"], m["slug"]) or []
+                hxg   = xg_weighted(hform, is_home=True,
+                                    odds_prior=1/m["odd_h"] if m.get("odd_h",0)>1 else 0) \
+                        if hform else xg_from_record(m.get("home_rec","5-5-5"), True)
+                axg   = xg_weighted(aform, is_home=False,
+                                    odds_prior=1/m["odd_a"] if m.get("odd_a",0)>1 else 0) \
+                        if aform else xg_from_record(m.get("away_rec","5-5-5"), False)
+                h2h   = get_h2h(m["home_id"], m["away_id"], m["slug"], m["home"], m["away"])
+                h2s   = h2h_stats(h2h, m["home"], m["away"])
+                mc    = ensemble_football(hxg, axg, h2s, hform, aform,
+                                          m["home_id"], m["away_id"],
+                                          odd_h=m.get("odd_h",0),
+                                          odd_a=m.get("odd_a",0),
+                                          odd_d=m.get("odd_d",0))
+                dp    = diamond_engine(mc, h2s, hform, aform)
+
+                # Todos los mercados evaluados
+                markets = [
+                    (f"🏠 {m['home']} gana",          dp["ph"],         m.get("odd_h",0), "1X2"),
+                    (f"✈️  {m['away']} gana",           dp["pa"],         m.get("odd_a",0), "1X2"),
+                    ("🤝 Empate",                       dp["pd"],         m.get("odd_d",0), "1X2"),
+                    (f"🔵 {m['home'][:10]} o Empate",   dp["ph"]+dp["pd"],0,                "DC"),
+                    (f"🟣 {m['away'][:10]} o Empate",   dp["pd"]+dp["pa"],0,                "DC"),
+                    ("⚽ Over 2.5",                     mc["o25"],         0,               "O/U"),
+                    ("⚽ Under 2.5",                    1-mc["o25"],       0,               "O/U"),
+                    ("⚡ Ambos Anotan",                 mc["btts"],        0,               "BTTS"),
+                ]
+                # Sólo mercados con prob ≥ 0.52
+                markets = [(l,p,o,t) for l,p,o,t in markets if p >= 0.52]
+                if not markets: continue
+
+                best = max(markets, key=lambda x: _kr_edge_score(x[1], x[2]) if x[2]>1 else x[1])
+                label, prob, odd, mkt_type = best
+
+                edge  = _kr_edge_score(prob, odd)
+                kelly = _kr_kelly(prob, odd)
+
+                # Dispersión entre 4 modelos (pp de prob local)
+                model_vals = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
+                              mc.get("elo_ph",0.5), mc.get("h2h_ph",0.5)]
+                model_spread = (max(model_vals) - min(model_vals)) * 100
+                contradiccion = model_spread > (_KR_CONFLICT_SPREAD * 100)
+
+                # Razon textual
+                consensus = mc.get("consensus","")
+                conf_emoji, conf_label, conf_color = _kr_confidence_label(
+                    prob, edge,
+                    dp.get("conf_score", 5 if not contradiccion else 3)
+                )
+
+                cand = {
+                    "deporte": "⚽ Fútbol", "sport": "futbol",
+                    "label":   f"{m['home']} vs {m['away']}",
+                    "liga":    m.get("league",""), "hora": m.get("hora",""),
+                    "pick":    label, "prob": prob, "odd": odd,
+                    "edge":    edge,  "kelly_pct": kelly,
+                    "mkt_type": mkt_type,
+                    "contradiccion": contradiccion,
+                    "model_spread":  round(model_spread, 1),
+                    "conf_emoji": conf_emoji, "conf_label": conf_label,
+                    "conf_color": conf_color,
+                    "reasoning": f"xG {hxg:.2f}/{axg:.2f} · {consensus} · {dp.get('conf','')}",
+                    "match": m,
+                    "models": {
+                        "Dixon-Coles": round(mc.get("dc_ph",0)*100,1),
+                        "Poisson BV":  round(mc.get("bvp_ph",0)*100,1),
+                        "Elo":         round(mc.get("elo_ph",0)*100,1),
+                        "H2H":         round(mc.get("h2h_ph",0)*100,1),
+                    },
+                    "hxg": hxg, "axg": axg,
+                }
+                cand["score"] = _kr_score_candidate(cand)
+                all_candidates.append(cand)
+            except: continue
+    except: pass
+
+    # ════════════════════════════════════════
+    # 🏀 NBA — Net Rating + O/U + ML
+    # ════════════════════════════════════════
+    try:
+        for g in (nba_games or [])[:20]:
+            if g.get("state") != "pre": continue
+            try:
+                res   = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                p_h   = res.get("p_h_win", 0.55)
+                p_a   = 1 - p_h
+                line  = res["line"]
+
+                markets = [
+                    (f"🔥 Over {line}",   res["p_over"],  0,               "O/U"),
+                    (f"❄️  Under {line}",  res["p_under"], 0,               "O/U"),
+                    (f"🏠 {g['home']}",    p_h,            g.get("odd_h",0),"ML"),
+                    (f"✈️  {g['away']}",    p_a,            g.get("odd_a",0),"ML"),
+                ]
+                markets = [(l,p,o,t) for l,p,o,t in markets if p >= 0.52]
+                if not markets: continue
+
+                best = max(markets, key=lambda x: _kr_edge_score(x[1], x[2]) if x[2]>1 else x[1])
+                label, prob, odd, mkt_type = best
+
+                edge  = _kr_edge_score(prob, odd)
+                kelly = _kr_kelly(prob, odd)
+
+                # Consenso O/U: divergencia si muy parejo
+                ou_div      = abs(res["p_over"] - res["p_under"])
+                contradiccion = ou_div < 0.10
+                model_spread  = round((1 - ou_div) * 50, 1)
+
+                conf_emoji, conf_label, conf_color = _kr_confidence_label(prob, edge, 6 if not contradiccion else 3)
+
+                net_h = res.get("net_h", 0); net_a = res.get("net_a", 0)
+                cand = {
+                    "deporte": "🏀 NBA", "sport": "nba",
+                    "label":   f"{g['away']} @ {g['home']}",
+                    "liga":    "NBA", "hora": g.get("hora",""),
+                    "pick":    label, "prob": prob, "odd": odd,
+                    "edge":    edge,  "kelly_pct": kelly,
+                    "mkt_type": mkt_type,
+                    "contradiccion": contradiccion,
+                    "model_spread":  model_spread,
+                    "conf_emoji": conf_emoji, "conf_label": conf_label,
+                    "conf_color": conf_color,
+                    "reasoning": f"Proy: {res['proj']} pts · NetRtg {net_h:+.1f}/{net_a:+.1f}",
+                    "match": g,
+                    "models": {
+                        "Over%":   round(res["p_over"]*100,1),
+                        "Under%":  round(res["p_under"]*100,1),
+                        "ML Home": round(p_h*100,1),
+                        "ML Away": round(p_a*100,1),
+                    },
+                }
+                cand["score"] = _kr_score_candidate(cand)
+                all_candidates.append(cand)
+            except: continue
+    except: pass
+
+    # ════════════════════════════════════════
+    # 🎾 TENIS — Weibull + Elo + Surface
+    # ════════════════════════════════════════
+    _surface_map = {
+        "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+        "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+        "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
+        "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
+        "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard",
+    }
+    try:
+        for m in (ten_matches or [])[:40]:
+            if m.get("state") != "pre": continue
+            try:
+                torneo   = m.get("torneo", m.get("tour",""))
+                surface  = next((v for k,v in _surface_map.items()
+                                 if k.lower() in torneo.lower()), "hard")
+                tm  = tennis_model(m["rank1"], m["rank2"],
+                                   m.get("odd_1",0), m.get("odd_2",0), surface)
+                fav = m["p1"] if tm["p1"] >= tm["p2"] else m["p2"]
+                und = m["p2"] if fav == m["p1"] else m["p1"]
+                prob = max(tm["p1"], tm["p2"])
+                odd  = m.get("odd_1",0) if fav==m["p1"] else m.get("odd_2",0)
+
+                edge  = _kr_edge_score(prob, odd)
+                kelly = _kr_kelly(prob, odd)
+
+                spread = abs(tm["p1"] - tm["p2"]) * 100
+                contradiccion = spread < 5   # muy parejo → riesgo
+
+                conf_emoji, conf_label, conf_color = _kr_confidence_label(prob, edge, 7 if not contradiccion else 2)
+
+                # Rank difference bonus
+                rank_diff = abs(m.get("rank1",200) - m.get("rank2",200))
+                reasoning = (f"Rk #{m.get('rank1','?')} vs #{m.get('rank2','?')} · "
+                             f"{surface.title()} · {m.get('tour','')}")
+
+                cand = {
+                    "deporte": "🎾 Tenis", "sport": "tenis",
+                    "label":   f"{m['p1']} vs {m['p2']}",
+                    "liga":    torneo, "hora": m.get("hora",""),
+                    "pick":    f"🎾 {fav} gana", "prob": prob,
+                    "odd":     odd,   "edge": edge, "kelly_pct": kelly,
+                    "mkt_type": "ML",
+                    "contradiccion": contradiccion,
+                    "model_spread":  round(spread, 1),
+                    "conf_emoji": conf_emoji, "conf_label": conf_label,
+                    "conf_color": conf_color,
+                    "reasoning": reasoning,
+                    "match": m,
+                    "models": {
+                        "Weibull": round(tm["p1"]*100,1),
+                        "Surface": round(tm.get("p1_surf",tm["p1"])*100,1),
+                        "Rank":    round(min(100, max(0, 50 + rank_diff*0.15)),1),
+                        "Odds":    round((1/odd*100) if odd>1 else 50, 1),
+                    },
+                }
+                cand["score"] = _kr_score_candidate(cand)
+                all_candidates.append(cand)
+            except: continue
+    except: pass
+
+    # ── Ordenar: primero por score desc ──
+    all_candidates.sort(key=lambda x: -x.get("score",0))
+    contradicciones = [c for c in all_candidates if c.get("contradiccion")]
+
+    # El pick del día: mayor score sin contradicción y edge positivo
+    el_pick = next(
+        (c for c in all_candidates
+         if not c.get("contradiccion") and c.get("edge",0) >= _KR_MIN_EDGE and c.get("prob",0) >= 0.55),
+        None
+    )
+    if not el_pick:
+        # Fallback: mayor score aunque sea debil
+        el_pick = next((c for c in all_candidates if not c.get("contradiccion")), None)
+    if not el_pick and all_candidates:
+        el_pick = all_candidates[0]
+
+    return el_pick, contradicciones, all_candidates[:20]
+
+
+def _king_rongo_bankroll_advice(pick_history):
+    """
+    Analiza el historial completo y calcula:
+    - racha actual (pos/neg)
+    - % acierto global y últimos 10
+    - Kelly recomendado ajustado a momento
+    - Nivel de riesgo
+    """
+    if not pick_history:
+        return {
+            "kelly_rec": 2.0, "racha": 0, "racha_sign": "─",
+            "consejo": "Sin historial — empieza con unidades mínimas",
+            "color": "#555", "pct": 0, "pct10": 0, "wins": 0, "total": 0,
+            "risk_level": "neutro", "roi": 0.0,
+        }
+
+    settled = [p for p in pick_history if p.get("result") in ("✅","❌")]
+    wins    = sum(1 for p in settled if p.get("result") == "✅")
+    total   = len(settled)
+    pct     = round(wins / total * 100) if total > 0 else 0
+
+    # Últimos 10
+    last10   = settled[-10:]
+    wins10   = sum(1 for p in last10 if p.get("result") == "✅")
+    pct10    = round(wins10 / len(last10) * 100) if last10 else 0
+
+    # Racha actual
+    racha = 0; sign = None
+    for pk in reversed(settled):
+        r = pk.get("result")
+        if sign is None: sign = r
+        if r == sign: racha += 1
+        else: break
+    racha_signed = racha if sign == "✅" else -racha
+
+    # ROI
+    roi = 0.0
+    for pk in settled:
+        o = float(pk.get("odd", 0))
+        if pk.get("result") == "✅": roi += (o - 1) if o > 1 else 0.5
+        else: roi -= 1.0
+
+    # Kelly recomendado según momento
+    if racha_signed <= -4:
+        kelly_rec  = 1.0
+        consejo    = "🔴 STOP — racha negativa severa. Pausa recomendada."
+        risk_level = "alto_peligro"
+        color      = "#ff4444"
+    elif racha_signed <= -2:
+        kelly_rec  = 1.5
+        consejo    = "🟠 Reduce exposición — estás en racha negativa."
+        risk_level = "reducir"
+        color      = "#ff9500"
+    elif racha_signed >= 5:
+        kelly_rec  = 4.5
+        consejo    = "🟢 Racha excelente — mantén disciplina, no te confíes."
+        risk_level = "optimo"
+        color      = "#00ff88"
+    elif racha_signed >= 3:
+        kelly_rec  = 3.5
+        consejo    = "🟢 Buena racha — puedes subir ligeramente."
+        risk_level = "bueno"
+        color      = "#00ff88"
+    elif pct10 >= 70:
+        kelly_rec  = 3.0
+        consejo    = "🟢 Últimos 10 partidos excelentes — sigue así."
+        risk_level = "bueno"
+        color      = "#00ff88"
+    elif pct10 < 40 and len(last10) >= 5:
+        kelly_rec  = 1.5
+        consejo    = "🟡 Forma reciente floja — apuesta con cuidado."
+        risk_level = "reducir"
+        color      = "#FFD700"
+    elif pct >= 60:
+        kelly_rec  = 3.0
+        consejo    = "🟢 Buen rendimiento histórico — mantén el ritmo."
+        risk_level = "bueno"
+        color      = "#00ff88"
+    else:
+        kelly_rec  = 2.0
+        consejo    = "⚪ Momento neutro — apuesta estándar."
+        risk_level = "neutro"
+        color      = "#aaa"
+
+    return {
+        "kelly_rec": kelly_rec, "racha": racha_signed,
+        "racha_sign": "▲" if racha_signed > 0 else ("▼" if racha_signed < 0 else "─"),
+        "consejo": consejo, "color": color, "pct": pct, "pct10": pct10,
+        "wins": wins, "wins10": wins10, "total": total,
+        "risk_level": risk_level, "roi": round(roi, 1),
+    }
+
+
+def _kr_render_pick_card(el_pick, bk, todos, rank=None):
+    """Renderiza la card del pick del día con todos los detalles."""
+    prob_pct  = el_pick["prob"] * 100
+    edge_pct  = el_pick["edge"] * 100
+    odd_txt   = f"@{el_pick['odd']:.2f}" if el_pick.get("odd",0) > 1 else "S/C"
+    kelly     = el_pick.get("kelly_pct", bk["kelly_rec"])
+    units     = round(kelly / 100 * 10, 2)  # sobre 10 unidades base
+    conf_e    = el_pick.get("conf_emoji","⚡")
+    conf_l    = el_pick.get("conf_label","")
+    conf_c    = el_pick.get("conf_color","#00ccff")
+
+    glow_color = conf_c
+
+    # Header crown
+    crown_html = (
+        "<div style='position:absolute;top:-1px;left:50%;transform:translateX(-50%);"
+        "background:linear-gradient(135deg,#1a0a00,#0d0030);padding:3px 16px;"
+        "border-radius:0 0 12px 12px;border:1px solid #FFD70055;border-top:none'>"
+        "<span style='font-size:.68rem;font-weight:900;color:#FFD700;letter-spacing:.14em'>"
+        f"👑 PICK DEL DÍA {conf_e} {conf_l}</span></div>"
+    )
+
+    # Models breakdown
+    models = el_pick.get("models", {})
+    models_html = "".join(
+        f"<div style='text-align:center;flex:1'>"
+        f"<div style='font-size:.85rem;font-weight:700;color:{conf_c}'>{v}%</div>"
+        f"<div style='font-size:.6rem;color:#444'>{k}</div></div>"
+        for k,v in models.items()
+    )
+
+    # Meter bar for prob
+    meter_w = min(int(prob_pct), 100)
+    meter_color = conf_c
+
+    card = (
+        f"<div style='position:relative;margin-top:16px;margin-bottom:14px;"
+        f"background:linear-gradient(160deg,#100020,#0a1500,#100020);"
+        f"border:2px solid {glow_color};border-radius:18px;padding:22px 18px 16px;"
+        f"box-shadow:0 0 30px {glow_color}33,inset 0 0 60px #ffffff05'>"
+        f"<div style='position:absolute;top:0;left:0;right:0;height:3px;border-radius:18px 18px 0 0;"
+        f"background:linear-gradient(90deg,transparent,{glow_color},{glow_color},transparent)'></div>"
+        f"{crown_html}"
+
+        # Match info
+        f"<div style='text-align:center;margin-top:10px;margin-bottom:12px'>"
+        f"<div style='font-size:.72rem;color:#444;letter-spacing:.08em'>"
+        f"{el_pick['deporte']} · {el_pick.get('liga','')[:30]} · {el_pick.get('hora','')} CDMX</div>"
+        f"<div style='font-size:1rem;color:#888;margin:4px 0'>{el_pick['label']}</div>"
+        f"</div>"
+
+        # PICK principal — gran
+        f"<div style='text-align:center;background:#07071a;border-radius:14px;"
+        f"padding:14px 10px;margin-bottom:14px;border:1px solid {glow_color}44'>"
+        f"<div style='font-size:2rem;font-weight:900;color:{conf_c};line-height:1.15;"
+        f"text-shadow:0 0 20px {conf_c}66'>{el_pick['pick']}</div>"
+        f"</div>"
+
+        # Stats row
+        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px'>"
+        f"<div class='mbox'>"
+        f"<div class='mval' style='color:{conf_c}'>{prob_pct:.1f}%</div>"
+        f"<div class='mlbl'>Probabilidad</div></div>"
+        f"<div class='mbox'>"
+        f"<div class='mval' style='color:{'#00ff88' if edge_pct>0 else '#ff4444'}'>{edge_pct:+.1f}%</div>"
+        f"<div class='mlbl'>Edge real</div></div>"
+        f"<div class='mbox'>"
+        f"<div class='mval' style='color:#FFD700'>{odd_txt}</div>"
+        f"<div class='mlbl'>Cuota</div></div>"
+        f"<div class='mbox'>"
+        f"<div class='mval' style='color:#00ccff'>{bk['kelly_rec']}%</div>"
+        f"<div class='mlbl'>Kelly</div></div>"
+        f"</div>"
+
+        # Meter de probabilidad
+        f"<div style='margin-bottom:12px'>"
+        f"<div style='display:flex;justify-content:space-between;margin-bottom:4px'>"
+        f"<span style='font-size:.65rem;color:#444'>Probabilidad modelo</span>"
+        f"<span style='font-size:.65rem;color:{meter_color}'>{prob_pct:.1f}%</span></div>"
+        f"<div style='background:#1a1a30;border-radius:6px;height:8px;overflow:hidden'>"
+        f"<div style='height:8px;width:{meter_w}%;border-radius:6px;"
+        f"background:linear-gradient(90deg,{meter_color}88,{meter_color})'></div></div>"
+        f"</div>"
+
+        # Models breakdown
+        f"<div style='background:#07071a;border-radius:10px;padding:10px 12px;margin-bottom:12px'>"
+        f"<div style='font-size:.6rem;color:#333;letter-spacing:.1em;margin-bottom:8px;text-transform:uppercase'>Consenso de modelos</div>"
+        f"<div style='display:flex;gap:6px;flex-wrap:wrap'>{models_html}</div>"
+        f"</div>"
+
+        # Reasoning
+        f"<div style='font-size:.72rem;color:#444;border-top:1px solid #1a1a30;padding-top:8px;line-height:1.6'>"
+        f"🧠 {el_pick.get('reasoning','')}</div>"
+
+        # Score King Rongo
+        f"<div style='position:absolute;bottom:12px;right:14px'>"
+        f"<span style='font-size:.65rem;color:#FFD70055'>Score KR: {el_pick.get('score',0):.1f}/10</span></div>"
+        f"</div>"
+    )
+    st.markdown(card, unsafe_allow_html=True)
+
+
+def _kr_render_bankroll_panel(bk):
+    """Panel de gestión de bankroll inteligente."""
+    risk_colors = {
+        "alto_peligro": "#ff4444", "reducir": "#ff9500",
+        "neutro": "#aaa", "bueno": "#00ff88", "optimo": "#FFD700"
+    }
+    rc = risk_colors.get(bk["risk_level"], "#aaa")
+
+    racha_bars = ""
+    if abs(bk["racha"]) > 0:
+        for i in range(min(abs(bk["racha"]), 8)):
+            c = "#00ff88" if bk["racha"] > 0 else "#ff4444"
+            racha_bars += f"<div style='width:10px;height:22px;background:{c};border-radius:2px;opacity:{1-i*0.08:.2f}'></div>"
+
+    trend_arrow = "▲" if bk["racha"] > 0 else ("▼" if bk["racha"] < 0 else "─")
+
+    st.markdown(
+        f"<div style='background:linear-gradient(135deg,#0a0020,#00100a);"
+        f"border:1px solid {rc}44;border-radius:14px;padding:14px 16px;margin-bottom:12px'>"
+
+        # Header
+        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:12px'>"
+        f"<div>"
+        f"<div style='font-size:.68rem;color:#FFD700;font-weight:700;letter-spacing:.1em'>👑 GESTIÓN DE BANKROLL</div>"
+        f"<div style='font-size:.72rem;color:{rc};margin-top:2px'>{bk['consejo']}</div>"
+        f"</div>"
+        f"<div style='font-size:2rem;color:{rc};font-weight:900;line-height:1'>"
+        f"{trend_arrow}{abs(bk['racha'])}</div>"
+        f"</div>"
+
+        # KPIs
+        f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px'>"
+        f"<div class='mbox'><div class='mval' style='color:#00ff88'>{bk['wins']}</div><div class='mlbl'>✅ Total</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#00ccff'>{bk['pct']}%</div><div class='mlbl'>% Global</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{bk['pct10']}%</div><div class='mlbl'>% Últ 10</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#FFD700'>{bk['kelly_rec']}%</div><div class='mlbl'>Kelly Rec</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:{'#00ff88' if bk['roi']>=0 else '#ff4444'}'>{bk['roi']:+.1f}u</div><div class='mlbl'>ROI</div></div>"
+        f"</div>"
+
+        # Racha visual
+        f"<div style='display:flex;align-items:center;gap:6px'>"
+        f"<span style='font-size:.65rem;color:#444'>Racha</span>"
+        f"<div style='display:flex;gap:3px;align-items:flex-end'>{racha_bars}</div>"
+        f"</div>"
+
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+
+def _kr_render_picks_table(todos, el_pick):
+    """Tabla de todos los picks ordenados con visual claro."""
+    st.markdown(
+        "<div style='font-size:.7rem;font-weight:700;color:#FFD700;letter-spacing:.1em;"
+        "text-transform:uppercase;margin:14px 0 8px'>📊 Ranking de Picks del Día</div>",
+        unsafe_allow_html=True
+    )
+
+    for i, c in enumerate(todos[:15]):
+        is_king     = el_pick and c["label"] == el_pick["label"]
+        conf_c      = c.get("conf_color","#555")
+        edge_c      = "#00ff88" if c["edge"] > 0.05 else ("#FFD700" if c["edge"] > 0 else "#ff4444")
+        conflict_tag = " ⚠️" if c.get("contradiccion") else ""
+        crown_tag    = "👑 " if is_king else f"<span style='color:#333'>#{i+1}</span> "
+        border_style = f"border:1px solid {conf_c}88" if is_king else "border:1px solid #1a1a30"
+        bg_style     = "background:linear-gradient(90deg,#100020,#0a0a1e)" if is_king else "background:#0a0a1e"
+
+        score_bar_w = int(c.get("score",0) * 10)  # score 0-10 → 0-100%
+
+        models_mini = " · ".join(f"{k}: {v}%" for k,v in list(c.get("models",{}).items())[:2])
+
+        pick_row = (
+            f"<div style='{bg_style};border-radius:10px;padding:9px 12px;"
+            f"margin:3px 0;{border_style};display:flex;align-items:center;gap:10px;position:relative;overflow:hidden'>"
+
+            # Score bar subtle bg
+            f"<div style='position:absolute;left:0;top:0;bottom:0;width:{score_bar_w}%;"
+            f"background:{conf_c}08;pointer-events:none'></div>"
+
+            # Rank / Crown
+            f"<div style='font-size:.9rem;font-weight:900;min-width:26px;text-align:center'>{crown_tag}</div>"
+
+            # Match info
+            f"<div style='flex:1;min-width:0'>"
+            f"<div style='font-size:.62rem;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+            f"{c['deporte']} · {c.get('liga','')[:22]} · {c.get('hora','')}{conflict_tag}</div>"
+            f"<div style='font-size:.78rem;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{c['label']}</div>"
+            f"<div style='font-size:.82rem;font-weight:700;color:{conf_c}'>{c['pick']}</div>"
+            f"<div style='font-size:.6rem;color:#333'>{models_mini}</div>"
+            f"</div>"
+
+            # Right stats
+            f"<div style='text-align:right;flex-shrink:0'>"
+            f"<div style='font-size:1rem;font-weight:900;color:{conf_c}'>{c['prob']*100:.1f}%</div>"
+            f"<div style='font-size:.65rem;color:{edge_c}'>Edge {c['edge']*100:+.1f}%</div>"
+            f"<div style='font-size:.65rem;color:#FFD700'>{('@' + str(round(c['odd'],2))) if c.get('odd',0)>1 else ''}</div>"
+            f"<div style='font-size:.6rem;color:#333'>KR {c.get('score',0):.1f}</div>"
+            f"</div>"
+            f"</div>"
+        )
+        st.markdown(pick_row, unsafe_allow_html=True)
+
+
+def _kr_render_contradiction_panel(contradicciones):
+    """Panel de contradicciones entre modelos."""
+    if not contradicciones: return
+
+    with st.expander(f"⚠️ {len(contradicciones)} picks bloqueados por conflicto entre modelos", expanded=False):
+        st.markdown(
+            "<div style='font-size:.72rem;color:#ff9500;margin-bottom:8px'>"
+            "King Rongo detectó que los modelos no coinciden en estos partidos. "
+            "Se descartaron para proteger tu bankroll.</div>",
+            unsafe_allow_html=True
+        )
+        for c in contradicciones[:6]:
+            spread = c.get("model_spread", 0)
+            bar_w  = min(int(spread), 100)
+            st.markdown(
+                f"<div style='background:#1a0800;border-radius:10px;padding:10px 12px;"
+                f"margin:4px 0;border-left:3px solid #ff9500'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+                f"<div>"
+                f"<div style='font-size:.75rem;font-weight:700;color:#ff9500'>{c['deporte']} — {c['label']}</div>"
+                f"<div style='font-size:.68rem;color:#555'>{c.get('reasoning','')}</div>"
+                f"</div>"
+                f"<div style='font-size:.8rem;font-weight:700;color:#ff9500'>{spread:.0f}pp</div>"
+                f"</div>"
+                f"<div style='margin-top:6px;background:#1a1a00;border-radius:4px;height:4px;overflow:hidden'>"
+                f"<div style='height:4px;width:{bar_w}%;background:linear-gradient(90deg,#ff9500,#ff4444);border-radius:4px'></div>"
+                f"</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+
+def _kr_render_memory_insight(pick_history):
+    """
+    Insights de memoria evolutiva: qué mercados y deportes
+    han dado mejor ROI histórico.
+    """
+    settled = [p for p in pick_history if p.get("result") in ("✅","❌")]
+    if len(settled) < 5:
+        return
+
+    from collections import defaultdict
+    sport_stats = defaultdict(lambda: {"w":0,"l":0,"units":0.0})
+    mkt_stats   = defaultdict(lambda: {"w":0,"l":0,"units":0.0})
+
+    for p in settled:
+        o  = float(p.get("odd", 0))
+        sp = p.get("sport", "?")
+        pk = p.get("pick","")
+        # Categorizar mercado
+        pk_l = pk.lower()
+        if "over" in pk_l: mkt = "Over"
+        elif "under" in pk_l: mkt = "Under"
+        elif "ambos" in pk_l or "btts" in pk_l: mkt = "BTTS"
+        elif "empate" in pk_l: mkt = "Empate"
+        elif "gana" in pk_l: mkt = "ML Win"
+        else: mkt = "Otro"
+
+        won = p.get("result") == "✅"
+        u   = (o-1) if (won and o>1) else -1.0
+
+        sport_stats[sp]["w" if won else "l"] += 1
+        sport_stats[sp]["units"] += u
+        mkt_stats[mkt]["w" if won else "l"] += 1
+        mkt_stats[mkt]["units"] += u
+
+    def fmt_stat(d):
+        n = d["w"] + d["l"]
+        if n == 0: return None
+        return {"n":n, "pct":round(d["w"]/n*100), "roi":round(d["units"]/n*100,1)}
+
+    sport_rows = [(k, fmt_stat(v)) for k,v in sport_stats.items() if fmt_stat(v) and fmt_stat(v)["n"]>=3]
+    mkt_rows   = [(k, fmt_stat(v)) for k,v in mkt_stats.items()   if fmt_stat(v) and fmt_stat(v)["n"]>=3]
+
+    if not sport_rows and not mkt_rows: return
+
+    sport_rows.sort(key=lambda x: -x[1]["roi"])
+    mkt_rows.sort(key=lambda x:   -x[1]["roi"])
+
+    with st.expander("🧠 Memoria Evolutiva — Qué te ha funcionado mejor", expanded=False):
+        st.markdown(
+            "<div style='font-size:.7rem;color:#555;margin-bottom:10px'>"
+            "King Rongo aprende de tu historial y usa estos patrones para ajustar sus recomendaciones.</div>",
+            unsafe_allow_html=True
+        )
+        cols = st.columns(2)
+        with cols[0]:
+            st.markdown("<div style='font-size:.68rem;color:#FFD700;font-weight:700;letter-spacing:.08em;margin-bottom:6px'>POR DEPORTE</div>", unsafe_allow_html=True)
+            for sp, s in sport_rows[:4]:
+                rc = "#00ff88" if s["roi"] >= 0 else "#ff4444"
+                st.markdown(
+                    f"<div style='display:flex;justify-content:space-between;padding:5px 8px;"
+                    f"background:#0a0a1e;border-radius:7px;margin:2px 0'>"
+                    f"<span style='font-size:.75rem;color:#888'>{sp}</span>"
+                    f"<div style='text-align:right'>"
+                    f"<span style='font-size:.75rem;color:#00ccff'>{s['pct']}%</span>"
+                    f"<span style='font-size:.7rem;color:{rc};margin-left:8px'>ROI {s['roi']:+.1f}%</span>"
+                    f"</div></div>",
+                    unsafe_allow_html=True
+                )
+        with cols[1]:
+            st.markdown("<div style='font-size:.68rem;color:#FFD700;font-weight:700;letter-spacing:.08em;margin-bottom:6px'>POR MERCADO</div>", unsafe_allow_html=True)
+            for mk, s in mkt_rows[:4]:
+                rc = "#00ff88" if s["roi"] >= 0 else "#ff4444"
+                st.markdown(
+                    f"<div style='display:flex;justify-content:space-between;padding:5px 8px;"
+                    f"background:#0a0a1e;border-radius:7px;margin:2px 0'>"
+                    f"<span style='font-size:.75rem;color:#888'>{mk}</span>"
+                    f"<div style='text-align:right'>"
+                    f"<span style='font-size:.75rem;color:#00ccff'>{s['pct']}%</span>"
+                    f"<span style='font-size:.7rem;color:{rc};margin-left:8px'>ROI {s['roi']:+.1f}%</span>"
+                    f"</div></div>",
+                    unsafe_allow_html=True
+                )
+
+
+def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
+    """
+    👑 KING RONGO — El Cerebro Supremo de The Gamblers Layer.
+    Escanea ⚽🏀🎾, corre todos los modelos, detecta contradicciones,
+    gestiona bankroll, aprende del historial, y da EL PICK DEL DÍA.
+    """
+    pick_history = st.session_state.get("pick_history", [])
+
+    # ══════════════════════════════════════════════════════
+    # HEADER — presencia máxima
+    # ══════════════════════════════════════════════════════
+    st.markdown("""
+    <div style='position:relative;background:linear-gradient(160deg,#150030,#001500,#150030);
+    border:none;border-radius:20px;padding:0;margin-bottom:4px;overflow:hidden'>
+
+    <!-- Top glow bar -->
+    <div style='height:3px;background:linear-gradient(90deg,transparent,#FFD700,#ff9500,#FFD700,transparent)'></div>
+
+    <!-- Ambient orb left -->
+    <div style='position:absolute;top:-40px;left:-40px;width:140px;height:140px;
+    background:radial-gradient(circle,#FFD70015,transparent 70%);pointer-events:none'></div>
+    <!-- Ambient orb right -->
+    <div style='position:absolute;top:-40px;right:-40px;width:140px;height:140px;
+    background:radial-gradient(circle,#7c00ff15,transparent 70%);pointer-events:none'></div>
+
+    <div style='padding:20px 22px 18px;text-align:center;position:relative'>
+      <div style='font-size:3rem;margin-bottom:6px;line-height:1;
+      filter:drop-shadow(0 0 12px #FFD70088)'>👑</div>
+      <div style='font-size:1.8rem;font-weight:900;letter-spacing:.2em;
+      background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700,#ffcc00);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+      text-shadow:none;margin-bottom:6px'>KING RONGO</div>
+      <div style='font-size:.72rem;color:#666;letter-spacing:.12em'>
+      EL CEREBRO SUPREMO · ÁRBITRO DE MODELOS · PICK DEFINITIVO</div>
+    </div>
+
+    <!-- Bottom glow bar -->
+    <div style='height:2px;background:linear-gradient(90deg,transparent,#7c00ff,#FFD700,#7c00ff,transparent)'></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════
+    # BANKROLL PANEL — siempre visible
+    # ══════════════════════════════════════════════════════
+    bk = _king_rongo_bankroll_advice(pick_history)
+    _kr_render_bankroll_panel(bk)
+
+    # ══════════════════════════════════════════════════════
+    # BOTONES DE ACCIÓN
+    # ══════════════════════════════════════════════════════
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1:
+        do_scan = st.button(
+            "👑 ESCANEAR — ⚽ Fútbol + 🏀 NBA + 🎾 Tenis",
+            use_container_width=True, key="king_scan",
+            help="King Rongo analiza todos los partidos del día y elige EL pick con mayor edge real"
+        )
+    with c2:
+        do_tg = st.button("📡 Telegram", use_container_width=True, key="king_tg")
+    with c3:
+        do_reset = st.button("🔄 Reset", use_container_width=True, key="king_reset")
+
+    if do_reset:
+        for k in ["_king_el_pick","_king_contras","_king_todos","_king_scanned","_king_ts"]:
+            st.session_state.pop(k, None)
+        st.rerun()
+
+    # ══════════════════════════════════════════════════════
+    # SCAN + RESULTADOS
+    # ══════════════════════════════════════════════════════
+    if do_scan or st.session_state.get("_king_scanned"):
+
+        if do_scan:
+            prog = st.progress(0, "👑 King Rongo iniciando escaneo...")
+            try:
+                prog.progress(5, "⚽ Cargando fútbol...")
+                _mf = matches_fut
+                try:
+                    if _mf is None: _mf = get_cartelera()
+                except: _mf = []
+
+                prog.progress(25, "🏀 Cargando NBA...")
+                _nbg = nba_games
+                try:
+                    if _nbg is None: _nbg = get_nba_cartelera()
+                except: _nbg = []
+
+                prog.progress(45, "🎾 Cargando Tenis...")
+                _ten = ten_matches
+                try:
+                    if _ten is None: _ten = get_tennis_cartelera()
+                except: _ten = []
+
+                prog.progress(65, "🧠 Corriendo todos los modelos...")
+                el_pick, contradicciones, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
+
+                prog.progress(100, f"✅ {len(todos)} partidos analizados"); prog.empty()
+
+                st.session_state["_king_el_pick"]  = el_pick
+                st.session_state["_king_contras"]  = contradicciones
+                st.session_state["_king_todos"]    = todos
+                st.session_state["_king_scanned"]  = True
+                st.session_state["_king_ts"]       = datetime.now(CDMX).strftime("%H:%M")
+            except Exception as e:
+                prog.empty()
+                st.error(f"Error en escaneo: {e}")
+
+        el_pick        = st.session_state.get("_king_el_pick")
+        contradicciones= st.session_state.get("_king_contras", [])
+        todos          = st.session_state.get("_king_todos", [])
+        scan_ts        = st.session_state.get("_king_ts","")
+
+        # Meta-stats del escaneo
+        n_fut  = sum(1 for c in todos if "Fútbol" in c["deporte"])
+        n_nba  = sum(1 for c in todos if "NBA"    in c["deporte"])
+        n_ten  = sum(1 for c in todos if "Tenis"  in c["deporte"])
+        n_pos  = sum(1 for c in todos if c.get("edge",0) > 0)
+        n_blk  = len(contradicciones)
+
+        st.markdown(
+            f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:12px'>"
+            f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{n_fut}</div><div class='mlbl'>⚽</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#ff9500'>{n_nba}</div><div class='mlbl'>🏀</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{n_ten}</div><div class='mlbl'>🎾</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{n_pos}</div><div class='mlbl'>Edge+</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#ff4444'>{n_blk}</div><div class='mlbl'>Bloq.</div></div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+        if scan_ts:
+            st.caption(f"👑 Escaneo completado a las {scan_ts} CDMX")
+
+        # ── EL PICK DEL DÍA ──
+        if el_pick:
+            _kr_render_pick_card(el_pick, bk, todos)
+
+            # Botones de acción del pick
+            a1, a2, a3 = st.columns(3)
+            with a1:
+                if st.button(f"💾 Guardar pick de King Rongo", key="save_king", use_container_width=True):
+                    m = el_pick.get("match", {})
+                    fake = {
+                        "home":   m.get("home", m.get("p1", el_pick["label"].split(" vs ")[0])),
+                        "away":   m.get("away", m.get("p2", el_pick["label"].split(" vs ")[-1])),
+                        "league": el_pick.get("liga",""),
+                        "fecha":  m.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d")),
+                    }
+                    add_pick(fake, f"👑 {el_pick['pick']}", el_pick["prob"],
+                             el_pick.get("odd",0), sport=el_pick["sport"])
+                    st.success("✅ Pick guardado")
+            with a2:
+                if st.button("📡 Enviar a Telegram", key="king_tg2", use_container_width=True):
+                    do_tg = True
+            with a3:
+                # Abrir partido completo
+                if el_pick.get("match") and st.button("🔎 Ver análisis completo", key="king_open", use_container_width=True):
+                    _m = el_pick["match"]
+                    sport = el_pick["sport"]
+                    if sport == "tenis":
+                        sel = {**_m,
+                               "home": _m.get("p1",_m.get("home","")),
+                               "away": _m.get("p2",_m.get("away","")),
+                               "home_id": _m.get("id","")+"_p1",
+                               "away_id": _m.get("id","")+"_p2",
+                               "league":  _m.get("torneo",_m.get("tour","Tenis")),
+                               "slug":"tennis","home_rec":"","away_rec":"",
+                               "odd_h":_m.get("odd_1",0),"odd_a":_m.get("odd_2",0),
+                               "odd_d":0,"_sport":"tennis"}
+                    else:
+                        sel = {**_m}
+                    st.session_state["sel"]  = sel
+                    st.session_state["view"] = "analisis"
+                    st.rerun()
+
+            # ── CONTRADICCIONES ──
+            _kr_render_contradiction_panel(contradicciones)
+
+            # ── TABLA DE PICKS ──
+            _kr_render_picks_table(todos, el_pick)
+
+            # ── MEMORIA EVOLUTIVA ──
+            _kr_render_memory_insight(pick_history)
+
+            # ── TELEGRAM ──
+            if do_tg:
+                _nl = chr(10)
+                prob_pct = el_pick["prob"] * 100
+                edge_pct = el_pick["edge"] * 100
+                conf_e   = el_pick.get("conf_emoji","⚡")
+                models_txt = " | ".join(f"{k}: {v}%" for k,v in list(el_pick.get("models",{}).items())[:3])
+                msg = (
+                    f"👑 *KING RONGO — PICK DEL DÍA*{_nl}"
+                    f"━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"{el_pick['deporte']} · {el_pick.get('liga','')}{_nl}"
+                    f"🆚 *{el_pick['label']}*{_nl}"
+                    f"🕒 {el_pick.get('hora','')} CDMX{_nl}{_nl}"
+                    f"{conf_e} *PICK: {el_pick['pick']}*{_nl}"
+                    f"📊 Prob: *{prob_pct:.1f}%*{_nl}"
+                    f"📈 Edge: *{edge_pct:+.1f}%*{_nl}"
+                    f"🎯 Kelly: *{bk['kelly_rec']}%* del banco{_nl}"
+                    f"{'💰 @' + str(round(el_pick['odd'],2)) if el_pick.get('odd',0)>1 else ''}{_nl}{_nl}"
+                    f"🧠 Modelos: {models_txt}{_nl}{_nl}"
+                    f"_{bk['consejo']}_{_nl}"
+                    f"━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"_The Gamblers Layer · King Rongo v2_{_nl}"
+                    f"_Escaneados: {len(todos)} partidos ⚽{n_fut} 🏀{n_nba} 🎾{n_ten}_"
+                )
+                if tg_send(msg):
+                    st.success("✅ Pick enviado a Telegram")
+                else:
+                    st.error("❌ Error Telegram")
+
+        else:
+            # No pick encontrado
+            st.markdown(
+                "<div style='text-align:center;padding:30px;background:#07071a;"
+                "border-radius:14px;border:1px solid #1a1a30;margin:12px 0'>"
+                "<div style='font-size:2rem'>🤔</div>"
+                "<div style='font-size:1rem;font-weight:700;color:#555;margin:8px 0'>"
+                "King Rongo no encontró picks con edge positivo hoy.</div>"
+                "<div style='font-size:.8rem;color:#333'>Día de descanso recomendado. "
+                "Proteger el bankroll también es ganar.</div>"
+                "</div>",
+                unsafe_allow_html=True
+            )
+
+    else:
+        # Pre-scan — estado inicial
+        st.markdown(
+            "<div style='text-align:center;padding:36px 20px;"
+            "background:linear-gradient(160deg,#0a0020,#07071a);"
+            "border-radius:16px;border:1px solid #1a1a30;margin:12px 0'>"
+            "<div style='font-size:3rem;margin-bottom:12px;"
+            "filter:drop-shadow(0 0 10px #FFD70044)'>👑</div>"
+            "<div style='font-size:1rem;font-weight:700;color:#555;margin-bottom:8px'>"
+            "King Rongo está listo para escanear</div>"
+            "<div style='font-size:.78rem;color:#333;line-height:1.8'>"
+            "Presiona el botón y King Rongo correrá todos los modelos simultáneamente:<br>"
+            "xG · Elo · Dixon-Coles · Monte Carlo · Weibull · Net Rating<br>"
+            "y elegirá EL PICK con mayor edge real ajustado a tu bankroll."
+            "</div></div>",
+            unsafe_allow_html=True
+        )
+        # Mostrar memoria aunque no haya escaneado
+        _kr_render_memory_insight(pick_history)
+
 
 
 def avg(lst): return sum(lst)/len(lst) if lst else 0.0
@@ -5857,7 +6824,11 @@ def get_tennis_cartelera():
                 all_text    = tour_type + " " + tour_name + " " + league_name
 
                 # Detectar ITF/Challenger (excluir) — queremos ATP, WTA y Grand Slams
-                if any(x in all_text for x in ["ITF","JUNIOR","WHEELCHAIR","EXHIBITION","DOUBLES ONLY"]):
+                p1n = ev.get("event_first_player","")
+                p2n = ev.get("event_second_player","")
+                # Skip doubles: player names contain "/" 
+                if "/" in p1n or "/" in p2n: continue
+                if any(x in all_text for x in ["ITF","JUNIOR","WHEELCHAIR","EXHIBITION","DOUBLES"]):
                     continue
 
                 # Determinar tour por nombre del torneo + tipo
@@ -6071,6 +7042,35 @@ with sp3:
 if "sport" not in st.session_state: st.session_state["sport"]="futbol"
 deporte = st.session_state["sport"]
 
+# ── KING RONGO — Banner de presencia permanente ──
+_king_pick = st.session_state.get("_king_el_pick")
+if _king_pick:
+    _kp   = _king_pick["prob"]*100
+    _ke   = _king_pick.get("edge",0)*100
+    _kc   = _king_pick.get("conf_color","#FFD700")
+    _ke_c = "#00ff88" if _ke>0 else "#ff4444"
+    _ts   = st.session_state.get("_king_ts","")
+    st.markdown(
+        f"<div style='background:linear-gradient(90deg,#100018,#00100a,#100018);"
+        f"border-radius:12px;padding:10px 14px;margin:4px 0 10px;"
+        f"border:1px solid {_kc}44;"
+        f"display:flex;align-items:center;gap:12px;position:relative;overflow:hidden'>"
+        f"<div style='position:absolute;top:0;left:0;right:0;height:2px;"
+        f"background:linear-gradient(90deg,transparent,{_kc},transparent)'></div>"
+        f"<div style='font-size:1.5rem;filter:drop-shadow(0 0 6px {_kc}88)'>👑</div>"
+        f"<div style='flex:1;min-width:0'>"
+        f"<div style='font-size:.62rem;color:#444;letter-spacing:.1em;font-weight:700'>"
+        f"KING RONGO · PICK DEL DÍA{(' · ' + _ts) if _ts else ''}</div>"
+        f"<div style='font-size:.88rem;font-weight:900;color:{_kc};"
+        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_king_pick['pick']}</div>"
+        f"<div style='font-size:.68rem;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+        f"{_king_pick['deporte']} · {_king_pick['label'][:30]}</div>"
+        f"</div>"
+        f"<div style='text-align:right;flex-shrink:0'>"
+        f"<div style='font-size:1.1rem;font-weight:900;color:{_kc}'>{_kp:.0f}%</div>"
+        f"<div style='font-size:.65rem;color:{_ke_c}'>Edge {_ke:+.1f}%</div>"
+        f"</div></div>", unsafe_allow_html=True)
+
 # ══════════════════════════════════════════════════════════
 # CARGAR DATA SEGÚN DEPORTE
 # ══════════════════════════════════════════════════════════
@@ -6099,7 +7099,7 @@ if st.session_state["view"] == "cartelera":
 
     # ─── NBA ─────────────────────────────────────────────
     if deporte == "nba":
-        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados"])
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","👑 KING"])
         with tab1:
             st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
             if not nba_games:
@@ -6117,17 +7117,18 @@ if st.session_state["view"] == "cartelera":
             for fi, fecha in enumerate(sorted(nba_por_fecha.keys())):
                 gs = nba_por_fecha[fecha]
                 with st.expander(f"{fecha_label_nba(fecha)}  ·  {len(gs)} juegos", expanded=(fi==0)):
-                    # ── Finalizados primero (compacto) ──
+                    # ── Finalizados — clickeables con score real ──
                     for g in [x for x in gs if x["state"]=="post"]:
                         sh=g.get("score_h",-1); sa=g.get("score_a",-1)
-                        sf=f"{sh}–{sa}" if sh>=0 else "FT"
+                        sf=f"{sh}–{sa} pts" if sh>=0 else "FT"
                         won_h=sh>sa; hc="#00ff88" if won_h else "#aaa"; ac="#00ff88" if sa>sh else "#aaa"
-                        st.markdown(
-                            f"<div style='display:flex;justify-content:space-between;padding:6px 14px;"
-                            f"background:#07071a;border-radius:8px;margin:2px 0;opacity:.55'>"
-                            f"<div style='font-size:.82rem;color:#555'>✅ {g['away']} @ {g['home']}</div>"
-                            f"<div style='font-size:.9rem;font-weight:700;color:#aaa'>{sf}</div></div>",
-                            unsafe_allow_html=True)
+                        won_lbl = g["home"] if won_h else g["away"]
+                        if st.button(
+                            f"✅ {g['away']} @ {g['home']}  ·  {sf}  · 🏆 {won_lbl}",
+                            key=f"nba_post_{g['id']}", use_container_width=True):
+                            st.session_state["sel"]  = g
+                            st.session_state["view"] = "analisis"
+                            st.rerun()
 
                     # ── Pre/live en 2 COLUMNAS ──
                     active_gs = [x for x in gs if x["state"]!="post"]
@@ -6349,10 +7350,12 @@ if st.session_state["view"] == "cartelera":
             render_einstein_califica("nba")
         with tab8:
             render_resultados_tab()
+        with tab_king:
+            render_king_rongo(matches_fut=None, nba_games=nba_games, ten_matches=None)
 
     # ─── TENIS ───────────────────────────────────────────
     elif deporte == "tenis":
-        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados"])
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","👑 KING"])
         with tab1:
             # ── TENNIS CARTELERA — 2 columnas, separado por ATP / WTA ──
             pre_m  = [m for m in ten_matches if m["state"] == "pre"]
@@ -6403,15 +7406,26 @@ if st.session_state["view"] == "cartelera":
                         fin_ms  = [m for m in ms if m["state"]=="post"]
                         pre_ms  = [m for m in ms if m["state"]!="post"]
 
-                        # Show finished as compact row
+                        # Finalizados — clickeables con score sets real
                         for m in fin_ms:
-                            sc = f"{m.get('score_p1','')}–{m.get('score_p2','')}" if m.get('score_p1') else "FT"
-                            st.markdown(
-                                f"<div style='display:flex;justify-content:space-between;align-items:center;"
-                                f"padding:5px 12px;background:#07071a;border-radius:7px;margin:2px 0;opacity:.55'>"
-                                f"<div style='font-size:.78rem;color:#555'>✅ {m['p1']} vs {m['p2']}</div>"
-                                f"<div style='font-size:.78rem;color:#555'>{sc}</div>"
-                                f"</div>", unsafe_allow_html=True)
+                            sc1r = m.get("score_p1",""); sc2r = m.get("score_p2","")
+                            sc = f"{sc1r}–{sc2r}" if sc1r else "FT"
+                            won_n = m["p1"] if (sc1r and sc2r and sc1r > sc2r) else m["p2"]
+                            if st.button(
+                                f"✅ {m['p1']} vs {m['p2']}  ·  Sets {sc}  · 🏆 {won_n}",
+                                key=f"ten_post_{m['id']}", use_container_width=True):
+                                # convert tennis match to sel format for detail view
+                                sel_m = {**m,
+                                    "home": m["p1"], "away": m["p2"],
+                                    "home_id": m["id"]+"_p1", "away_id": m["id"]+"_p2",
+                                    "league": m.get("torneo", m.get("tour","Tenis")),
+                                    "slug": "tennis", "home_rec":"", "away_rec":"",
+                                    "odd_h": m.get("odd_1",0), "odd_a": m.get("odd_2",0),
+                                    "odd_d": 0, "_sport": "tennis",
+                                }
+                                st.session_state["sel"]  = sel_m
+                                st.session_state["view"] = "analisis"
+                                st.rerun()
 
                         # Pre/live in 2-column grid
                         # We render them as pairs into 2 st.columns
@@ -6426,1000 +7440,1386 @@ if st.session_state["view"] == "cartelera":
                                     live_badge = " 🔴" if m["state"]=="in" else ""
                                     conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
                                     if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']}{live_badge}", key=f"ten_{m['id']}", use_container_width=True):
-                                        # ═══════════════════════════════════════════════════
-                                        # PIPELINE UNIFICADO — veredicto_academico_tenis
-                                        # es la ÚNICA fuente de verdad para probs y pick.
-                                        # Einstein entra como señal interna (no sobreescribe).
-                                        # ═══════════════════════════════════════════════════
-                                        _ten_surface_map = {
-                                            "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
-                                            "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
-                                            "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
-                                            "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
-                                            "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard",
+                                        sel_m = {**m,
+                                            "home":m["p1"],"away":m["p2"],
+                                            "home_id":m["id"]+"_p1","away_id":m["id"]+"_p2",
+                                            "league":m.get("torneo",m.get("tour","Tenis")),
+                                            "slug":"tennis","home_rec":"","away_rec":"",
+                                            "odd_h":m.get("odd_1",0),"odd_a":m.get("odd_2",0),
+                                            "odd_d":0,"_sport":"tennis",
                                         }
-                                        _ten_tour    = m.get("torneo","")
-                                        _ten_surface = next((v for k,v in _ten_surface_map.items()
-                                                             if k.lower() in _ten_tour.lower()), "hard")
-                                        _weib = tennis_model(m["rank1"], m["rank2"],
-                                                             m["odd_1"], m["odd_2"], _ten_surface)
+                                        st.session_state["sel"]  = sel_m
+                                        st.session_state["view"] = "analisis"
+                                        st.rerun()
 
-                                        # ── PASO 1: Einstein → señal interna ──
-                                        _einstein_p1  = None
-                                        _einstein_txt = ""
-                                        with st.spinner("🧠 Einstein: H2H y forma reciente..."):
-                                            _ei = tennis_expert_analysis(
-                                                m["p1"], m["p2"],
-                                                m.get("rank1",200), m.get("rank2",200),
-                                                m.get("odd_1",0), m.get("odd_2",0),
-                                                _ten_surface, _ten_tour,
-                                                model_p1=_weib["p1"], model_p2=_weib["p2"]
-                                            )
-                                        if _ei:
-                                            _einstein_p1  = _ei["p1"]
-                                            _einstein_txt = _ei.get("resumen","")
-
-                                        # ── PASO 2: Veredicto unificado (ÚNICA fuente de verdad) ──
-                                        with st.spinner("🎾 Calculando 50,000 simulaciones..."):
-                                            _vd = veredicto_academico_tenis(
-                                                p1_name=m["p1"], p2_name=m["p2"],
-                                                rank1=m.get("rank1",200), rank2=m.get("rank2",200),
-                                                odd_1=m.get("odd_1",0), odd_2=m.get("odd_2",0),
-                                                surface=_ten_surface, torneo=_ten_tour,
-                                                expert_p1=_einstein_p1
-                                            )
-
-                                        # ── Extraer valores del veredicto para TODA la UI ──
-                                        _vd_p1    = _vd["_p1_final"]
-                                        _vd_p2    = _vd["_p2_final"]
-                                        _vd_fav   = _vd["_fav_name"]
-                                        _vd_fav_p = _vd["_fav_prob"]
-                                        _vd_score = _vd["_score"]
-                                        _vd_html  = _vd["_html"]
-
-                                        # Confianza coherente con veredicto
-                                        if _vd_score >= 7 and _vd_fav_p >= 0.65:
-                                            _ten_conf   = "💎 DIAMANTE"; _conf_color = "#FFD700"
-                                        elif _vd_score >= 4 and _vd_fav_p >= 0.58:
-                                            _ten_conf   = "🔥 ALTA";     _conf_color = "#00ff88"
-                                        elif _vd_score >= 4:
-                                            _ten_conf   = "⚡ MEDIA";    _conf_color = "#aaa"
-                                        else:
-                                            _ten_conf   = "🔻 NO APOSTAR"; _conf_color = "#ff4444"
-
-                                        # ── PASO 3: Card principal con probs del veredicto ──
-                                        p1_is_fav = _vd_p1 >= _vd_p2
-                                        p1_color  = "#00ccff" if p1_is_fav else "#aa00ff"
-                                        p2_color  = "#aa00ff" if p1_is_fav else "#00ccff"
-                                        st.markdown(
-                                            f"<div class='acard' style='border-color:{_conf_color}'>"
-                                            f"<div style='font-weight:900;font-size:1.1rem;color:{_conf_color};margin-bottom:10px'>"
-                                            f"{_vd_fav_p*100:.1f}% → {_vd_fav}  "
-                                            f"<span style='font-size:.78rem;font-weight:400;color:#555'>{_ten_conf}</span></div>"
-                                            f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
-                                            f"<div class='mbox' style='flex:1'>"
-                                            f"<div class='mval' style='color:{p1_color}'>{_vd_p1*100:.1f}%</div>"
-                                            f"<div class='mlbl'>{m['p1'][:14]}</div>"
-                                            f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                            f"<div style='height:5px;width:{_vd_p1*100:.0f}%;background:{p1_color};border-radius:3px'></div></div>"
-                                            f"</div>"
-                                            f"<div class='mbox' style='flex:1'>"
-                                            f"<div class='mval' style='color:{p2_color}'>{_vd_p2*100:.1f}%</div>"
-                                            f"<div class='mlbl'>{m['p2'][:14]}</div>"
-                                            f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                            f"<div style='height:5px;width:{_vd_p2*100:.0f}%;background:{p2_color};border-radius:3px'></div></div>"
-                                            f"</div></div>"
-                                            + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
-                                               f"border-left:3px solid {_conf_color};font-size:.88rem;line-height:1.7'>"
-                                               f"🧠 <b>Einstein:</b><br>{_einstein_txt.replace(chr(10),'<br>')}</div>"
-                                               if _einstein_txt else "")
-                                            + f"</div>", unsafe_allow_html=True)
-
-                                        # ── PASO 4: Veredicto completo ──
-                                        st.markdown(_vd_html, unsafe_allow_html=True)
-
-                                        # ── PASO 5: Badrino con probs del veredicto ──
-                                        _ten_model = {"p1":_vd_p1,"p2":_vd_p2,"ph":_vd_p1,"pd":0.0,"pa":_vd_p2}
-                                        render_prematch_bot(
-                                            sport="tennis", home=m["p1"], away=m["p2"],
-                                            league_slug=m.get("tour","tennis"),
-                                            league_name=m.get("torneo", m.get("tour","Tenis")),
-                                            model_result=_ten_model,
-                                            rank1=m.get("rank1",0), rank2=m.get("rank2",0),
-                                            hora_partido=m.get("hora","")
-                                        )
-        with tab2:
-            st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
-            st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick Tenis del día:")
-            with st.spinner("Calculando TRILAY Tenis..."):
-                _ten_cands = []
-                for _tm_match in ten_matches:
-                    if _tm_match["state"]!="pre": continue
-                    _tmm = tennis_model(_tm_match["rank1"],_tm_match["rank2"],_tm_match["odd_1"],_tm_match["odd_2"])
-                    _bp = max(_tmm["p1"],_tmm["p2"])
-                    _fv = _tm_match["p1"] if _tmm["p1"]>=_tmm["p2"] else _tm_match["p2"]
-                    if _bp >= 0.58:
-                        _ten_cands.append({"teams":f"{_tm_match['p1']} vs {_tm_match['p2']}","tour":_tm_match["tour"],"hora":_tm_match["hora"],"pick":f"🎾 {_fv}","prob":_bp})
-                _ten_cands.sort(key=lambda x:-x["prob"])
-                _trilay_ten = _ten_cands[:3]
-            if len(_trilay_ten) >= 2:
-                _comb_t = 1.0
-                for _t in _trilay_ten: _comb_t *= _t["prob"]
-                _cuota_t = round(1/_comb_t,2) if _comb_t>0 else 0
-                st.markdown(f"<div class='trilay-card'><div style='font-size:.8rem;font-weight:700;color:#aa00ff;letter-spacing:.1em;margin-bottom:12px'>✦ TRILAY TENIS DEL DÍA</div><div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'><div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{_comb_t*100:.1f}%</div><div class='mlbl'>Prob. combinada</div></div><div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{_cuota_t}x</div><div class='mlbl'>Cuota estimada</div></div></div>",unsafe_allow_html=True)
-                for _i,_t in enumerate(_trilay_ten):
-                    _cc = "#FFD700" if _t["prob"]>0.65 else ("#00ff88" if _t["prob"]>0.58 else "#aaa")
-                    st.markdown(f"<div class='mrow'><span style='color:{_cc};font-weight:700'>{_i+1}. {_t['teams']}</span><br><span style='color:#555;font-size:.78rem'>{_t['tour']} · {_t['hora']}</span><br><span style='color:#00ccff;font-weight:700'>{_t['pick']} gana</span> <span style='color:{_cc};font-size:.85rem'>{_t['prob']*100:.1f}%</span></div>",unsafe_allow_html=True)
-                st.markdown("</div>",unsafe_allow_html=True)
-            else:
-                st.info("No hay suficientes picks de tenis para TRILAY hoy.")
-        with tab3:
-            st.info("PATO es exclusivo de fútbol.")
-        with tab4:
-            st.info("Los picks unificados de todos los deportes están en ⚽ Fútbol → 🎯 Picks.")
-            st.markdown("<div class='shdr'>🎯 Picks Tenis del Día — ML + Valor</div>", unsafe_allow_html=True)
-            # ── PASO 1: Weibull rápido en TODOS los partidos (~0s) ──
-            _surface_map = {
-                "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
-                "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
-                "Monte Carlo":"clay","Madrid":"clay","Rome":"clay","Cincinnati":"hard",
-                "Toronto":"hard","Montreal":"hard","Paris":"hard","Vienna":"hard",
-                "Basel":"hard","Rotterdam":"hard","Dubai":"hard","Doha":"hard",
-                "Barcelona":"clay","Hamburg":"clay","Geneva":"clay","Lyon":"clay",
-                "Halle":"grass","Queen":"grass","Eastbourne":"grass","Birmingham":"grass",
-            }
-            candidates = []
-            for m in ten_matches:
-                if m["state"]!="pre": continue
-                torneo  = m.get("torneo","")
-                surface = next((v for k,v in _surface_map.items() if k.lower() in torneo.lower()), "hard")
-                base_tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"],surface)
-                best_p  = max(base_tm["p1"], base_tm["p2"])
-                candidates.append((best_p, m, surface, torneo, base_tm))
-            candidates.sort(key=lambda x:-x[0])
-            top6 = candidates[:6]  # Solo top 6 candidatos van a Einstein
-
-            # ── PASO 2: Einstein — usa caché disco si existe, paralelo solo si hay misses ──
-            import concurrent.futures
-            def _analyze_one(args):
-                best_p, m, surface, torneo, base_tm = args
-                expert = tennis_expert_analysis(
-                    m["p1"],m["p2"],m["rank1"],m["rank2"],
-                    m["odd_1"],m["odd_2"],surface,torneo,
-                    base_tm["p1"],base_tm["p2"]
-                )
-                return (m, surface, torneo, base_tm, expert)
-
-            # ── Separar hits de caché vs misses (llamadas API reales) ──
-            import hashlib as _hlib, json as _jcache, os as _oscache
-            today_str = __import__('datetime').datetime.now().strftime("%Y-%m-%d")
-            ten_picks_raw = []
-
-            cached_results, need_api = [], []
-            for c in top6:
-                _, m, surface, torneo, base_tm = c
-                key = _hlib.md5(f"{m['p1']}|{m['p2']}|{surface}|{torneo}".encode()).hexdigest()[:16]
-                cp  = f"/tmp/tenis_ai_{key}_{today_str}.json"
-                if _oscache.path.exists(cp):
-                    try:
-                        cached_results.append((m, surface, torneo, base_tm, _jcache.load(open(cp))))
-                        continue
-                    except: pass
-                need_api.append(c)
-
-            # Partidos cacheados = resultado instantáneo
-            for m, surface, torneo, base_tm, expert in cached_results:
-                p1_f = expert["p1"]; p2_f = expert["p2"]
-                fav = m["p1"] if p1_f>=p2_f else m["p2"]
-                best_p = max(p1_f, p2_f)
-                best_odd = m["odd_1"] if p1_f>=p2_f else m["odd_2"]
-                edge_v = (p1_f-(1/m["odd_1"])) if p1_f>=p2_f and m["odd_1"]>1 else                          (p2_f-(1/m["odd_2"])) if m["odd_2"]>1 else 0
-                ten_picks_raw.append({
-                    "p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
-                    "torneo":torneo,"surface":surface,
-                    "pick":f"🎾 {fav}","prob":best_p,"odd":best_odd,
-                    "conf":expert["conf"],"edge":edge_v,
-                    "resumen":expert.get("resumen",""),"h2h":expert.get("h2h",""),
-                    "factor":expert.get("factor",""),
-                    "forma_p1":expert.get("forma_p1",""),"forma_p2":expert.get("forma_p2",""),
-                    "surf_adv":expert.get("surface_adv",""),
-                    "p1_pct":p1_f*100,"p2_pct":p2_f*100,"_from_cache":True,
-                })
-
-            # Partidos sin caché = llamada API (paralela, con barra de progreso)
-            if need_api:
-                n_api = len(need_api)
-                prog_ten = st.progress(0, f"🧠 Einstein analizando {n_api} partido(s) nuevos... ({len(cached_results)} del caché)")
-                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
-                    futures = {ex.submit(_analyze_one, c): i for i,c in enumerate(need_api)}
-                    done = 0
-                    for fut in concurrent.futures.as_completed(futures):
-                        done += 1
-                        prog_ten.progress(done/n_api, f"🧠 Einstein {done}/{n_api} nuevos · {len(cached_results)} del caché ✓")
-                        try:
-                            m, surface, torneo, base_tm, expert = fut.result()
-                        except: continue
-                        if expert:
-                            p1_f = expert["p1"]; p2_f = expert["p2"]
-                            conf = expert["conf"]
-                            resumen=expert.get("resumen",""); h2h_txt=expert.get("h2h","")
-                            factor=expert.get("factor",""); forma_p1=expert.get("forma_p1","")
-                            forma_p2=expert.get("forma_p2",""); surf_adv=expert.get("surface_adv","")
-                        else:
-                            p1_f=base_tm["p1"]; p2_f=base_tm["p2"]; conf=base_tm["conf"]
-                            resumen=h2h_txt=factor=forma_p1=forma_p2=surf_adv=""
-                        fav=m["p1"] if p1_f>=p2_f else m["p2"]
-                        best_p=max(p1_f,p2_f)
-                        best_odd=m["odd_1"] if p1_f>=p2_f else m["odd_2"]
-                        edge_v=(p1_f-(1/m["odd_1"])) if p1_f>=p2_f and m["odd_1"]>1 else                                (p2_f-(1/m["odd_2"])) if m["odd_2"]>1 else 0
-                        ten_picks_raw.append({
-                            "p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
-                            "torneo":torneo,"surface":surface,
-                            "pick":f"🎾 {fav}","prob":best_p,"odd":best_odd,
-                            "conf":conf,"edge":edge_v,
-                            "resumen":resumen,"h2h":h2h_txt,"factor":factor,
-                            "forma_p1":forma_p1,"forma_p2":forma_p2,"surf_adv":surf_adv,
-                            "p1_pct":p1_f*100,"p2_pct":p2_f*100,
-                        })
-                prog_ten.empty()
-            elif len(cached_results) > 0:
-                st.caption(f"⚡ {len(cached_results)} análisis del caché — instantáneo")
-
-            # TOP 3 por probabilidad más alta
-            ten_picks_raw.sort(key=lambda x:-x["prob"])
-            ten_picks = ten_picks_raw[:3]
-
-            if not ten_picks:
-                st.info("No hay picks de tenis disponibles hoy.")
-            else:
-                st.markdown(f"<div style='font-size:.72rem;color:#555;margin-bottom:8px'>🎾 Top 3 picks por mayor probabilidad · Einstein analiza H2H, superficie y forma</div>", unsafe_allow_html=True)
-
-            for rank_i, p in enumerate(ten_picks):
-                cc = "#FFD700" if "DIAMANTE" in p["conf"] else ("#00ff88" if "ALTA" in p["conf"] else "#aaa")
-                rank_badge = ["🥇","🥈","🥉"][rank_i] if rank_i<3 else "🎾"
-                os_ = f" @{p['odd']:.2f}" if p["odd"]>1 else ""
-                surf_icon = {"hard":"🔵","clay":"🟤","grass":"🟢"}.get(p.get("surface","hard"),"🎾")
-                edge_txt = f"<span style='color:#00ff88;font-size:.72rem'> edge +{p['edge']*100:.1f}%</span>" if p.get("edge",0)>0.02 else ""
-
-                st.markdown(
-                    f"<div class='mrow' style='margin-bottom:4px'>"
-                    f"<div style='display:flex;justify-content:space-between;align-items:flex-start'>"
-                    f"<div style='flex:1;min-width:0'>"
-                    f"<div style='font-weight:700;font-size:.92rem'>{rank_badge} {p['p1']} vs {p['p2']}</div>"
-                    f"<div style='color:#555;font-size:.75rem'>{p['tour']} · {p['torneo']} {surf_icon} · {p['hora']}</div>"
-                    f"<div style='margin-top:5px;color:#00ccff;font-weight:700;font-size:.95rem'>👉 {p['pick']}{os_}{edge_txt}</div>"
-                    f"</div>"
-                    f"<div style='text-align:right;flex-shrink:0;margin-left:12px'>"
-                    f"<div style='font-size:1.5rem;font-weight:900;color:{cc}'>{p['prob']*100:.1f}%</div>"
-                    f"<div style='font-size:.7rem;color:{cc}'>{p['conf']}</div>"
-                    f"<div style='font-size:.68rem;color:#555'>{p['p1'][:10]}: {p['p1_pct']:.1f}% / {p['p2'][:10]}: {p['p2_pct']:.1f}%</div>"
-                    f"</div></div>",
-                    unsafe_allow_html=True)
-
-                # Análisis Einstein expandido
-                if p.get("resumen") or p.get("h2h") or p.get("factor"):
-                    with st.expander(f"🧠 Análisis Einstein — {p['p1']} vs {p['p2']}"):
-                        if p.get("h2h"):
-                            st.markdown(f"<div style='font-size:.8rem;color:#00ccff;padding:4px 0'>⚔️ <b>H2H:</b> {p['h2h']}</div>",unsafe_allow_html=True)
-                        cols = st.columns(2)
-                        with cols[0]:
-                            if p.get("forma_p1"):
-                                st.markdown(f"<div style='font-size:.78rem;color:#aaa;background:#07071a;border-radius:8px;padding:8px'><b style='color:#00ff88'>{p['p1'][:16]}</b><br>{p['forma_p1']}</div>",unsafe_allow_html=True)
-                        with cols[1]:
-                            if p.get("forma_p2"):
-                                st.markdown(f"<div style='font-size:.78rem;color:#aaa;background:#07071a;border-radius:8px;padding:8px'><b style='color:#aa00ff'>{p['p2'][:16]}</b><br>{p['forma_p2']}</div>",unsafe_allow_html=True)
-                        if p.get("surf_adv"):
-                            st.markdown(f"<div style='font-size:.78rem;color:#FFD700;padding:4px 0'>{surf_icon} <b>Superficie:</b> {p['surf_adv']}</div>",unsafe_allow_html=True)
-                        if p.get("factor"):
-                            st.markdown(f"<div style='font-size:.78rem;color:#ff9500;padding:4px 0'>⚡ <b>Factor decisivo:</b> {p['factor']}</div>",unsafe_allow_html=True)
-                        if p.get("resumen"):
-                            st.markdown(f"<div style='font-size:.82rem;color:#aaa;background:#07071a;border-radius:8px;padding:10px;margin-top:4px;line-height:1.6'>🧠 {p['resumen']}</div>",unsafe_allow_html=True)
-        with tab5:
-            def _ten_preview():
-                with st.spinner("Calculando preview Tenis..."):
-                    _prev = []
-                    for _m in ten_matches:
-                        if _m["state"]!="pre": continue
-                        _tm = tennis_model(_m["rank1"],_m["rank2"],_m["odd_1"],_m["odd_2"])
-                        _bp = max(_tm["p1"],_tm["p2"])
-                        _fv = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
-                        if _bp >= 0.62:
-                            _prev.append({"match":f"{_m['p1']} vs {_m['p2']}","tour":_m["tour"],"hora":_m["hora"],"fav":_fv,"prob":_bp})
-                    _prev.sort(key=lambda x:-x["prob"])
-                if not _prev:
-                    st.markdown("<div style='color:#555;padding:10px'>Sin picks de tenis con prob>=62% ahora.</div>",unsafe_allow_html=True)
-                for _p in _prev[:5]:
-                    _cc = "#FFD700" if _p["prob"]>0.68 else "#00ff88"
-                    st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-weight:700'>{_p['match']}</div><div style='color:#555;font-size:.8rem'>{_p['tour']} · {_p['hora']}</div><div style='color:#00ccff;font-weight:700;margin-top:4px'>🎾 {_p['fav']} gana</div></div><div style='text-align:right'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{_p['prob']*100:.1f}%</div></div></div>",unsafe_allow_html=True)
-            render_bot_tab("🎾 Tenis", escanear_tenis_y_enviar, [ten_matches], _ten_preview)
-        with tab6:
-            st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
-            init_history()
-            render_history()
-        with tab5:
-            def _ten_preview():
-                with st.spinner("Calculando preview Tenis..."):
-                    _prev = []
-                    for _m in ten_matches:
-                        if _m["state"]!="pre": continue
-                        _tm = tennis_model(_m["rank1"],_m["rank2"],_m["odd_1"],_m["odd_2"])
-                        _bp = max(_tm["p1"],_tm["p2"])
-                        _fv = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
-                        if _bp >= 0.62:
-                            _prev.append({"match":f"{_m['p1']} vs {_m['p2']}","tour":_m["tour"],"hora":_m["hora"],"fav":_fv,"prob":_bp})
-                    _prev.sort(key=lambda x:-x["prob"])
-                if not _prev:
-                    st.markdown("<div style='color:#555;padding:10px'>Sin picks de tenis con prob>=62% ahora.</div>",unsafe_allow_html=True)
-                for _p in _prev[:5]:
-                    _cc = "#FFD700" if _p["prob"]>0.68 else "#00ff88"
-                    st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-weight:700'>{_p['match']}</div><div style='color:#555;font-size:.8rem'>{_p['tour']} · {_p['hora']}</div><div style='color:#00ccff;font-weight:700;margin-top:4px'>🎾 {_p['fav']} gana</div></div><div style='text-align:right'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{_p['prob']*100:.1f}%</div></div></div>",unsafe_allow_html=True)
-        with tab6:
-            st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
-            init_history()
-            render_history()
-        with tab7:
-            st.markdown("<div class='shdr'>🎓 Califica tu Pick — Einstein 🧠</div>", unsafe_allow_html=True)
-            # Detector de anomalías Tenis
-            _an_ten_pro = get_action_network_pro("","","tennis")
-            render_fix_detector("tennis","Jugador 1","Jugador 2",{},{},{},
-                               {"slug":"tennis"},an_data=_an_ten_pro)
-            render_einstein_califica("ten")
-        with tab8:
-            render_resultados_tab()
-
-    # ─── FÚTBOL ──────────────────────────────────────────
-    else:
-        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados"])
-
-        # ─── TAB CARTELERA ───────────────────────────────────
-        with tab1:
-            fc1, fc2 = st.columns([3,1])
-            with fc1:
-                conf_fil = st.selectbox("Filtro", ["Todos","💎 Solo Diamante","🔥 Alta o más","⚡ Media o más"],
-                                        label_visibility="collapsed", key="conf_filter")
-            with fc2:
-                st.markdown(f"<div style='color:#555;font-size:.82rem;padding:10px 0;text-align:right'>{len(matches)} partidos</div>",unsafe_allow_html=True)
-    
-            from collections import defaultdict
-            fecha_liga = defaultdict(lambda: defaultdict(list))
-            now_str = datetime.now(CDMX)
-            def fecha_label(f):
-                try:
-                    d = datetime.strptime(f, "%Y-%m-%d")
-                    dias  = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
-                    meses = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-                    return f"📅 {dias[d.weekday()]} {d.day} {meses[d.month]}"
-                except: return f"📅 {f}"
-            for m in matches:
-                fecha_liga[m["fecha"]][m["league"]].append(m)
-            for fi, fecha in enumerate(sorted(fecha_liga.keys())):
-                total_p = sum(len(v) for v in fecha_liga[fecha].values())
-                label = f"{fecha_label(fecha)}  ·  {total_p} partidos"
-                with st.expander(label, expanded=(fi==0)):
-                    for liga in sorted(fecha_liga[fecha].keys()):
-                        liga_matches = []
-                        for m in fecha_liga[fecha][liga]:
-                            if conf_fil != "Todos" and m["state"] == "pre":
-                                hf  = get_form(m["home_id"], m["slug"])
-                                af  = get_form(m["away_id"], m["slug"])
-                                hxg = xg_weighted(hf, is_home=True,  odds_prior=1/m.get("odd_h",0) if m.get("odd_h",0)>1 else 0) if hf else xg_from_record(m["home_rec"],True)
-                                axg = xg_weighted(af, is_home=False, odds_prior=1/m.get("odd_a",0) if m.get("odd_a",0)>1 else 0) if af else xg_from_record(m["away_rec"],False)
-                                dp_ = diamond_engine(mc50k(hxg,axg), {}, hf, af)
-                                conf = dp_["conf"]
-                                if conf_fil == "💎 Solo Diamante" and "DIAMANTE" not in conf: continue
-                                if conf_fil == "🔥 Alta o más" and conf not in ["💎 DIAMANTE","🔥 ALTA"]: continue
-                                if conf_fil == "⚡ Media o más" and "BAJA" in conf: continue
-                                m = {**m, "_conf": conf}
-                            liga_matches.append(m)
-                        if not liga_matches: continue
-                        st.markdown(f"<div class='shdr'>{liga}</div>", unsafe_allow_html=True)
-                        for m in liga_matches:
-                            # Skip finished games — they go to Resultados tab
-                            if m["state"] == "post":
-                                sh = m.get("score_h",-1); sa = m.get("score_a",-1)
-                                score_f = f"{sh}-{sa}" if sh>=0 else "FT"
-                                st.markdown(
-                                    f"<div style='display:flex;justify-content:space-between;align-items:center;"
-                                    f"padding:6px 14px;background:#0a0a1e;border-radius:8px;margin:2px 0;"
-                                    f"border-left:3px solid #333;opacity:.6'>"
-                                    f"<div style='font-size:.82rem;color:#555'>"
-                                    f"✅ {m['home']} vs {m['away']}</div>"
-                                    f"<div style='font-size:.9rem;font-weight:700;color:#555'>{score_f}</div>"
-                                    f"</div>", unsafe_allow_html=True)
-                                continue
-                            live = m["state"] == "in"
-                            sc   = f"🔴 {m['score_h']}-{m['score_a']}" if live else m["hora"]
-                            conf_tag = f" · {m.get('_conf','')}" if m.get("_conf") else ""
-                            lbl = f"{'🔴 ' if live else ''}{m['home']}  vs  {m['away']}   ·   {sc}{conf_tag}"
-                            if st.button(lbl, key=f"b_{m['id']}", use_container_width=True):
-                                st.session_state["sel"]  = m
-                                st.session_state["view"] = "analisis"
-                                st.rerun()
-    
-        # ─── TAB TRILAY ──────────────────────────────────────
-        with tab2:
-            st.markdown("<div class='shdr'>🎰 TRILAY — Top 3 de todos los deportes</div>",unsafe_allow_html=True)
-            with st.spinner("Calculando TRILAY multi-deporte..."):
-                # ── Recolectar TODOS los candidatos ──
-                trilay_cands = []
-                # Fútbol
-                for t in compute_trilay(matches):
-                    trilay_cands.append({"deporte":"⚽","label":f"{t['home']} vs {t['away']}",
-                        "sub":f"{t['league']} · {t['hora']}","pick":t["best_m"],
-                        "prob":t["best_p"],"extra":f"xG {t['hxg']:.1f}-{t['axg']:.1f}"})
-                # NBA
-                try:
-                    for g in get_nba_cartelera()[:20]:
-                        if g["state"]!="pre": continue
-                        res = nba_ou_model(g["home_id"],g["away_id"],g["ou_line"])
-                        bp = max(res["p_over"],res["p_under"])
-                        bm = f"Over {res['line']}" if res["p_over"]>res["p_under"] else f"Under {res['line']}"
-                        if bp >= 0.55:
-                            trilay_cands.append({"deporte":"🏀","label":f"{g['away']} @ {g['home']}",
-                                "sub":f"NBA · {g['hora']}","pick":bm,"prob":bp,
-                                "extra":f"Proy: {res['proj']} pts"})
-                except: pass
-                # Tenis
-                try:
-                    for m in get_tennis_cartelera()[:30]:
-                        if m["state"]!="pre": continue
-                        tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"])
-                        bp = max(tm["p1"],tm["p2"])
-                        fv = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
-                        if bp >= 0.58:
-                            trilay_cands.append({"deporte":"🎾","label":f"{m['p1']} vs {m['p2']}",
-                                "sub":f"{m['tour']} · {m['hora']}","pick":f"{fv} gana",
-                                "prob":bp,"extra":tm["conf"]})
-                except: pass
-                trilay_cands.sort(key=lambda x:-x["prob"])
-
-                # ── Generar 3 combinaciones distintas ──
-                def make_trilay_combo(pool, exclude_labels):
-                    avail = [c for c in pool if c["label"] not in exclude_labels]
-                    if len(avail) < 3: return None
-                    return avail[:3]
-
-                used = set()
-                combos = []
-                for _ in range(3):
-                    combo = make_trilay_combo(trilay_cands, used)
-                    if not combo: break
-                    combos.append(combo)
-                    # For next combo, exclude the top pick and rotate
-                    used.add(combo[0]["label"])
-
-            def render_trilay_combo(combo, idx):
-                pc = 1.0
-                for t in combo: pc *= t["prob"]
-                sports = len(set(t["deporte"] for t in combo))
-                dep_colors = {"🏀":"#ff9500","⚽":"#aa00ff","🎾":"#00ccff"}
-                st.markdown(
-                    f"<div class='trilay-card' style='margin-bottom:16px'>"
-                    f"<div style='font-size:.75rem;color:#aa00ff;font-weight:700;letter-spacing:.1em;margin-bottom:10px'>"
-                    f"✦ COMBINACIÓN {idx} {'🔥' if idx==1 else ('⚡' if idx==2 else '💡')}</div>"
-                    f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{pc*100:.1f}%</div><div class='mlbl'>Prob combinada</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{1/pc:.2f}x</div><div class='mlbl'>Cuota est.</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{sports}</div><div class='mlbl'>Deportes</div></div>"
-                    f"</div>", unsafe_allow_html=True)
-                for i,t in enumerate(combo,1):
-                    dc = dep_colors.get(t["deporte"],"#aaa")
-                    st.markdown(
-                        f"<div style='padding:10px 0;border-bottom:1px solid #1a1a40'>"
-                        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:2px'>"
-                        f"<span style='background:{dc}22;border:1px solid {dc};border-radius:20px;"
-                        f"padding:2px 10px;font-size:.72rem;font-weight:700;color:{dc}!important'>{t['deporte']}</span>"
-                        f"<span style='font-weight:700;font-size:.9rem'>{i}. {t['label']}</span></div>"
-                        f"<div style='color:#555;font-size:.8rem'>{t['sub']}</div>"
-                        f"<div style='margin-top:5px'><span style='color:#aa00ff;font-weight:700'>👉 {t['pick']}</span>"
-                        f"<span style='color:#666;margin-left:10px;font-size:.82rem'>{t['prob']*100:.1f}% · {t['extra']}</span></div>"
-                        f"</div>", unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-
-            if combos:
-                for idx, combo in enumerate(combos, 1):
-                    render_trilay_combo(combo, idx)
-            else:
-                st.info("No hay suficientes picks hoy para el TRILAY. Vuelve más tarde.")
-
-        # ─── TAB PATO ────────────────────────────────────────
-        with tab3:
-            st.markdown("<div class='shdr'>🦆 PATO — Mejores Under 4.5</div>",unsafe_allow_html=True)
-            with st.spinner("Calculando..."):
-                pato = compute_pato(matches)
-            umbral = st.slider("Umbral mínimo U4.5 %",60,95,75,5,key="pslider")
-            fil    = [p for p in pato if p["u45"]>=umbral]
-            if not fil:
-                st.info(f"No hay partidos con U4.5 ≥ {umbral}%")
-            else:
-                st.markdown(
-                    f"<div class='pato-hero'>"
-                    f"<div style='font-size:.8rem;color:#39d353;font-weight:700;letter-spacing:.1em;margin-bottom:8px'>🦆 PATO DEL DÍA</div>"
-                    f"<div style='font-size:1.1rem;font-weight:700'>{fil[0]['home']} vs {fil[0]['away']}</div>"
-                    f"<div style='font-size:.85rem;color:#555;margin:4px 0'>{fil[0]['league']}</div>"
-                    f"<div style='margin-top:10px'><span style='background:#39d35322;border:1.5px solid #39d353;"
-                    f"border-radius:20px;padding:6px 16px;font-size:1.1rem;font-weight:900;color:#39d353!important'>"
-                    f"U4.5: {fil[0]['u45']:.1f}%</span></div></div>",unsafe_allow_html=True)
-                for p in fil:
-                    uc = "#39d353" if p["u45"]>=85 else ("#00ff88" if p["u45"]>=75 else "#FFD700")
-                    st.markdown(
-                        f"<div class='pato-card'>"
-                        f"<div style='display:flex;justify-content:space-between;align-items:center'>"
-                        f"<div><div style='font-weight:700'>{p['home']} vs {p['away']}</div>"
-                        f"<div style='color:#555;font-size:.82rem'>{p['league']} · {p['hora']}</div>"
-                        f"<div style='margin-top:6px;font-size:.82rem'>xG: {p['hxg']}–{p['axg']} · GC prom: {p['h_gc']}–{p['a_gc']}</div></div>"
-                        f"<div style='text-align:right'><div style='color:{uc};font-size:1.6rem;font-weight:900'>{p['u45']:.1f}%</div>"
-                        f"<div style='font-size:.75rem;color:#555'>U4.5</div></div></div></div>",unsafe_allow_html=True)
-
-        # ─── TAB PICKS ───────────────────────────────────────
-        with tab4:
-            st.markdown("<div class='shdr'>🎯 Mejores Picks del Día — Todos los deportes</div>",unsafe_allow_html=True)
-            with st.spinner("Calculando picks multi-deporte..."):
-                picks = []
-                # ── FÚTBOL ──
-                for m in matches[:50]:
-                    if m["state"]!="pre": continue
-                    try:
-                        hf  = get_form(m["home_id"],m["slug"])
-                        af  = get_form(m["away_id"],m["slug"])
-                        hxg = xg_weighted(hf, is_home=True,  odds_prior=1/m.get("odd_h",0) if m.get("odd_h",0)>1 else 0) if hf else xg_from_record(m["home_rec"],True)
-                        axg = xg_weighted(af, is_home=False, odds_prior=1/m.get("odd_a",0) if m.get("odd_a",0)>1 else 0) if af else xg_from_record(m["away_rec"],False)
-                        mc_ = mc50k(hxg,axg)
-                        h2h = get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"])
-                        h2s = h2h_stats(h2h,m["home"],m["away"])
-                        dp  = diamond_engine(mc_,h2s,hf,af)
-                        # ── Evalúa solo mercados válidos para DIAMANTE ──
-                        opts=[]
-                        # 1X2 — Ganador
-                        if m["odd_h"]>1: opts.append(("🏠 "+m["home"][:15]+" gana", dp["ph"], m["odd_h"], dp["ph"]-(1/m["odd_h"])))
-                        if m["odd_d"]>1: opts.append(("🤝 Empate",                  dp["pd"], m["odd_d"], dp["pd"]-(1/m["odd_d"])))
-                        if m["odd_a"]>1: opts.append(("✈️ "+m["away"][:15]+" gana",  dp["pa"], m["odd_a"], dp["pa"]-(1/m["odd_a"])))
-                        # Doble Chance
-                        dc_1x = dp["ph"]+dp["pd"]; dc_x2 = dp["pd"]+dp["pa"]; dc_12 = dp["ph"]+dp["pa"]
-                        opts.append(("🔵 DC: "+m["home"][:12]+" o Empate", dc_1x, 0, dc_1x-0.65))
-                        opts.append(("🟣 DC: "+m["away"][:12]+" o Empate", dc_x2, 0, dc_x2-0.65))
-                        opts.append(("🔴 DC: "+m["home"][:11]+" o "+m["away"][:11], dc_12, 0, dc_12-0.65))
-                        # Over 2.5 y Over 3.5
-                        opts.append(("⚽ Over 2.5", mc_["o25"], 0, mc_["o25"]-0.52))
-                        opts.append(("⚽ Over 3.5", mc_["o35"], 0, mc_["o35"]-0.45))
-                        # Ambos Anotan
-                        opts.append(("⚡ Ambos Anotan (AA)", mc_["btts"], 0, mc_["btts"]-0.52))
-                        # Ordenar por probabilidad — el pick es el de MAYOR prob con edge positivo
-                        opts.sort(key=lambda x: (-x[1], -x[3]))
-                        # Filtrar solo los que tienen edge positivo
-                        valid = [o for o in opts if o[3] > 0.0]
-                        best = valid[0] if valid else max(opts, key=lambda x: x[1])
-                        if best[1] >= 0.55:  # prob mínima 55% para aparecer como pick
-                            picks.append({"deporte":"⚽","home":m["home"],"away":m["away"],
-                                         "league":m["league"],"hora":m["hora"],
-                                         "pick":best[0],"prob":best[1],"odd":best[2],
-                                         "edge":best[3],"conf":dp["conf"]})
-                    except: continue
-                # ── NBA ──
-                try:
-                    for g in get_nba_cartelera()[:20]:
-                        if g["state"]!="pre": continue
-                        res = nba_ou_model(g["home_id"],g["away_id"],g["ou_line"])
-                        best_p = res["p_over"] if res["p_over"]>res["p_under"] else res["p_under"]
-                        best_m = f"🏀 Over {res['line']}" if res["p_over"]>res["p_under"] else f"❄️ Under {res['line']}"
-                        edge = best_p - 0.5
-                        if edge > 0.04:
-                            picks.append({"deporte":"🏀","home":g["home"],"away":g["away"],
-                                         "league":"NBA","hora":g["hora"],
-                                         "pick":best_m,"prob":best_p,"odd":0,
-                                         "edge":edge,"conf":"💎 DIAMANTE" if best_p>0.65 else "🔥 ALTA"})
-                except: pass
-                # ── TENIS ──
-                try:
-                    for m in get_tennis_cartelera()[:30]:
-                        if m["state"]!="pre": continue
-                        tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"])
-                        best_p = max(tm["p1"],tm["p2"])
-                        fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
-                        best_odd = m["odd_1"] if tm["p1"]>=tm["p2"] else m["odd_2"]
-                        edge = tm["edge_1"] if tm["p1"]>=tm["p2"] else tm["edge_2"]
-                        if best_p >= 0.58:
-                            picks.append({"deporte":"🎾","home":m["p1"],"away":m["p2"],
-                                         "league":f"{m['tour']} · {m['torneo']}","hora":m["hora"],
-                                         "pick":f"🎾 {fav} gana","prob":best_p,
-                                         "odd":best_odd,"edge":edge,"conf":tm["conf"]})
-                except: pass
-
-                picks.sort(key=lambda x:-x["prob"])
-
-            if not picks:
-                st.info("No se encontraron picks con valor hoy.")
-            # Mostrar pick diamante primero
-            diamantes = [p for p in picks if "DIAMANTE" in p["conf"]]
-            if diamantes:
-                d = diamantes[0]
-                dep_color = "#ff9500" if d["deporte"]=="🏀" else ("#00ccff" if d["deporte"]=="🎾" else "#7c00ff")
-                os_ = f"@{d['odd']}" if d["odd"]>1 else ""
-                st.markdown(
-                    f"<div class='diamond-hero'>"
-                    f"<div style='font-size:.78rem;font-weight:700;color:#FFD700;letter-spacing:.14em;margin-bottom:10px'>"
-                    f"✦ PICK DIAMANTE DEL DÍA {d['deporte']}</div>"
-                    f"<div style='font-size:1.6rem;font-weight:900'>{d['home']} vs {d['away']}</div>"
-                    f"<div style='color:#555;font-size:.85rem;margin:4px 0'>{d['league']} · {d['hora']}</div>"
-                    f"<div style='font-size:1.2rem;font-weight:700;color:#FFD700;margin:10px 0'>"
-                    f"👉 {d['pick']} {os_}</div>"
-                    f"<div style='display:flex;gap:10px;flex-wrap:wrap'>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#7c00ff'>{d['prob']*100:.1f}%</div><div class='mlbl'>Probabilidad</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>+{d['edge']*100:.1f}%</div><div class='mlbl'>Edge</div></div>"
-                    f"</div></div>", unsafe_allow_html=True)
-                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-            for p in picks[:15]:
-                dep_color = "#ff9500" if p["deporte"]=="🏀" else ("#00ccff" if p["deporte"]=="🎾" else "#7c00ff")
-                os_ = f"@{p['odd']}" if p["odd"]>1 else ""
-                st.markdown(
-                    f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'>"
-                    f"<div style='flex:1'>"
-                    f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:2px'>"
-                    f"<span style='background:{dep_color}22;border:1px solid {dep_color};border-radius:12px;"
-                    f"padding:1px 8px;font-size:.72rem;font-weight:700;color:{dep_color}!important'>{p['deporte']}</span>"
-                    f"<span style='font-weight:700;font-size:.9rem'>{p['home']} vs {p['away']}</span></div>"
-                    f"<div style='color:#555;font-size:.78rem'>{p['league']} · {p['hora']}</div>"
-                    f"<div style='margin-top:4px;color:#00ccff;font-weight:700;font-size:.85rem'>{p['pick']} {os_}</div></div>"
-                    f"<div style='text-align:right;min-width:80px'>"
-                    f"<div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div>"
-                    f"<div style='font-size:.72rem;color:#555'>{p['conf']}</div></div></div>",
-                    unsafe_allow_html=True)
-    
-        # ─── TAB BOT TELEGRAM ────────────────────────────────
-        with tab5:
-            bot_ok = bool(BOT_TOKEN and CHAT_ID)
-            st.markdown(
-                f"<div class='bot-card'>"
-                f"<div style='font-size:.8rem;color:#229ED9;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>🤖 BOT TELEGRAM</div>"
-                f"<div style='font-size:1.1rem;font-weight:700;margin-bottom:6px'>The Gamblers Layer Bot</div>"
-                f"<div style='color:#555;font-size:.85rem'>Estado: {'✅ Configurado' if bot_ok else '⚠️ Sin configurar — edita BOT_TOKEN y CHAT_ID en el código'}</div>"
-                f"</div>",unsafe_allow_html=True)
-            if bot_ok:
-                col1,col2 = st.columns(2)
-                with col1:
-                    if st.button("📡 Enviar Escáner Ahora", use_container_width=True):
-                        with st.spinner("Escaneando y enviando..."):
-                            n = escanear_y_enviar(all_matches)
-                        st.success(f"✅ Enviado. {n} picks encontrados.")
-                with col2:
-                    if st.button("🧪 Test — Enviar Mensaje de Prueba", use_container_width=True):
-                        ok = tg_send("🦅 *The Gamblers Layer* — Test de conexión exitoso ✅")
-                        st.success("✅ Mensaje enviado.") if ok else st.error("❌ Error. Verifica token y chat_id.")
-    
-                st.markdown("<div class='shdr'>Envío Automático</div>",unsafe_allow_html=True)
-                st.info("El bot ya está programado en PythonAnywhere para correr todos los días a las 13:00 UTC. "
-                        "Usa el botón de arriba para un escaneo manual en cualquier momento.")
-    
-                st.markdown("<div class='shdr'>Últimos picks enviados</div>",unsafe_allow_html=True)
-                with st.spinner("Calculando picks para preview..."):
-                    preview=[]
-                    for m in all_matches[:30]:
-                        if m["state"]!="pre": continue
-                        hf  = get_form(m["home_id"],m["slug"])
-                        af  = get_form(m["away_id"],m["slug"])
-                        hxg = xg_weighted(hf, is_home=True,  odds_prior=1/m.get("odd_h",0) if m.get("odd_h",0)>1 else 0) if hf else xg_from_record(m["home_rec"],True)
-                        axg = xg_weighted(af, is_home=False, odds_prior=1/m.get("odd_a",0) if m.get("odd_a",0)>1 else 0) if af else xg_from_record(m["away_rec"],False)
-                        mc  = mc50k(hxg,axg)
-                        h2s = h2h_stats(get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"]),m["home"],m["away"])
-                        dp  = diamond_engine(mc,h2s,hf,af)
-                        if m["odd_h"]>1:
-                            edge=dp["ph"]-(1/m["odd_h"])
-                            if edge>=0.08 and dp["ph"]>=0.45:
-                                preview.append({**m,"dp":dp,"edge":edge})
-                    preview.sort(key=lambda x:-x["edge"])
-                if not preview:
-                    st.markdown("<div style='color:#555;padding:10px'>No hay picks con edge>8% en la cartelera actual.</div>",unsafe_allow_html=True)
-                for p in preview[:5]:
-                    st.markdown(
-                        f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'>"
-                        f"<div><div style='font-weight:700'>🚨 {p['home']} vs {p['away']}</div>"
-                        f"<div style='color:#555;font-size:.82rem'>{p['league']} · {p['hora']}</div>"
-                        f"<div style='margin-top:4px;color:#00ccff'>Local gana @{p['odd_h']} · Edge: {p['edge']*100:.1f}%</div></div>"
-                        f"<div style='text-align:right'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['dp']['ph']*100:.1f}%</div>"
-                        f"<div style='font-size:.75rem;color:#555'>{p['dp']['conf']}</div></div></div>",
-                        unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div style='background:#0d0d2e;border-radius:12px;padding:20px;margin-top:10px;color:#666'>
-                <b>Cómo configurar el bot:</b><br><br>
-                1. Abre el archivo <code>app_final.py</code><br>
-                2. Cambia <code>BOT_TOKEN</code> por el token que te dio BotFather<br>
-                3. Cambia <code>CHAT_ID</code> por tu chat ID<br>
-                4. Reinicia la app
-                </div>""",unsafe_allow_html=True)
-    
-        # ─── TAB HISTORIAL ───────────────────────────────────
-        with tab6:
-            st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
-            col_a, col_b = st.columns([3,1])
-            with col_a:
-                st.markdown("<div style='color:#555;font-size:.82rem;margin-bottom:4px'>Abre un partido → click en 💾 Guardar Pick → marca ✅ o ❌ cuando termine</div>", unsafe_allow_html=True)
-            with col_b:
-                if st.button("🔄 Auto-actualizar", use_container_width=True, help="Revisa ESPN y actualiza resultados automáticamente"):
-                    with st.spinner("Revisando resultados..."):
-                        n = auto_track_picks()
-                    if n > 0:
-                        st.success(f"✅ {n} pick(s) actualizados")
-                    else:
-                        st.info("No hay resultados nuevos aún")
-            render_history()
-    
-        # ─── TAB CALIFICA TU PICK ─────────────────────────────
-        with tab7:
-            st.markdown("<div class'shdr'>🎓 Califica tu Pick — Einstein 🧠</div>", unsafe_allow_html=True)
-            render_einstein_califica("fut")
-        with tab8:
-            render_resultados_tab()
-
-    
 else:
     g = st.session_state["sel"]
     if st.button("← Volver"):
         st.session_state["view"]="cartelera"; st.session_state["sel"]=None; st.rerun()
 
-    st.markdown(
-        f"<div style='text-align:center;padding:16px 0 4px'>"
-        f"<div style='font-size:.8rem;color:#555;letter-spacing:.1em'>{g['league']}</div>"
-        f"<div style='font-size:2rem;font-weight:900;margin:6px 0'>{g['home']} <span style='color:#333'>vs</span> {g['away']}</div>"
-        f"<div style='color:#555;font-size:.9rem'>🕒 {g['hora']} CDMX</div></div>",unsafe_allow_html=True)
+    # ══════════════════════════════════════════════════════════════
+    # ANALISIS VIEW — ramificado por deporte
+    # ══════════════════════════════════════════════════════════════
+    _sport = g.get("_sport","")
 
-    prog = st.progress(0,"📊 Cargando datos ESPN...")
-    hform = get_form(g["home_id"],g["slug"]); prog.progress(30,f"📊 {g['away']}...")
-    aform = get_form(g["away_id"],g["slug"]); prog.progress(60,"📊 Calculando...")
-    h2h   = []
-    h2s   = {}
-    # xG con decaimiento exponencial + prior bayesiano de odds
-    hxg = xg_weighted(hform, is_home=True,  odds_prior=1/g.get("odd_h",0) if g.get("odd_h",0)>1 else 0) if hform else xg_from_record(g["home_rec"],True)
-    axg = xg_weighted(aform, is_home=False, odds_prior=1/g.get("odd_a",0) if g.get("odd_a",0)>1 else 0) if aform else xg_from_record(g["away_rec"],False)
-    h2h   = get_h2h(g["home_id"],g["away_id"],g["slug"],g["home"],g["away"])
-    h2s   = h2h_stats(h2h, g["home"], g["away"])
-    mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"], odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0))
-    dp    = diamond_engine(mc, h2s, hform, aform)
-    pls   = smart_parlay(mc, dp, g["home"], g["away"])
-    prog.progress(100,"✅ Listo"); prog.empty()
-
-    # fuente
-    src_h = f"✅ ESPN ({len(hform)}P)" if hform else f"📊 Récord {g['home_rec']}"
-    src_a = f"✅ ESPN ({len(aform)}P)" if aform else f"📊 Récord {g['away_rec']}"
-    st.markdown(
-        f"<div style='font-size:.8rem;background:#0a0a1e;border-radius:8px;padding:8px 14px;"
-        f"border:1px solid #1a1a40;margin:4px 0 14px;display:flex;gap:20px;flex-wrap:wrap'>"
-        f"<span style='color:#444;font-weight:700'>Fuente:</span>"
-        f"<span style='color:#00ff88'>{g['home'][:14]}: {src_h}</span>"
-        f"<span style='color:#00ff88'>{g['away'][:14]}: {src_a}</span></div>",unsafe_allow_html=True)
-
-    # ── JUGADA DIAMANTE — pick = mercado con mayor probabilidad ──
-    _all_markets = [
-        (f"🏠 {g['home'][:16]} gana",      dp["ph"],  g.get("odd_h",0)),
-        ("🤝 Empate",                        dp["pd"],  g.get("odd_d",0)),
-        (f"✈️ {g['away'][:16]} gana",        dp["pa"],  g.get("odd_a",0)),
-        (f"🔵 DC: {g['home'][:12]} o Emp",   dp["ph"]+dp["pd"], 0),
-        (f"🟣 DC: {g['away'][:12]} o Emp",   dp["pd"]+dp["pa"], 0),
-        (f"🔴 DC: {g['home'][:10]} o {g['away'][:10]}", dp["ph"]+dp["pa"], 0),
-        ("⚽ Over 2.5",                       mc["o25"],  0),
-        ("⚽ Over 3.5",                       mc["o35"],  0),
-        ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
-    ]
-    # El pick DIAMANTE = el mercado con probabilidad más alta
-    main_mkt = max(_all_markets, key=lambda x: x[1])
-    main_lbl, main_prob, main_odd = main_mkt
-
-    # Badges de todos los mercados ordenados por prob
-    _mkt_sorted = sorted(_all_markets, key=lambda x:-x[1])
-    top3 = _mkt_sorted[:4]  # mostrar top 4 en la card
-
-    mkt_badges = "".join(
-        f"<div class='mbox' style='flex:1;min-width:90px'>"
-        f"<div class='mval' style='color:{'#FFD700' if i==0 else ('#7c00ff' if i==1 else '#555')};font-size:{1.1 if i==0 else 0.9}rem'>"
-        f"{v*100:.1f}%{'  ✦' if i==0 else ''}</div>"
-        f"<div class='mlbl' style='font-size:.65rem'>{l[:20]}</div></div>"
-        for i,(l,v,_) in enumerate(top3)
-    )
-
-    st.markdown(
-        f"<div class='diamond-hero'>"
-        f"<div style='font-size:.78rem;font-weight:700;color:#FFD700;letter-spacing:.14em;margin-bottom:10px'>"
-        f"✦ JUGADA DIAMANTE — {dp['conf']} · Mayor probabilidad del partido</div>"
-        f"<div style='font-size:2.4rem;font-weight:900;line-height:1.1;margin-bottom:8px'>{main_lbl}</div>"
-        f"<div style='font-size:1.3rem;font-weight:700;color:#FFD700;margin-bottom:6px'>"
-        f"{main_prob*100:.1f}% de probabilidad"
-        + (f" · @{main_odd:.2f}" if main_odd>1 else "") + "</div>"
-        f"<div style='font-size:.75rem;color:#888;margin-bottom:16px'>"
-        f"Evaluados: 1X2 · Doble Chance · Over 2.5 · Over 3.5 · Ambos Anotan</div>"
-        f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{mkt_badges}</div>"
-        f"<div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'>"
-        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'>"
-        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ccff'>{mc.get('dc_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Dixon-Coles</div></div>"
-        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#aa00ff'>{mc.get('bvp_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Poisson BV</div></div>"
-        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ff88'>{mc.get('elo_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Elo Dinámico</div></div>"
-        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#FFD700'>{mc.get('h2h_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>H2H</div></div>"
-        f"</div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div>"
-        f"</div></div>",
-        unsafe_allow_html=True)
-
-    # ── VEREDICTO ACADÉMICO — semáforo ──
-    v_html = veredicto_academico(mc, dp, g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0), g["home"], g["away"], best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
-    st.markdown(v_html, unsafe_allow_html=True)
-
-    # ── GUARDAR PICK ──
-    sc1, sc2, sc3 = st.columns(3)
-    with sc1:
-        if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
-            add_pick(g, main_lbl, main_prob, main_odd)
-            st.success("✅ Pick guardado en Historial")
-    with sc2:
-        if st.button(f"💾 Over 2.5 ({mc['o25']*100:.0f}%)", use_container_width=True, key="save_o25"):
-            add_pick(g, "⚽ Over 2.5", mc["o25"], 0)
-            st.success("✅ Pick guardado")
-    with sc3:
-        if st.button(f"💾 AA ({mc['btts']*100:.0f}%)", use_container_width=True, key="save_btts"):
-            add_pick(g, "⚡ Ambos Anotan", mc["btts"], 0)
-            st.success("✅ Pick guardado")
-
-    # ══════════════════════════════════════════════════════════
-    # VEREDICTO ACADÉMICO — Semáforo 🟢🟡🔴
-    # ══════════════════════════════════════════════════════════
-    v_html = veredicto_academico(mc, dp,
-        g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0),
-        g["home"], g["away"],
-        best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
-    st.markdown(v_html, unsafe_allow_html=True)
-
-    # ── TABLA DE POSICIONES ──
-    st.markdown("<div class='shdr'>📊 Tabla de Posiciones</div>", unsafe_allow_html=True)
-    with st.spinner("Cargando tabla..."):
-        standings = get_standings(g["slug"])
-    if standings:
-        # Highlight home and away team
+    if _sport == "tennis":
+        # ── TENNIS ANALYSIS — full pipeline ──
         st.markdown(
-            f"<div class='acard' style='padding:12px 16px'>"
-            f"<div class='stand-row' style='color:#555;font-size:.72rem;font-weight:700;border-bottom:2px solid #252555'>"
-            f"<span>#</span><span>Equipo</span><span>PJ</span><span>Pts</span>"
-            f"<span>GF</span><span>GC</span><span>Dif</span></div>",
+            f"<div style='text-align:center;padding:16px 0 4px'>"
+            f"<div style='font-size:.8rem;color:#00ccff;letter-spacing:.1em'>"
+            f"{g.get('league','Tenis')}</div>"
+            f"<div style='font-size:2rem;font-weight:900;margin:6px 0'>"
+            f"{g['home']} <span style='color:#333'>vs</span> {g['away']}</div>"
+            f"<div style='color:#555;font-size:.9rem'>🕒 {g.get('hora','')} CDMX</div></div>",
             unsafe_allow_html=True)
-        for row in standings[:20]:
-            is_h = g["home_id"] == row["tid"]
-            is_a = g["away_id"] == row["tid"]
-            bg   = "background:#7c00ff22;border-left:3px solid #7c00ff;" if is_h else \
-                   ("background:#ff444422;border-left:3px solid #ff4444;" if is_a else "")
-            name_color = "#7c00ff" if is_h else ("#ff4444" if is_a else "#EEEEFF")
-            st.markdown(
-                f"<div class='stand-row' style='{bg}'>"
-                f"<span style='color:#555'>{row['pos']}</span>"
-                f"<span style='color:{name_color};font-weight:{'700' if is_h or is_a else '400'}'>{row['team'][:16]}</span>"
-                f"<span style='color:#555'>{row['pj']}</span>"
-                f"<span style='color:#FFD700;font-weight:700'>{row['pts']}</span>"
-                f"<span style='color:#00ff88'>{row['gf']}</span>"
-                f"<span style='color:#ff4444'>{row['gc']}</span>"
-                f"<span style='color:#aaa'>{row['dif']}</span>"
-                f"</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("<div style='color:#555;font-size:.85rem'>Tabla no disponible para esta liga.</div>", unsafe_allow_html=True)
 
-    # ── MERCADOS ──
-    st.markdown("<div class='shdr'>📊 Todos los Mercados</div>",unsafe_allow_html=True)
-    cols=st.columns(6)
-    for col,(label,val) in zip(cols,[("Over 1.5",mc["o15"]),("Over 2.5",mc["o25"]),
-        ("Over 3.5",mc["o35"]),("Ambos Anotan",mc["btts"]),("CS Local",mc["cs_h"]),("CS Visit.",mc["cs_a"])]):
-        with col:
-            color="#00ff88" if val>=0.58 else ("#FFD700" if val>=0.45 else "#666")
-            st.markdown(f"<div class='mbox'><div class='mval' style='color:{color}'>{val*100:.0f}%</div><div class='mlbl'>{label}</div></div>",unsafe_allow_html=True)
+        _ten_surface_map = {
+            "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+            "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+            "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
+            "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
+            "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard",
+        }
+        _ten_tour    = g.get("torneo", g.get("league",""))
+        _ten_surface = next((v for k,v in _ten_surface_map.items()
+                             if k.lower() in _ten_tour.lower()), "hard")
+        _rank1 = g.get("rank1",200); _rank2 = g.get("rank2",200)
+        _odd1  = g.get("odd_h", g.get("odd_1",0))
+        _odd2  = g.get("odd_a", g.get("odd_2",0))
 
-    # ── SMART PARLAY ──
-    if pls:
-        st.markdown("<div class='shdr'>🎰 Smart Parlay</div>",unsafe_allow_html=True)
-        best=pls[0]; legs=[x for x in [best.get("l1"),best.get("l2")] if x]
+        _weib = tennis_model(_rank1, _rank2, _odd1, _odd2, _ten_surface)
+
+        # Einstein
+        _einstein_p1 = None
+        with st.spinner("🧠 Einstein: H2H y forma reciente..."):
+            _ei = tennis_expert_analysis(
+                g["home"], g["away"], _rank1, _rank2,
+                _odd1, _odd2, _ten_surface, _ten_tour,
+                model_p1=_weib["p1"], model_p2=_weib["p2"]
+            )
+        if _ei: _einstein_p1 = _ei.get("p1")
+
+        # Veredicto unificado
+        with st.spinner("🎾 Calculando 50,000 simulaciones..."):
+            _vd = veredicto_academico_tenis(
+                p1_name=g["home"], p2_name=g["away"],
+                rank1=_rank1, rank2=_rank2,
+                odd_1=_odd1, odd_2=_odd2,
+                surface=_ten_surface, torneo=_ten_tour,
+                expert_p1=_einstein_p1
+            )
+
+        _vd_p1    = _vd["_p1_final"]; _vd_p2 = _vd["_p2_final"]
+        _vd_fav   = _vd["_fav_name"]; _vd_fav_p = _vd["_fav_prob"]
+        _vd_score = _vd["_score"];    _vd_html  = _vd["_html"]
+
+        if _vd_score >= 7 and _vd_fav_p >= 0.65:
+            _ten_conf = "💎 DIAMANTE"; _conf_color = "#FFD700"
+        elif _vd_score >= 4 and _vd_fav_p >= 0.58:
+            _ten_conf = "🔥 ALTA"; _conf_color = "#00ff88"
+        elif _vd_score >= 4:
+            _ten_conf = "⚡ MEDIA"; _conf_color = "#aaa"
+        else:
+            _ten_conf = "🔻 NO APOSTAR"; _conf_color = "#ff4444"
+
+        # Hero card
         st.markdown(
-            f"<div class='parlay-hero'>"
-            f"<div style='font-size:.8rem;color:#00ccff;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>✦ PARLAY RECOMENDADO</div>"
-            +"".join(f"<div style='font-size:1.1rem;font-weight:700;margin:4px 0'>✓ {l}</div>" for l in legs)
-            +f"<div style='display:flex;gap:12px;margin-top:16px;flex-wrap:wrap'>"
-            +"".join(f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{p*100:.1f}%</div><div class='mlbl'>{l}</div></div>" for l,p in [(best.get("l1",""),best.get("p1",0)),(best.get("l2",""),best.get("p2",0))])
-            +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['cp']*100:.1f}%</div><div class='mlbl'>Combinada</div></div>"
-            +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['odds']}x</div><div class='mlbl'>Cuota</div></div>"
-            +f"</div></div>",unsafe_allow_html=True)
+            f"<div class='diamond-hero'>"
+            f"<div style='font-size:.75rem;font-weight:700;color:#FFD700;letter-spacing:.12em;margin-bottom:8px'>"
+            f"✦ JUGADA DIAMANTE TENIS — {_ten_conf}</div>"
+            f"<div style='font-size:2.2rem;font-weight:900;margin-bottom:6px'>🎾 {_vd_fav} gana</div>"
+            f"<div style='font-size:1.3rem;font-weight:700;color:#FFD700;margin-bottom:10px'>"
+            f"{_vd_fav_p*100:.1f}% de probabilidad</div>"
+            f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
+            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{_vd['_p1_elo']*100:.0f}%</div><div class='mlbl'>Elo</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{_vd['_p1_surf']*100:.0f}%</div><div class='mlbl'>Superficie</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{_vd['_p1_mc']*100:.0f}%</div><div class='mlbl'>Monte Carlo</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#FFD700'>{_vd['_p1_einstein']*100:.0f}%</div><div class='mlbl'>Einstein</div></div>"
+            f"</div></div>", unsafe_allow_html=True)
 
-    # ── STATS ──
-    st.markdown("<div class='shdr'>📈 Estadísticas Comparativas</div>",unsafe_allow_html=True)
-    h_gf=avg([r["gf"] for r in hform]) if hform else 0
-    a_gf=avg([r["gf"] for r in aform]) if aform else 0
-    h_gc=avg([r["gc"] for r in hform]) if hform else 0
-    a_gc=avg([r["gc"] for r in aform]) if aform else 0
-    h_o25=len([r for r in hform if r["gf"]+r["gc"]>2])/max(len(hform),1)*100
-    a_o25=len([r for r in aform if r["gf"]+r["gc"]>2])/max(len(aform),1)*100
-    h_bt=len([r for r in hform if r["gf"]>0 and r["gc"]>0])/max(len(hform),1)*100
-    a_bt=len([r for r in aform if r["gf"]>0 and r["gc"]>0])/max(len(aform),1)*100
-    rows=(f"<div style='display:grid;grid-template-columns:1fr 200px 1fr;gap:4px;"
-          f"padding:8px 0;border-bottom:1px solid #151530;font-size:.82rem;font-weight:700;color:#555'>"
-          f"<div style='text-align:right'>{g['home'][:14]}</div>"
-          f"<div style='text-align:center'>Estadística</div>"
-          f"<div>{g['away'][:14]}</div></div>")
-    rows+=cmprow("Goles anotados/partido",h_gf,a_gf)
-    rows+=cmprow("Goles recibidos/partido",h_gc,a_gc)
-    rows+=cmprow("xG estimado",hxg,axg,"{:.1f}")
-    rows+=cmprow("% Over 2.5 (últimos 10)",h_o25,a_o25,"{:.0f}","%")
-    rows+=cmprow("% Ambos Anotan (últimos 10)",h_bt,a_bt,"{:.0f}","%")
-    st.markdown(f"<div class='acard'>{rows}</div>",unsafe_allow_html=True)
+        # Veredicto
+        st.markdown(_vd_html, unsafe_allow_html=True)
 
-    # ── FORMA ──
-    st.markdown("<div class='shdr'>📈 Forma reciente</div>",unsafe_allow_html=True)
-    fc1,fc2=st.columns(2)
-    for col,tname,form,color,rec in [(fc1,g["home"],hform,"#7c00ff",g["home_rec"]),(fc2,g["away"],aform,"#ff4444",g["away_rec"])]:
-        with col:
-            w=sum(1 for r in form if r["result"]=="W")
-            d=sum(1 for r in form if r["result"]=="D")
-            l=sum(1 for r in form if r["result"]=="L")
-            gf=sum(r["gf"] for r in form); gc=sum(r["gc"] for r in form)
-            if form:
+        # Guardar pick
+        if st.button(f"💾 Guardar: 🎾 {_vd_fav} gana ({_vd_fav_p*100:.0f}%)",
+                     use_container_width=True, key="save_ten_main"):
+            add_pick({"home":g["home"],"away":g["away"],
+                      "league":g.get("league",""),"fecha":g.get("fecha","")},
+                     f"🎾 {_vd_fav} gana", _vd_fav_p,
+                     _odd1 if _vd_fav==g["home"] else _odd2, sport="tenis")
+            st.success("✅ Pick guardado")
+
+        # Einstein resumen
+        if _ei and _ei.get("resumen"):
+            st.markdown(
+                f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
+                f"border-left:3px solid #FFD700;font-size:.88rem;line-height:1.7;margin-top:12px'>"
+                f"🧠 <b>Einstein:</b><br>{_ei['resumen'].replace(chr(10),'<br>')}</div>",
+                unsafe_allow_html=True)
+
+        # Badrino
+        st.markdown("<div class='shdr'>🤖 Badrino — Análisis Completo</div>", unsafe_allow_html=True)
+        badrino_key = f"bad_detail_{g['home'][:6]}_{g['away'][:6]}"
+        if st.button("🤖 Generar análisis Badrino", key=badrino_key, use_container_width=True):
+            render_badrino_tennis(
+                g["home"], g["away"], _rank1, _rank2,
+                _odd1, _odd2, _ten_surface, _ten_tour,
+                _vd_p1, _vd_p2, _vd_fav, _vd_fav_p, _ten_conf,
+                _ei or {}
+            )
+
+    else:
+        # ── SOCCER ANALYSIS ──
+
+        prog = st.progress(0,"📊 Cargando datos ESPN...")
+        hform = get_form(g["home_id"],g["slug"]); prog.progress(30,f"📊 {g['away']}...")
+        aform = get_form(g["away_id"],g["slug"]); prog.progress(60,"📊 Calculando...")
+        h2h   = []
+        h2s   = {}
+        # xG con decaimiento exponencial + prior bayesiano de odds
+        hxg = xg_weighted(hform, is_home=True,  odds_prior=1/g.get("odd_h",0) if g.get("odd_h",0)>1 else 0) if hform else xg_from_record(g["home_rec"],True)
+        axg = xg_weighted(aform, is_home=False, odds_prior=1/g.get("odd_a",0) if g.get("odd_a",0)>1 else 0) if aform else xg_from_record(g["away_rec"],False)
+        h2h   = get_h2h(g["home_id"],g["away_id"],g["slug"],g["home"],g["away"])
+        h2s   = h2h_stats(h2h, g["home"], g["away"])
+        mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"], odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0))
+        dp    = diamond_engine(mc, h2s, hform, aform)
+        pls   = smart_parlay(mc, dp, g["home"], g["away"])
+        prog.progress(100,"✅ Listo"); prog.empty()
+
+        # fuente
+        src_h = f"✅ ESPN ({len(hform)}P)" if hform else f"📊 Récord {g['home_rec']}"
+        src_a = f"✅ ESPN ({len(aform)}P)" if aform else f"📊 Récord {g['away_rec']}"
+        st.markdown(
+            f"<div style='font-size:.8rem;background:#0a0a1e;border-radius:8px;padding:8px 14px;"
+            f"border:1px solid #1a1a40;margin:4px 0 14px;display:flex;gap:20px;flex-wrap:wrap'>"
+            f"<span style='color:#444;font-weight:700'>Fuente:</span>"
+            f"<span style='color:#00ff88'>{g['home'][:14]}: {src_h}</span>"
+            f"<span style='color:#00ff88'>{g['away'][:14]}: {src_a}</span></div>",unsafe_allow_html=True)
+
+        # ── JUGADA DIAMANTE — pick = mercado con mayor probabilidad ──
+        _all_markets = [
+            (f"🏠 {g['home'][:16]} gana",      dp["ph"],  g.get("odd_h",0)),
+            ("🤝 Empate",                        dp["pd"],  g.get("odd_d",0)),
+            (f"✈️ {g['away'][:16]} gana",        dp["pa"],  g.get("odd_a",0)),
+            (f"🔵 DC: {g['home'][:12]} o Emp",   dp["ph"]+dp["pd"], 0),
+            (f"🟣 DC: {g['away'][:12]} o Emp",   dp["pd"]+dp["pa"], 0),
+            (f"🔴 DC: {g['home'][:10]} o {g['away'][:10]}", dp["ph"]+dp["pa"], 0),
+            ("⚽ Over 2.5",                       mc["o25"],  0),
+            ("⚽ Over 3.5",                       mc["o35"],  0),
+            ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
+        ]
+        # El pick DIAMANTE = el mercado con probabilidad más alta
+        main_mkt = max(_all_markets, key=lambda x: x[1])
+        main_lbl, main_prob, main_odd = main_mkt
+
+        # Badges de todos los mercados ordenados por prob
+        _mkt_sorted = sorted(_all_markets, key=lambda x:-x[1])
+        top3 = _mkt_sorted[:4]  # mostrar top 4 en la card
+
+        mkt_badges = "".join(
+            f"<div class='mbox' style='flex:1;min-width:90px'>"
+            f"<div class='mval' style='color:{'#FFD700' if i==0 else ('#7c00ff' if i==1 else '#555')};font-size:{1.1 if i==0 else 0.9}rem'>"
+            f"{v*100:.1f}%{'  ✦' if i==0 else ''}</div>"
+            f"<div class='mlbl' style='font-size:.65rem'>{l[:20]}</div></div>"
+            for i,(l,v,_) in enumerate(top3)
+        )
+
+        st.markdown(
+            f"<div class='diamond-hero'>"
+            f"<div style='font-size:.78rem;font-weight:700;color:#FFD700;letter-spacing:.14em;margin-bottom:10px'>"
+            f"✦ JUGADA DIAMANTE — {dp['conf']} · Mayor probabilidad del partido</div>"
+            f"<div style='font-size:2.4rem;font-weight:900;line-height:1.1;margin-bottom:8px'>{main_lbl}</div>"
+            f"<div style='font-size:1.3rem;font-weight:700;color:#FFD700;margin-bottom:6px'>"
+            f"{main_prob*100:.1f}% de probabilidad"
+            + (f" · @{main_odd:.2f}" if main_odd>1 else "") + "</div>"
+            f"<div style='font-size:.75rem;color:#888;margin-bottom:16px'>"
+            f"Evaluados: 1X2 · Doble Chance · Over 2.5 · Over 3.5 · Ambos Anotan</div>"
+            f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{mkt_badges}</div>"
+            f"<div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'>"
+            f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'>"
+            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ccff'>{mc.get('dc_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Dixon-Coles</div></div>"
+            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#aa00ff'>{mc.get('bvp_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Poisson BV</div></div>"
+            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ff88'>{mc.get('elo_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Elo Dinámico</div></div>"
+            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#FFD700'>{mc.get('h2h_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>H2H</div></div>"
+            f"</div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div>"
+            f"</div></div>",
+            unsafe_allow_html=True)
+
+        # ── VEREDICTO ACADÉMICO — semáforo ──
+        v_html = veredicto_academico(mc, dp, g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0), g["home"], g["away"], best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
+        st.markdown(v_html, unsafe_allow_html=True)
+
+        # ── GUARDAR PICK ──
+        sc1, sc2, sc3 = st.columns(3)
+        with sc1:
+            if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
+                add_pick(g, main_lbl, main_prob, main_odd)
+                st.success("✅ Pick guardado en Historial")
+        with sc2:
+            if st.button(f"💾 Over 2.5 ({mc['o25']*100:.0f}%)", use_container_width=True, key="save_o25"):
+                add_pick(g, "⚽ Over 2.5", mc["o25"], 0)
+                st.success("✅ Pick guardado")
+        with sc3:
+            if st.button(f"💾 AA ({mc['btts']*100:.0f}%)", use_container_width=True, key="save_btts"):
+                add_pick(g, "⚡ Ambos Anotan", mc["btts"], 0)
+                st.success("✅ Pick guardado")
+
+        # ══════════════════════════════════════════════════════════
+        # VEREDICTO ACADÉMICO — Semáforo 🟢🟡🔴
+        # ══════════════════════════════════════════════════════════
+        v_html = veredicto_academico(mc, dp,
+            g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0),
+            g["home"], g["away"],
+            best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
+        st.markdown(v_html, unsafe_allow_html=True)
+
+        # ── TABLA DE POSICIONES ──
+        st.markdown("<div class='shdr'>📊 Tabla de Posiciones</div>", unsafe_allow_html=True)
+        with st.spinner("Cargando tabla..."):
+            standings = get_standings(g["slug"])
+        if standings:
+            # Highlight home and away team
+            st.markdown(
+                f"<div class='acard' style='padding:12px 16px'>"
+                f"<div class='stand-row' style='color:#555;font-size:.72rem;font-weight:700;border-bottom:2px solid #252555'>"
+                f"<span>#</span><span>Equipo</span><span>PJ</span><span>Pts</span>"
+                f"<span>GF</span><span>GC</span><span>Dif</span></div>",
+                unsafe_allow_html=True)
+            for row in standings[:20]:
+                is_h = g["home_id"] == row["tid"]
+                is_a = g["away_id"] == row["tid"]
+                bg   = "background:#7c00ff22;border-left:3px solid #7c00ff;" if is_h else \
+                       ("background:#ff444422;border-left:3px solid #ff4444;" if is_a else "")
+                name_color = "#7c00ff" if is_h else ("#ff4444" if is_a else "#EEEEFF")
                 st.markdown(
-                    f"<div class='acard'>"
-                    f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
-                    f"<div style='margin-bottom:12px'>{badges(form)}</div>"
-                    f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{w}</div><div class='mlbl'>V</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{d}</div><div class='mlbl'>E</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{l}</div><div class='mlbl'>D</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{gf}</div><div class='mlbl'>GF</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff9500'>{gc}</div><div class='mlbl'>GC</div></div>"
-                    f"</div>"
-                    f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec} · Último: hace {days_since(form)}d</div>"
-                    f"</div>",unsafe_allow_html=True)
-                render_form_chart(form, tname, color)
-            else:
-                try:
-                    rw,rd,rl = map(int, rec.split("-"))
-                    rn = rw+rd+rl
-                    rwp = round(rw/rn*100) if rn>0 else 0
-                except: rw=rd=rl=rn=rwp=0
-                st.markdown(
-                    f"<div class='acard'>"
-                    f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
-                    f"<div style='margin-bottom:12px'><span style='color:#555;font-size:.85rem'>Sin historial detallado en ESPN</span></div>"
-                    f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{rw}</div><div class='mlbl'>V</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{rd}</div><div class='mlbl'>E</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{rl}</div><div class='mlbl'>D</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{rn}</div><div class='mlbl'>PJ</div></div>"
-                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#7c00ff'>{rwp}%</div><div class='mlbl'>% V</div></div>"
-                    f"</div>"
-                    f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec}</div>"
-                    f"</div>",unsafe_allow_html=True)
-            with st.expander(f"📋 {tname[:20]} — partidos detallados"):
-                if not form:
-                    st.markdown("<div style='color:#555;padding:10px'>Sin historial ESPN para esta liga.</div>",unsafe_allow_html=True)
-                for r in form:
-                    rc="#00ff88" if r["result"]=="W" else ("#FFD700" if r["result"]=="D" else "#ff4444")
-                    loc="🏠" if r["is_home"] else "✈️"
+                    f"<div class='stand-row' style='{bg}'>"
+                    f"<span style='color:#555'>{row['pos']}</span>"
+                    f"<span style='color:{name_color};font-weight:{'700' if is_h or is_a else '400'}'>{row['team'][:16]}</span>"
+                    f"<span style='color:#555'>{row['pj']}</span>"
+                    f"<span style='color:#FFD700;font-weight:700'>{row['pts']}</span>"
+                    f"<span style='color:#00ff88'>{row['gf']}</span>"
+                    f"<span style='color:#ff4444'>{row['gc']}</span>"
+                    f"<span style='color:#aaa'>{row['dif']}</span>"
+                    f"</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='color:#555;font-size:.85rem'>Tabla no disponible para esta liga.</div>", unsafe_allow_html=True)
+
+        # ── MERCADOS ──
+        st.markdown("<div class='shdr'>📊 Todos los Mercados</div>",unsafe_allow_html=True)
+        cols=st.columns(6)
+        for col,(label,val) in zip(cols,[("Over 1.5",mc["o15"]),("Over 2.5",mc["o25"]),
+            ("Over 3.5",mc["o35"]),("Ambos Anotan",mc["btts"]),("CS Local",mc["cs_h"]),("CS Visit.",mc["cs_a"])]):
+            with col:
+                color="#00ff88" if val>=0.58 else ("#FFD700" if val>=0.45 else "#666")
+                st.markdown(f"<div class='mbox'><div class='mval' style='color:{color}'>{val*100:.0f}%</div><div class='mlbl'>{label}</div></div>",unsafe_allow_html=True)
+
+        # ── SMART PARLAY ──
+        if pls:
+            st.markdown("<div class='shdr'>🎰 Smart Parlay</div>",unsafe_allow_html=True)
+            best=pls[0]; legs=[x for x in [best.get("l1"),best.get("l2")] if x]
+            st.markdown(
+                f"<div class='parlay-hero'>"
+                f"<div style='font-size:.8rem;color:#00ccff;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>✦ PARLAY RECOMENDADO</div>"
+                +"".join(f"<div style='font-size:1.1rem;font-weight:700;margin:4px 0'>✓ {l}</div>" for l in legs)
+                +f"<div style='display:flex;gap:12px;margin-top:16px;flex-wrap:wrap'>"
+                +"".join(f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{p*100:.1f}%</div><div class='mlbl'>{l}</div></div>" for l,p in [(best.get("l1",""),best.get("p1",0)),(best.get("l2",""),best.get("p2",0))])
+                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['cp']*100:.1f}%</div><div class='mlbl'>Combinada</div></div>"
+                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['odds']}x</div><div class='mlbl'>Cuota</div></div>"
+                +f"</div></div>",unsafe_allow_html=True)
+
+        # ── STATS ──
+        st.markdown("<div class='shdr'>📈 Estadísticas Comparativas</div>",unsafe_allow_html=True)
+        h_gf=avg([r["gf"] for r in hform]) if hform else 0
+        a_gf=avg([r["gf"] for r in aform]) if aform else 0
+        h_gc=avg([r["gc"] for r in hform]) if hform else 0
+        a_gc=avg([r["gc"] for r in aform]) if aform else 0
+        h_o25=len([r for r in hform if r["gf"]+r["gc"]>2])/max(len(hform),1)*100
+        a_o25=len([r for r in aform if r["gf"]+r["gc"]>2])/max(len(aform),1)*100
+        h_bt=len([r for r in hform if r["gf"]>0 and r["gc"]>0])/max(len(hform),1)*100
+        a_bt=len([r for r in aform if r["gf"]>0 and r["gc"]>0])/max(len(aform),1)*100
+        rows=(f"<div style='display:grid;grid-template-columns:1fr 200px 1fr;gap:4px;"
+              f"padding:8px 0;border-bottom:1px solid #151530;font-size:.82rem;font-weight:700;color:#555'>"
+              f"<div style='text-align:right'>{g['home'][:14]}</div>"
+              f"<div style='text-align:center'>Estadística</div>"
+              f"<div>{g['away'][:14]}</div></div>")
+        rows+=cmprow("Goles anotados/partido",h_gf,a_gf)
+        rows+=cmprow("Goles recibidos/partido",h_gc,a_gc)
+        rows+=cmprow("xG estimado",hxg,axg,"{:.1f}")
+        rows+=cmprow("% Over 2.5 (últimos 10)",h_o25,a_o25,"{:.0f}","%")
+        rows+=cmprow("% Ambos Anotan (últimos 10)",h_bt,a_bt,"{:.0f}","%")
+        st.markdown(f"<div class='acard'>{rows}</div>",unsafe_allow_html=True)
+
+        # ── FORMA ──
+        st.markdown("<div class='shdr'>📈 Forma reciente</div>",unsafe_allow_html=True)
+        fc1,fc2=st.columns(2)
+        for col,tname,form,color,rec in [(fc1,g["home"],hform,"#7c00ff",g["home_rec"]),(fc2,g["away"],aform,"#ff4444",g["away_rec"])]:
+            with col:
+                w=sum(1 for r in form if r["result"]=="W")
+                d=sum(1 for r in form if r["result"]=="D")
+                l=sum(1 for r in form if r["result"]=="L")
+                gf=sum(r["gf"] for r in form); gc=sum(r["gc"] for r in form)
+                if form:
                     st.markdown(
-                        f"<div style='display:flex;justify-content:space-between;font-size:.88rem;"
-                        f"padding:6px 4px;border-bottom:1px solid #151530'>"
-                        f"<span style='color:#555;width:90px'>{r['date']}</span>"
-                        f"<span>{loc} {r['opponent'][:18]}</span>"
-                        f"<span style='color:{rc};font-weight:700'>{r['gf']}-{r['gc']} ({r['result']})</span></div>",
-                        unsafe_allow_html=True)
+                        f"<div class='acard'>"
+                        f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
+                        f"<div style='margin-bottom:12px'>{badges(form)}</div>"
+                        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{w}</div><div class='mlbl'>V</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{d}</div><div class='mlbl'>E</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{l}</div><div class='mlbl'>D</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{gf}</div><div class='mlbl'>GF</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff9500'>{gc}</div><div class='mlbl'>GC</div></div>"
+                        f"</div>"
+                        f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec} · Último: hace {days_since(form)}d</div>"
+                        f"</div>",unsafe_allow_html=True)
+                    render_form_chart(form, tname, color)
+                else:
+                    try:
+                        rw,rd,rl = map(int, rec.split("-"))
+                        rn = rw+rd+rl
+                        rwp = round(rw/rn*100) if rn>0 else 0
+                    except: rw=rd=rl=rn=rwp=0
+                    st.markdown(
+                        f"<div class='acard'>"
+                        f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
+                        f"<div style='margin-bottom:12px'><span style='color:#555;font-size:.85rem'>Sin historial detallado en ESPN</span></div>"
+                        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{rw}</div><div class='mlbl'>V</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{rd}</div><div class='mlbl'>E</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{rl}</div><div class='mlbl'>D</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{rn}</div><div class='mlbl'>PJ</div></div>"
+                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#7c00ff'>{rwp}%</div><div class='mlbl'>% V</div></div>"
+                        f"</div>"
+                        f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec}</div>"
+                        f"</div>",unsafe_allow_html=True)
+                with st.expander(f"📋 {tname[:20]} — partidos detallados"):
+                    if not form:
+                        st.markdown("<div style='color:#555;padding:10px'>Sin historial ESPN para esta liga.</div>",unsafe_allow_html=True)
+                    for r in form:
+                        rc="#00ff88" if r["result"]=="W" else ("#FFD700" if r["result"]=="D" else "#ff4444")
+                        loc="🏠" if r["is_home"] else "✈️"
+                        st.markdown(
+                            f"<div style='display:flex;justify-content:space-between;font-size:.88rem;"
+                            f"padding:6px 4px;border-bottom:1px solid #151530'>"
+                            f"<span style='color:#555;width:90px'>{r['date']}</span>"
+                            f"<span>{loc} {r['opponent'][:18]}</span>"
+                            f"<span style='color:{rc};font-weight:700'>{r['gf']}-{r['gc']} ({r['result']})</span></div>",
+                            unsafe_allow_html=True)
 
-    # ── ODDS COMPARISON ──
-    with st.spinner("Buscando cuotas..."):
-        real_odds = get_real_odds(g["home"], g["away"], g["slug"])
-    render_odds_comparison(g["home"], g["away"], dp, mc, real_odds)
-    # ── PRE-MATCH INTELLIGENCE BOT — Fútbol ──
-    adj_dp, _was_adj = render_prematch_bot(
-        sport="soccer", home=g["home"], away=g["away"],
-        league_slug=g.get("slug",""),
-        league_name=g.get("league",g.get("slug","Fútbol")),
-        model_result=dp,
-        hxg=g.get("hxg",1.3), axg=g.get("axg",1.0),
-        hora_partido=g.get("hora","")
+        # ── ODDS COMPARISON ──
+        with st.spinner("Buscando cuotas..."):
+            real_odds = get_real_odds(g["home"], g["away"], g["slug"])
+        render_odds_comparison(g["home"], g["away"], dp, mc, real_odds)
+        # ── PRE-MATCH INTELLIGENCE BOT — Fútbol ──
+        adj_dp, _was_adj = render_prematch_bot(
+            sport="soccer", home=g["home"], away=g["away"],
+            league_slug=g.get("slug",""),
+            league_name=g.get("league",g.get("slug","Fútbol")),
+            model_result=dp,
+            hxg=g.get("hxg",1.3), axg=g.get("axg",1.0),
+            hora_partido=g.get("hora","")
+        )
+        if _was_adj: dp = adj_dp  # modelo ajustado con bajas
+        render_sharp_money(g["home"], g["away"], dp, mc, real_odds, g)
+        # ── Fetch AN PRO data for fix detector ──
+        _an_pro   = get_action_network_pro(g["home"], g["away"], "soccer")
+        _sbr_fix  = get_sbr_public_betting(g["home"], g["away"], "soccer")
+        _snaps    = _line_history.get(f"{g["home"][:8]}_{g["away"][:8]}", {}).get("snapshots",[])
+        render_fix_detector("soccer", g["home"], g["away"], mc, dp, real_odds, g,
+                            an_data=_an_pro, sbr_data=_sbr_fix, line_snapshots=_snaps)
+
+# ════════════════════════════════════════════════════════════════════════════
+# 👑 KING RONGO — EL CEREBRO SUPREMO v3
+#
+# El meta-sistema que unifica TODOS los modelos de The Gamblers Layer:
+#   ⚽ xG · Dixon-Coles · Poisson BV · Elo Dinámico · H2H Monte-Carlo
+#   🏀 Net Rating · O/U Proyectado · Money Line implícito
+#   🎾 Weibull · Elo ATP/WTA · Superficie · Odds Bayesianos
+#
+# Capacidades:
+#   1. Escaneo completo de los 3 deportes
+#   2. Scoring compuesto (edge + prob + consenso + kelly)
+#   3. Detección de contradicciones entre modelos
+#   4. Gestión de bankroll con memoria de racha
+#   5. Parlay del Rey: combina los 3 mejores picks multi-deporte
+#   6. Narración IA: Claude explica el pick en lenguaje humano
+#   7. Memoria evolutiva: aprende qué mercados/deportes funcionan
+#   8. Presencia global: banner permanente en toda la app
+#   9. Telegram completo: pick + parlay + bankroll
+# ════════════════════════════════════════════════════════════════════════════
+
+_KR_MIN_PROB       = 0.54   # prob mínima para aparecer en lista
+_KR_MIN_EDGE       = 0.02   # edge mínimo para recomendar
+_KR_CONFLICT_PP    = 22     # dispersión (pp) entre modelos → conflicto
+_KR_DIAMOND_PROB   = 0.68
+_KR_GOLD_PROB      = 0.62
+_KR_PARLAY_MIN     = 3      # picks mínimos para armar el parlay del rey
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# UTILIDADES MATEMÁTICAS
+# ────────────────────────────────────────────────────────────────────────────
+
+def _kr_edge(prob, odd):
+    """Edge real vs casas. Sin cuota: edge vs 50-50."""
+    if odd > 1.01:
+        return prob - (1.0 / odd)
+    return prob - 0.50
+
+
+def _kr_kelly(prob, odd, cap=0.08):
+    """Fracción Kelly, cappada al 8%."""
+    if odd <= 1.01 or prob <= 0:
+        return 0.0
+    k = (prob * (odd - 1) - (1 - prob)) / (odd - 1)
+    return round(max(0.0, min(k, cap)) * 100, 1)
+
+
+def _kr_conf(prob, edge, spread_pp):
+    """Devuelve (emoji, label, color) de confianza."""
+    penalizado = spread_pp > _KR_CONFLICT_PP
+    if prob >= _KR_DIAMOND_PROB and edge >= 0.07 and not penalizado:
+        return "💎", "DIAMANTE", "#FFD700"
+    if prob >= _KR_GOLD_PROB and edge >= _KR_MIN_EDGE and not penalizado:
+        return "🔥", "ALTA",     "#00ff88"
+    if prob >= 0.57 and not penalizado:
+        return "⚡", "MEDIA",    "#00ccff"
+    if prob >= 0.52:
+        return "⚠️", "BAJA",     "#ff9500"
+    return "🔻", "NO APOSTAR",  "#ff4444"
+
+
+def _kr_score(prob, edge, spread_pp, kelly, contradiccion):
+    """Score compuesto 0-10 para rankear candidatos."""
+    s  = min(prob * 5.5,  4.0)       # probabilidad base         0-4.0
+    s += min(max(edge * 28, 0), 2.8) # edge real positivo        0-2.8
+    s += min(kelly / 6.0, 1.5)       # kelly: cuánto apostar     0-1.5
+    s -= min(spread_pp / 16.0, 1.5)  # penalizar dispersión      0-1.5
+    if contradiccion: s -= 2.2       # penalización conflicto
+    return round(max(0.0, min(s, 10.0)), 2)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# MOTOR DE ESCANEO — analiza los 3 deportes
+# ────────────────────────────────────────────────────────────────────────────
+
+def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
+    """
+    Corre TODOS los modelos sobre todos los partidos pre-match.
+    Retorna: (el_pick, contradicciones, todos_ordenados)
+    """
+    candidates = []
+
+    # ── ⚽ FÚTBOL ─────────────────────────────────────────────────────────
+    try:
+        for m in (matches_fut or [])[:40]:
+            if m.get("state") != "pre": continue
+            try:
+                hf  = get_form(m["home_id"], m["slug"]) or []
+                af  = get_form(m["away_id"], m["slug"]) or []
+                hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0) \
+                      if hf else xg_from_record(m.get("home_rec","5-5-5"), True)
+                axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0) \
+                      if af else xg_from_record(m.get("away_rec","5-5-5"), False)
+                h2h = get_h2h(m["home_id"], m["away_id"], m["slug"], m["home"], m["away"])
+                h2s = h2h_stats(h2h, m["home"], m["away"])
+                mc  = ensemble_football(hxg, axg, h2s, hf, af,
+                                        m["home_id"], m["away_id"],
+                                        odd_h=m.get("odd_h",0),
+                                        odd_a=m.get("odd_a",0),
+                                        odd_d=m.get("odd_d",0))
+                dp  = diamond_engine(mc, h2s, hf, af)
+
+                mkts = [
+                    (f"🏠 {m['home']} gana",             dp["ph"],          m.get("odd_h",0), "1X2"),
+                    (f"✈️  {m['away']} gana",              dp["pa"],          m.get("odd_a",0), "1X2"),
+                    ("🤝 Empate",                          dp["pd"],          m.get("odd_d",0), "1X2"),
+                    (f"🔵 {m['home'][:10]} o Empate",      dp["ph"]+dp["pd"], 0, "DC"),
+                    (f"🟣 {m['away'][:10]} o Empate",      dp["pd"]+dp["pa"], 0, "DC"),
+                    ("⚽ Over 2.5",                        mc["o25"],         0, "O/U"),
+                    ("⚡ Ambos Anotan",                    mc["btts"],        0, "BTTS"),
+                ]
+                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= _KR_MIN_PROB]
+                if not mkts: continue
+
+                best = max(mkts, key=lambda x: _kr_edge(x[1],x[2]) if x[2]>1 else x[1]-0.50)
+                lbl, prob, odd, mkt = best
+                edge   = _kr_edge(prob, odd)
+                kelly  = _kr_kelly(prob, odd)
+                mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
+                          mc.get("elo_ph",0.5), mc.get("h2h_ph",0.5)]
+                spread = round((max(mv)-min(mv))*100, 1)
+                contra = spread > _KR_CONFLICT_PP
+                ce,cl,cc = _kr_conf(prob, edge, spread)
+
+                c = {
+                    "deporte":"⚽ Fútbol","sport":"futbol",
+                    "label":f"{m['home']} vs {m['away']}",
+                    "liga":m.get("league",""),"hora":m.get("hora",""),
+                    "pick":lbl,"prob":prob,"odd":odd,"edge":edge,
+                    "kelly_pct":kelly,"mkt_type":mkt,
+                    "contradiccion":contra,"model_spread":spread,
+                    "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
+                    "reasoning":f"xG {hxg:.2f}–{axg:.2f} · {mc.get('consensus','')} · {dp.get('conf','')}",
+                    "match":m,
+                    "models":{"Dixon-Coles":round(mc.get("dc_ph",0)*100,1),
+                              "Poisson BV": round(mc.get("bvp_ph",0)*100,1),
+                              "Elo":        round(mc.get("elo_ph",0)*100,1),
+                              "H2H":        round(mc.get("h2h_ph",0)*100,1)},
+                    "hxg":hxg,"axg":axg,
+                }
+                c["score"] = _kr_score(prob, edge, spread, kelly, contra)
+                candidates.append(c)
+            except: continue
+    except: pass
+
+    # ── 🏀 NBA ────────────────────────────────────────────────────────────
+    try:
+        for g in (nba_games or [])[:20]:
+            if g.get("state") != "pre": continue
+            try:
+                res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                p_h = res.get("p_h_win", 0.55); p_a = 1-p_h
+                line= res["line"]
+                mkts= [
+                    (f"🔥 Over {line}",   res["p_over"],  0,               "O/U"),
+                    (f"❄️  Under {line}",  res["p_under"], 0,               "O/U"),
+                    (f"🏠 {g['home']}",    p_h,            g.get("odd_h",0),"ML"),
+                    (f"✈️  {g['away']}",    p_a,            g.get("odd_a",0),"ML"),
+                ]
+                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= _KR_MIN_PROB]
+                if not mkts: continue
+                best = max(mkts, key=lambda x: _kr_edge(x[1],x[2]) if x[2]>1 else x[1]-0.50)
+                lbl,prob,odd,mkt = best
+                edge   = _kr_edge(prob, odd)
+                kelly  = _kr_kelly(prob, odd)
+                spread = round((1-abs(res["p_over"]-res["p_under"]))*50, 1)
+                contra = abs(res["p_over"]-res["p_under"]) < 0.08
+                ce,cl,cc = _kr_conf(prob, edge, spread)
+                c = {
+                    "deporte":"🏀 NBA","sport":"nba",
+                    "label":f"{g['away']} @ {g['home']}",
+                    "liga":"NBA","hora":g.get("hora",""),
+                    "pick":lbl,"prob":prob,"odd":odd,"edge":edge,
+                    "kelly_pct":kelly,"mkt_type":mkt,
+                    "contradiccion":contra,"model_spread":spread,
+                    "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
+                    "reasoning":f"Proy {res['proj']} pts · NetRtg {res.get('net_h',0):+.1f}/{res.get('net_a',0):+.1f}",
+                    "match":g,
+                    "models":{"Over%":round(res["p_over"]*100,1),"Under%":round(res["p_under"]*100,1),
+                              "ML Home":round(p_h*100,1),"ML Away":round(p_a*100,1)},
+                }
+                c["score"] = _kr_score(prob, edge, spread, kelly, contra)
+                candidates.append(c)
+            except: continue
+    except: pass
+
+    # ── 🎾 TENIS ──────────────────────────────────────────────────────────
+    _smap = {"Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+             "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+             "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
+             "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
+             "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard"}
+    try:
+        for m in (ten_matches or [])[:45]:
+            if m.get("state") != "pre": continue
+            try:
+                tor = m.get("torneo", m.get("tour",""))
+                srf = next((v for k,v in _smap.items() if k.lower() in tor.lower()), "hard")
+                tm  = tennis_model(m["rank1"], m["rank2"], m.get("odd_1",0), m.get("odd_2",0), srf)
+                fav = m["p1"] if tm["p1"] >= tm["p2"] else m["p2"]
+                prob= max(tm["p1"], tm["p2"])
+                odd = m.get("odd_1",0) if fav==m["p1"] else m.get("odd_2",0)
+                edge   = _kr_edge(prob, odd)
+                kelly  = _kr_kelly(prob, odd)
+                spread = round(abs(tm["p1"]-tm["p2"])*100, 1)
+                contra = spread < 6
+                ce,cl,cc = _kr_conf(prob, edge, _KR_CONFLICT_PP+5 if contra else 10)
+                rd   = abs(m.get("rank1",200)-m.get("rank2",200))
+                c = {
+                    "deporte":"🎾 Tenis","sport":"tenis",
+                    "label":f"{m['p1']} vs {m['p2']}",
+                    "liga":tor,"hora":m.get("hora",""),
+                    "pick":f"🎾 {fav} gana","prob":prob,"odd":odd,"edge":edge,
+                    "kelly_pct":kelly,"mkt_type":"ML",
+                    "contradiccion":contra,"model_spread":spread,
+                    "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
+                    "reasoning":f"Rk #{m.get('rank1','?')} vs #{m.get('rank2','?')} · {srf.title()} · Δ{spread:.0f}pp",
+                    "match":m,
+                    "models":{"Weibull":round(tm["p1"]*100,1),"Sup":round(tm.get("p1_surf",tm["p1"])*100,1),
+                              "Rank":round(min(100,max(0,50+rd*0.14)),1),"Odds":round(1/odd*100 if odd>1 else 50,1)},
+                }
+                c["score"] = _kr_score(prob, edge, spread if contra else 10, kelly, contra)
+                candidates.append(c)
+            except: continue
+    except: pass
+
+    # ── Rankear ──
+    candidates.sort(key=lambda x: -x.get("score",0))
+    contras = [c for c in candidates if c.get("contradiccion")]
+    # El pick: mayor score, sin contradicción, edge positivo
+    el_pick = next(
+        (c for c in candidates if not c.get("contradiccion") and c.get("edge",0) >= _KR_MIN_EDGE),
+        next((c for c in candidates if not c.get("contradiccion")), None) or
+        (candidates[0] if candidates else None)
     )
-    if _was_adj: dp = adj_dp  # modelo ajustado con bajas
-    render_sharp_money(g["home"], g["away"], dp, mc, real_odds, g)
-    # ── Fetch AN PRO data for fix detector ──
-    _an_pro   = get_action_network_pro(g["home"], g["away"], "soccer")
-    _sbr_fix  = get_sbr_public_betting(g["home"], g["away"], "soccer")
-    _snaps    = _line_history.get(f"{g["home"][:8]}_{g["away"][:8]}", {}).get("snapshots",[])
-    render_fix_detector("soccer", g["home"], g["away"], mc, dp, real_odds, g,
-                        an_data=_an_pro, sbr_data=_sbr_fix, line_snapshots=_snaps)
+    return el_pick, contras, candidates[:20]
+
+
+def _kr_parlay_del_rey(todos):
+    """
+    Arma EL PARLAY DEL REY: los 3 mejores picks de deportes distintos
+    sin contradicción, máxima prob combinada.
+    Retorna lista de hasta 3 candidatos o [] si no hay suficientes.
+    """
+    sin_contra = [c for c in todos if not c.get("contradiccion") and c.get("prob",0) >= 0.58]
+    # Un pick por deporte
+    usados_deportes = set()
+    parlay = []
+    for c in sin_contra:
+        dep = c["deporte"]
+        if dep not in usados_deportes:
+            usados_deportes.add(dep)
+            parlay.append(c)
+        if len(parlay) == 3:
+            break
+    return parlay
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# BANKROLL INTELLIGENCE
+# ────────────────────────────────────────────────────────────────────────────
+
+def _king_rongo_bankroll_advice(pick_history):
+    """
+    Analiza historial y racha actual.
+    Retorna dict con todos los indicadores para la UI.
+    """
+    empty = {"kelly_rec":2.0,"racha":0,"racha_sign":"─","consejo":"Sin historial",
+             "color":"#555","pct":0,"pct10":0,"wins":0,"total":0,
+             "risk_level":"neutro","roi":0.0,"wins10":0,"last_results":[]}
+    if not pick_history: return empty
+
+    settled = [p for p in pick_history if p.get("result") in ("✅","❌")]
+    if not settled: return empty
+
+    wins  = sum(1 for p in settled if p.get("result")=="✅")
+    total = len(settled)
+    pct   = round(wins/total*100) if total else 0
+
+    last10  = settled[-10:]
+    wins10  = sum(1 for p in last10 if p.get("result")=="✅")
+    pct10   = round(wins10/len(last10)*100) if last10 else 0
+    last_r  = [p.get("result","⏳") for p in last10]
+
+    # Racha
+    racha=0; sign=None
+    for pk in reversed(settled):
+        r=pk.get("result")
+        if sign is None: sign=r
+        if r==sign: racha+=1
+        else: break
+    rs = racha if sign=="✅" else -racha
+
+    # ROI
+    roi = sum(
+        (float(p.get("odd",0))-1 if float(p.get("odd",0))>1 else 0.5) if p["result"]=="✅" else -1.0
+        for p in settled
+    )
+
+    # Kelly y consejo
+    if rs <= -5:   kr,co,rl,c = 0.5, "🔴 STOP — racha crítica. Pausa obligatoria.", "critico",   "#ff4444"
+    elif rs <= -3: kr,co,rl,c = 1.0, "🔴 Racha negativa severa — mínimo posible.",  "peligro",  "#ff4444"
+    elif rs <= -1: kr,co,rl,c = 1.5, "🟠 Reduce exposición — no fuerces.",          "reducir",  "#ff9500"
+    elif rs >= 6:  kr,co,rl,c = 5.0, "🟢 Racha épica — sigue con disciplina.",      "epico",    "#FFD700"
+    elif rs >= 4:  kr,co,rl,c = 4.0, "🟢 Racha excelente — puedes subir un poco.", "excelente","#00ff88"
+    elif rs >= 2:  kr,co,rl,c = 3.0, "🟢 Buena racha — mantén el ritmo.",          "bueno",    "#00ff88"
+    elif pct10>=70:kr,co,rl,c = 3.5, "🟢 Últimos 10 perfectos — sigue así.",       "bueno",    "#00ff88"
+    elif pct10<35 and len(last10)>=5:
+                   kr,co,rl,c = 1.5, "🟡 Forma reciente floja — ten cuidado.",      "reducir",  "#FFD700"
+    elif pct>=60:  kr,co,rl,c = 3.0, "🟢 Buen historial — mantén estándar.",       "bueno",    "#00ff88"
+    else:          kr,co,rl,c = 2.0, "⚪ Momento neutro — apuesta estándar.",       "neutro",   "#aaa"
+
+    return {"kelly_rec":kr,"racha":rs,"racha_sign":"▲" if rs>0 else("▼" if rs<0 else"─"),
+            "consejo":co,"color":c,"pct":pct,"pct10":pct10,"wins":wins,"wins10":wins10,
+            "total":total,"risk_level":rl,"roi":round(roi,1),"last_results":last_r}
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# IA NARRATIVA — King Rongo habla
+# ────────────────────────────────────────────────────────────────────────────
+
+def _kr_ia_narracion(el_pick, bk, todos):
+    """
+    Llama a Claude para que King Rongo narre el pick en primera persona.
+    Conciso, poderoso, con personalidad.
+    """
+    if not ANTHROPIC_API_KEY: return ""
+    try:
+        modelos_txt = " | ".join(f"{k}: {v}%" for k,v in el_pick.get("models",{}).items())
+        parlay      = _kr_parlay_del_rey(todos)
+        parlay_txt  = "; ".join(f"{p['pick']} ({p['prob']*100:.0f}%)" for p in parlay) if len(parlay)>=2 else "No disponible"
+
+        prompt = (
+            f"Eres KING RONGO, el cerebro supremo de The Gamblers Layer. "
+            f"Hablas en español, con autoridad, en primera persona, máximo 3 frases cortas. "
+            f"NO uses asteriscos ni markdown. Solo texto plano con carácter.\n\n"
+            f"PICK DEL DÍA:\n"
+            f"Partido: {el_pick['label']}\n"
+            f"Pick: {el_pick['pick']}\n"
+            f"Probabilidad: {el_pick['prob']*100:.1f}%\n"
+            f"Edge real: {el_pick['edge']*100:+.1f}%\n"
+            f"Modelos: {modelos_txt}\n"
+            f"Razonamiento base: {el_pick.get('reasoning','')}\n"
+            f"Confianza: {el_pick.get('conf_label','')}\n\n"
+            f"ESTADO DEL BANKROLL:\n"
+            f"Racha: {bk['racha_sign']}{abs(bk['racha'])} · "
+            f"Acierto global: {bk['pct']}% · ROI: {bk['roi']:+.1f}u\n"
+            f"Consejo: {bk['consejo']}\n\n"
+            f"PARLAY DEL REY: {parlay_txt}\n\n"
+            f"Narra el pick. Sé el rey."
+        )
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
+                     "content-type":"application/json"},
+            json={"model":"claude-opus-4-6","max_tokens":180,
+                  "messages":[{"role":"user","content":prompt}]},
+            timeout=12
+        )
+        if r.status_code == 200:
+            return r.json()["content"][0]["text"].strip()
+    except: pass
+    return ""
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# RENDERIZADO — componentes visuales
+# ────────────────────────────────────────────────────────────────────────────
+
+def _kr_render_header():
+    st.markdown("""
+    <div style='position:relative;overflow:hidden;border-radius:20px;margin-bottom:6px'>
+      <!-- Fondo degradado animado -->
+      <div style='background:linear-gradient(160deg,#180030 0%,#001a00 40%,#1a0020 80%,#000818 100%);
+      padding:0;'>
+
+        <!-- Línea superior dorada -->
+        <div style='height:3px;background:linear-gradient(90deg,
+        transparent 0%,#FFD700 20%,#ff9500 50%,#FFD700 80%,transparent 100%)'></div>
+
+        <!-- Orbs de ambiente -->
+        <div style='position:absolute;top:-30px;left:-30px;width:180px;height:180px;
+        background:radial-gradient(circle,#FFD70014 0%,transparent 70%);pointer-events:none'></div>
+        <div style='position:absolute;top:-30px;right:-30px;width:180px;height:180px;
+        background:radial-gradient(circle,#7c00ff14 0%,transparent 70%);pointer-events:none'></div>
+        <div style='position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);
+        width:300px;height:100px;
+        background:radial-gradient(ellipse,#00ff8808 0%,transparent 70%);pointer-events:none'></div>
+
+        <!-- Contenido central -->
+        <div style='padding:24px 20px 20px;text-align:center;position:relative'>
+          <div style='font-size:3.2rem;line-height:1;margin-bottom:8px;
+          filter:drop-shadow(0 0 16px #FFD70099)'>👑</div>
+
+          <div style='font-size:2rem;font-weight:900;letter-spacing:.22em;
+          background:linear-gradient(135deg,#FFD700 0%,#ff9500 35%,#FFD700 65%,#ffe066 100%);
+          -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+          margin-bottom:6px;line-height:1.1'>KING RONGO</div>
+
+          <div style='font-size:.68rem;color:#555;letter-spacing:.16em;
+          text-transform:uppercase;margin-bottom:2px'>
+          El Cerebro Supremo · Árbitro de Modelos</div>
+
+          <div style='display:flex;justify-content:center;gap:16px;margin-top:10px;flex-wrap:wrap'>
+            <span style='font-size:.65rem;background:#FFD70015;border:1px solid #FFD70033;
+            border-radius:20px;padding:3px 12px;color:#FFD70088'>⚽ xG + Ensemble 4M</span>
+            <span style='font-size:.65rem;background:#ff950015;border:1px solid #ff950033;
+            border-radius:20px;padding:3px 12px;color:#ff950088'>🏀 Net Rating + O/U</span>
+            <span style='font-size:.65rem;background:#00ccff15;border:1px solid #00ccff33;
+            border-radius:20px;padding:3px 12px;color:#00ccff88'>🎾 Weibull + Elo</span>
+          </div>
+        </div>
+
+        <!-- Línea inferior bicolor -->
+        <div style='height:2px;background:linear-gradient(90deg,
+        transparent 0%,#7c00ff 25%,#FFD700 50%,#7c00ff 75%,transparent 100%)'></div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def _kr_render_bankroll(bk):
+    rc     = bk["color"]
+    sign   = bk["racha_sign"]
+    racha  = abs(bk["racha"])
+
+    # Dot indicators for last 10
+    dots = ""
+    for r in bk.get("last_results",[])[-10:]:
+        dc = "#00ff88" if r=="✅" else ("#ff4444" if r=="❌" else "#333")
+        dots += f"<div style='width:9px;height:9px;border-radius:50%;background:{dc}'></div>"
+
+    st.markdown(
+        f"<div style='background:linear-gradient(135deg,#0a0020,#001008);"
+        f"border:1px solid {rc}33;border-radius:14px;padding:14px 16px;margin-bottom:10px'>"
+
+        # Título + racha grande
+        f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:10px'>"
+        f"<div>"
+        f"<div style='font-size:.65rem;color:#FFD700;font-weight:700;letter-spacing:.12em'>👑 BANKROLL INTELLIGENCE</div>"
+        f"<div style='font-size:.78rem;color:{rc};margin-top:3px'>{bk['consejo']}</div>"
+        f"</div>"
+        f"<div style='text-align:right'>"
+        f"<div style='font-size:2.2rem;font-weight:900;color:{rc};line-height:1'>{sign}{racha}</div>"
+        f"<div style='font-size:.6rem;color:#444'>racha actual</div>"
+        f"</div></div>"
+
+        # KPIs fila
+        f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:10px'>"
+        f"<div class='mbox'><div class='mval' style='color:#00ff88'>{bk['wins']}</div><div class='mlbl'>✅ Gana</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#00ccff'>{bk['pct']}%</div><div class='mlbl'>Glb</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{bk['pct10']}%</div><div class='mlbl'>Últ10</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#FFD700'>{bk['kelly_rec']}%</div><div class='mlbl'>Kelly</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:{'#00ff88' if bk['roi']>=0 else '#ff4444'}'>"
+        f"{bk['roi']:+.1f}u</div><div class='mlbl'>ROI</div></div>"
+        f"</div>"
+
+        # Últimos 10 dots
+        f"<div style='display:flex;align-items:center;gap:8px'>"
+        f"<span style='font-size:.6rem;color:#333;white-space:nowrap'>Últ 10</span>"
+        f"<div style='display:flex;gap:4px;align-items:center'>{dots}</div>"
+        f"</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+
+def _kr_render_pick_card(el_pick, bk, narracion=""):
+    """La card principal del pick del día — el centro de todo."""
+    prob  = el_pick["prob"]
+    edge  = el_pick["edge"]
+    odd   = el_pick.get("odd",0)
+    kelly = el_pick.get("kelly_pct", bk["kelly_rec"])
+    ce    = el_pick.get("conf_emoji","⚡")
+    cl    = el_pick.get("conf_label","")
+    cc    = el_pick.get("conf_color","#00ccff")
+    score = el_pick.get("score",0)
+
+    odd_txt  = f"@{odd:.2f}" if odd>1 else "S/C"
+    meter_w  = min(int(prob*100), 100)
+    edge_c   = "#00ff88" if edge>0 else "#ff4444"
+    # Unidades recomendadas sobre base-10
+    units    = round(kelly/100*10, 1)
+
+    # Models mini pills
+    models   = el_pick.get("models",{})
+    pills    = "".join(
+        f"<div style='background:#0a0a1e;border:1px solid #1a1a40;border-radius:20px;"
+        f"padding:4px 10px;text-align:center'>"
+        f"<div style='font-size:.78rem;font-weight:700;color:{cc}'>{v}%</div>"
+        f"<div style='font-size:.58rem;color:#444'>{k}</div></div>"
+        for k,v in models.items()
+    )
+
+    # Narración box
+    narr_html = (
+        f"<div style='background:#07071a;border-left:3px solid #FFD700;"
+        f"border-radius:0 10px 10px 0;padding:10px 14px;margin-bottom:12px;"
+        f"font-size:.82rem;color:#888;line-height:1.7;font-style:italic'>"
+        f"💬 &ldquo;{narracion}&rdquo;</div>"
+    ) if narracion else ""
+
+    st.markdown(
+        # Contenedor con glow
+        f"<div style='position:relative;margin:14px 0;"
+        f"background:linear-gradient(160deg,#0f0025,#001208,#0f0025);"
+        f"border:2px solid {cc};border-radius:18px;"
+        f"box-shadow:0 0 35px {cc}25,inset 0 0 80px #ffffff04;overflow:hidden'>"
+
+        # Top bar
+        f"<div style='height:3px;background:linear-gradient(90deg,transparent,{cc},{cc},transparent)'></div>"
+
+        # Crown badge
+        f"<div style='position:absolute;top:0;left:50%;transform:translateX(-50%);"
+        f"background:linear-gradient(135deg,#0f0025,#001208);"
+        f"padding:4px 18px;border-radius:0 0 14px 14px;"
+        f"border:1px solid {cc}55;border-top:none'>"
+        f"<span style='font-size:.65rem;font-weight:900;color:{cc};letter-spacing:.16em'>"
+        f"👑 PICK DEL DÍA · {ce} {cl}</span></div>"
+
+        f"<div style='padding:22px 18px 16px'>"
+
+        # Partido
+        f"<div style='text-align:center;margin-bottom:12px'>"
+        f"<div style='font-size:.68rem;color:#444;letter-spacing:.08em'>"
+        f"{el_pick['deporte']} · {el_pick.get('liga','')[:32]} · {el_pick.get('hora','')} CDMX</div>"
+        f"<div style='font-size:.96rem;color:#777;margin:4px 0'>{el_pick['label']}</div>"
+        f"</div>"
+
+        # PICK en grande
+        f"<div style='text-align:center;background:#07071a;border-radius:14px;"
+        f"padding:16px 10px;margin-bottom:14px;border:1px solid {cc}33'>"
+        f"<div style='font-size:1.9rem;font-weight:900;color:{cc};line-height:1.2;"
+        f"text-shadow:0 0 24px {cc}55'>{el_pick['pick']}</div>"
+        f"</div>"
+
+        # Meter de probabilidad
+        f"<div style='margin-bottom:14px'>"
+        f"<div style='display:flex;justify-content:space-between;margin-bottom:5px'>"
+        f"<span style='font-size:.63rem;color:#444'>Probabilidad del modelo</span>"
+        f"<span style='font-size:.72rem;font-weight:700;color:{cc}'>{prob*100:.1f}%</span></div>"
+        f"<div style='background:#111128;border-radius:8px;height:10px;overflow:hidden'>"
+        f"<div style='height:10px;width:{meter_w}%;border-radius:8px;position:relative;"
+        f"background:linear-gradient(90deg,{cc}77,{cc})'>"
+        f"<div style='position:absolute;right:0;top:0;bottom:0;width:6px;border-radius:0 8px 8px 0;"
+        f"background:white;opacity:.25'></div>"
+        f"</div></div></div>"
+
+        # Stats 4 columnas
+        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px'>"
+        f"<div class='mbox'><div class='mval' style='color:{cc}'>{prob*100:.1f}%</div><div class='mlbl'>Prob</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:{edge_c}'>{edge*100:+.1f}%</div><div class='mlbl'>Edge</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#FFD700'>{odd_txt}</div><div class='mlbl'>Cuota</div></div>"
+        f"<div class='mbox'><div class='mval' style='color:#00ccff'>{units}u</div><div class='mlbl'>Unidades</div></div>"
+        f"</div>"
+
+        # Pills de modelos
+        f"<div style='background:#07071a;border-radius:10px;padding:10px 12px;margin-bottom:12px'>"
+        f"<div style='font-size:.6rem;color:#333;letter-spacing:.1em;margin-bottom:8px;text-transform:uppercase'>Consenso de modelos</div>"
+        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:6px'>{pills}</div>"
+        f"</div>"
+
+        # Narracion IA
+        + narr_html +
+
+        # Razonamiento técnico
+        f"<div style='font-size:.7rem;color:#333;line-height:1.6;border-top:1px solid #1a1a30;padding-top:8px'>"
+        f"🧠 {el_pick.get('reasoning','')}</div>"
+
+        # Score badge
+        f"</div>"
+        f"<div style='position:absolute;bottom:10px;right:14px;"
+        f"font-size:.6rem;color:{cc}55'>KR Score {score:.1f}/10</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+
+def _kr_render_parlay(parlay):
+    """Parlay del Rey — 3 picks multi-deporte combinados."""
+    if len(parlay) < 2: return
+
+    prob_c = 1.0
+    for p in parlay: prob_c *= p["prob"]
+    odds_c = 1.0
+    for p in parlay:
+        if p.get("odd",0)>1: odds_c *= p["odd"]
+
+    legs_html = ""
+    for i,p in enumerate(parlay,1):
+        cc = p.get("conf_color","#aaa")
+        legs_html += (
+            f"<div style='padding:10px 12px;background:#0a0a1e;"
+            f"border-radius:10px;margin:4px 0;border-left:3px solid {cc}'>"
+            f"<div style='display:flex;align-items:center;justify-content:space-between'>"
+            f"<div>"
+            f"<div style='font-size:.65rem;color:#444'>{p['deporte']} · {p.get('liga','')[:20]}</div>"
+            f"<div style='font-size:.8rem;color:#888'>{p['label']}</div>"
+            f"<div style='font-size:.85rem;font-weight:700;color:{cc}'>{p['pick']}</div>"
+            f"</div>"
+            f"<div style='text-align:right'>"
+            f"<div style='font-size:.9rem;font-weight:900;color:{cc}'>{p['prob']*100:.0f}%</div>"
+            f"<div style='font-size:.65rem;color:#444'>{'@'+str(round(p['odd'],2)) if p.get('odd',0)>1 else 'S/C'}</div>"
+            f"</div></div></div>"
+        )
+
+    odd_txt = f"Cuota combinada aprox {odds_c:.2f}" if odds_c > 1.1 else ""
+
+    st.markdown(
+        f"<div style='background:linear-gradient(135deg,#0a001a,#001008);"
+        f"border:1px solid #FFD70055;border-radius:16px;padding:14px 16px;margin:12px 0'>"
+        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:12px'>"
+        f"<div style='font-size:1.8rem'>🃏</div>"
+        f"<div>"
+        f"<div style='font-size:.7rem;font-weight:700;color:#FFD700;letter-spacing:.12em'>PARLAY DEL REY</div>"
+        f"<div style='font-size:.72rem;color:#555'>{len(parlay)} picks · {len(set(p['deporte'] for p in parlay))} deportes</div>"
+        f"</div>"
+        f"<div style='margin-left:auto;text-align:right'>"
+        f"<div style='font-size:1.2rem;font-weight:900;color:#FFD700'>{prob_c*100:.1f}%</div>"
+        f"<div style='font-size:.62rem;color:#555'>Prob combinada</div>"
+        f"</div></div>"
+        f"{legs_html}"
+        f"<div style='font-size:.68rem;color:#444;margin-top:8px;padding-top:8px;border-top:1px solid #1a1a30'>"
+        f"{'💰 ' + odd_txt if odd_txt else ''} · Apuesta máx 0.5% del banco por pata</div>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+
+def _kr_render_table(todos, el_pick):
+    """Ranking completo de todos los picks del día."""
+    st.markdown(
+        "<div style='font-size:.68rem;font-weight:700;color:#FFD700;letter-spacing:.1em;"
+        "text-transform:uppercase;margin:16px 0 8px'>📊 Ranking completo — todos los picks del día</div>",
+        unsafe_allow_html=True
+    )
+    for i,c in enumerate(todos[:16]):
+        is_king = el_pick and c["label"]==el_pick["label"]
+        cc      = c.get("conf_color","#555")
+        ec      = "#00ff88" if c.get("edge",0)>0.05 else ("#FFD700" if c.get("edge",0)>0 else "#ff4444")
+        bg      = "background:linear-gradient(90deg,#10001e,#0a0a1e)" if is_king else "background:#0a0a1e"
+        bd      = f"border:1px solid {cc}77" if is_king else "border:1px solid #141428"
+        flag    = "⚠️ " if c.get("contradiccion") else ""
+        crown   = "👑 " if is_king else ""
+        score_bar = int(c.get("score",0)*10)
+        models_mini = " · ".join(f"{k} {v}%" for k,v in list(c.get("models",{}).items())[:2])
+
+        st.markdown(
+            f"<div style='{bg};{bd};border-radius:10px;padding:9px 12px;margin:3px 0;"
+            f"position:relative;overflow:hidden'>"
+            f"<div style='position:absolute;left:0;top:0;bottom:0;width:{score_bar}%;"
+            f"background:{cc}07;pointer-events:none'></div>"
+            f"<div style='display:flex;align-items:center;gap:10px;position:relative'>"
+            f"<div style='font-size:.85rem;font-weight:900;min-width:24px;color:#333'>{crown}{i+1}</div>"
+            f"<div style='flex:1;min-width:0'>"
+            f"<div style='font-size:.6rem;color:#444;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"
+            f"{flag}{c['deporte']} · {c.get('liga','')[:20]} · {c.get('hora','')}</div>"
+            f"<div style='font-size:.76rem;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{c['label']}</div>"
+            f"<div style='font-size:.82rem;font-weight:700;color:{cc}'>{c['pick']}</div>"
+            f"<div style='font-size:.58rem;color:#2a2a50'>{models_mini}</div>"
+            f"</div>"
+            f"<div style='text-align:right;flex-shrink:0'>"
+            f"<div style='font-size:1rem;font-weight:900;color:{cc}'>{c['prob']*100:.1f}%</div>"
+            f"<div style='font-size:.62rem;color:{ec}'>Edge {c['edge']*100:+.1f}%</div>"
+            f"<div style='font-size:.6rem;color:#FFD70066'>{'@'+str(round(c['odd'],2)) if c.get('odd',0)>1 else ''}</div>"
+            f"</div></div></div>",
+            unsafe_allow_html=True
+        )
+
+
+def _kr_render_contradictions(contras):
+    if not contras: return
+    with st.expander(f"⚠️ {len(contras)} picks bloqueados — modelos en conflicto", expanded=False):
+        st.markdown(
+            "<div style='font-size:.72rem;color:#ff9500;margin-bottom:8px'>"
+            "King Rongo detectó contradicciones entre modelos. "
+            "Se bloquearon para proteger el bankroll.</div>",
+            unsafe_allow_html=True
+        )
+        for c in contras[:8]:
+            sp = c.get("model_spread",0)
+            st.markdown(
+                f"<div style='background:#120800;border-radius:8px;padding:8px 12px;"
+                f"margin:3px 0;border-left:3px solid #ff950055'>"
+                f"<div style='display:flex;justify-content:space-between'>"
+                f"<div><div style='font-size:.76rem;color:#ff9500'>{c['deporte']} · {c['label']}</div>"
+                f"<div style='font-size:.65rem;color:#444'>{c.get('reasoning','')}</div></div>"
+                f"<div style='font-size:.8rem;font-weight:700;color:#ff9500'>{sp:.0f}pp</div></div>"
+                f"<div style='margin-top:5px;background:#1a1000;border-radius:3px;height:3px'>"
+                f"<div style='height:3px;width:{min(int(sp),100)}%;background:#ff9500;border-radius:3px'></div>"
+                f"</div></div>",
+                unsafe_allow_html=True
+            )
+
+
+def _kr_render_memory(pick_history):
+    """Insights de memoria evolutiva."""
+    settled = [p for p in pick_history if p.get("result") in ("✅","❌")]
+    if len(settled) < 5: return
+
+    from collections import defaultdict
+    sp_s = defaultdict(lambda:{"w":0,"l":0,"u":0.0})
+    mk_s = defaultdict(lambda:{"w":0,"l":0,"u":0.0})
+
+    for p in settled:
+        o   = float(p.get("odd",0))
+        sp  = p.get("sport","?")
+        pk  = p.get("pick","").lower()
+        if   "over"  in pk: mk="Over"
+        elif "under" in pk: mk="Under"
+        elif "ambos" in pk or "btts" in pk: mk="BTTS"
+        elif "empate" in pk: mk="Empate"
+        elif "gana"  in pk: mk="Win ML"
+        else: mk="Otro"
+        won = p.get("result")=="✅"
+        u   = (o-1 if o>1 else 0.5) if won else -1.0
+        sp_s[sp]["w" if won else "l"]+=1; sp_s[sp]["u"]+=u
+        mk_s[mk]["w" if won else "l"]+=1; mk_s[mk]["u"]+=u
+
+    def row(d):
+        n=d["w"]+d["l"]
+        return {"n":n,"pct":round(d["w"]/n*100),"roi":round(d["u"]/n*100,1)} if n>=3 else None
+
+    sp_rows = sorted([(k,row(v)) for k,v in sp_s.items() if row(v)], key=lambda x:-x[1]["roi"])
+    mk_rows = sorted([(k,row(v)) for k,v in mk_s.items() if row(v)], key=lambda x:-x[1]["roi"])
+    if not sp_rows and not mk_rows: return
+
+    with st.expander("🧠 Memoria Evolutiva — patrones de tu historial", expanded=False):
+        st.markdown(
+            "<div style='font-size:.7rem;color:#444;margin-bottom:10px'>"
+            "King Rongo aprende de cada pick. Estos son tus patrones reales.</div>",
+            unsafe_allow_html=True
+        )
+        c1,c2 = st.columns(2)
+        for col,rows,title in [(c1,sp_rows,"POR DEPORTE"),(c2,mk_rows,"POR MERCADO")]:
+            with col:
+                st.markdown(
+                    f"<div style='font-size:.65rem;color:#FFD700;font-weight:700;"
+                    f"letter-spacing:.1em;margin-bottom:6px'>{title}</div>",
+                    unsafe_allow_html=True
+                )
+                for k,s in rows[:5]:
+                    rc="#00ff88" if s["roi"]>=0 else "#ff4444"
+                    st.markdown(
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                        f"padding:5px 8px;background:#0a0a1e;border-radius:7px;margin:2px 0'>"
+                        f"<span style='font-size:.74rem;color:#777'>{k}</span>"
+                        f"<div style='display:flex;gap:10px'>"
+                        f"<span style='font-size:.72rem;color:#00ccff'>{s['pct']}%</span>"
+                        f"<span style='font-size:.7rem;color:{rc}'>{s['roi']:+.1f}%</span>"
+                        f"<span style='font-size:.62rem;color:#333'>n={s['n']}</span>"
+                        f"</div></div>",
+                        unsafe_allow_html=True
+                    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# RENDER PRINCIPAL
+# ────────────────────────────────────────────────────────────────────────────
+
+def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
+    """
+    👑 KING RONGO — Tab completo. El amo y maestro.
+    """
+    pick_history = st.session_state.get("pick_history", [])
+
+    # ── Header ──
+    _kr_render_header()
+
+    # ── Bankroll ──
+    bk = _king_rongo_bankroll_advice(pick_history)
+    _kr_render_bankroll(bk)
+
+    # ── Botones ──
+    b1, b2, b3 = st.columns([4, 1, 1])
+    with b1:
+        do_scan = st.button(
+            "👑 ESCANEAR ⚽ Fútbol · 🏀 NBA · 🎾 Tenis",
+            use_container_width=True, key="king_scan",
+            help="King Rongo corre todos los modelos y elige EL pick con mayor edge real"
+        )
+    with b2:
+        do_tg = st.button("📡 TG", use_container_width=True, key="king_tg")
+    with b3:
+        if st.button("🔄", use_container_width=True, key="king_reset"):
+            for k in ["_king_el_pick","_king_contras","_king_todos",
+                      "_king_scanned","_king_ts","_king_narr","_king_parlay"]:
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    # ── Scan ──
+    if do_scan or st.session_state.get("_king_scanned"):
+
+        if do_scan:
+            prog = st.progress(0, "👑 Iniciando escaneo...")
+            try:
+                prog.progress(5,  "⚽ Cargando partidos de fútbol...")
+                _mf = matches_fut
+                try:
+                    if _mf is None: _mf = get_cartelera()
+                except: _mf = []
+
+                prog.progress(22, "🏀 Cargando partidos NBA...")
+                _nbg = nba_games
+                try:
+                    if _nbg is None: _nbg = get_nba_cartelera()
+                except: _nbg = []
+
+                prog.progress(40, "🎾 Cargando partidos de tenis...")
+                _ten = ten_matches
+                try:
+                    if _ten is None: _ten = get_tennis_cartelera()
+                except: _ten = []
+
+                prog.progress(58, "🧠 Corriendo todos los modelos...")
+                el_pick, contras, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
+
+                prog.progress(80, "💬 King Rongo narrando el pick...")
+                narr = ""
+                if el_pick:
+                    try: narr = _kr_ia_narracion(el_pick, bk, todos)
+                    except: pass
+
+                prog.progress(100, f"✅ {len(todos)} partidos analizados")
+                prog.empty()
+
+                st.session_state.update({
+                    "_king_el_pick": el_pick,
+                    "_king_contras": contras,
+                    "_king_todos":   todos,
+                    "_king_scanned": True,
+                    "_king_ts":      datetime.now(CDMX).strftime("%H:%M"),
+                    "_king_narr":    narr,
+                    "_king_parlay":  _kr_parlay_del_rey(todos),
+                })
+            except Exception as e:
+                prog.empty()
+                st.error(f"Error en escaneo: {e}")
+
+        el_pick = st.session_state.get("_king_el_pick")
+        contras = st.session_state.get("_king_contras", [])
+        todos   = st.session_state.get("_king_todos", [])
+        narr    = st.session_state.get("_king_narr", "")
+        parlay  = st.session_state.get("_king_parlay", [])
+        ts      = st.session_state.get("_king_ts","")
+
+        # Meta-stats del escaneo
+        nf = sum(1 for c in todos if "Fútbol" in c["deporte"])
+        nn = sum(1 for c in todos if "NBA"    in c["deporte"])
+        nt = sum(1 for c in todos if "Tenis"  in c["deporte"])
+        np = sum(1 for c in todos if c.get("edge",0)>0)
+        nb = len(contras)
+
+        st.markdown(
+            f"<div style='display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:10px'>"
+            f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{nf}</div><div class='mlbl'>⚽</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#ff9500'>{nn}</div><div class='mlbl'>🏀</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{nt}</div><div class='mlbl'>🎾</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{np}</div><div class='mlbl'>Edge+</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#ff4444'>{nb}</div><div class='mlbl'>Bloq</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#555;font-size:.75rem'>{ts}</div><div class='mlbl'>CDMX</div></div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+        if el_pick:
+            # ── PICK CARD ──
+            _kr_render_pick_card(el_pick, bk, narr)
+
+            # ── ACCIONES ──
+            a1, a2, a3 = st.columns(3)
+            with a1:
+                if st.button("💾 Guardar pick", key="save_king", use_container_width=True):
+                    m    = el_pick.get("match", {})
+                    home = m.get("home", m.get("p1","?"))
+                    away = m.get("away", m.get("p2","?"))
+                    add_pick(
+                        {"home":home,"away":away,
+                         "league":el_pick.get("liga",""),
+                         "fecha":m.get("fecha",datetime.now(CDMX).strftime("%Y-%m-%d"))},
+                        f"👑 {el_pick['pick']}", el_pick["prob"],
+                        el_pick.get("odd",0), sport=el_pick["sport"]
+                    )
+                    st.success("✅ Pick guardado")
+            with a2:
+                if st.button("💬 Re-narrar IA", key="king_renarr", use_container_width=True):
+                    with st.spinner("King Rongo pensando..."):
+                        try:
+                            nn2 = _kr_ia_narracion(el_pick, bk, todos)
+                            st.session_state["_king_narr"] = nn2
+                        except: pass
+                    st.rerun()
+            with a3:
+                if el_pick.get("match") and st.button("🔎 Partido completo", key="king_open", use_container_width=True):
+                    _m = el_pick["match"]
+                    if el_pick["sport"] == "tenis":
+                        sel = {**_m,
+                               "home":_m.get("p1",_m.get("home","")),
+                               "away":_m.get("p2",_m.get("away","")),
+                               "home_id":_m.get("id","")+"_p1",
+                               "away_id":_m.get("id","")+"_p2",
+                               "league":_m.get("torneo",_m.get("tour","Tenis")),
+                               "slug":"tennis","home_rec":"","away_rec":"",
+                               "odd_h":_m.get("odd_1",0),"odd_a":_m.get("odd_2",0),
+                               "odd_d":0,"_sport":"tennis"}
+                    else:
+                        sel = {**_m}
+                    st.session_state["sel"]  = sel
+                    st.session_state["view"] = "analisis"
+                    st.rerun()
+
+            # ── PARLAY DEL REY ──
+            _kr_render_parlay(parlay)
+
+            # ── CONTRADICCIONES ──
+            _kr_render_contradictions(contras)
+
+            # ── TABLA RANKING ──
+            _kr_render_table(todos, el_pick)
+
+            # ── MEMORIA ──
+            _kr_render_memory(pick_history)
+
+            # ── TELEGRAM ──
+            if do_tg:
+                _nl = chr(10)
+                prob_pct = el_pick["prob"]*100
+                edge_pct = el_pick["edge"]*100
+                models_t = " | ".join(f"{k}: {v}%" for k,v in list(el_pick.get("models",{}).items())[:3])
+                parlay_t = ""
+                if len(parlay) >= 2:
+                    parlay_t = (
+                        f"{_nl}🃏 *PARLAY DEL REY*{_nl}"
+                        + "".join(f"  • {p['pick']} ({p['prob']*100:.0f}%){_nl}" for p in parlay)
+                        + f"  Prob combinada: {( __import__('math').prod(p['prob'] for p in parlay) if hasattr(__import__('math'),'prod') else sum(p['prob'] for p in parlay)/len(parlay) )*100:.1f}%{_nl}"
+                    )
+                narr_t = f"{_nl}_{narr}_{_nl}" if narr else ""
+                msg = (
+                    f"👑 *KING RONGO — PICK DEL DÍA*{_nl}"
+                    f"━━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"{el_pick['deporte']} · {el_pick.get('liga','')}{_nl}"
+                    f"🆚 *{el_pick['label']}*{_nl}"
+                    f"🕒 {el_pick.get('hora','')} CDMX{_nl}{_nl}"
+                    f"{el_pick.get('conf_emoji','⚡')} *PICK: {el_pick['pick']}*{_nl}"
+                    f"📊 Prob: *{prob_pct:.1f}%* · Edge: *{edge_pct:+.1f}%*{_nl}"
+                    f"🎯 Kelly: *{bk['kelly_rec']}%* · {'@'+str(round(el_pick['odd'],2)) if el_pick.get('odd',0)>1 else 'Sin cuota'}{_nl}"
+                    f"🧠 {models_t}{_nl}"
+                    f"{narr_t}"
+                    f"{parlay_t}"
+                    f"📈 Bankroll: {bk['racha_sign']}{abs(bk['racha'])} racha · {bk['pct']}% acierto · ROI {bk['roi']:+.1f}u{_nl}"
+                    f"_{bk['consejo']}_{_nl}"
+                    f"━━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"_Gamblers Layer · King Rongo v3 · ⚽{nf} 🏀{nn} 🎾{nt}_"
+                )
+                if tg_send(msg):
+                    st.success("✅ Enviado a Telegram")
+                else:
+                    st.error("❌ Error Telegram")
+
+        else:
+            st.markdown(
+                "<div style='text-align:center;padding:32px 20px;"
+                "background:#07071a;border-radius:14px;border:1px solid #1a1a30;margin:12px 0'>"
+                "<div style='font-size:2rem;margin-bottom:8px'>🤔</div>"
+                "<div style='font-size:.95rem;font-weight:700;color:#444'>Sin picks con edge positivo hoy.</div>"
+                "<div style='font-size:.78rem;color:#333;margin-top:6px'>"
+                "Proteger el bankroll también es ganar. Mañana habrá mejores oportunidades.</div>"
+                "</div>",
+                unsafe_allow_html=True
+            )
+
+    else:
+        # Pre-scan
+        st.markdown(
+            "<div style='text-align:center;padding:40px 20px;"
+            "background:linear-gradient(160deg,#0c001a,#000c00,#0c001a);"
+            "border-radius:18px;border:1px solid #1a1a30;margin:10px 0'>"
+            "<div style='font-size:3.5rem;margin-bottom:14px;"
+            "filter:drop-shadow(0 0 14px #FFD70055)'>👑</div>"
+            "<div style='font-size:1.05rem;font-weight:700;color:#444;margin-bottom:10px'>"
+            "King Rongo está listo</div>"
+            "<div style='font-size:.78rem;color:#2a2a40;line-height:2;max-width:360px;margin:0 auto'>"
+            "⚽ xG · Dixon-Coles · Poisson BV · Elo Dinámico · H2H<br>"
+            "🏀 Net Rating · O/U Proyectado · Money Line<br>"
+            "🎾 Weibull · Elo ATP/WTA · Superficie · Bayes<br><br>"
+            "<span style='color:#333'>Presiona ESCANEAR y King Rongo elegirá<br>"
+            "EL PICK con mayor edge real del día.</span>"
+            "</div></div>",
+            unsafe_allow_html=True
+        )
+        _kr_render_memory(pick_history)
+
 
 
