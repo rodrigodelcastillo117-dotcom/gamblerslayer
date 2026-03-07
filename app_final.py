@@ -2635,20 +2635,31 @@ def update_results_db(force=False):
         if p["id"] in existing_map:
             idx = existing_map[p["id"]]
             if p["state"] == "post":
-                db["partidos"][idx]["state"]   = "post"
-                db["partidos"][idx]["score_h"] = p["score_h"]
-                db["partidos"][idx]["score_a"] = p["score_a"]
-                # Rellenar rank si faltaban
+                db["partidos"][idx]["state"] = "post"
+                # Solo sobreescribir score si el nuevo es válido (>= 0)
+                # y no reemplazar un score real con 0-0 incorrecto
+                _new_sh = p.get("score_h", -1)
+                _new_sa = p.get("score_a", -1)
+                _old_sh = db["partidos"][idx].get("score_h", -1)
+                _old_sa = db["partidos"][idx].get("score_a", -1)
+                # Actualizar si: no había score antes, o el nuevo es mayor (más goles/sets)
+                if _new_sh >= 0 and (_old_sh < 0 or _new_sh > 0 or _old_sh == 0):
+                    db["partidos"][idx]["score_h"] = _new_sh
+                    db["partidos"][idx]["score_a"] = _new_sa
                 if not db["partidos"][idx].get("rank1") and p.get("rank1"):
                     db["partidos"][idx]["rank1"] = p["rank1"]
                     db["partidos"][idx]["rank2"] = p["rank2"]
         elif fkey in existing_fuzzy:
-            # Mismo partido diferente fuente — actualizar score si ahora terminó
             idx = existing_fuzzy[fkey]
             if p["state"] == "post":
-                db["partidos"][idx]["state"]   = "post"
-                db["partidos"][idx]["score_h"] = p["score_h"]
-                db["partidos"][idx]["score_a"] = p["score_a"]
+                db["partidos"][idx]["state"] = "post"
+                _new_sh = p.get("score_h", -1)
+                _new_sa = p.get("score_a", -1)
+                _old_sh = db["partidos"][idx].get("score_h", -1)
+                _old_sa = db["partidos"][idx].get("score_a", -1)
+                if _new_sh >= 0 and (_old_sh < 0 or _new_sh > 0 or _old_sh == 0):
+                    db["partidos"][idx]["score_h"] = _new_sh
+                    db["partidos"][idx]["score_a"] = _new_sa
                 if not db["partidos"][idx].get("rank1") and p.get("rank1"):
                     db["partidos"][idx]["rank1"] = p["rank1"]
                     db["partidos"][idx]["rank2"] = p["rank2"]
@@ -2873,32 +2884,56 @@ def _villar_match_pick_to_result(pk, partido_db):
         import unicodedata as _ud
         def _norm(s):
             """Normaliza: quita tildes, minúsculas, quita puntuación."""
-            s = s.lower().strip()
-            s = _ud.normalize("NFD", s)
-            s = "".join(c for c in s if _ud.category(c) != "Mn")
+            s = str(s).lower().strip()
+            try:
+                s = _ud.normalize("NFD", s)
+                s = "".join(c for c in s if _ud.category(c) != "Mn")
+            except: pass
             return s
         def _apellido_norm(name):
-            parts = [w for w in _norm(name).split() if len(w) > 2]
-            return parts[-1] if parts else _norm(name)[:5]
+            parts = [w for w in _norm(name).split() if len(w) >= 3]
+            return parts[-1] if parts else _norm(name)[:6]
         def _name_hits(name, pick_str):
-            nn = _norm(name); pn = _norm(pick_str)
-            # cualquier palabra >=3 chars del nombre en el pick
+            nn = _norm(name)
+            pn = _norm(pick_str)
+            # 1. Apellido exacto en el pick (más importante)
+            ap = _apellido_norm(name)
+            if ap and ap in pn: return True
+            # 2. Cualquier palabra >=3 chars del nombre en el pick
             for w in nn.split():
                 if len(w) >= 3 and w in pn: return True
-            # apellido (última palabra) en el pick
-            ap = _apellido_norm(name)
-            return ap in pn
+            # 3. Nombre completo normalizado como substring
+            if nn and nn in pn: return True
+            return False
 
         p1 = home_db or home_pk
         p2 = away_db or away_pk
+        # Normalizar scores — asegurarse que son int comparables
+        _sh = int(sh) if sh is not None else 0
+        _sa = int(sa) if sa is not None else 0
+        won_h = _sh > _sa
+        won_a = _sa > _sh
+
         pick_hits_p1 = _name_hits(p1, pick)
         pick_hits_p2 = _name_hits(p2, pick)
+
         if pick_hits_p1 and not pick_hits_p2:
             ok = won_h
         elif pick_hits_p2 and not pick_hits_p1:
             ok = won_a
+        elif pick_hits_p1 and pick_hits_p2:
+            # Ambos nombres en el pick — usar el que tenga mejor match
+            ap1 = _apellido_norm(p1); ap2 = _apellido_norm(p2)
+            pn = _norm(pick)
+            if ap1 in pn and ap2 not in pn:
+                ok = won_h
+            elif ap2 in pn and ap1 not in pn:
+                ok = won_a
+            else:
+                winner = p1 if won_h else p2
+                ok = _name_hits(winner, pick)
         else:
-            # último recurso: el pick menciona al ganador?
+            # Pick no menciona ningún jugador conocido
             winner = p1 if won_h else p2
             ok = _name_hits(winner, pick)
 
@@ -3012,7 +3047,16 @@ def _villar_auto_pick(partido_db):
             if abs(tm["p1"] - tm["p2"]) < 0.02:
                 fav  = home if r1 <= r2 else away
                 prob = 0.53
-            return {"pick": f"🎾 {fav} gana", "prob": prob, "sport": "tenis",
+            import unicodedata as _ud2
+            def _norm_name(s):
+                s = s.strip()
+                try:
+                    s = _ud2.normalize("NFD", s)
+                    s = "".join(c for c in s if _ud2.category(c) != "Mn")
+                except: pass
+                return s
+            fav_norm = _norm_name(fav)
+            return {"pick": f"🎾 {fav_norm} gana", "prob": prob, "sport": "tenis",
                     "home": home, "away": away,
                     "src": f"🤖 Weibull #{r1} vs #{r2}"}
 
@@ -3053,59 +3097,33 @@ def _villar_auto_pick(partido_db):
             axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0) if af else xg_from_record(away_rec, False)
             mc  = mc50k(hxg, axg)
 
-            # ── Calcular todas las probs ──
-            p_h   = mc["ph"]
-            p_a   = mc["pa"]
-            p_d   = mc["pd"]
-            p_do_h = p_h + p_d   # DO: local o empate
-            p_do_a = p_a + p_d   # DO: visitante o empate
-            p_do_12= p_h + p_a   # DO: cualquiera gana (sin empate)
-            p_o25  = mc["o25"]
-            p_aa   = mc["btts"]
-            # "Gana cualquier mitad" — aprox: prob de que haya equipo dominante
-            p_1x_mitad = min(0.82, p_h + 0.12)  # local gana al menos 1 mitad
-            p_2x_mitad = min(0.78, p_a + 0.12)  # visitante gana al menos 1 mitad
+            # ── Calcular probs ──
+            p_h  = mc["ph"]
+            p_a  = mc["pa"]
+            p_o25 = mc["o25"]
+            p_aa  = mc["btts"]
+            p_1xm = min(0.82, p_h + 0.12)
+            p_2xm = min(0.78, p_a + 0.12)
 
-            # ── JERARQUÍA DE PICKS ──
-            # 1º DO si ≥ 58%
-            # 2º Over 2.5 si ≥ 55%
-            # 3º AA si ≥ 52%
-            # 4º 1X gana cualquier mitad si ≥ 60%
-            # 5º 2X gana cualquier mitad si ≥ 58%
-            # Solo como último recurso: 1X2 (si todo lo anterior < umbral)
-            UMBRAL_DO   = 0.58
-            UMBRAL_O25  = 0.55
-            UMBRAL_AA   = 0.52
-            UMBRAL_MITAD= 0.60
-            UMBRAL_1X2  = 0.60  # 1X2 solo si prob muy alta
-
-            # Elegir DO más alto
-            best_do = max(
-                {"pick": f"🔵 DO: {home[:12]} o Emp", "prob": p_do_h, "mkt": "DO", "odd": 0},
-                {"pick": f"🟣 DO: {away[:12]} o Emp", "prob": p_do_a, "mkt": "DO", "odd": 0},
-                {"pick": f"🔴 DO: {home[:9]} o {away[:9]}", "prob": p_do_12, "mkt": "DO", "odd": 0},
-                key=lambda x: x["prob"]
-            )
-
-            if best_do["prob"] >= UMBRAL_DO:
-                best = best_do
-            elif p_o25 >= UMBRAL_O25:
-                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0}
-            elif p_aa >= UMBRAL_AA:
+            # ── JERARQUÍA (sin DO) ──
+            # 1º Over 2.5 si ≥ 55%
+            # 2º AA si ≥ 52%
+            # 3º Gana cualquier mitad si ≥ 60%
+            # 4º 1X2 si ≥ 55% — o el mejor disponible
+            if p_o25 >= 0.55:
+                best = {"pick": "⚽ Over 2.5",  "prob": p_o25, "mkt": "O/U",  "odd": 0}
+            elif p_aa >= 0.52:
                 best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0}
-            elif p_1x_mitad >= UMBRAL_MITAD and p_h >= p_a:
-                best = {"pick": f"🏠 {home[:12]} gana cualquier mitad", "prob": p_1x_mitad, "mkt": "MITAD", "odd": 0}
-            elif p_2x_mitad >= UMBRAL_MITAD and p_a > p_h:
-                best = {"pick": f"✈️ {away[:12]} gana cualquier mitad", "prob": p_2x_mitad, "mkt": "MITAD", "odd": 0}
-            elif p_h >= UMBRAL_1X2 and p_h >= p_a:
+            elif p_1xm >= 0.60 and p_h >= p_a:
+                best = {"pick": f"🏠 {home[:12]} gana cualquier mitad", "prob": p_1xm, "mkt": "MITAD", "odd": 0}
+            elif p_2xm >= 0.60 and p_a > p_h:
+                best = {"pick": f"✈️ {away[:12]} gana cualquier mitad", "prob": p_2xm, "mkt": "MITAD", "odd": 0}
+            elif p_h >= p_a:
                 best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h}
-            elif p_a >= UMBRAL_1X2:
-                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a}
             else:
-                # Último recurso: mejor DO disponible
-                best = best_do
+                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a}
 
-            strong = [best]  # un solo pick limpio
+            strong = [best]
             return {
                 "pick":      best["pick"],
                 "prob":      best["prob"],
@@ -3396,10 +3414,15 @@ def render_resultados_tab():
 
                         for p in lps:
                             sh=p.get("score_h",-1); sa=p.get("score_a",-1)
-                            # Tenis: score_h/sa puede ser -1 si no se parseó — no filtrar
+                            # Fútbol/NBA: saltar si no hay score
                             if sport_key != "tenis" and (sh<0 or sa<0): continue
-                            if sport_key == "tenis" and sh<0: sh=0
-                            if sport_key == "tenis" and sa<0: sa=0
+                            # Tenis: 0-0 imposible — si ambos 0 o -1, score no disponible
+                            if sport_key == "tenis":
+                                if sh < 0: sh = 0
+                                if sa < 0: sa = 0
+                                if sh == 0 and sa == 0:
+                                    # No hay score real — skip para no contar como ❌ falso
+                                    continue
                             # Nombres: buscar en todos los campos posibles
                             home_n = (p.get("home") or p.get("p1") or "?").strip() or "?"
                             away_n = (p.get("away") or p.get("p2") or "?").strip() or "?"
@@ -5491,8 +5514,8 @@ def veredicto_academico(mc, dp, odd_h, odd_a, odd_d, home, away, best_market=Non
         mkt_lbl  = best_market
         mkt_prob = best_prob
         mkt_odd  = best_odd or 0
-        # Si es Over 2.5 / AA / Doble Oportunidad, usar su prob directamente
-        is_totals  = any(x in best_market for x in ["Over","Ambos","AA","DO","o Emp","o "])
+        # Si es Over 2.5 / AA / Mitad, usar su prob directamente
+        is_totals  = any(x in best_market for x in ["Over","Ambos","AA","mitad","o Emp"])
         fav_name   = best_market  if is_totals else (home if ph>=pa else away)
     else:
         fav_is_home = ph >= pa
@@ -5829,7 +5852,7 @@ def tg_send(msg):
 def _best_market_soccer(m, dp, mc):
     """
     Evalúa todos los mercados válidos y devuelve el de MAYOR probabilidad.
-    Mercados: 1X2, Doble Oportunidad, Over 2.5, Over 3.5, Ambos Anotan.
+    Mercados: 1X2, Over 2.5, Over 3.5, Ambos Anotan, Gana cualquier mitad.
     NO incluye O1.5, ML simple sin cuota, Handicap.
     """
     opts = []
@@ -5837,11 +5860,7 @@ def _best_market_soccer(m, dp, mc):
     if m.get("odd_h",0)>1: opts.append(("🏠 "+m["home"][:15]+" gana",    dp["ph"], m["odd_h"], dp["ph"]-(1/m["odd_h"])))
     if m.get("odd_d",0)>1: opts.append(("🤝 Empate",                      dp["pd"], m["odd_d"], dp["pd"]-(1/m["odd_d"])))
     if m.get("odd_a",0)>1: opts.append(("✈️ "+m["away"][:15]+" gana",      dp["pa"], m["odd_a"], dp["pa"]-(1/m["odd_a"])))
-    # Doble Oportunidad
-    dc_1x = dp["ph"]+dp["pd"]; dc_x2 = dp["pd"]+dp["pa"]; dc_12 = dp["ph"]+dp["pa"]
-    opts.append(("🔵 DO: "+m["home"][:12]+" o Emp",    dc_1x, 0, dc_1x-0.65))
-    opts.append(("🟣 DO: "+m["away"][:12]+" o Emp",    dc_x2, 0, dc_x2-0.65))
-    opts.append(("🔴 DO: "+m["home"][:10]+" o "+m["away"][:10], dc_12, 0, dc_12-0.65))
+    # DO cualquiera gana — también eliminado
     # Over / BTTS
     opts.append(("⚽ Over 2.5",             mc["o25"],  0, mc["o25"]-0.52))
     opts.append(("⚽ Over 3.5",             mc["o35"],  0, mc["o35"]-0.45))
@@ -6843,17 +6862,12 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                                         odd_d=m.get("odd_d",0))
                 dp  = diamond_engine(mc, h2s, hf, af)
 
-                # ── Jerarquía DO → O25 → AA → Mitad → 1X2 último recurso ──
-                _ph  = dp["ph"]; _pa = dp["pa"]; _pd = dp["pd"]
-                _do_h  = _ph+_pd; _do_a = _pa+_pd
-                _best_do_lbl = f"🔵 DO: {m['home'][:12]} o Emp" if _do_h>=_do_a else f"🟣 DO: {m['away'][:12]} o Emp"
-                _best_do_p   = max(_do_h, _do_a)
+                # ── Jerarquía sin DO: O25 → AA → Mitad → 1X2 ──
+                _ph = dp["ph"]; _pa = dp["pa"]
                 _o25 = mc["o25"]; _aa = mc["btts"]
                 _1xm = min(0.82, _ph+0.12); _2xm = min(0.78, _pa+0.12)
 
-                if _best_do_p >= 0.58:
-                    lbl, prob, odd, mkt = _best_do_lbl, _best_do_p, 0, "DO"
-                elif _o25 >= 0.55:
+                if _o25 >= 0.55:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
                 elif _aa >= 0.52:
                     lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
@@ -6861,12 +6875,10 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     lbl, prob, odd, mkt = f"🏠 {m['home'][:12]} gana cualquier mitad", _1xm, 0, "MITAD"
                 elif _2xm >= 0.60 and _pa > _ph:
                     lbl, prob, odd, mkt = f"✈️ {m['away'][:12]} gana cualquier mitad", _2xm, 0, "MITAD"
-                elif _ph >= 0.60 and _ph >= _pa:
+                elif _ph >= _pa:
                     lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
-                elif _pa >= 0.60:
-                    lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
                 else:
-                    lbl, prob, odd, mkt = _best_do_lbl, _best_do_p, 0, "DO"
+                    lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
 
                 if prob < 0.50: continue
                 edge   = _kr_edge(prob, odd)
@@ -8971,9 +8983,7 @@ else:
             (f"🏠 {g['home'][:16]} gana",      dp["ph"],  g.get("odd_h",0)),
             ("🤝 Empate",                        dp["pd"],  g.get("odd_d",0)),
             (f"✈️ {g['away'][:16]} gana",        dp["pa"],  g.get("odd_a",0)),
-            (f"🔵 DO: {g['home'][:12]} o Emp",   dp["ph"]+dp["pd"], 0),
-            (f"🟣 DO: {g['away'][:12]} o Emp",   dp["pd"]+dp["pa"], 0),
-            (f"🔴 DO: {g['home'][:10]} o {g['away'][:10]}", dp["ph"]+dp["pa"], 0),
+            # Doble Oportunidad eliminada
             ("⚽ Over 2.5",                       mc["o25"],  0),
             ("⚽ Over 3.5",                       mc["o35"],  0),
             ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
@@ -9006,7 +9016,7 @@ else:
             f"{main_prob*100:.1f}% de probabilidad"
             + (f" · @{main_odd:.2f}" if main_odd>1 else "") + "</div>"
             f"<div style='font-size:.75rem;color:#888;margin-bottom:16px'>"
-            f"Evaluados: 1X2 · Doble Oportunidad · Over 2.5 · Over 3.5 · Ambos Anotan</div>"
+            f"Evaluados: Over 2.5 · Over 3.5 · Ambos Anotan · Mitad · 1X2</div>"
             f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{mkt_badges}</div>"
             f"<div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'>"
             f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'>"
