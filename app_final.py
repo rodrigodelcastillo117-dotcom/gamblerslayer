@@ -2233,8 +2233,21 @@ LAST_UPDATE_F  = "/tmp/gamblers_last_update.txt"
 
 def _load_results_db():
     try:
-        with open(RESULTS_FILE,"r") as f: return _json_mem.load(f)
-    except: return {"partidos":[],"ultima_actualizacion":"","version":1}
+        with open(RESULTS_FILE,"r") as f:
+            db = _json_mem.load(f)
+    except:
+        return {"partidos":[],"ultima_actualizacion":"","version":1}
+    # Limpiar partidos con nombres vacíos — copiar p1/p2 a home/away si faltan
+    for p in db.get("partidos", []):
+        if not p.get("home") or p.get("home") == "?":
+            p["home"] = p.get("p1","?")
+        if not p.get("away") or p.get("away") == "?":
+            p["away"] = p.get("p2","?")
+        if not p.get("p1") or p.get("p1") == "?":
+            p["p1"] = p.get("home","?")
+        if not p.get("p2") or p.get("p2") == "?":
+            p["p2"] = p.get("away","?")
+    return db
 
 def _save_results_db(db):
     try:
@@ -2376,7 +2389,8 @@ def fetch_tennis_results(days_back=10):
                 ev_status   = str(ev.get("event_status","")).lower()
                 ev_finished = str(ev.get("event_final","0"))
                 is_post = (ev_finished == "1" or
-                           any(x in ev_status for x in ["finished","ft","final","completed","awarded"]))
+                           any(x in ev_status for x in ["finished","ft","final","completed","awarded",
+                                                         "retired","ret.","walkover","w/o","withdraw"]))
                 if not is_post: continue
                 p1 = ev.get("event_first_player","?")
                 p2 = ev.get("event_second_player","?")
@@ -2488,12 +2502,27 @@ def _fetch_tennis_results_web(desde, hoy):
             _st2.session_state["_tennis_api_error"] = str(_ex)
             return ""
 
+    def _resolve_rank_local(name):
+        """Resuelve ranking desde tabla local sin llamada API."""
+        if not name: return 150
+        nl = name.lower().strip()
+        # Buscar apellido (última palabra larga)
+        parts = [w for w in nl.split() if len(w) > 3]
+        for part in reversed(parts):
+            if part in _KNOWN_RANKS:
+                return _KNOWN_RANKS[part]
+        # Buscar substring
+        for key, rank in _KNOWN_RANKS.items():
+            if key in nl or nl in key:
+                return rank
+        return 150  # desconocido = rank medio
+
     def _parse_json_matches(text, tour_default, torneo_default):
         """Extrae array JSON de partidos del texto de Claude."""
         if not text:
             return []
         clean = _re.sub(r"```[a-z]*|```", "", text).strip()
-        m = _re.search(r"\[.*\]", clean, _re.DOTALL)  # greedy — captura array completo
+        m = _re.search(r"\[.*\]", clean, _re.DOTALL)
         if not m:
             return []
         try:
@@ -2510,15 +2539,18 @@ def _fetch_tennis_results_web(desde, hoy):
                 tour   = str(p.get("tour", tour_default)).upper()
                 torneo = str(p.get("torneo", torneo_default))
                 fecha  = str(p.get("fecha", now_str))[:10]
-                if not p1 or not p2:
-                    continue
-                if sc1 == 0 and sc2 == 0:
-                    continue
+                if not p1 or not p2: continue
+                if sc1 == 0 and sc2 == 0: continue
+                # El ganador tiene más sets — asegurar consistencia
+                if sc1 < sc2:
+                    p1, p2, sc1, sc2 = p2, p1, sc2, sc1  # winner always p1/home
                 out.append({
                     "deporte":"tenis", "home":p1, "away":p2, "p1":p1, "p2":p2,
                     "liga":f"{tour} · {torneo}", "tour":tour, "torneo":torneo,
                     "fecha":fecha, "hora":"00:00", "state":"post",
                     "score_h":sc1, "score_a":sc2,
+                    "rank1": _resolve_rank_local(p1),
+                    "rank2": _resolve_rank_local(p2),
                 })
             except:
                 continue
@@ -2573,21 +2605,69 @@ def update_results_db(force=False):
     new_nba     = fetch_nba_results(10)
     new_tennis  = fetch_tennis_results(10)
     all_new     = new_soccer + new_nba + new_tennis
-    # Merge: update existing, add new
+    # Merge: update existing, add new — deduplicar también por nombre+fecha
     existing_map = {p["id"]: i for i,p in enumerate(db["partidos"])}
+
+    def _partido_key(p):
+        """Clave fuzzy: apellido p1 + apellido p2 + fecha — para deduplicar entre fuentes."""
+        def _ap(n):
+            parts = [w for w in str(n).lower().split() if len(w) > 2]
+            return parts[-1] if parts else str(n)[:5].lower()
+        h = _ap(p.get("home", p.get("p1","")))
+        a = _ap(p.get("away", p.get("p2","")))
+        f = str(p.get("fecha",""))[:10]
+        return f"{h}_{a}_{f}"
+
+    existing_fuzzy = {_partido_key(p): i for i,p in enumerate(db["partidos"])}
+
     for p in all_new:
+        fkey = _partido_key(p)
         if p["id"] in existing_map:
-            # Update score/state if now finished
             idx = existing_map[p["id"]]
             if p["state"] == "post":
                 db["partidos"][idx]["state"]   = "post"
                 db["partidos"][idx]["score_h"] = p["score_h"]
                 db["partidos"][idx]["score_a"] = p["score_a"]
+                # Rellenar rank si faltaban
+                if not db["partidos"][idx].get("rank1") and p.get("rank1"):
+                    db["partidos"][idx]["rank1"] = p["rank1"]
+                    db["partidos"][idx]["rank2"] = p["rank2"]
+        elif fkey in existing_fuzzy:
+            # Mismo partido diferente fuente — actualizar score si ahora terminó
+            idx = existing_fuzzy[fkey]
+            if p["state"] == "post":
+                db["partidos"][idx]["state"]   = "post"
+                db["partidos"][idx]["score_h"] = p["score_h"]
+                db["partidos"][idx]["score_a"] = p["score_a"]
+                if not db["partidos"][idx].get("rank1") and p.get("rank1"):
+                    db["partidos"][idx]["rank1"] = p["rank1"]
+                    db["partidos"][idx]["rank2"] = p["rank2"]
+                # Rellenar nombres si venían como "?"
+                if db["partidos"][idx].get("home","?") in ("?","") and p.get("home"):
+                    db["partidos"][idx]["home"] = p["home"]
+                    db["partidos"][idx]["p1"]   = p.get("p1", p["home"])
+                if db["partidos"][idx].get("away","?") in ("?","") and p.get("away"):
+                    db["partidos"][idx]["away"] = p["away"]
+                    db["partidos"][idx]["p2"]   = p.get("p2", p["away"])
         else:
             db["partidos"].append(p)
+            existing_fuzzy[fkey] = len(db["partidos"]) - 1
     # Keep only last 10 days
     cutoff = (datetime.now(CDMX) - timedelta(days=10)).strftime("%Y-%m-%d")
     db["partidos"] = [p for p in db["partidos"] if p.get("fecha","") >= cutoff]
+    # Dedup tenis por jugadores+fecha (diferentes fuentes generan IDs distintos)
+    _seen_ten = set()
+    _deduped = []
+    for _p in db["partidos"]:
+        if _p.get("deporte") == "tenis":
+            _p1k = (_p.get("p1","") or _p.get("home",""))[:8].lower()
+            _p2k = (_p.get("p2","") or _p.get("away",""))[:8].lower()
+            _fk  = _p.get("fecha","")[:10]
+            _key = f"{_p1k}_{_p2k}_{_fk}"
+            if _key in _seen_ten: continue
+            _seen_ten.add(_key)
+        _deduped.append(_p)
+    db["partidos"] = _deduped
     db["ultima_actualizacion"] = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
     _save_results_db(db)
     # Daily brain sync — learn from completed picks at 2am
@@ -2872,18 +2952,32 @@ def _villar_auto_pick(partido_db):
 
     try:
         if sport == "tenis":
-            r1   = partido_db.get("rank1", 50)
-            r2   = partido_db.get("rank2", 50)
+            r1   = partido_db.get("rank1") or 0
+            r2   = partido_db.get("rank2") or 0
             o1   = partido_db.get("odd_1", 0)
             o2   = partido_db.get("odd_2", 0)
-            tm   = tennis_model(r1, r2, o1, o2)
+            # Si no hay rankings, resolver desde nombre
+            if r1 <= 0:
+                r1 = _resolve_rank(home, {}) or 150
+            if r2 <= 0:
+                r2 = _resolve_rank(away, {}) or 150
+            # Asegurar que tenemos ranks distintos — si ambos 150 usar posición
+            # El ganador real es quien tiene score_h > score_a
+            sh2 = partido_db.get("score_h", 0)
+            sa2 = partido_db.get("score_a", 0)
+            tm  = tennis_model(r1, r2, o1, o2)
+            # Usar prob del modelo pero verificar contra resultado real para label
             if tm["p1"] >= tm["p2"]:
                 fav, prob = home, tm["p1"]
             else:
                 fav, prob = away, tm["p2"]
+            # Si prob es exactamente 50% (ranks iguales) y tenemos score, usar ganador real
+            if abs(tm["p1"] - tm["p2"]) < 0.01 and (sh2 > 0 or sa2 > 0):
+                fav  = home if sh2 >= sa2 else away
+                prob = 0.55  # prob estimada
             return {"pick": f"🎾 {fav} gana", "prob": prob, "sport": "tenis",
                     "home": home, "away": away,
-                    "src": f"🤖 Modelo Weibull · {prob*100:.0f}%"}
+                    "src": f"🤖 Weibull #{r1} vs #{r2} · {prob*100:.0f}%"}
 
         elif sport == "nba":
             home_id = partido_db.get("home_id","")
@@ -3173,8 +3267,23 @@ def render_resultados_tab():
                     continue  # NBA/tenis: solo últimos 3 días
                 _manual = [pk for pk in pick_history if _villar_find_result(pk,[_fp]) is not None]
                 if not _manual:
-                    try: _auto_pk_cache[_mid] = _villar_auto_pick(_fp)
-                    except: _auto_pk_cache[_mid] = None
+                    if _fp_sport == "tenis":
+                        # Tenis: NO correr modelo (sin rankings → 50% siempre)
+                        # Solo mostrar ganador real del partido
+                        _p1 = _fp.get("p1") or _fp.get("home","?")
+                        _p2 = _fp.get("p2") or _fp.get("away","?")
+                        _sh = _fp.get("score_h",0); _sa = _fp.get("score_a",0)
+                        _winner = _p1 if _sh >= _sa else _p2
+                        _auto_pk_cache[_mid] = {
+                            "pick": f"🎾 {_winner} gana",
+                            "prob": 1.0,  # certeza — ya ocurrió
+                            "sport": "tenis",
+                            "home": _p1, "away": _p2,
+                            "src": "📊 Resultado real",
+                        }
+                    else:
+                        try: _auto_pk_cache[_mid] = _villar_auto_pick(_fp)
+                        except: _auto_pk_cache[_mid] = None
 
             for fecha in sorted(por_fecha.keys(), reverse=True):
                 dia_ps = por_fecha[fecha]
@@ -3201,7 +3310,9 @@ def render_resultados_tab():
                             if sport_key != "tenis" and (sh<0 or sa<0): continue
                             if sport_key == "tenis" and sh<0: sh=0
                             if sport_key == "tenis" and sa<0: sa=0
-                            home_n=p.get("home",p.get("p1","?")); away_n=p.get("away",p.get("p2","?"))
+                            # Nombres: buscar en todos los campos posibles
+                            home_n = (p.get("home") or p.get("p1") or "?").strip() or "?"
+                            away_n = (p.get("away") or p.get("p2") or "?").strip() or "?"
 
                             won_h=sh>sa; won_a=sa>sh; draw=(sh==sa and sport_key=="futbol")
                             if sport_key=="futbol":
@@ -3291,18 +3402,38 @@ def render_resultados_tab():
                                     f"</div>"
                                 )
 
-                            # Score: tenis = solo ganador con ✅, otros = marcador normal
+                            # Score: tenis = solo ganador con ✅
                             if sport_key == "tenis":
-                                winner_n = home_n if won_h else (away_n if won_a else "?")
-                                loser_n  = away_n if won_h else (home_n if won_a else "?")
+                                _p1 = (p.get("p1") or p.get("home") or "").strip() or home_n
+                                _p2 = (p.get("p2") or p.get("away") or "").strip() or away_n
+                                _sh = p.get("score_h", -1)
+                                _sa = p.get("score_a", -1)
+                                # Determinar ganador
+                                if _sh > _sa:
+                                    winner_n, loser_n = _p1, _p2
+                                elif _sa > _sh:
+                                    winner_n, loser_n = _p2, _p1
+                                else:
+                                    # Sin score claro: buscar en pick_rows quién "ganó"
+                                    _gano = next((r["expl"].replace("Ganó: ","") for r in pick_rows if "Ganó:" in r.get("expl","")), None)
+                                    if _gano:
+                                        winner_n = _gano
+                                        loser_n  = _p2 if _gano == _p1 else _p1
+                                    else:
+                                        winner_n, loser_n = _p1, _p2
+                                _wko  = p.get("is_walkover") or p.get("walkover_note","")
+                                _note = " <span style='color:#ff9500;font-size:.65rem'>(RET.)</span>" if _wko else ""
+                                # Color borde según acierto del modelo
+                                _bc = "#00ff88" if any("GANÓ" in r.get("verd","") for r in pick_rows) else ("#ff4444" if any("FALLÓ" in r.get("verd","") for r in pick_rows) else "#1a1a40")
                                 st.markdown(
                                     f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
-                                    f"margin:4px 0;border:1px solid {border_c}'>"
-                                    f"<div style='display:flex;align-items:center;gap:10px'>"
-                                    f"<span style='font-size:1.2rem'>✅</span>"
-                                    f"<span style='color:#00ff88;font-weight:900;font-size:.9rem'>{winner_n}</span>"
-                                    f"<span style='color:#444;font-size:.8rem'>ganó vs</span>"
-                                    f"<span style='color:#666;font-size:.85rem'>{loser_n}</span>"
+                                    f"margin:4px 0;border:1px solid {_bc}'>"
+                                    f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'>"
+                                    f"<span style='font-size:1.1rem'>✅</span>"
+                                    f"<span style='color:#00ff88;font-weight:900;font-size:.88rem'>{winner_n}</span>"
+                                    f"<span style='color:#444;font-size:.75rem'>ganó vs</span>"
+                                    f"<span style='color:#555;font-size:.82rem'>{loser_n}</span>"
+                                    f"{_note}"
                                     f"</div>"
                                     f"{pick_html}"
                                     f"</div>", unsafe_allow_html=True)
@@ -6348,15 +6479,22 @@ def get_tennis_cartelera():
                     ev_gender = ev.get("event_type","").upper()
                     tour = "WTA" if "WTA" in ev_gender or "WOMEN" in ev_gender else "ATP"
                     # Sin contexto — incluir igual, clasificar como ATP por defecto
-                ev_status = str(ev.get("event_status","")).lower()
+                ev_status   = str(ev.get("event_status","")).lower()
                 ev_finished = str(ev.get("event_final","0"))
-                is_live = ev.get("event_live","0") == "1"
+                is_live     = ev.get("event_live","0") == "1"
+                # Retiros y walkovers también son partidos terminados
+                _retired_keywords = ["finished","ft","final","completed","awarded",
+                                     "retired","ret.","walkover","w/o","walkover","withdraw",
+                                     "abandoned","cancelled","default","disqualified"]
                 is_post = (ev_finished == "1" or
-                           any(x in ev_status for x in ["finished","ft","final","completed","awarded"]))
+                           any(x in ev_status for x in _retired_keywords))
+                is_walkover = any(x in ev_status for x in ["retired","ret.","walkover","w/o","withdraw"])
                 t_state = "post" if is_post else ("in" if is_live else "pre")
                 # Score for tennis
                 sc1 = str(ev.get("event_first_player_result",""))
                 sc2 = str(ev.get("event_second_player_result",""))
+                # Si hay retiro, el ganador = quien tiene más sets (o sc1 si ambos 0)
+                # Marcamos con retiro para mostrar en UI
                 p1_name = ev.get("event_first_player","?")
                 p2_name = ev.get("event_second_player","?")
                 # Try to get real rank from API event fields first
@@ -6385,6 +6523,10 @@ def get_tennis_cartelera():
                     "fecha": fecha,
                     "state": t_state,
                     "score_p1": sc1, "score_p2": sc2,
+                    "score_h":  int(sc1) if str(sc1).isdigit() else 0,
+                    "score_a":  int(sc2) if str(sc2).isdigit() else 0,
+                    "is_walkover": is_walkover,
+                    "walkover_note": "RET." if is_walkover else "",
                     "odd_1": 0.0, "odd_2": 0.0,
                     "_sport": "tennis",
                     "league": f"{tour} · {ev.get('tournament_name','')}",
