@@ -379,6 +379,7 @@ def get_cartelera():
                         "odd_d":    odd_d,
                         "score_h":  parse_score(hc.get("score", 0)),
                         "score_a":  parse_score(ac.get("score", 0)),
+                         "minute":   int(ev.get("status",{}).get("clock",0) or ev.get("status",{}).get("displayClock","0:00").split(":")[0] or 0),
                     })
                 except: continue
 
@@ -454,40 +455,147 @@ def get_form(team_id, slug):
     return matches[:15]  # 15 partidos para más contexto
 
 
-def xg_weighted(form, is_home, odds_prior=0.0):
+def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
     """
     xG con decaimiento exponencial — partidos recientes pesan MÁS.
     Si ESPN devuelve xG real lo usa; si no, usa goles como proxy.
     Incorpora odds como prior bayesiano cuando están disponibles.
 
+    MEJORA: xG separado home/away — usa rendimiento de local cuando juega de local,
+    de visitante cuando juega de visitante. Ventaja local calibrada por liga.
+
     decay = 0.85 por partido (partido de hace 5 = peso 0.44x vs último)
     Ref: Dixon & Coles 1997 — time-weighting de observaciones.
     """
+    # ── Ventaja local calibrada por liga ──
+    # Fuentes: Pollard & Pollard (2005), Nevill & Holder (1999), Goumas (2014),
+    # FBref 2015-2024, StatsBomb. Multiplicador xG del equipo local.
+    # MLS es la más baja del mundo (~39.5% hw). Bolivia la más alta (altitud 3640m).
+    _LEAGUE_HA = {
+        # ── EUROPA TOP 5 ──
+        "eng.1": 1.08,   # Premier League — referencia (45.5% hw)
+        "eng.2": 1.09,   # Championship
+        "eng.3": 1.09,   # League One
+        "eng.4": 1.09,   # League Two
+        "esp.1": 1.08,   # La Liga (46.5% hw)
+        "esp.2": 1.09,   # Segunda División
+        "ger.1": 1.07,   # Bundesliga (45.5% hw, ligero)
+        "ger.2": 1.08,   # 2. Bundesliga
+        "ita.1": 1.07,   # Serie A (44.0% hw)
+        "ita.2": 1.08,   # Serie B
+        "fra.1": 1.07,   # Ligue 1 (43.5% hw)
+        "fra.2": 1.08,   # Ligue 2
+        # ── EUROPA RESTO ──
+        "por.1": 1.07,   # Primeira Liga
+        "por.2": 1.08,
+        "ned.1": 1.07,   # Eredivisie (45.5% hw)
+        "ned.2": 1.08,
+        "bel.1": 1.08,   # Pro League
+        "tur.1": 1.10,   # Süper Lig — afición muy intensa (47% hw)
+        "tur.2": 1.09,
+        "sco.1": 1.09,   # Scottish Premiership
+        "sco.2": 1.09,
+        "den.1": 1.08,   # Superliga Dinamarca
+        "nor.1": 1.08,   # Eliteserien
+        "swe.1": 1.07,   # Allsvenskan
+        "gre.1": 1.10,   # Super League Grecia — alta presión afición (46.5% hw)
+        "pol.1": 1.09,   # Ekstraklasa
+        "aut.1": 1.08,   # Bundesliga Austria
+        "sui.1": 1.07,   # Super League Suiza
+        "cze.1": 1.08,   # Czech First League
+        "hun.1": 1.09,   # OTP Bank Liga
+        "rum.1": 1.09,   # Liga I Romania
+        "cro.1": 1.09,   # HNL Croatia
+        "ser.1": 1.09,   # SuperLiga Serbia
+        "ukr.1": 1.08,   # Premier League Ukraine
+        "isr.1": 1.08,   # Israeli Premier League
+        # ── LATINOAMÉRICA ──
+        "mex.1": 1.09,   # Liga MX — viajes largos + altitud CDMX/Toluca (44.5% hw)
+        "mex.2": 1.09,   # Liga de Expansión
+        "bra.1": 1.09,   # Brasileirão — viajes enormes país + altitud (46% hw)
+        "bra.2": 1.09,
+        "arg.1": 1.10,   # Liga Argentina — afición muy intensa (46% hw)
+        "arg.2": 1.09,
+        "col.1": 1.10,   # Liga BetPlay — altitud Bogotá/Manizales/Armenia (45.5% hw)
+        "chi.1": 1.09,   # Primera División Chile
+        "uru.1": 1.09,   # Primera División Uruguay
+        "per.1": 1.10,   # Liga 1 Perú — altitud Lima/Cusco/Juliaca
+        "ecu.1": 1.10,   # LigaPro Ecuador — altitud Quito 2850m
+        "ven.1": 1.09,   # Liga FUTVE
+        "par.1": 1.09,   # División de Honor Paraguay
+        "bol.1": 1.12,   # División Profesional Bolivia — La Paz 3640m MAYOR HA del mundo
+        # ── NORTEAMÉRICA ──
+        "usa.1": 1.04,   # MLS — ventaja local MUY baja (39.5% hw, estadios neutros, cultura)
+        "can.1": 1.05,   # Canadian Premier League
+        # ── MEDIO ORIENTE / ASIA / AFRICA ──
+        "sau.1": 1.08,   # Saudi Pro League
+        "jpn.1": 1.06,   # J1 League — cultura más neutral (41.5% hw)
+        "jpn.2": 1.06,
+        "kor.1": 1.07,   # K League 1
+        "chn.1": 1.07,   # Chinese Super League
+        "aus.1": 1.06,   # A-League Australia
+        # ── UEFA COMPETICIONES ──
+        "uefa.cl":  1.05,  # Champions League — casi neutral
+        "uefa.el":  1.05,  # Europa League
+        "uefa.ecl": 1.06,  # Conference League
+        # ── COPAS NACIONALES (single leg, más neutral) ──
+        "eng.fa":    1.06,  # FA Cup
+        "eng.lc":    1.06,  # League Cup
+        "esp.copa":  1.06,  # Copa del Rey
+        "ger.dfb":   1.06,  # DFB-Pokal
+        "ita.coppa": 1.06,  # Coppa Italia
+        "fra.coupe": 1.06,  # Coupe de France
+        "por.cup":   1.06,
+        "ned.cup":   1.06,
+        "sco.cup":   1.06,
+        "mex.copa":  1.07,  # Copa MX
+    }
+    # Detectar liga del slug
+    _ha_mult = 1.08  # default
+    if slug:
+        for _k, _v in _LEAGUE_HA.items():
+            if _k in str(slug).lower():
+                _ha_mult = _v
+                break
+
     if not form:
-        return (1.25 if is_home else 1.0)
+        return (1.25 * _ha_mult / 1.08 if is_home else 1.0)
 
     DECAY = 0.85
-    total_w = 0.0; total_xg = 0.0
 
-    for i, r in enumerate(form):
-        w = DECAY ** i   # partido más reciente = peso 1.0, hace 10 = 0.85^10=0.197
-        # Usar xG real si ESPN lo devuelve, si no usar goles como proxy
-        xg_real = r.get("xg_f", 0.0)
-        xg_val  = xg_real if xg_real > 0.1 else float(r.get("gf", 1.0))
-        total_xg += w * xg_val
-        total_w  += w
+    # ── Separar forma home vs away ──
+    home_matches = [r for r in form if r.get("is_home", True)]
+    away_matches = [r for r in form if not r.get("is_home", True)]
 
-    xg_base = total_xg / total_w if total_w > 0 else (1.25 if is_home else 1.0)
+    def _weighted_xg(matches):
+        tw = 0.0; txg = 0.0
+        for i, r in enumerate(matches):
+            w = DECAY ** i
+            xg_real = r.get("xg_f", 0.0)
+            xg_val  = xg_real if xg_real > 0.1 else float(r.get("gf", 1.0))
+            txg += w * xg_val
+            tw  += w
+        return txg / tw if tw > 0 else None
 
-    # Home advantage adjustment
+    # Calcular xG específico del contexto (local o visitante)
+    context_xg  = _weighted_xg(home_matches if is_home else away_matches)
+    overall_xg  = _weighted_xg(form)
+
+    # Si hay suficientes partidos en el contexto correcto (≥3), usar contextual (80%) + general (20%)
+    context_n = len(home_matches if is_home else away_matches)
+    if context_xg is not None and context_n >= 3:
+        xg_base = 0.80 * context_xg + 0.20 * (overall_xg or context_xg)
+    elif overall_xg is not None:
+        xg_base = overall_xg
+    else:
+        xg_base = 1.25 if is_home else 1.0
+
+    # Home advantage calibrado por liga (solo para el local)
     if is_home:
-        xg_base *= 1.08   # +8% ventaja local (meta-análisis Dixon & Coles)
+        xg_base *= _ha_mult
 
     # Bayesian prior desde odds de mercado (si disponible)
-    # Odds imply an xG — blendear 20% mercado + 80% modelo estadístico
     if odds_prior > 0.05:
-        # p_score ≈ 1 - e^(-xG)  →  xG = -ln(1 - p_score)
-        # p_win_odds → p_score aproximada con Poisson
         xg_from_odds = max(0.3, -math.log(max(0.01, 1 - odds_prior)) * 1.8)
         xg_base = 0.80 * xg_base + 0.20 * xg_from_odds
 
@@ -2105,19 +2213,20 @@ def init_history():
     if "pick_history" not in st.session_state:
         st.session_state["pick_history"] = []
 
-def add_pick(match, pick_label, prob, odd, sport="futbol"):
+def add_pick(match, pick_label, prob, odd, sport="futbol", model_snapshot=None):
     init_history()
     st.session_state["pick_history"].append({
-        "date":   datetime.now(CDMX).strftime("%d/%m %H:%M"),
-        "fecha":  match.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d")),
-        "home":   match.get("home", match.get("p1","?")),
-        "away":   match.get("away", match.get("p2","?")),
-        "league": match.get("league", match.get("torneo", match.get("tour",""))),
-        "sport":  sport,
-        "pick":   pick_label,
-        "prob":   prob,
-        "odd":    odd,
-        "result": "⏳",
+        "date":           datetime.now(CDMX).strftime("%d/%m %H:%M"),
+        "fecha":          match.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d")),
+        "home":           match.get("home", match.get("p1","?")),
+        "away":           match.get("away", match.get("p2","?")),
+        "league":         match.get("league", match.get("torneo", match.get("tour",""))),
+        "sport":          sport,
+        "pick":           pick_label,
+        "prob":           prob,
+        "odd":            odd,
+        "result":         "⏳",
+        "model_snapshot": model_snapshot or {},  # {dc_ph, bvp_ph, elo_ph, h2h_ph, mkt_ph}
     })
 
 def render_history():
@@ -2749,6 +2858,9 @@ def update_results_db(force=False):
     new_soccer  = fetch_soccer_results(10)
     new_nba     = fetch_nba_results(10)
     new_tennis  = fetch_tennis_results(10)
+    # Cache tenis en session_state para factores contextuales (fatiga, H2H superficie)
+    try: st.session_state["tennis_results_cache"] = new_tennis
+    except: pass
     all_new     = new_soccer + new_nba + new_tennis
     # Merge: update existing, add new — deduplicar también por nombre+fecha
     existing_map = {p["id"]: i for i,p in enumerate(db["partidos"])}
@@ -3281,14 +3393,14 @@ def _villar_auto_pick(partido_db):
                 return 1.3 if is_home else 1.0
 
             if hf:
-                hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0)
+                hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0, slug=slug)
             elif home_rec and home_rec != "5-5-5":
                 hxg = xg_from_record(home_rec, True)
             else:
                 hxg = _cup_enriched_xg(partido_db, True,  [], [])
 
             if af:
-                axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0)
+                axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0, slug=slug)
             elif away_rec and away_rec != "5-5-5":
                 axg = xg_from_record(away_rec, False)
             else:
@@ -5085,6 +5197,308 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
 
     return round(max(0.20, min(4.5, xg_adj)), 3)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO JUGADORES ESTRELLA — ajuste de xG cuando titulares/suplentes conocidos
+# Fuente: Transfermarkt market value × rendimiento real (goles/90 + asistencias/90)
+# Impacto calibrado: Opta 2018-2024 — ausencia estrella = -0.18 a -0.35 xG/partido
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Perfil de estrellas: (xg_contribution, assist_contribution, team_slug_keywords)
+# xg_contribution = cuánto xG PROPIO genera por partido cuando juega
+# team_slugs = fragmentos del nombre de equipo para detectar automáticamente
+_STAR_PROFILES = {
+    # ══════════════════════════════════════════
+    # FÚTBOL — TOP 100 (Gemini 2025)
+    # xg = expected goals por partido jugado
+    # ast = contribución de asistencias (× 0.35 para xG equivalente)
+    # teams = fragmentos de nombre de equipo/selección para detección automática
+    # ══════════════════════════════════════════
+
+    # ── TOP 1-10: ÉLITE ABSOLUTA ──
+    "mbappe":       {"xg":0.62,"ast":0.28,"teams":["real madrid","madrid","france","francia","psg","paris"]},
+    "haaland":      {"xg":0.78,"ast":0.12,"teams":["manchester city","man city","norway","noruega"]},
+    "bellingham":   {"xg":0.34,"ast":0.30,"teams":["real madrid","madrid","england","inglaterra"]},
+    "vinicius":     {"xg":0.38,"ast":0.35,"teams":["real madrid","madrid","brasil","brazil"]},
+    "yamal":        {"xg":0.28,"ast":0.40,"teams":["barcelona","spain","españa"]},
+    "musiala":      {"xg":0.30,"ast":0.32,"teams":["bayern","munchen","munich","germany","alemania"]},
+    "wirtz":        {"xg":0.28,"ast":0.38,"teams":["real madrid","madrid","bayer","leverkusen","germany","alemania"]},
+    "rodri":        {"xg":0.08,"ast":0.22,"teams":["manchester city","man city","spain","españa"]},
+    "saka":         {"xg":0.30,"ast":0.32,"teams":["arsenal","england","inglaterra"]},
+    "foden":        {"xg":0.28,"ast":0.30,"teams":["manchester city","man city","england","inglaterra"]},
+
+    # ── TOP 11-30: CLASE MUNDIAL ──
+    "kane":         {"xg":0.58,"ast":0.22,"teams":["bayern","munchen","munich","england","inglaterra"]},
+    "de bruyne":    {"xg":0.18,"ast":0.45,"teams":["manchester city","man city","belgium","belgica"]},
+    "salah":        {"xg":0.46,"ast":0.32,"teams":["liverpool","egypt","egipto"]},
+    "lautaro":      {"xg":0.52,"ast":0.18,"teams":["inter","internazionale","argentina"]},
+    "palmer":       {"xg":0.32,"ast":0.30,"teams":["chelsea","england","inglaterra"]},
+    "leao":         {"xg":0.30,"ast":0.32,"teams":["milan","ac milan","portugal"]},
+    "valverde":     {"xg":0.18,"ast":0.28,"teams":["real madrid","madrid","uruguay"]},
+    "odegaard":     {"xg":0.18,"ast":0.35,"teams":["arsenal","norway","noruega"]},
+    "osimhen":      {"xg":0.55,"ast":0.14,"teams":["galatasaray","psg","paris","napoli","nigeria"]},
+    "saliba":       {"xg":0.05,"ast":0.06,"teams":["arsenal","france","francia"]},
+    "griezmann":    {"xg":0.32,"ast":0.28,"teams":["atletico","atlético","france","francia"]},
+    "bernardo":     {"xg":0.16,"ast":0.32,"teams":["manchester city","man city","portugal"]},
+    "ruben dias":   {"xg":0.04,"ast":0.05,"teams":["manchester city","man city","portugal"]},
+    "alexander-arnold": {"xg":0.08,"ast":0.30,"teams":["real madrid","madrid","liverpool","england","inglaterra"]},
+    "davies":       {"xg":0.06,"ast":0.22,"teams":["real madrid","madrid","bayern","munchen","canada","canadá"]},
+    "tchouameni":   {"xg":0.06,"ast":0.12,"teams":["real madrid","madrid","france","francia"]},
+    "declan rice":  {"xg":0.10,"ast":0.18,"teams":["arsenal","england","inglaterra"]},
+    "bruno fernandes": {"xg":0.22,"ast":0.35,"teams":["manchester united","man utd","united","portugal"]},
+    "barella":      {"xg":0.14,"ast":0.22,"teams":["inter","internazionale","italy","italia"]},
+    "theo hernandez": {"xg":0.12,"ast":0.22,"teams":["milan","ac milan","france","francia"]},
+
+    # ── TOP 31-60: PILARES DE EUROPA ──
+    "sane":         {"xg":0.22,"ast":0.28,"teams":["bayern","munchen","munich","germany","alemania"]},
+    "xavi simons":  {"xg":0.22,"ast":0.30,"teams":["rb leipzig","leipzig","psg","paris","netherlands","holanda","países bajos"]},
+    "endrick":      {"xg":0.30,"ast":0.12,"teams":["real madrid","madrid","brasil","brazil"]},
+    "gavi":         {"xg":0.10,"ast":0.28,"teams":["barcelona","spain","españa"]},
+    "pedri":        {"xg":0.14,"ast":0.30,"teams":["barcelona","spain","españa"]},
+    "camavinga":    {"xg":0.08,"ast":0.16,"teams":["real madrid","madrid","france","francia"]},
+    "van dijk":     {"xg":0.06,"ast":0.06,"teams":["liverpool","netherlands","holanda","países bajos"]},
+    "son":          {"xg":0.32,"ast":0.26,"teams":["tottenham","spurs","south korea","corea"]},
+    "kvaratskhelia": {"xg":0.26,"ast":0.32,"teams":["napoli","psg","paris","georgia"]},
+    "vlahovic":     {"xg":0.50,"ast":0.12,"teams":["juventus","juve","serbia"]},
+    "isak":         {"xg":0.46,"ast":0.14,"teams":["newcastle","sweden","suecia"]},
+    "gyokeres":     {"xg":0.62,"ast":0.18,"teams":["sporting","sporting cp","sweden","suecia"]},
+    "nico williams": {"xg":0.22,"ast":0.32,"teams":["athletic","bilbao","barcelona","spain","españa"]},
+    "julian alvarez": {"xg":0.40,"ast":0.20,"teams":["atletico","atlético","argentina"]},
+    "dembele":      {"xg":0.22,"ast":0.30,"teams":["psg","paris","france","francia"]},
+    "mac allister": {"xg":0.10,"ast":0.20,"teams":["liverpool","argentina"]},
+    "gvardiol":     {"xg":0.08,"ast":0.10,"teams":["manchester city","man city","croatia","croacia"]},
+    "hakimi":       {"xg":0.10,"ast":0.24,"teams":["psg","paris","morocco","marruecos"]},
+    "frimpong":     {"xg":0.12,"ast":0.22,"teams":["bayer","leverkusen","netherlands","holanda"]},
+    "xhaka":        {"xg":0.08,"ast":0.18,"teams":["bayer","leverkusen","switzerland","suiza"]},
+    "bastoni":      {"xg":0.06,"ast":0.10,"teams":["inter","internazionale","italy","italia"]},
+    "maignan":      {"xg":0.00,"ast":0.00,"teams":["milan","ac milan","france","francia"]},  # portero: influye en CS
+    "martinez emi": {"xg":0.00,"ast":0.00,"teams":["aston villa","villa","argentina"]},
+    "bruno guimaraes": {"xg":0.12,"ast":0.22,"teams":["newcastle","brasil","brazil"]},
+    "mainoo":       {"xg":0.08,"ast":0.14,"teams":["manchester united","man utd","united","england","inglaterra"]},
+    "zaire-emery":  {"xg":0.10,"ast":0.18,"teams":["psg","paris","france","francia"]},
+    "garnacho":     {"xg":0.20,"ast":0.22,"teams":["manchester united","man utd","united","argentina"]},
+    "darwin nunez": {"xg":0.42,"ast":0.14,"teams":["liverpool","uruguay"]},
+    "rashford":     {"xg":0.26,"ast":0.20,"teams":["manchester united","man utd","united","england","inglaterra"]},
+    "luis diaz":    {"xg":0.26,"ast":0.24,"teams":["liverpool","colombia"]},
+
+    # ── TOP 61-100: TALENTO ELITE Y LEYENDAS ──
+    "ronaldo":      {"xg":0.58,"ast":0.16,"teams":["al nassr","nassr","portugal"]},
+    "messi":        {"xg":0.42,"ast":0.40,"teams":["inter miami","miami","argentina"]},
+    "modric":       {"xg":0.08,"ast":0.24,"teams":["real madrid","madrid","croatia","croacia"]},
+    "lewandowski":  {"xg":0.56,"ast":0.16,"teams":["barcelona","poland","polonia"]},
+    "calhanoglu":   {"xg":0.14,"ast":0.28,"teams":["inter","internazionale","turkey","turquía","turquia"]},
+    "gundogan":     {"xg":0.12,"ast":0.24,"teams":["manchester city","man city","germany","alemania"]},
+    "vitinha":      {"xg":0.10,"ast":0.22,"teams":["psg","paris","portugal"]},
+    "douglas luiz": {"xg":0.12,"ast":0.18,"teams":["juventus","juve","brasil","brazil"]},
+    "enzo fernandez": {"xg":0.10,"ast":0.20,"teams":["chelsea","argentina"]},
+    "van de ven":   {"xg":0.05,"ast":0.06,"teams":["tottenham","spurs","netherlands","holanda"]},
+    "cubarsi":      {"xg":0.04,"ast":0.05,"teams":["barcelona","spain","españa"]},
+    "militao":      {"xg":0.05,"ast":0.05,"teams":["real madrid","madrid","brasil","brazil"]},
+    "gabriel":      {"xg":0.06,"ast":0.05,"teams":["arsenal","brasil","brazil"]},
+    "oblak":        {"xg":0.00,"ast":0.00,"teams":["atletico","atlético","slovenia","eslovenia"]},
+    "courtois":     {"xg":0.00,"ast":0.00,"teams":["real madrid","madrid","belgium","belgica"]},
+    "ederson":      {"xg":0.00,"ast":0.00,"teams":["manchester city","man city","brasil","brazil"]},
+    "alisson":      {"xg":0.00,"ast":0.00,"teams":["liverpool","brasil","brazil"]},
+    "ter stegen":   {"xg":0.00,"ast":0.00,"teams":["barcelona","germany","alemania"]},
+    "carvajal":     {"xg":0.06,"ast":0.12,"teams":["real madrid","madrid","spain","españa"]},
+    "kyle walker":  {"xg":0.03,"ast":0.08,"teams":["manchester city","man city","england","inglaterra"]},
+    "stones":       {"xg":0.04,"ast":0.06,"teams":["manchester city","man city","england","inglaterra"]},
+    "grimaldo":     {"xg":0.10,"ast":0.20,"teams":["bayer","leverkusen","spain","españa"]},
+    "moussa diaby": {"xg":0.24,"ast":0.24,"teams":["al-ittihad","ittihad","france","francia"]},
+    "kubo":         {"xg":0.18,"ast":0.26,"teams":["real sociedad","sociedad","japan","japón","japon"]},
+    "arda guler":   {"xg":0.20,"ast":0.24,"teams":["real madrid","madrid","turkey","turquía","turquia"]},
+    "joao neves":   {"xg":0.08,"ast":0.16,"teams":["psg","paris","portugal"]},
+    "goncalo ramos": {"xg":0.44,"ast":0.14,"teams":["psg","paris","portugal"]},
+    "kenan yildiz": {"xg":0.22,"ast":0.22,"teams":["juventus","juve","turkey","turquía","turquia"]},
+    "savinho":      {"xg":0.16,"ast":0.26,"teams":["manchester city","man city","brasil","brazil"]},
+    "guirassy":     {"xg":0.50,"ast":0.12,"teams":["dortmund","borussia dortmund","guinea"]},
+    "openda":       {"xg":0.44,"ast":0.14,"teams":["rb leipzig","leipzig","belgium","belgica"]},
+    "anthony gordon": {"xg":0.24,"ast":0.22,"teams":["newcastle","england","inglaterra"]},
+    "szoboszlai":   {"xg":0.14,"ast":0.22,"teams":["liverpool","hungary","hungría","hungria"]},
+    "maddison":     {"xg":0.14,"ast":0.28,"teams":["tottenham","spurs","england","inglaterra"]},
+    "pulisic":      {"xg":0.22,"ast":0.22,"teams":["milan","ac milan","usa","estados unidos"]},
+    "santi gimenez": {"xg":0.50,"ast":0.14,"teams":["feyenoord","milan","ac milan","mexico","méxico"]},
+    "omorodion":    {"xg":0.36,"ast":0.10,"teams":["porto","spain","españa"]},
+    "barcola":      {"xg":0.22,"ast":0.24,"teams":["psg","paris","france","francia"]},
+    "reijnders":    {"xg":0.12,"ast":0.20,"teams":["milan","ac milan","netherlands","holanda"]},
+    "sesko":        {"xg":0.44,"ast":0.12,"teams":["rb leipzig","leipzig","slovenia","eslovenia"]},
+
+    # ══════════════════════════════════════════
+    # NBA — TOP 100 (EPM + PER ajustado 2025-2026)
+    # pts_impact = puntos perdidos por el equipo cuando este jugador no juega
+    # ast_impact = pérdida en asistencias/facilitación de juego
+    # spread_impact = impacto directo en el spread (hándicap) del partido
+    # load_risk = 0.0-1.0, riesgo de load management / lesión crónica
+    # ══════════════════════════════════════════
+
+    # ── TOP 1-10: GAME CHANGERS ──
+    "jokic":        {"pts_impact":9.8,"ast_impact":6.5,"spread_impact":6.5,"load_risk":0.05,"teams":["denver","nuggets"]},
+    "wembanyama":   {"pts_impact":9.2,"ast_impact":2.5,"spread_impact":6.0,"load_risk":0.10,"teams":["san antonio","spurs"]},
+    "doncic":       {"pts_impact":9.5,"ast_impact":5.0,"spread_impact":6.2,"load_risk":0.12,"teams":["dallas","mavericks","mavs"]},
+    "sga":          {"pts_impact":9.0,"ast_impact":3.5,"spread_impact":5.8,"load_risk":0.05,"teams":["oklahoma","thunder","okc"]},
+    "giannis":      {"pts_impact":9.2,"ast_impact":2.8,"spread_impact":5.9,"load_risk":0.15,"teams":["milwaukee","bucks"]},
+    "edwards":      {"pts_impact":8.8,"ast_impact":2.5,"spread_impact":5.5,"load_risk":0.05,"teams":["minnesota","timberwolves","wolves"]},
+    "tatum":        {"pts_impact":8.5,"ast_impact":2.8,"spread_impact":5.3,"load_risk":0.08,"teams":["boston","celtics"]},
+    "embiid":       {"pts_impact":9.5,"ast_impact":2.0,"spread_impact":6.0,"load_risk":0.45,"teams":["philadelphia","76ers","sixers","philly"]},
+    "haliburton":   {"pts_impact":7.5,"ast_impact":6.0,"spread_impact":4.8,"load_risk":0.08,"teams":["indiana","pacers"]},
+    "morant":       {"pts_impact":8.5,"ast_impact":4.0,"spread_impact":5.2,"load_risk":0.20,"teams":["memphis","grizzlies"]},
+
+    # ── TOP 11-30: ESTRELLAS PERIMETRALES ──
+    "curry":        {"pts_impact":9.0,"ast_impact":3.2,"spread_impact":5.5,"load_risk":0.12,"teams":["golden state","warriors","gsw"]},
+    "booker":       {"pts_impact":8.0,"ast_impact":2.5,"spread_impact":4.5,"load_risk":0.10,"teams":["phoenix","suns"]},
+    "banchero":     {"pts_impact":8.2,"ast_impact":2.8,"spread_impact":4.8,"load_risk":0.08,"teams":["orlando","magic"]},
+    "holmgren":     {"pts_impact":7.2,"ast_impact":1.8,"spread_impact":4.0,"load_risk":0.15,"teams":["oklahoma","thunder","okc"]},
+    "durant":       {"pts_impact":8.8,"ast_impact":2.5,"spread_impact":5.0,"load_risk":0.25,"teams":["phoenix","suns"]},
+    "brunson":      {"pts_impact":8.0,"ast_impact":3.5,"spread_impact":4.5,"load_risk":0.08,"teams":["new york","knicks","nyc"]},
+    "mitchell":     {"pts_impact":8.2,"ast_impact":2.8,"spread_impact":4.8,"load_risk":0.10,"teams":["cleveland","cavaliers","cavs"]},
+    "sabonis":      {"pts_impact":7.5,"ast_impact":4.5,"spread_impact":4.2,"load_risk":0.08,"teams":["sacramento","kings"]},
+    "adebayo":      {"pts_impact":7.0,"ast_impact":2.5,"spread_impact":3.8,"load_risk":0.10,"teams":["miami","heat"]},
+    "lebron":       {"pts_impact":7.8,"ast_impact":4.0,"spread_impact":4.5,"load_risk":0.30,"teams":["lakers","los angeles lakers"]},
+    "fox":          {"pts_impact":7.8,"ast_impact":3.8,"spread_impact":4.2,"load_risk":0.08,"teams":["sacramento","kings"]},
+    "maxey":        {"pts_impact":7.5,"ast_impact":3.0,"spread_impact":4.0,"load_risk":0.08,"teams":["philadelphia","76ers","sixers"]},
+    "cunningham":   {"pts_impact":8.0,"ast_impact":4.0,"spread_impact":4.5,"load_risk":0.10,"teams":["detroit","pistons"]},
+    "jaylen brown": {"pts_impact":7.5,"ast_impact":2.0,"spread_impact":4.0,"load_risk":0.08,"teams":["boston","celtics"]},
+    "lamelo":       {"pts_impact":7.8,"ast_impact":4.5,"spread_impact":4.2,"load_risk":0.30,"teams":["charlotte","hornets"]},
+    "kyrie":        {"pts_impact":8.0,"ast_impact":3.5,"spread_impact":4.5,"load_risk":0.35,"teams":["dallas","mavericks","mavs"]},
+    "zion":         {"pts_impact":8.5,"ast_impact":2.0,"spread_impact":4.8,"load_risk":0.45,"teams":["new orleans","pelicans"]},
+    "mobley":       {"pts_impact":6.8,"ast_impact":2.0,"spread_impact":3.5,"load_risk":0.08,"teams":["cleveland","cavaliers","cavs"]},
+    "sengun":       {"pts_impact":7.5,"ast_impact":3.5,"spread_impact":4.0,"load_risk":0.08,"teams":["houston","rockets"]},
+    "scottie barnes": {"pts_impact":7.2,"ast_impact":3.0,"spread_impact":3.8,"load_risk":0.10,"teams":["toronto","raptors"]},
+
+    # ── TOP 31-60: ESPECIALISTAS Y TITULARES ──
+    "jimmy butler": {"pts_impact":7.5,"ast_impact":2.5,"spread_impact":4.0,"load_risk":0.25,"teams":["miami","heat"]},
+    "lillard":      {"pts_impact":7.8,"ast_impact":3.5,"spread_impact":4.2,"load_risk":0.12,"teams":["milwaukee","bucks"]},
+    "mikal bridges": {"pts_impact":6.5,"ast_impact":1.8,"spread_impact":3.2,"load_risk":0.05,"teams":["new york","knicks"]},
+    "franz wagner": {"pts_impact":7.2,"ast_impact":2.5,"spread_impact":3.8,"load_risk":0.08,"teams":["orlando","magic"]},
+    "jaren jackson": {"pts_impact":6.8,"ast_impact":1.5,"spread_impact":3.5,"load_risk":0.20,"teams":["memphis","grizzlies"]},
+    "siakam":       {"pts_impact":7.0,"ast_impact":2.5,"spread_impact":3.5,"load_risk":0.10,"teams":["indiana","pacers"]},
+    "jamal murray": {"pts_impact":7.0,"ast_impact":3.0,"spread_impact":3.8,"load_risk":0.25,"teams":["denver","nuggets"]},
+    "ingram":       {"pts_impact":7.5,"ast_impact":2.5,"spread_impact":4.0,"load_risk":0.30,"teams":["new orleans","pelicans"]},
+    "kawhi":        {"pts_impact":8.0,"ast_impact":2.0,"spread_impact":4.5,"load_risk":0.60,"teams":["los angeles clippers","clippers","lac"]},
+    "harden":       {"pts_impact":7.2,"ast_impact":4.0,"spread_impact":3.8,"load_risk":0.20,"teams":["los angeles clippers","clippers","lac"]},
+    "kat":          {"pts_impact":7.5,"ast_impact":2.5,"spread_impact":4.0,"load_risk":0.15,"teams":["new york","knicks"]},
+    "porzingis":    {"pts_impact":6.8,"ast_impact":1.5,"spread_impact":3.5,"load_risk":0.40,"teams":["boston","celtics"]},
+    "jalen williams": {"pts_impact":7.2,"ast_impact":2.8,"spread_impact":3.8,"load_risk":0.08,"teams":["oklahoma","thunder","okc"]},
+    "derrick white": {"pts_impact":5.5,"ast_impact":2.5,"spread_impact":2.8,"load_risk":0.05,"teams":["boston","celtics"]},
+    "og anunoby":   {"pts_impact":6.0,"ast_impact":1.5,"spread_impact":3.0,"load_risk":0.15,"teams":["new york","knicks"]},
+    "gobert":       {"pts_impact":5.5,"ast_impact":1.2,"spread_impact":2.8,"load_risk":0.08,"teams":["minnesota","timberwolves","wolves"]},
+    "bane":         {"pts_impact":6.0,"ast_impact":2.0,"spread_impact":3.0,"load_risk":0.08,"teams":["memphis","grizzlies"]},
+    "myles turner": {"pts_impact":5.8,"ast_impact":1.5,"spread_impact":2.8,"load_risk":0.12,"teams":["indiana","pacers"]},
+    "markkanen":    {"pts_impact":7.0,"ast_impact":1.5,"spread_impact":3.5,"load_risk":0.12,"teams":["utah","jazz"]},
+    "quickley":     {"pts_impact":6.2,"ast_impact":3.0,"spread_impact":3.0,"load_risk":0.08,"teams":["toronto","raptors"]},
+    "brandon miller": {"pts_impact":6.5,"ast_impact":1.8,"spread_impact":3.2,"load_risk":0.08,"teams":["charlotte","hornets"]},
+    "keegan murray": {"pts_impact":5.8,"ast_impact":1.5,"spread_impact":2.8,"load_risk":0.05,"teams":["sacramento","kings"]},
+    "amen thompson": {"pts_impact":6.0,"ast_impact":2.5,"spread_impact":3.0,"load_risk":0.08,"teams":["houston","rockets"]},
+    "jarrett allen": {"pts_impact":5.5,"ast_impact":1.5,"spread_impact":2.5,"load_risk":0.08,"teams":["cleveland","cavaliers","cavs"]},
+    "dejounte murray": {"pts_impact":6.5,"ast_impact":3.5,"spread_impact":3.2,"load_risk":0.10,"teams":["new orleans","pelicans"]},
+    "vanvleet":     {"pts_impact":5.8,"ast_impact":3.5,"spread_impact":2.8,"load_risk":0.10,"teams":["houston","rockets"]},
+    "coby white":   {"pts_impact":6.0,"ast_impact":2.5,"spread_impact":3.0,"load_risk":0.08,"teams":["chicago","bulls"]},
+    "aaron gordon": {"pts_impact":5.5,"ast_impact":1.8,"spread_impact":2.5,"load_risk":0.10,"teams":["denver","nuggets"]},
+    "jalen johnson": {"pts_impact":6.5,"ast_impact":2.5,"spread_impact":3.2,"load_risk":0.10,"teams":["atlanta","hawks"]},
+    "austin reaves": {"pts_impact":5.8,"ast_impact":2.5,"spread_impact":2.8,"load_risk":0.05,"teams":["lakers","los angeles lakers"]},
+
+    # ── TOP 61-100: PROFUNDIDAD Y EMERGENTES ──
+    "nic claxton":  {"pts_impact":4.5,"ast_impact":1.2,"spread_impact":2.0,"load_risk":0.10,"teams":["brooklyn","nets"]},
+    "cam thomas":   {"pts_impact":5.8,"ast_impact":1.5,"spread_impact":2.8,"load_risk":0.10,"teams":["brooklyn","nets"]},
+    "kuminga":      {"pts_impact":5.5,"ast_impact":1.5,"spread_impact":2.5,"load_risk":0.10,"teams":["golden state","warriors"]},
+    "keyonte george": {"pts_impact":5.0,"ast_impact":2.0,"spread_impact":2.2,"load_risk":0.10,"teams":["utah","jazz"]},
+    "bradley beal": {"pts_impact":6.5,"ast_impact":2.5,"spread_impact":3.0,"load_risk":0.35,"teams":["phoenix","suns"]},
+    "draymond":     {"pts_impact":3.5,"ast_impact":3.5,"spread_impact":2.5,"load_risk":0.20,"teams":["golden state","warriors"]},
+    "klay":         {"pts_impact":5.5,"ast_impact":1.2,"spread_impact":2.5,"load_risk":0.20,"teams":["dallas","mavericks","mavs"]},
+    "walker kessler": {"pts_impact":4.2,"ast_impact":1.0,"spread_impact":2.0,"load_risk":0.08,"teams":["utah","jazz"]},
+    "lively":       {"pts_impact":4.5,"ast_impact":1.2,"spread_impact":2.0,"load_risk":0.10,"teams":["dallas","mavericks","mavs"]},
+    "cooper flagg": {"pts_impact":5.5,"ast_impact":2.0,"spread_impact":2.8,"load_risk":0.10,"teams":["dallas","mavericks","mavs"]},
+    "josh hart":    {"pts_impact":4.0,"ast_impact":2.0,"spread_impact":1.8,"load_risk":0.05,"teams":["new york","knicks"]},
+    "naz reid":     {"pts_impact":5.0,"ast_impact":1.5,"spread_impact":2.2,"load_risk":0.08,"teams":["minnesota","timberwolves"]},
+    "tyherro":      {"pts_impact":6.0,"ast_impact":2.0,"spread_impact":2.8,"load_risk":0.20,"teams":["miami","heat"]},
+    "rj barrett":   {"pts_impact":5.5,"ast_impact":1.8,"spread_impact":2.5,"load_risk":0.10,"teams":["toronto","raptors"]},
+    "miles bridges": {"pts_impact":5.5,"ast_impact":1.5,"spread_impact":2.5,"load_risk":0.12,"teams":["charlotte","hornets"]},
+}
+
+def _star_xg_adjustment(team_name, injuries_list=None, lineup_text=None, is_absent=False, star_name=None):
+    """
+    Ajusta el xG de un equipo cuando una estrella está ausente o confirmada titular.
+
+    Uso:
+      • injuries_list: lista de strings ["Messi OUT", "Haaland doubtful"]
+        → detecta automáticamente quién falta
+      • star_name + is_absent=True: forzar ausencia explícita
+      • lineup_text: texto libre de alineación confirmada
+
+    Retorna delta_xg (negativo = menos goles proyectados).
+    """
+    team_l = str(team_name).lower()
+    delta = 0.0
+    detected = []
+
+    # Construir lista de verificación desde todas las fuentes
+    check_texts = []
+    if injuries_list:
+        for inj in (injuries_list or []):
+            check_texts.append(str(inj).lower())
+    if lineup_text:
+        check_texts.append(str(lineup_text).lower())
+    if star_name and is_absent:
+        check_texts.append(f"{star_name.lower()} out")
+
+    for key, profile in _STAR_PROFILES.items():
+        # Verificar que esta estrella pertenece al equipo
+        if not any(t in team_l for t in profile.get("teams", [])):
+            continue
+        xg_contrib = profile.get("xg", 0) + profile.get("ast", 0) * 0.35
+
+        # Detectar ausencia en textos
+        absent = False
+        for txt in check_texts:
+            if key in txt and any(w in txt for w in ["out","baja","lesion","doubtful","absent","injury","baja"]):
+                absent = True
+                break
+        # Si se forzó explícitamente
+        if star_name and is_absent and key in star_name.lower():
+            absent = True
+
+        if absent:
+            # Penalización: 65% de su contribución xG se pierde (el equipo compensa parcialmente)
+            delta -= xg_contrib * 0.65
+            detected.append(f"{key.title()} OUT (-{xg_contrib*0.65:.2f} xG)")
+
+    return round(max(-1.2, delta), 3), detected
+
+def _star_nba_adjustment(team_name, injuries_list=None):
+    """
+    Ajusta proyección de puntos NBA cuando una estrella está fuera.
+    Retorna (delta_pts, spread_delta, detected_list).
+    spread_delta = impacto directo en el spread (hándicap) del partido.
+    """
+    team_l = str(team_name).lower()
+    delta_pts = 0.0
+    delta_spread = 0.0
+    detected = []
+    for key, profile in _STAR_PROFILES.items():
+        if "pts_impact" not in profile: continue
+        if not any(t in team_l for t in profile.get("teams", [])):
+            continue
+        load_risk = profile.get("load_risk", 0.0)
+        absent = False
+        for inj in (injuries_list or []):
+            inj_l = str(inj).lower()
+            if key in inj_l and any(w in inj_l for w in ["out","baja","lesion","doubtful","absent","injury","gtd"]):
+                absent = True; break
+        if absent:
+            # pts perdidos: 70% del impacto (equipo compensa ~30% con rotación)
+            pts_lost    = profile["pts_impact"] * 0.70
+            spread_lost = profile.get("spread_impact", pts_lost * 0.45) * 0.70
+            delta_pts    -= pts_lost
+            delta_spread -= spread_lost
+            detected.append(f"{key.title()} OUT (-{pts_lost:.1f}pts / -{spread_lost:.1f}spread)")
+        elif load_risk >= 0.30:
+            # Jugador con alto riesgo de load management → penalización parcial preventiva
+            pts_adj    = profile["pts_impact"] * load_risk * 0.20
+            spread_adj = profile.get("spread_impact", pts_adj * 0.45) * load_risk * 0.20
+            delta_pts    -= pts_adj
+            delta_spread -= spread_adj
+    return round(delta_pts, 2), round(delta_spread, 2), detected
+
+
 def mc50k(hxg, axg, N=50_000):
     rng = np.random.default_rng(42)
     hg  = rng.poisson(max(0.3, hxg), N)
@@ -5749,6 +6163,320 @@ def render_prematch_bot(sport, home, away, league_slug, league_name,
     return model_result, False
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO DE FACTORES CONTEXTUALES — integrado silenciosamente en todos los modelos
+# Fuentes: Pollard 2005, Bureš 2019, NBA Analytics (B-Ref), Tennis Abstract
+# Cada función devuelve un multiplicador o ajuste de probabilidad.
+# REGLA: impacto máximo ±12% para no dominar el ensemble.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── FÚTBOL: Motivación / contexto de temporada ──────────────────────────────
+_LOW_MOTIVATION_KEYWORDS = {
+    "already","champion","relegated","promoted","nothing to play",
+    "campeón","descendido","ascendido","sin nada","clasificado",
+}
+
+def _football_motivation_factor(hform, aform, meta=None):
+    """
+    Detecta racha de resultados sin motivación aparente.
+    Equipos en racha de 5+ partidos perdidos/empatados SIN mejorar →
+    posible desmotivación → penaliza xG levemente.
+    Retorna (h_mult, a_mult) — típicamente entre 0.93 y 1.03.
+    """
+    def _streak_score(form):
+        if not form: return 0.0
+        pts = [3 if r["result"]=="W" else (1 if r["result"]=="D" else 0) for r in form[:5]]
+        recent = sum(pts[:3]); all5 = sum(pts)
+        # Racha ascendente = positivo, descendente = negativo
+        trend = (pts[0]+pts[1]) - (pts[3]+pts[4]) if len(pts)>=5 else 0
+        return trend * 0.015  # max ±0.045
+
+    h_adj = _streak_score(hform)
+    a_adj = _streak_score(aform)
+    return (max(0.93, min(1.05, 1.0 + h_adj)),
+            max(0.93, min(1.05, 1.0 + a_adj)))
+
+def _football_rest_days(hform, aform):
+    """
+    Ajuste por días de descanso desde último partido.
+    0-2 días: fatiga → -3% xG. 3-5 días: óptimo. 6+ días: posible falta de ritmo → -1%.
+    """
+    def _days(form):
+        if not form: return 5
+        try:
+            last = form[0].get("date","")
+            if not last: return 5
+            d = (datetime.now() - datetime.strptime(last, "%Y-%m-%d")).days
+            return max(0, d)
+        except: return 5
+
+    def _mult(days):
+        if days <= 2:  return 0.97  # fatiga
+        if days <= 5:  return 1.00  # óptimo
+        return 0.99                 # falta de ritmo
+
+    return _mult(_days(hform)), _mult(_days(aform))
+
+def _football_h2h_surface(hform, aform, h2h):
+    """
+    Peso adicional del H2H cuando hay patrón claro de dominancia psicológica.
+    Si un equipo ganó 4+ de los últimos 5 H2H → +3% de prob.
+    """
+    if not h2h or len(h2h) < 4: return 0.0
+    recent5 = h2h[:5]
+    # Se requiere conocer los nombres desde fuera — aquí devolvemos el ratio crudo
+    # home_wins / total como boost adicional (se aplica en ensemble)
+    hw = sum(1 for g in recent5 if g.get("winner","") == recent5[0].get("home","__NONE__"))
+    ratio = hw / len(recent5)
+    if ratio >= 0.80: return +0.03
+    if ratio <= 0.20: return -0.03
+    return 0.0
+
+def _football_line_movement(odd_h_open, odd_h_now, odd_a_open, odd_a_now):
+    """
+    Line movement: si la cuota bajó ≥15% = sharp money en ese lado.
+    Retorna ajuste de prob: positivo = sharp en local, negativo = sharp en visitante.
+    Máximo ±0.05.
+    """
+    if not (odd_h_open and odd_h_now and odd_a_open and odd_a_now): return 0.0
+    # Movimiento hacia local: cuota local bajó (favorita más), visitante subió
+    move_h = (odd_h_open - odd_h_now) / odd_h_open  # positivo = local más favorito
+    move_a = (odd_a_open - odd_a_now) / odd_a_open
+    net = move_h - move_a
+    return max(-0.05, min(0.05, net * 0.25))
+
+# ── NBA: Factores adicionales ────────────────────────────────────────────────
+
+# Foul rate por árbitro: multiplicador sobre total de puntos proyectado
+# Árbitros high-foul = más FTs = más puntos. Calibrado desde Basketball-Reference.
+_NBA_REF_FOUL_RATE = {
+    # nombre_parcial: multiplicador total puntos
+    "scott foster":   1.045,  # highest foul rate historically
+    "tony brothers":  1.038,
+    "marc davis":     1.032,
+    "ed malloy":      1.028,
+    "kane fitzgerald":1.022,
+    "zach zarba":     0.978,  # low foul rate
+    "ben taylor":     0.975,
+    "john goble":     0.972,
+}
+
+def _nba_referee_factor(referee_names):
+    """
+    Ajusta total proyectado según árbitros asignados.
+    referee_names: lista de strings con nombres de árbitros del partido.
+    Retorna multiplicador total (default 1.0 si no hay datos).
+    """
+    if not referee_names: return 1.0
+    mults = []
+    for ref in referee_names:
+        ref_l = str(ref).lower()
+        for k, v in _NBA_REF_FOUL_RATE.items():
+            if k in ref_l:
+                mults.append(v)
+                break
+    return sum(mults)/len(mults) if mults else 1.0
+
+def _nba_rest_days(form):
+    """
+    Días de descanso NBA (más granular que solo B2B).
+    0 días (B2B): ya penalizado. 1 día: leve fatiga. 3+ días: fresco.
+    Retorna multiplicador de rendimiento para PPG proyectado.
+    """
+    if not form: return 1.0
+    try:
+        from datetime import datetime as _dt
+        last = _dt.strptime(form[0]["date"], "%Y-%m-%d")
+        today = _dt.now()
+        days = (today - last).days
+        if days == 0:   return 0.960  # B2B (ya cubierto pero por si acaso)
+        if days == 1:   return 0.985  # 1 día de descanso
+        if days == 2:   return 0.997  # 2 días — casi óptimo
+        if days <= 5:   return 1.000  # óptimo
+        return 0.993                  # mucho descanso → falta de ritmo
+    except: return 1.0
+
+def _nba_defensive_matchup(h_stats, a_stats):
+    """
+    Ajuste por matchup defensivo real.
+    Proyección ofensiva del equipo A se ajusta por DefRtg del equipo B.
+    Retorna (h_def_adj, a_def_adj) como multiplicadores sobre PPG proyectado.
+    Liga promedio DefRtg ≈ 112.
+    """
+    league_avg_drtg = 112.0
+    # Si el rival tiene mejor defensa que promedio → yo anoto menos
+    h_adj = league_avg_drtg / max(90, a_stats.get("drtg", league_avg_drtg))
+    a_adj = league_avg_drtg / max(90, h_stats.get("drtg", league_avg_drtg))
+    return (max(0.88, min(1.12, h_adj)),
+            max(0.88, min(1.12, a_adj)))
+
+# ── TENIS: Factores adicionales ──────────────────────────────────────────────
+
+def _tennis_fatigue_factor(results_list, player_name, days_back=7):
+    """
+    Fatiga acumulada en los últimos 7 días.
+    Cuenta partidos jugados + sets jugados (partido largo = más fatiga).
+    Retorna ajuste de prob: negativo si muy fatigado, positivo si descansado.
+    """
+    if not results_list: return 0.0
+    name_l = player_name.lower().split()[-1]  # usar apellido
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        cutoff = (_dt.now() - _td(days=days_back)).strftime("%Y-%m-%d")
+        recent = [r for r in results_list
+                  if r.get("fecha","") >= cutoff and
+                  (name_l in r.get("p1","").lower() or name_l in r.get("p2","").lower())]
+        n_matches = len(recent)
+        # Sets jugados (score_h + score_a = sets totales)
+        n_sets = sum(r.get("score_h",0) + r.get("score_a",0) for r in recent)
+
+        if n_matches >= 4 or n_sets >= 10:  return -0.04  # muy fatigado
+        if n_matches >= 3 or n_sets >= 7:   return -0.02  # algo fatigado
+        if n_matches == 0:                  return -0.01  # sin rodaje
+        return 0.0  # normal
+    except: return 0.0
+
+def _tennis_h2h_by_surface(h2h_results, p1_name, surface):
+    """
+    H2H filtrado por superficie específica.
+    Retorna ajuste de prob para p1 basado en wins/losses en esa superficie.
+    """
+    if not h2h_results: return 0.0
+    srf_l = surface.lower()
+    p1_l = p1_name.lower().split()[-1]
+    srf_matches = [r for r in h2h_results
+                   if srf_l in str(r.get("surface","")).lower() or
+                   srf_l in str(r.get("torneo","")).lower()]
+    if len(srf_matches) < 2: return 0.0
+    p1_wins = sum(1 for r in srf_matches if p1_l in r.get("p1","").lower())
+    ratio = p1_wins / len(srf_matches)
+    if ratio >= 0.75: return +0.03
+    if ratio <= 0.25: return -0.03
+    return 0.0
+
+def _tennis_days_since_last_match(results_list, player_name):
+    """
+    Días desde el último partido jugado.
+    0-1 días: fatigado. 2-4 días: óptimo. 7+ días: sin ritmo.
+    """
+    if not results_list: return 0.0
+    name_l = player_name.lower().split()[-1]
+    try:
+        from datetime import datetime as _dt
+        player_matches = [r for r in results_list
+                         if name_l in r.get("p1","").lower() or
+                            name_l in r.get("p2","").lower()]
+        if not player_matches: return 0.0
+        last_date = max(r.get("fecha","") for r in player_matches)
+        days = (_dt.now() - _dt.strptime(last_date, "%Y-%m-%d")).days
+        if days <= 1: return -0.025  # back-to-back tenis
+        if days <= 4: return  0.000  # óptimo
+        if days <= 7: return -0.005  # leve falta de ritmo
+        return -0.015                # mucho tiempo sin jugar
+    except: return 0.0
+
+def _tennis_sets_in_previous_round(results_list, player_name):
+    """
+    Sets jugados en la ronda anterior de este torneo.
+    Partido largo (3 sets) vs fácil (2-0) afecta el partido siguiente.
+    Retorna penalización si jugó 3 sets recientemente.
+    """
+    if not results_list: return 0.0
+    name_l = player_name.lower().split()[-1]
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        cutoff = (_dt.now() - _td(days=2)).strftime("%Y-%m-%d")
+        recent = [r for r in results_list
+                  if r.get("fecha","") >= cutoff and
+                  (name_l in r.get("p1","").lower() or name_l in r.get("p2","").lower())]
+        if not recent: return 0.0
+        last = recent[0]
+        sets_played = last.get("score_h",0) + last.get("score_a",0)
+        if sets_played >= 5: return -0.03   # best-of-5 largo
+        if sets_played >= 3: return -0.015  # best-of-3 con 3 sets
+        return 0.0
+    except: return 0.0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CALIBRACIÓN DINÁMICA DE PESOS DEL ENSEMBLE
+# Brier Score semanal por modelo — el que más acierta gana más peso.
+# Basado en: Gneiting & Raftery 2007 (Strictly Proper Scoring Rules)
+# Los pesos se calculan desde pick_history resuelto (✅/❌) con model_snapshot.
+# Si no hay suficiente historial, usa los pesos estáticos originales.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _compute_dynamic_weights():
+    """
+    Lee pick_history y calcula Brier Score por modelo en los últimos 30 picks resueltos.
+    Brier Score = mean((p_model - outcome)²) — menor es mejor.
+    Retorna dict de multiplicadores de peso (se aplican sobre los pesos base).
+    Si hay <8 picks resueltos → retorna None (usa pesos estáticos).
+    """
+    try:
+        h = st.session_state.get("pick_history", [])
+        resolved = [p for p in h if p.get("result") in ("✅","❌") and p.get("model_snapshot")]
+        if len(resolved) < 8:
+            return None  # insuficiente historial
+
+        resolved = resolved[-30:]  # últimos 30 picks
+
+        model_keys = ["dc_ph","bvp_ph","elo_ph","h2h_ph","mkt_ph"]
+        brier = {k: [] for k in model_keys}
+
+        for pick in resolved:
+            outcome = 1.0 if pick["result"] == "✅" else 0.0
+            snap = pick.get("model_snapshot", {})
+            for k in model_keys:
+                if k in snap and snap[k] > 0:
+                    p = snap[k] / 100.0  # guardado como porcentaje
+                    brier[k].append((p - outcome) ** 2)
+
+        # Calcular Brier Score promedio por modelo
+        scores = {}
+        for k in model_keys:
+            if len(brier[k]) >= 4:
+                scores[k] = sum(brier[k]) / len(brier[k])
+
+        if len(scores) < 3:
+            return None
+
+        # Convertir a peso: inverso del Brier Score (menor error = mayor peso)
+        # Normalizar para que sumen 1.0 sobre los modelos con datos
+        inv = {k: 1.0 / max(0.001, v) for k, v in scores.items()}
+        total_inv = sum(inv.values())
+        weights_calibrated = {k: v / total_inv for k, v in inv.items()}
+
+        # Guardar para debug (no visible en UI)
+        st.session_state["_ensemble_calibrated_weights"] = weights_calibrated
+        return weights_calibrated
+
+    except: return None
+
+def _apply_calibrated_weights(w_base, calibrated):
+    """
+    Blend suave: 70% pesos base + 30% pesos calibrados.
+    Garantiza que ningún modelo quede con peso < 0.05 ni > 0.55.
+    """
+    if not calibrated:
+        return w_base
+    try:
+        model_map = {"dc":"dc_ph","bvp":"bvp_ph","elo":"elo_ph","h2h":"h2h_ph","mkt":"mkt_ph"}
+        w_new = {}
+        for k, base_v in w_base.items():
+            cal_key = model_map.get(k)
+            cal_v = calibrated.get(cal_key, base_v) if cal_key else base_v
+            w_new[k] = 0.70 * base_v + 0.30 * cal_v
+        # Normalizar
+        total = sum(w_new.values())
+        if total > 0:
+            w_new = {k: max(0.05, min(0.55, v/total)) for k, v in w_new.items()}
+            total2 = sum(w_new.values())
+            w_new = {k: v/total2 for k, v in w_new.items()}
+        return w_new
+    except: return w_base
+
+
 def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
                        home_id=None, away_id=None,
                        odd_h=0.0, odd_a=0.0, odd_d=0.0):
@@ -5771,6 +6499,31 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
     # ── rho dinámico (correlación goles bajos) ──
     total_xg = hxg + axg
     rho = -0.13 if total_xg > 2.2 else (-0.18 if total_xg > 1.5 else -0.22)
+
+    # ── Factores contextuales silenciosos sobre xG ──
+    try:
+        _h_mot, _a_mot = _football_motivation_factor(hform, aform)
+        _h_rest, _a_rest = _football_rest_days(hform, aform)
+        hxg = hxg * _h_mot * _h_rest
+        axg = axg * _a_mot * _a_rest
+        # Recalcular rho con xG ajustado
+        total_xg = hxg + axg
+        rho = -0.13 if total_xg > 2.2 else (-0.18 if total_xg > 1.5 else -0.22)
+    except: pass
+
+    # ── Estrellas ausentes (lesiones/bajas detectadas en hform/aform metadata) ──
+    try:
+        _h_inj = []
+        _a_inj = []
+        if hform and isinstance(hform[0], dict):
+            _h_inj = hform[0].get("injuries", [])
+        if aform and isinstance(aform[0], dict):
+            _a_inj = aform[0].get("injuries", [])
+        _h_star_delta, _ = _star_xg_adjustment(home_id or "", _h_inj)
+        _a_star_delta, _ = _star_xg_adjustment(away_id or "", _a_inj)
+        hxg = max(0.20, hxg + _h_star_delta)
+        axg = max(0.20, axg + _a_star_delta)
+    except: pass
 
     dc  = dc_probabilities(hxg, axg, rho=rho)
     bvp = bivariate_poisson(hxg, axg)
@@ -5798,6 +6551,13 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
         w = {"dc":0.35,"bvp":0.25,"elo":0.15,"h2h":0.15,"mkt":0.10}
     else:
         w = {"dc":0.45,"bvp":0.30,"elo":0.15,"h2h":0.10,"mkt":0.00}
+
+    # Calibración dinámica basada en Brier Score del historial de picks
+    try:
+        _cal = _compute_dynamic_weights()
+        if _cal:
+            w = _apply_calibrated_weights(w, _cal)
+    except: pass
 
     ph = (w["dc"]*dc["ph"] + w["bvp"]*bvp["ph"] + w["elo"]*elo_ph
           + w["h2h"]*h2h_ph + w["mkt"]*mkt_ph)
@@ -5848,17 +6608,24 @@ _SURFACE_PROFILES = {
 # Surface affinity by player archetype (inferred from ranking era + name patterns)
 # This is a conservative model — only adjusts when ranking is real (< 150)
 _CLAY_SPECIALISTS = {
-    "etcheverry","nadal","ruud","alcaraz","cerundolo","baez","navone",
-    "jarry","tabilo","gaston","coria","schwartzman","ferrer","thiem",
-    "swiatek","jabeur","paolini","badosa","sorribes",
+    "alcaraz","ruud","nadal","etcheverry","cerundolo","baez","navone",
+    "jarry","tabilo","gaston","coria","schwartzman","thiem","ferrer",
+    "musetti","cobolli","darderi","arnaldi","sonego","fonseca",
+    "rune","tsitsipas","zverev","griekspoor","cazaux","ofner","medjedovic",
+    "swiatek","jabeur","paolini","badosa","sorribes","sakkari",
+    "garcia","halep","muguruza","tauson","haddad maia","kostyuk","fernandez","fruhvirtova",
 }
 _GRASS_SPECIALISTS = {
-    "djokovic","federer","wimbledon","hurkacz","norrie","draper",
-    "rybakina","kvitova","keys",
+    "djokovic","hurkacz","draper","fritz","shelton","rublev","nakashima","norrie",
+    "bautista","cilic","auger-aliassime","fils",
+    "rybakina","vondrousova","kvitova","keys","krejcikova","andreescu","watson","boulter","navarro",
 }
 _HARD_SPECIALISTS = {
-    "sinner","medvedev","zverev","fritz","shelton","paul","korda",
-    "mensik","draper","sabalenka","gauff","zheng","pegula",
+    "sinner","medvedev","zverev","fritz","paul","korda","mensik","draper",
+    "de minaur","tiafoe","auger-aliassime","shelton","nakashima","khachanov",
+    "dimitrov","michelsen","thompson","zhang",
+    "sabalenka","gauff","zheng","pegula","navarro","andreeva","keys","collins",
+    "samsonova","shnaider","osaka",
 }
 
 def _surface_affinity(name: str, surface: str) -> float:
@@ -5925,14 +6692,14 @@ def _tennis_elo_prob(rank1, rank2, odd_1=0, odd_2=0, surface="hard",
 
 
 def _tennis_surface_model(rank1, rank2, surface, odd_1=0, odd_2=0,
-                           p1_name="", p2_name=""):
+                           p1_name="", p2_name="", best_of=3):
     """
     MODELO 2 — Weibull-Markov por Superficie (Klaassen & Magnus 2003)
     Cada superficie tiene parámetros distintos de ventaja al servicio.
     Grass > Carpet > Hard > Clay en ventaja de servicio.
     Incluye ajuste de especialista de superficie sobre el modelo Weibull.
     """
-    p1_base = weibull_match_prob(rank1, rank2, odd_1, odd_2, surface, best_of=3)["p1"]
+    p1_base = weibull_match_prob(rank1, rank2, odd_1, odd_2, surface, best_of=best_of)["p1"]
     # Add surface affinity on top of Weibull
     if (rank1 < 150 or rank2 < 150) and (p1_name or p2_name):
         adj1 = _surface_affinity(p1_name, surface)
@@ -6002,14 +6769,45 @@ def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=50_000):
 #   c) Fatiga implícita por posición en el torneo (Grand Slam: best-of-5 cuesta más)
 
 _RANK_TRAJECTORY_2026 = {
-    # jugadores que SUBIERON rápido en 2025-2026 → momentum positivo
-    "mensik":+15,"fonseca":+40,"tien":+30,"cobolli":+20,"darderi":+18,
-    "shelton":+8,"draper":+10,"mboko":+25,"andreeva":+12,"jovic":+20,
-    "anisimova":+8,"noskova":+12,
-    # jugadores que BAJARON o están estancados → momentum negativo
-    "tsitsipas":-20,"hurkacz":-18,"rublev":-5,"dimitrov":-15,
-    "jabeur":-15,"kvitova":-10,"osaka":-5,"azarenka":-12,
-    "badosa":-5,"andreescu":-8,
+    # ── ATP: SUBIENDO 2025-2026 ──
+    "rune":     +22,  # salto mental, ganando sets decisivos
+    "fils":     +30,  # explosión física francesa 2026
+    "draper":   +25,  # gran subida 2026
+    "mensik":   +18,  # clutch factor emergente
+    "fonseca":  +35,  # sensación 2026
+    "cobolli":  +20,  # pilar italiano
+    "darderi":  +18,
+    "navone":   +22,  # clay puro
+    "michelsen":+20,
+    "cazaux":   +15,
+    "shelton":  +10,  # servicio dominante consolidado
+    "korda":    +12,
+    "nakashima":+8,
+    "lehechka": +14,
+    "medjedovic":+18,
+    # ── ATP: BAJANDO O ESTANCADOS ──
+    "tsitsipas":-22,
+    "hurkacz":  -18,
+    "rublev":   -8,   # vulnerable en finales
+    "dimitrov": -15,
+    "bublik":   -10,  # inconsistente
+    "khachanov":-12,
+    # ── WTA: SUBIENDO 2025-2026 ──
+    "andreeva": +28,  # 18 años, IQ tenístico élite
+    "navarro":  +20,  # crecimiento táctico 2026
+    "zheng":    +18,  # oro olímpico + resistencia
+    "shnaider": +22,  # subida meteórica
+    "kostyuk":  +15,
+    "fruhvirtova":+18,
+    "fernandez":+12,
+    "paolini":  +10,  # agresividad desde el fondo
+    # ── WTA: BAJANDO O ESTANCADOS ──
+    "jabeur":   -18,  # lesiones recurrentes
+    "kvitova":  -12,
+    "azarenka": -14,
+    "badosa":   -8,
+    "andreescu":-10,
+    "osaka":    -6,   # regreso, varianza alta
 }
 
 def _tennis_h2h_momentum(rank1, rank2, p1_name, p2_name, odd_1=0, odd_2=0, surface="hard"):
@@ -6061,13 +6859,29 @@ def _tennis_h2h_momentum(rank1, rank2, p1_name, p2_name, odd_1=0, odd_2=0, surfa
 
 # Perfiles de servicio — big servers tienen ventaja EXTRA en grass/hard
 _BIG_SERVERS = {
-    "isner","raonic","karlovic","anderson","opelka","perricard","mpetshi",
-    "shelton","bublik","rinderknech","fils","zverev","fritz","paul",
-    "djokovic","sabalenka","keys","rybakina","pliskova","kvitova",
+    # ATP — big servers dominantes
+    "shelton",    # 230 km/h promedio, más dominante del circuito 2026
+    "fils",       # potencia francesa
+    "zverev","fritz","paul","hurkacz","isner","raonic","karlovic",
+    "opelka","perricard","mpetshi","bublik","rinderknech","nakashima",
+    "auger-aliassime","korda","lehechka","griekspoor",
+    # WTA — big servers
+    "sabalenka","rybakina","keys","kvitova","pliskova","samsonova","shnaider",
 }
 _RETURNERS = {
-    "djokovic","alcaraz","sinner","ruud","nadal","schwartzman","thiem",
-    "swiatek","halep","azarenka","muchova","pegula","gauff",
+    # ATP — mejores restadores, dominan con el retorno
+    "alcaraz",    # cobertura de cancha infinita
+    "sinner",     # imbatible desde el fondo
+    "djokovic",   # el mejor restador histórico
+    "medvedev",   # "The Wall"
+    "ruud","de minaur","dimitrov","tsitsipas",
+    "rune",       # mejora 2026 en sets decisivos
+    "schwartzman","nadal","thiem",
+    # WTA — mejores defensoras/retornadoras
+    "swiatek",    # dominio absoluto desde el fondo
+    "gauff",      # mejor defensa y cobertura de red del mundo
+    "pegula",     # la más estable del circuito
+    "andreeva","muchova","azarenka","halep","vondrousova",
 }
 
 def _tennis_serve_dominance(rank1, rank2, p1_name, p2_name, odd_1=0, odd_2=0, surface="hard"):
@@ -6123,13 +6937,52 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     """
     import statistics
 
+    # ── Detectar best-of-5 (Grand Slams masculinos) ──
+    _GRAND_SLAMS = {"australian open","roland garros","wimbledon","us open","roland-garros"}
+    _torneo_l = str(torneo).lower()
+    _is_slam = any(s in _torneo_l for s in _GRAND_SLAMS)
+    # ATP best-of-5 solo en Grand Slams. WTA siempre best-of-3.
+    # Si no hay info de género asumimos ATP (más conservador → best-of-5 en slams)
+    _best_of = 5 if _is_slam else 3
+
     # ── Ejecutar los 5 modelos ──
     p1_elo   = _tennis_elo_prob(rank1, rank2, odd_1, odd_2, surface, p1_name, p2_name)
-    p1_surf  = _tennis_surface_model(rank1, rank2, surface, odd_1, odd_2, p1_name, p2_name)
+    p1_surf  = _tennis_surface_model(rank1, rank2, surface, odd_1, odd_2, p1_name, p2_name, best_of=_best_of)
     base_mc  = (p1_elo + p1_surf) / 2
     p1_mc    = _tennis_monte_carlo_50k(base_mc, odd_1, odd_2, n=50_000)
     p1_mom   = _tennis_h2h_momentum(rank1, rank2, p1_name, p2_name, odd_1, odd_2, surface)
     p1_srv   = _tennis_serve_dominance(rank1, rank2, p1_name, p2_name, odd_1, odd_2, surface)
+
+    # ── Factores contextuales silenciosos — ajuste directo sobre prob final ──
+    try:
+        _results_cache = st.session_state.get("tennis_results_cache", [])
+        # Fatiga últimos 7 días (partidos + sets jugados)
+        _fat1 = _tennis_fatigue_factor(_results_cache, p1_name, 7)
+        _fat2 = _tennis_fatigue_factor(_results_cache, p2_name, 7)
+        # Días desde último partido (frescura vs falta de ritmo)
+        _fresh1 = _tennis_days_since_last_match(_results_cache, p1_name)
+        _fresh2 = _tennis_days_since_last_match(_results_cache, p2_name)
+        # Sets jugados en ronda anterior (esfuerzo físico reciente)
+        _sets1 = _tennis_sets_in_previous_round(_results_cache, p1_name)
+        _sets2 = _tennis_sets_in_previous_round(_results_cache, p2_name)
+        # H2H por superficie específica
+        _h2h_surf = _tennis_h2h_by_surface(_results_cache, p1_name, surface)
+        # Ajuste neto para p1: fatiga relativa + H2H superficie
+        _ctx_adj = (_fat1 - _fat2) + (_fresh1 - _fresh2) + (_sets1 - _sets2) + _h2h_surf
+        _ctx_adj = max(-0.08, min(0.08, _ctx_adj))  # cap absoluto ±8%
+        # Blend suave: 85% modelo estadístico + 15% contexto
+        p1_elo  = max(0.05, min(0.95, p1_elo  + _ctx_adj * 0.15))
+        p1_surf = max(0.05, min(0.95, p1_surf + _ctx_adj * 0.15))
+        p1_mom  = max(0.05, min(0.95, p1_mom  + _ctx_adj * 0.20))
+    except: pass
+
+    # ── Clima real de la sede del torneo — ajuste invisible ──
+    try:
+        _wx_adj = _weather_tennis_adj(p1_name, p2_name, surface, torneo)
+        if _wx_adj != 0.0:
+            p1_surf = max(0.05, min(0.95, p1_surf + _wx_adj))
+            p1_srv  = max(0.05, min(0.95, p1_srv  + _wx_adj * 0.8))
+    except: pass
 
     # Si hay análisis de Einstein, también lo incluimos como señal
     p1_einstein = expert_p1 if expert_p1 is not None else None
@@ -6482,6 +7335,18 @@ def veredicto_academico(mc, dp, odd_h, odd_a, odd_d, home, away, best_market=Non
             score -= 1
             factores.append((f"🚫 xG total bajo ({total_xg:.2f}) — partido cerrado, pocos goles", "#ff4444"))
 
+    # 6. CLV silencioso — line movement como validador externo
+    # open_ml_h/curr_ml_h disponibles desde Action Network (mc puede traerlos)
+    try:
+        _open_odd = mc.get("open_ml_h", 0) or mc.get("open_odd_h", 0)
+        _curr_odd = mc.get("curr_ml_h", 0) or odd_h
+        if not fav_is_home:
+            _open_odd = mc.get("open_ml_a", 0) or 0
+            _curr_odd = odd_a
+        _clv_adj = _clv_score_adj(_open_odd, _curr_odd, mkt_prob)
+        score += _clv_adj
+    except: pass
+
     # ── VEREDICTO FINAL ──
     MAX_SCORE = 11
     score_pct = max(0, min(score, MAX_SCORE))
@@ -6632,8 +7497,26 @@ def veredicto_academico(mc, dp, odd_h, odd_a, odd_d, home, away, best_market=Non
     return html
 
 
-def diamond_engine(mc, h2h_s, hform, aform):
+def diamond_engine(mc, h2h_s, hform, aform, match=None):
     ph, pd, pa = mc["ph"], mc["pd"], mc["pa"]
+
+    # ── In-play adjustment: si el partido está en curso, recalcular con Poisson condicional ──
+    try:
+        if match and match.get("state") == "in":
+            _sh   = int(match.get("score_h", 0) or 0)
+            _sa   = int(match.get("score_a", 0) or 0)
+            _min  = int(match.get("minute", 45) or 45)
+            _hxg  = mc.get("hxg", 1.3); _axg = mc.get("axg", 1.1)
+            _,_,_iph,_ipd,_ipa = _inplay_poisson(_hxg, _axg, _sh, _sa, _min)
+            if _iph is not None:
+                # Blend: 60% in-play Poisson + 40% modelo pre-partido
+                ph = 0.60*_iph + 0.40*ph
+                pd = 0.60*_ipd + 0.40*pd
+                pa = 0.60*_ipa + 0.40*pa
+                _s = ph+pd+pa
+                if _s > 0: ph/=_s; pd/=_s; pa/=_s
+    except: pass
+
     if h2h_s.get("tot",0) >= 3:
         ph = 0.75*ph + 0.25*(h2h_s["hp"]/100)
         pd = 0.75*pd + 0.25*(h2h_s["dp"]/100)
@@ -6650,6 +7533,219 @@ def diamond_engine(mc, h2h_s, hform, aform):
     elif top >= 0.37: conf,cc = "⚡ MEDIA","#00aaff"
     else:             conf,cc = "⚠️ BAJA","#ff9500"
     return {"ph":ph,"pd":pd,"pa":pa,"conf":conf,"cc":cc,"top":top}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 1 — IN-PLAY POISSON CONDICIONAL
+# Cuando state="in": recalcula distribución de goles restantes dado marcador actual.
+# Dixon-Coles condicional: P(resultado_final | marcador_X:Y, minuto_T)
+# Ref: Dixon & Robinson 1998 — A birth process model for association football matches
+# ══════════════════════════════════════════════════════════════════════════════
+def _inplay_poisson(hxg_pre, axg_pre, score_h, score_a, minute):
+    """
+    Recalcula xG restante según marcador actual y minuto.
+    Retorna (hxg_rest, axg_rest, ph_final, pd_final, pa_final).
+    Si no hay datos de minuto usa fallback de 45'.
+    """
+    try:
+        import math as _m
+        minute = max(1, min(int(minute or 45), 95))
+        frac_rest = max(0.05, (90 - minute) / 90.0)
+        # xG restante proporcional al tiempo restante
+        # Equipos perdiendo tienden a aumentar presión ofensiva ~15%
+        h_trailing = score_h < score_a
+        a_trailing = score_a < score_h
+        h_mult = 1.15 if h_trailing else (0.90 if score_h > score_a + 1 else 1.0)
+        a_mult = 1.15 if a_trailing else (0.90 if score_a > score_h + 1 else 1.0)
+        hxg_r = max(0.05, hxg_pre * frac_rest * h_mult)
+        axg_r = max(0.05, axg_pre * frac_rest * a_mult)
+        # Distribución de goles adicionales
+        ph = pd = pa = 0.0
+        rho = -0.13
+        def pmf(k, lam): return _m.exp(-lam)*lam**k/_m.factorial(min(k,10))
+        def tau(x,y,mu,lam,r):
+            if x==0 and y==0: return max(0.001,1-mu*lam*r)
+            if x==0 and y==1: return max(0.001,1+mu*r)
+            if x==1 and y==0: return max(0.001,1+lam*r)
+            if x==1 and y==1: return max(0.001,1-r)
+            return 1.0
+        for i in range(6):
+            for j in range(6):
+                p = pmf(i,hxg_r)*pmf(j,axg_r)*tau(i,j,hxg_r,axg_r,rho)
+                fh = score_h+i; fa = score_a+j
+                if fh>fa: ph+=p
+                elif fh<fa: pa+=p
+                else: pd+=p
+        tot = ph+pd+pa
+        if tot>0: ph/=tot; pd/=tot; pa/=tot
+        return hxg_r, axg_r, ph, pd, pa
+    except:
+        return hxg_pre*0.5, axg_pre*0.5, None, None, None
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 2 — CLV (CLOSING LINE VALUE) COMO FILTRO DE SCORE
+# Si la cuota se movió en contra (mercado apostó al rival) → penalizar pick.
+# Si la cuota se movió a favor (sharp money en tu lado) → bonificar pick.
+# Ref: Pinnacle Research — CLV is the single best predictor of long-term profit.
+# ══════════════════════════════════════════════════════════════════════════════
+def _clv_score_adj(open_odd, curr_odd, prob_model):
+    """
+    Calcula ajuste de score basado en line movement.
+    open_odd: cuota de apertura. curr_odd: cuota actual.
+    Retorna ajuste de score (-2 a +2) para veredicto_academico.
+    """
+    try:
+        if not (open_odd and curr_odd and open_odd > 1 and curr_odd > 1): return 0
+        # Movimiento: cuota bajó = más favorito = sharp money EN este lado
+        # Cuota subió = más underdog = sharp money EN EL OTRO lado
+        move = (open_odd - curr_odd) / open_odd  # positivo = cuota bajó (bueno para nosotros)
+        clv_implied = (1/curr_odd) - (1/open_odd)  # positivo = mercado se movió a tu favor
+        if clv_implied > 0.06:   return +2   # sharp money fuerte en tu lado
+        if clv_implied > 0.03:   return +1   # movimiento moderado a favor
+        if clv_implied > -0.02:  return  0   # sin movimiento significativo
+        if clv_implied > -0.05:  return -1   # movimiento moderado en contra
+        return -2                             # sharp money fuerte en contra
+    except: return 0
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 3 — CORRELACIÓN REAL EN PARLAYS
+# Los eventos "equipo gana" + "Over 2.5" NO son independientes.
+# Correlaciones calibradas de datos reales (Stobierski 2019, Betfair Research).
+# ══════════════════════════════════════════════════════════════════════════════
+_PARLAY_CORRELATION = {
+    # (leg1_type, leg2_type): correlación real
+    ("win_home", "over25"):  +0.22,   # local gana + goles: positivo (local gana marcando)
+    ("win_away", "over25"):  +0.18,   # visitante gana + goles: también positivo
+    ("win_home", "btts"):    +0.10,   # ganar sin goleada: débil correlación
+    ("win_away", "btts"):    +0.12,
+    ("win_home", "over15"):  +0.28,   # ganar + al menos 2 goles: alta correlación
+    ("win_away", "over15"):  +0.24,
+    ("win_home", "over35"):  +0.08,   # ganar + muchos goles: débil (defensas también ganan)
+    ("win_away", "over35"):  +0.06,
+    ("draw",     "over25"):  -0.08,   # empate + muchos goles: negativo (empates suelen ser bajos)
+    ("draw",     "btts"):    +0.15,   # empate + ambos anotan: positivo (1-1 común)
+    ("draw",     "over15"):  +0.05,
+}
+
+def _correlated_parlay_prob(p1, p2, leg1_type="win_home", leg2_type="over25"):
+    """
+    Probabilidad combinada con correlación real entre legs.
+    Fórmula: P(A∩B) = P(A)*P(B) + ρ*√(P(A)*(1-P(A))*P(B)*(1-P(B)))
+    Ref: Bivariate Bernoulli (Stobierski 2019)
+    """
+    try:
+        import math as _m
+        rho = _PARLAY_CORRELATION.get((leg1_type, leg2_type),
+              _PARLAY_CORRELATION.get((leg2_type, leg1_type), 0.0))
+        sigma1 = _m.sqrt(max(0, p1*(1-p1)))
+        sigma2 = _m.sqrt(max(0, p2*(1-p2)))
+        p_joint = p1*p2 + rho*sigma1*sigma2
+        return round(max(0.01, min(0.98, p_joint)), 4)
+    except: return round(p1*p2, 4)
+
+def _leg_type(label):
+    """Detecta el tipo de leg desde su label para buscar correlación."""
+    l = label.lower()
+    if "over 3" in l or "o35" in l:  return "over35"
+    if "over 2" in l or "o25" in l:  return "over25"
+    if "over 1" in l or "o15" in l:  return "over15"
+    if "ambos" in l or "btts" in l:  return "btts"
+    if "empate" in l or "draw" in l: return "draw"
+    if "🏠" in label:                return "win_home"
+    if "✈️" in label or "✈" in label: return "win_away"
+    return "win_home"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO 4 — CLIMA REAL POR SEDE DE TORNEO (TENIS)
+# Temperatura alta + humedad baja = bolas rápidas → ventaja big server
+# Humedad alta en clay = bolas pesadas → ventaja baseliner
+# Temperatura baja = bolas lentas → ventaja de fondo
+# ══════════════════════════════════════════════════════════════════════════════
+_TOURNAMENT_CITIES = {
+    "indian wells":   ("33.7175", "-116.3742"),
+    "miami":          ("25.7617", "-80.1918"),
+    "roland garros":  ("48.8462", "2.2528"),
+    "wimbledon":      ("51.4333", "-0.2138"),
+    "us open":        ("40.7501", "-73.8496"),
+    "australian open":("-37.8167", "144.9833"),
+    "madrid":         ("40.4168", "-3.7038"),
+    "rome":           ("41.9028", "12.4964"),
+    "monte carlo":    ("43.7384", "7.4246"),
+    "barcelona":      ("41.3851", "2.1734"),
+    "halle":          ("51.9333", "8.3667"),
+    "queens":         ("51.4875", "-0.2043"),
+    "cincinnati":     ("39.1031", "-84.5120"),
+    "toronto":        ("43.6532", "-79.3832"),
+    "shanghai":       ("31.2304", "121.4737"),
+    "paris":          ("48.8566", "2.3522"),
+    "dubai":          ("25.2048", "55.2708"),
+    "doha":           ("25.2854", "51.5310"),
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_tournament_weather(torneo_name):
+    """
+    Obtiene clima real de la sede del torneo.
+    Retorna dict con temp_c, humidity, wind_kmh, condition.
+    Cache 1 hora.
+    """
+    try:
+        torneo_l = str(torneo_name).lower()
+        coords = next(((lat,lon) for k,(lat,lon) in _TOURNAMENT_CITIES.items()
+                       if k in torneo_l), None)
+        if not coords: return {}
+        lat, lon = coords
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&wind_speed_unit=kmh&forecast_days=1"
+        import urllib.request as _ur, json as _jj
+        with _ur.urlopen(url, timeout=4) as r:
+            d = _jj.loads(r.read())
+        cur = d.get("current",{})
+        return {
+            "temp_c":    cur.get("temperature_2m", 20),
+            "humidity":  cur.get("relative_humidity_2m", 50),
+            "wind_kmh":  cur.get("wind_speed_10m", 10),
+            "wcode":     cur.get("weather_code", 0),
+        }
+    except: return {}
+
+def _weather_tennis_adj(p1_name, p2_name, surface, torneo):
+    """
+    Ajuste de prob para p1 basado en condiciones climáticas reales.
+    Retorna delta_prob (-0.03 a +0.03).
+    Invisible — solo entra al blend del modelo, no se muestra en UI.
+    """
+    try:
+        wx = _fetch_tournament_weather(torneo)
+        if not wx: return 0.0
+        temp    = wx.get("temp_c", 20)
+        humid   = wx.get("humidity", 50)
+        wind    = wx.get("wind_kmh", 10)
+        n1 = p1_name.lower(); n2 = p2_name.lower()
+        is_srv1 = any(s in n1 for s in _BIG_SERVERS)
+        is_srv2 = any(s in n2 for s in _BIG_SERVERS)
+        is_ret1 = any(s in n1 for s in _RETURNERS)
+        is_ret2 = any(s in n2 for s in _RETURNERS)
+        delta = 0.0
+        # Calor seco (>28°C, <50% humid): bolas rápidas → ventaja big server
+        if temp > 28 and humid < 50:
+            if is_srv1 and not is_srv2: delta += 0.020
+            if is_srv2 and not is_srv1: delta -= 0.020
+        # Frío (<15°C): bolas lentas → ventaja baseliner/returner
+        if temp < 15:
+            if is_ret1 and not is_ret2: delta += 0.015
+            if is_ret2 and not is_ret1: delta -= 0.015
+        # Viento fuerte (>25 km/h): penaliza big servers (servicio menos preciso)
+        if wind > 25:
+            if is_srv1: delta -= 0.015
+            if is_srv2: delta += 0.015
+        # Clay húmedo (>70% humid): bolas pesadas → ventaja clay baseliner
+        if surface == "clay" and humid > 70:
+            from_clay1 = any(s in n1 for s in _CLAY_SPECIALISTS)
+            from_clay2 = any(s in n2 for s in _CLAY_SPECIALISTS)
+            if from_clay1 and not from_clay2: delta += 0.015
+            if from_clay2 and not from_clay1: delta -= 0.015
+        return max(-0.03, min(0.03, delta))
+    except: return 0.0
+
 
 def smart_parlay(mc, dp, hn, an):
     T=0.58
@@ -6669,7 +7765,9 @@ def smart_parlay(mc, dp, hn, an):
     out=[]
     for l1 in leg1[:2]:
         for l2 in leg2[:2]:
-            cp=l1["p"]*l2["p"]
+            # Correlación real entre legs (en vez de independencia asumida)
+            t1 = _leg_type(l1["l"]); t2 = _leg_type(l2["l"])
+            cp = _correlated_parlay_prob(l1["p"], l2["p"], t1, t2)
             out.append({"l1":l1["l"],"p1":l1["p"],"l2":l2["l"],"p2":l2["p"],
                         "cp":cp,"odds":round(1/cp,2) if cp>0 else 99})
     if not out:
@@ -7483,104 +8581,129 @@ def get_nba_recent_form(team_id, n_games=7):
     return results[:n_games]
 
 
-def nba_ou_model(home_id, away_id, ou_line):
+def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     """
-    Modelo NBA O/U mejorado — usa 5 factores reales:
-    1. PPG reciente (últimos 7 partidos) con decay 0.88
-    2. Pace del equipo (posesiones/48min)
-    3. eFG% ofensivo vs defensivo
-    4. Net Rating (mejor predictor de resultados que PPG)
-    5. Monte Carlo 50k simulaciones con varianza calibrada
-
-    Ref: Oliver 2004 (Basketball on Paper), Kubatko 2007 (pace adjustments)
+    NBA O/U + ML — 8 factores:
+    PPG decay · Pace · Net Rating · Defensive Matchup ·
+    Back-to-back · Rest days granular · Árbitro foul-rate · Monte Carlo 50k
     """
-    # ── Stats avanzadas ──
     h_stats = get_nba_team_stats(home_id)
     a_stats = get_nba_team_stats(away_id)
     h_form  = get_nba_recent_form(home_id, 7)
     a_form  = get_nba_recent_form(away_id, 7)
 
-    # ── PPG con decay exponencial (últimos 7 > promedio temporada) ──
+    # PPG con decay exponencial
     DECAY = 0.88
     def decay_ppg(form, fallback):
         if not form: return fallback
         w_total = w_pts = 0
         for i, g in enumerate(form):
-            w = DECAY ** i
-            w_pts   += w * g["pts_for"]
-            w_total += w
+            w = DECAY ** i; w_pts += w * g["pts_for"]; w_total += w
         return w_pts / w_total if w_total > 0 else fallback
 
     h_recent_ppg = decay_ppg(h_form, h_stats["ppg"])
     a_recent_ppg = decay_ppg(a_form, a_stats["ppg"])
 
-    # ── Pace adjustment: blend promedios ──
+    # Pace
     avg_pace = (h_stats["pace"] + a_stats["pace"]) / 2
-    pace_adj  = avg_pace / 100.0  # normalizado
+    pace_adj  = avg_pace / 100.0
 
-    # ── Proyección base ──
-    # Local tiene +2.5 pts ventaja de cancha en casa
-    h_proj = h_recent_ppg * 1.025 * min(1.05, max(0.95, pace_adj))
-    a_proj = a_recent_ppg * min(1.05, max(0.95, pace_adj))
-    proj   = h_proj + a_proj
-
-    # ── Net rating adjustment ──
-    # Si un equipo tiene mucho mejor/peor NetRtg, ajustar proyección
-    net_diff = h_stats["net_rtg"] - a_stats["net_rtg"]
-    proj += net_diff * 0.15   # cada punto de net rating = 0.15 pts en total
-
-    line = ou_line if ou_line > 0 else proj
-
-    # ── Back-to-back fatigue: reduce proyección si jugó ayer ──
+    # Back-to-back detection (primero, antes de usar b2b_h/b2b_a)
     def played_yesterday(form):
         if len(form) < 2: return False
         try:
-            from datetime import datetime as _dt, timedelta as _td
-            d1 = _dt.strptime(form[0]["date"], "%Y-%m-%d")
-            d2 = _dt.strptime(form[1]["date"], "%Y-%m-%d")
+            d1 = datetime.strptime(form[0]["date"], "%Y-%m-%d")
+            d2 = datetime.strptime(form[1]["date"], "%Y-%m-%d")
             return abs((d1-d2).days) <= 1
         except: return False
 
     b2b_h = played_yesterday(h_form)
     b2b_a = played_yesterday(a_form)
-    if b2b_h: proj -= 4.0   # -4 pts por back-to-back local
-    if b2b_a: proj -= 3.5   # -3.5 pts por back-to-back visitante
 
-    # ── Monte Carlo 50k con varianza calibrada ──
-    # Std dev calibrada: 11 pts por equipo (histórico NBA, Oliver 2004)
-    rng    = np.random.default_rng(42)
-    h_sims = rng.normal(h_proj - (4 if b2b_h else 0), 11.0, 50_000)
-    a_sims = rng.normal(a_proj - (3.5 if b2b_a else 0), 11.0, 50_000)
+    # Proyección base con HCA
+    h_proj = h_recent_ppg * 1.014 * min(1.05, max(0.95, pace_adj))
+    a_proj = a_recent_ppg * min(1.05, max(0.95, pace_adj))
+
+    # Net rating adjustment
+    net_diff = h_stats["net_rtg"] - a_stats["net_rtg"]
+
+    # Defensive matchup — proyección ajustada por la defensa del rival
+    try:
+        _h_def_adj, _a_def_adj = _nba_defensive_matchup(h_stats, a_stats)
+        h_proj = h_proj * _h_def_adj
+        a_proj = a_proj * _a_def_adj
+    except: pass
+
+    # Rest days granular (no duplicar si ya hay B2B)
+    try:
+        if not b2b_h: h_proj = h_proj * _nba_rest_days(h_form)
+        if not b2b_a: a_proj = a_proj * _nba_rest_days(a_form)
+    except: pass
+
+    # Estrellas ausentes — impacto directo en proyección de puntos y spread
+    try:
+        _h_inj = [g.get("injury_report","") for g in h_form[:3] if g.get("injury_report")]
+        _a_inj = [g.get("injury_report","") for g in a_form[:3] if g.get("injury_report")]
+        _h_star_delta, _h_spread_delta, _ = _star_nba_adjustment(home_id or "", _h_inj)
+        _a_star_delta, _a_spread_delta, _ = _star_nba_adjustment(away_id or "", _a_inj)
+        h_proj = max(80, h_proj + _h_star_delta)
+        a_proj = max(80, a_proj + _a_star_delta)
+        # spread_delta se guarda para uso en ML probability
+        _net_star_spread = _h_spread_delta - _a_spread_delta
+    except:
+        _net_star_spread = 0.0
+
+    # Back-to-back fatigue
+    if b2b_h: h_proj -= 4.0
+    if b2b_a: a_proj -= 3.5
+
+    proj = h_proj + a_proj + net_diff * 0.15
+
+    # Árbitro foul-rate ajusta el total proyectado
+    try:
+        _ref_mult = _nba_referee_factor(referee_names or [])
+        proj = proj * _ref_mult
+        h_proj = h_proj * ((_ref_mult - 1) * 0.5 + 1)
+        a_proj = a_proj * ((_ref_mult - 1) * 0.5 + 1)
+    except: pass
+
+    line = ou_line if ou_line > 0 else proj
+
+    # Monte Carlo 50k
+    rng    = np.random.default_rng(seed=None)
+    h_sims = rng.normal(h_proj, 11.0, 50_000)
+    a_sims = rng.normal(a_proj, 11.0, 50_000)
     tots   = h_sims + a_sims
 
     p_over  = float((tots > line).mean())
     p_under = 1 - p_over
 
-    # ── ML (win probability) con Net Rating ──
-    # Net Rating es el mejor predictor de victorias (r²=0.89 vs PPG r²=0.72)
+    # ML con Net Rating
     net_h = h_stats["net_rtg"]; net_a = a_stats["net_rtg"]
-    # Convertir net rating a prob de victoria: logistic calibrado
-    net_diff_ml = (net_h - net_a + 3.0)  # +3 home court advantage
+    net_diff_ml = (net_h - net_a + 1.5)
+    # Ajuste por spread de estrellas ausentes (EPM calibrado)
+    try: net_diff_ml += _net_star_spread
+    except: pass
     p_h_win = 1 / (1 + math.exp(-net_diff_ml * 0.15))
     p_a_win = 1 - p_h_win
 
     return {
-        "proj":       round(proj, 1),
-        "line":       round(line, 1),
-        "p_over":     round(p_over, 4),
-        "p_under":    round(p_under, 4),
-        "p_h_win":    round(p_h_win, 4),
-        "p_a_win":    round(p_a_win, 4),
-        "h_proj":     round(h_proj, 1),
-        "a_proj":     round(a_proj, 1),
-        "b2b_h":      b2b_h,
-        "b2b_a":      b2b_a,
-        "net_h":      round(net_h, 1),
-        "net_a":      round(net_a, 1),
-        "pace":       round(avg_pace, 1),
+        "proj":         round(proj, 1),
+        "line":         round(line, 1),
+        "p_over":       round(p_over, 4),
+        "p_under":      round(p_under, 4),
+        "p_h_win":      round(p_h_win, 4),
+        "p_a_win":      round(p_a_win, 4),
+        "h_proj":       round(h_proj, 1),
+        "a_proj":       round(a_proj, 1),
+        "b2b_h":        b2b_h,
+        "b2b_a":        b2b_a,
+        "net_h":        round(net_h, 1),
+        "net_a":        round(net_a, 1),
+        "pace":         round(avg_pace, 1),
         "h_recent_ppg": round(h_recent_ppg, 1),
         "a_recent_ppg": round(a_recent_ppg, 1),
-        "rec":        "OVER 🔥" if p_over>0.54 else ("UNDER ❄️" if p_over<0.46 else "NEUTRAL ⚖️"),
+        "rec":          "OVER 🔥" if p_over>0.54 else ("UNDER ❄️" if p_over<0.46 else "NEUTRAL ⚖️"),
     }
 
 # ══════════════════════════════════════════════════════════
@@ -8021,14 +9144,65 @@ def _kr_nba_pythagorean(home_id, away_id, p_h_win, p_a_win, p_over, ou_line):
 
 # ── KR TENIS: Pressure Index (rendimiento bajo presión) ──────────────────────
 _KR_PRESSURE_PROFILE = {
-    # (gs_boost, masters_boost) — positivo = mejor en torneos grandes
-    "djokovic":(+0.04,+0.03),"alcaraz":(+0.03,+0.02),"sinner":(+0.02,+0.02),
-    "zverev":(-0.02,+0.01),"medvedev":(+0.01,+0.01),"ruud":(-0.03,-0.01),
-    "fritz":(-0.02,-0.01),"shelton":(-0.01,+0.01),"bublik":(-0.04,-0.02),
-    "rublev":(-0.03,-0.02),"sabalenka":(+0.04,+0.03),"rybakina":(+0.03,+0.02),
-    "swiatek":(+0.03,+0.02),"gauff":(+0.02,+0.01),"pegula":(-0.02,-0.01),
-    "anisimova":(+0.01,+0.00),"andreeva":(+0.01,+0.01),"svitolina":(+0.02,+0.02),
-    "mensik":(+0.01,+0.01),"draper":(+0.01,+0.01),"fonseca":(+0.01,+0.00),
+    # (gs_boost, masters_boost) — positivo = rinde MEJOR en torneos grandes
+    # ── ATP TOP 10 ──
+    "alcaraz":   (+0.04,+0.03),  # el más completo, factor cobertura infinito
+    "sinner":    (+0.03,+0.02),  # imbatible en hard bajo techo
+    "rune":      (+0.02,+0.02),  # salto mental 2026, gana sets decisivos
+    "shelton":   (-0.01,+0.01),  # servicio élite pero nervioso en GS
+    "zverev":    (-0.02,+0.02),  # consistente en 1000s, flaquea en GS finales
+    "medvedev":  (+0.02,+0.01),  # "The Wall", mejor en hardcourt grande
+    "fils":      (+0.01,+0.01),  # explosión 2026, clutch creciente
+    "ruud":      (-0.03,-0.01),  # rey clay pero flaquea en GS hardcourt
+    "rublev":    (-0.04,-0.02),  # potencia max, muy vulnerable en finales
+    "djokovic":  (+0.05,+0.03),  # clutch factor 100, solo juega slams
+    # ── ATP 11-40 ──
+    "tsitsipas": (-0.02,+0.00),
+    "hurkacz":   (+0.01,+0.01),  # buen grass
+    "fritz":     (-0.02,-0.01),
+    "de minaur": (+0.01,+0.01),
+    "draper":    (+0.02,+0.01),  # subida 2026
+    "dimitrov":  (-0.01,+0.00),
+    "paul":      (-0.01,+0.00),
+    "musetti":   (+0.01,+0.01),
+    "korda":     (-0.01,+0.00),
+    "auger-aliassime": (+0.00,+0.01),
+    "tiafoe":    (-0.01,+0.00),
+    "khachanov": (-0.01,+0.00),
+    "cerundolo": (+0.01,+0.00),
+    "bublik":    (-0.05,-0.03),  # muy inconsistente en grandes
+    "mensik":    (+0.02,+0.01),
+    "fonseca":   (+0.01,+0.00),
+    "navone":    (+0.01,+0.00),
+    # ── WTA TOP 10 ──
+    "swiatek":   (+0.04,+0.03),  # dominio absoluto clay, clutch total
+    "sabalenka": (+0.04,+0.03),  # si saque 70% entra → imbatible
+    "gauff":     (+0.03,+0.02),  # mejor defensa del mundo
+    "rybakina":  (+0.03,+0.02),  # reina grass y hard
+    "zheng":     (+0.02,+0.02),  # oro olímpico, resistencia
+    "andreeva":  (+0.03,+0.02),  # 18 años, IQ tenístico leyenda
+    "pegula":    (-0.01,-0.01),  # estable pero no clutch en GS
+    "vondrousova": (+0.01,+0.01),
+    "paolini":   (+0.01,+0.01),
+    "navarro":   (+0.02,+0.01),  # crecimiento táctico 2026
+    # ── WTA 11-40 ──
+    "sakkari":   (-0.01,+0.00),
+    "jabeur":    (-0.02,-0.01),  # lesiones afectan
+    "kostyuk":   (+0.01,+0.00),
+    "haddad maia": (+0.00,+0.01),
+    "shnaider":  (+0.01,+0.01),
+    "keys":      (+0.01,+0.01),
+    "samsonova": (-0.01,+0.00),
+    "kasatkina": (+0.01,+0.00),
+    "ostapenko": (-0.02,-0.01),  # máxima varianza: o 6-0 o 0-6
+    "azarenka":  (+0.01,+0.01),
+    "muchova":   (+0.01,+0.00),
+    "fernandez": (+0.01,+0.00),
+    "svitolina": (+0.02,+0.02),
+    "osaka":     (-0.01,+0.00),  # regreso, alta varianza
+    "badosa":    (-0.01,+0.00),
+    "tauson":    (-0.01,+0.00),
+    "boulter":   (+0.01,+0.01),  # edge como underdog
 }
 def _kr_tennis_pressure(rank1, rank2, p1_name, p2_name, torneo, odd_1=0, odd_2=0):
     """Pressure Index — exclusivo King Rongo tenis."""
@@ -8071,9 +9245,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 if not home_id or not slug: continue
                 hf  = get_form(home_id, slug) or []
                 af  = get_form(away_id, slug) or []
-                hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0) \
+                hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug) \
                       if hf else _cup_enriched_xg(m, True,  hf, af)
-                axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0) \
+                axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug) \
                       if af else _cup_enriched_xg(m, False, hf, af)
                 h2h = get_h2h(home_id, away_id, slug, m.get("home","?"), m.get("away","?"))
                 h2s = h2h_stats(h2h, m.get("home","?"), m.get("away","?"))
@@ -8082,7 +9256,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                                         odd_h=m.get("odd_h",0),
                                         odd_a=m.get("odd_a",0),
                                         odd_d=m.get("odd_d",0))
-                dp  = diamond_engine(mc, h2s, hf, af)
+                dp  = diamond_engine(mc, h2s, hf, af, match=m)
 
                 # ── Modelo exclusivo KR: Dixon-Coles bivariado ──
                 try:
@@ -8161,7 +9335,14 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                               "xG A":       round(axg,2)},
                     "hxg":hxg,"axg":axg,
                 }
-                c["score"] = _kr_score(prob, edge, spread, kelly, contra)
+                # CLV silencioso ajusta score KR
+                try:
+                    _kr_clv = _clv_score_adj(
+                        m.get("open_ml_h",0) or m.get("odd_h",0),
+                        m.get("odd_h",0), prob)
+                    c["score"] = _kr_score(prob, edge, spread, kelly, contra) + _kr_clv * 0.5
+                except:
+                    c["score"] = _kr_score(prob, edge, spread, kelly, contra)
                 candidates.append(c)
             except Exception as _e_fut:
                 continue  # partido fallido, continuar con el siguiente
@@ -8298,7 +9479,13 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                         "👑 Press":round(p1_press*100, 1),
                     },
                 }
-                c["score"] = _kr_score(prob, edge, spread if contra else 10, kelly, contra)
+                # Clima ajusta score KR tenis silenciosamente
+                try:
+                    _kr_wx = _weather_tennis_adj(p1_name, p2_name, srf, tor)
+                    _wx_bonus = 0.3 if abs(_kr_wx) >= 0.02 else 0
+                    c["score"] = _kr_score(prob, edge, spread if contra else 10, kelly, contra) + _wx_bonus
+                except:
+                    c["score"] = _kr_score(prob, edge, spread if contra else 10, kelly, contra)
                 candidates.append(c)
             except: continue
     except: pass
@@ -9722,8 +10909,8 @@ if deporte == "futbol":
                 # Calcular con datos reales
                 _am_hf  = get_form(_am.get("home_id",""), _am.get("slug","")) or []
                 _am_af  = get_form(_am.get("away_id",""), _am.get("slug","")) or []
-                _am_hxg = xg_weighted(_am_hf, True,  1/_am.get("odd_h",0) if _am.get("odd_h",0)>1 else 0) if _am_hf else xg_from_record(_am.get("home_rec","5-5-5"), True)
-                _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
+                _am_hxg = xg_weighted(_am_hf, True,  1/_am.get("odd_h",0) if _am.get("odd_h",0)>1 else 0, slug=_am.get("slug","")) if _am_hf else xg_from_record(_am.get("home_rec","5-5-5"), True)
+                _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0, slug=_am.get("slug","")) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
                 _am_mc  = ensemble_football(_am_hxg, _am_axg, {}, _am_hf, _am_af,
                             _am.get("home_id",""), _am.get("away_id",""),
                             odd_h=_am.get("odd_h",0), odd_a=_am.get("odd_a",0), odd_d=_am.get("odd_d",0))
@@ -10299,8 +11486,8 @@ if st.session_state["view"] == "cartelera":
                                     try:
                                         _hf2 = get_form(_m["home_id"], _m["slug"]) or []
                                         _af2 = get_form(_m["away_id"], _m["slug"]) or []
-                                        _hx2 = xg_weighted(_hf2,True) if _hf2 else _cup_enriched_xg(_m, True,  _hf2, _af2)
-                                        _ax2 = xg_weighted(_af2,False) if _af2 else _cup_enriched_xg(_m, False, _hf2, _af2)
+                                        _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug","")) if _hf2 else _cup_enriched_xg(_m, True,  _hf2, _af2)
+                                        _ax2 = xg_weighted(_af2,False,slug=_m.get("slug","")) if _af2 else _cup_enriched_xg(_m, False, _hf2, _af2)
                                         _mc2 = mc50k(_hx2, _ax2)
                                         _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
                                     except:
@@ -10368,8 +11555,8 @@ if st.session_state["view"] == "cartelera":
                 try:
                     _hf = get_form(_m["home_id"],_m["slug"]) or []
                     _af = get_form(_m["away_id"],_m["slug"]) or []
-                    _hxg = xg_weighted(_hf,True) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
-                    _axg = xg_weighted(_af,False) if _af else _cup_enriched_xg(_m, False, _hf, _af)
+                    _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                    _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                     _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
@@ -10393,8 +11580,8 @@ if st.session_state["view"] == "cartelera":
                 try:
                     _hf = get_form(_m["home_id"],_m["slug"]) or []
                     _af = get_form(_m["away_id"],_m["slug"]) or []
-                    _hxg = xg_weighted(_hf,True) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
-                    _axg = xg_weighted(_af,False) if _af else _cup_enriched_xg(_m, False, _hf, _af)
+                    _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                    _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                     _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
@@ -10447,8 +11634,8 @@ if st.session_state["view"] == "cartelera":
                         try:
                             _hf = get_form(_m["home_id"],_m["slug"]) or []
                             _af = get_form(_m["away_id"],_m["slug"]) or []
-                            _hxg = xg_weighted(_hf,True) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
-                            _axg = xg_weighted(_af,False) if _af else _cup_enriched_xg(_m, False, _hf, _af)
+                            _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                            _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                             _mc  = ensemble_football(_hxg,_axg,{},_hf,_af,_m["home_id"],_m["away_id"])
                             _dp  = diamond_engine(_mc,{},_hf,_af)
                             _bm  = max([(_dp["ph"],f"🏠 {_m['home']}"),(_dp["pa"],f"✈️ {_m['away']}"),(_mc["o25"],"⚽ Over 2.5")],key=lambda x:x[0])
@@ -10682,8 +11869,8 @@ else:
         h2h   = []
         h2s   = {}
         # xG con decaimiento exponencial + prior bayesiano de odds
-        hxg = xg_weighted(hform, is_home=True,  odds_prior=1/g.get("odd_h",0) if g.get("odd_h",0)>1 else 0) if hform else xg_from_record(g.get("home_rec","5-5-5"),True)
-        axg = xg_weighted(aform, is_home=False, odds_prior=1/g.get("odd_a",0) if g.get("odd_a",0)>1 else 0) if aform else xg_from_record(g.get("away_rec","5-5-5"),False)
+        hxg = xg_weighted(hform, is_home=True,  odds_prior=1/g.get("odd_h",0) if g.get("odd_h",0)>1 else 0, slug=g.get("slug","")) if hform else xg_from_record(g.get("home_rec","5-5-5"),True)
+        axg = xg_weighted(aform, is_home=False, odds_prior=1/g.get("odd_a",0) if g.get("odd_a",0)>1 else 0, slug=g.get("slug","")) if aform else xg_from_record(g.get("away_rec","5-5-5"),False)
         h2h   = get_h2h(g["home_id"],g["away_id"],g["slug"],g["home"],g["away"])
         h2s   = h2h_stats(h2h, g["home"], g["away"])
         mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"], odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0))
@@ -10818,7 +12005,10 @@ else:
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
-                add_pick(g, main_lbl, main_prob, main_odd)
+                _snap = {"dc_ph": mc.get("dc_ph",0), "bvp_ph": mc.get("bvp_ph",0),
+                         "elo_ph": mc.get("elo_ph",0), "h2h_ph": mc.get("h2h_ph",0),
+                         "mkt_ph": mc.get("mkt_ph",0)}
+                add_pick(g, main_lbl, main_prob, main_odd, sport="futbol", model_snapshot=_snap)
                 st.success("✅ Pick guardado en Historial")
         with sc2:
             if st.button(f"💾 Over 2.5 ({mc['o25']*100:.0f}%)", use_container_width=True, key="save_o25"):
@@ -10845,6 +12035,14 @@ else:
         # ══════════════════════════════════════════════════════════
         # VEREDICTO ACADÉMICO — Semáforo 🟢🟡🔴
         # ══════════════════════════════════════════════════════════
+        # Enriquecer mc con line movement de Action Network (CLV silencioso)
+        try:
+            if _an_pro:
+                mc['open_ml_h'] = _an_pro.get('open_ml_h', 0) or 0
+                mc['curr_ml_h'] = _an_pro.get('curr_ml_h', 0) or g.get('odd_h', 0)
+                mc['open_ml_a'] = _an_pro.get('open_ml_a', 0) or 0
+                mc['curr_ml_a'] = _an_pro.get('curr_ml_a', 0) or g.get('odd_a', 0)
+        except: pass
         v_html = veredicto_academico(mc, dp,
             g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0),
             g["home"], g["away"],
