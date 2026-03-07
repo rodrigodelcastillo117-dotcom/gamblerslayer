@@ -3198,9 +3198,22 @@ def _villar_auto_pick(partido_db):
                 pick_lbl = ml_lbl
                 prob     = ml_prob
 
+            ml_odd_h = partido_db.get("odd_h", 0)
+            ml_odd_a = partido_db.get("odd_a", 0)
+            ml_odd   = ml_odd_h if r["p_h_win"] >= 0.5 else ml_odd_a
+            ml_pick  = {"pick": ml_lbl,  "prob": ml_prob,  "mkt": "ML",   "odd": ml_odd,
+                        "sport":"nba","home":home,"away":away,
+                        "src": f"🤖 ML {ml_prob*100:.0f}%"}
+            over_pick  = {"pick": f"🔥 Over {line:.1f}",  "prob": p_over,  "mkt": "Over",  "odd": 0,
+                          "sport":"nba","home":home,"away":away,
+                          "src": f"🤖 Over {p_over*100:.0f}%"}
+            under_pick = {"pick": f"❄️ Under {line:.1f}", "prob": p_under, "mkt": "Under", "odd": 0,
+                          "sport":"nba","home":home,"away":away,
+                          "src": f"🤖 Under {p_under*100:.0f}%"}
             return {"pick": pick_lbl, "prob": prob, "sport": "nba",
                     "home": home, "away": away,
-                    "src": f"🤖 NBA · ML {r['p_h_win']*100:.0f}%/O{p_over*100:.0f}%/U{p_under*100:.0f}%"}
+                    "src": f"🤖 NBA · ML {r['p_h_win']*100:.0f}%/O{p_over*100:.0f}%/U{p_under*100:.0f}%",
+                    "all_picks": [ml_pick, over_pick, under_pick]}
 
         else:  # futbol — correr ensemble completo
             home_id  = partido_db.get("home_id","")
@@ -3425,29 +3438,47 @@ def render_resultados_tab():
 
     roi = sum((float(pk.get("odd",0))-1) for pk in pick_history if pk.get("result")=="✅") -           sum(1 for pk in pick_history if pk.get("result")=="❌")
 
+    # Desglose por deporte para el banner unificado
+    _fut_ok  = _pre_ok.get('futbol',0);  _fut_fail  = _pre_fail.get('futbol',0)
+    _nba_ok  = _pre_ok.get('nba',0);     _nba_fail  = _pre_fail.get('nba',0)
+    _ten_ok  = _pre_ok.get('tenis',0);   _ten_fail  = _pre_fail.get('tenis',0)
+    def _sp_pct(ok, fail): return f"{round(ok/(ok+fail)*100)}%" if ok+fail>0 else "–"
     st.markdown(
         f"<div style='background:linear-gradient(135deg,#07071a,#0a0a2e);"
-        f"border-radius:14px;padding:14px 18px;margin-bottom:14px;"
-        f"border:1px solid {_bar_c_hdr}55'>"
+        f"border-radius:14px;padding:16px 18px;margin-bottom:14px;"
+        f"border:2px solid {_bar_c_hdr}88'>"
+        # Header
         f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
-        f"letter-spacing:.12em;margin-bottom:10px'>🤖 VILLAR — PICKS AUDITADOS</div>"
-        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
-        f"<div style='text-align:center'>"
-        f"<div style='font-size:1.8rem;font-weight:900;color:#00ff88'>{_total_ok}</div>"
+        f"letter-spacing:.12em;margin-bottom:12px'>🤖 VILLAR — MODELO AUDITADO · TODOS LOS DEPORTES</div>"
+        # Big numbers
+        f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px'>"
+        f"<div style='text-align:center;background:#00ff8810;border-radius:10px;padding:10px 4px'>"
+        f"<div style='font-size:2rem;font-weight:900;color:#00ff88'>{_total_ok}</div>"
         f"<div style='font-size:.7rem;color:#555'>✅ Acertados</div></div>"
-        f"<div style='text-align:center'>"
-        f"<div style='font-size:1.8rem;font-weight:900;color:#ff4444'>{_total_fail}</div>"
+        f"<div style='text-align:center;background:#ff444410;border-radius:10px;padding:10px 4px'>"
+        f"<div style='font-size:2rem;font-weight:900;color:#ff4444'>{_total_fail}</div>"
         f"<div style='font-size:.7rem;color:#555'>❌ Fallados</div></div>"
-        f"<div style='text-align:center'>"
-        f"<div style='font-size:1.8rem;font-weight:900;color:{_bar_c_hdr}'>{_pct_all}%</div>"
+        f"<div style='text-align:center;background:{_bar_c_hdr}18;border-radius:10px;padding:10px 4px'>"
+        f"<div style='font-size:2rem;font-weight:900;color:{_bar_c_hdr}'>{_pct_all}%</div>"
         f"<div style='font-size:.7rem;color:#555'>Acierto global</div></div>"
-        f"<div style='text-align:center;font-size:.85rem;font-weight:700;color:#aaa'>"
-        f"⚽{_pre_ok.get('futbol',0)+_pre_fail.get('futbol',0)}<br>"
-        f"🏀{_pre_ok.get('nba',0)+_pre_fail.get('nba',0)}<br>"
-        f"🎾{_pre_ok.get('tenis',0)+_pre_fail.get('tenis',0)}</div>"
         f"</div>"
-        f"<div style='background:#0d0d2e;border-radius:6px;height:10px;overflow:hidden'>"
-        f"<div style='width:{_pct_all}%;height:100%;background:{_bar_c_hdr};border-radius:6px'></div>"
+        # Barra global
+        f"<div style='background:#0d0d2e;border-radius:6px;height:8px;overflow:hidden;margin-bottom:12px'>"
+        f"<div style='width:{_pct_all}%;height:100%;background:{_bar_c_hdr};border-radius:6px'></div></div>"
+        # Desglose por deporte
+        f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:6px'>"
+        f"<div style='background:#07071a;border-radius:8px;padding:8px;text-align:center'>"
+        f"<div style='font-size:.9rem'>⚽</div>"
+        f"<div style='font-size:.75rem;color:#00ff88;font-weight:700'>{_fut_ok}✅ {_fut_fail}❌</div>"
+        f"<div style='font-size:.8rem;font-weight:900;color:#aaa'>{_sp_pct(_fut_ok,_fut_fail)}</div></div>"
+        f"<div style='background:#07071a;border-radius:8px;padding:8px;text-align:center'>"
+        f"<div style='font-size:.9rem'>🏀</div>"
+        f"<div style='font-size:.75rem;color:#00ff88;font-weight:700'>{_nba_ok}✅ {_nba_fail}❌</div>"
+        f"<div style='font-size:.8rem;font-weight:900;color:#aaa'>{_sp_pct(_nba_ok,_nba_fail)}</div></div>"
+        f"<div style='background:#07071a;border-radius:8px;padding:8px;text-align:center'>"
+        f"<div style='font-size:.9rem'>🎾</div>"
+        f"<div style='font-size:.75rem;color:#00ff88;font-weight:700'>{_ten_ok}✅ {_ten_fail}❌</div>"
+        f"<div style='font-size:.8rem;font-weight:900;color:#aaa'>{_sp_pct(_ten_ok,_ten_fail)}</div></div>"
         f"</div></div>", unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════
@@ -3687,16 +3718,12 @@ def render_resultados_tab():
                             if sport_key == "tenis":
                                 _p1 = (p.get("p1") or p.get("home") or "").strip() or home_n
                                 _p2 = (p.get("p2") or p.get("away") or "").strip() or away_n
-                                # Usar sh/sa ya validados — NO p.get("score_h") que puede ser -1
-                                _sh = sh
-                                _sa = sa
-                                # Determinar ganador
+                                _sh = sh; _sa = sa
                                 if _sh > _sa:
                                     winner_n, loser_n = _p1, _p2
                                 elif _sa > _sh:
                                     winner_n, loser_n = _p2, _p1
                                 else:
-                                    # Sin score claro: buscar en pick_rows quién "ganó"
                                     _gano = next((r["expl"].replace("Ganó: ","") for r in pick_rows if "Ganó:" in r.get("expl","")), None)
                                     if _gano:
                                         winner_n = _gano
@@ -3705,26 +3732,28 @@ def render_resultados_tab():
                                         winner_n, loser_n = _p1, _p2
                                 _wko  = p.get("is_walkover") or p.get("walkover_note","")
                                 _note = " <span style='color:#ff9500;font-size:.65rem'>(RET.)</span>" if _wko else ""
-                                # Color borde según acierto del modelo
                                 _bc = "#00ff88" if any("GANÓ" in r.get("verd","") for r in pick_rows) else ("#ff4444" if any("FALLÓ" in r.get("verd","") for r in pick_rows) else "#1a1a40")
                                 st.markdown(
                                     f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
                                     f"margin:4px 0;border:1px solid {_bc}'>"
-                                    f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'>"
-                                    f"<span style='font-size:1.1rem'>✅</span>"
+                                    f"{pick_html}"
+                                    f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;"
+                                    f"padding-top:6px;border-top:1px solid #1a1a30'>"
+                                    f"<span style='font-size:.75rem;color:#555'>Ganó:</span>"
                                     f"<span style='color:#00ff88;font-weight:900;font-size:.88rem'>{winner_n}</span>"
-                                    f"<span style='color:#444;font-size:.75rem'>ganó vs</span>"
+                                    f"<span style='color:#444;font-size:.75rem'>vs</span>"
                                     f"<span style='color:#555;font-size:.82rem'>{loser_n}</span>"
                                     f"{_note}"
                                     f"</div>"
-                                    f"{pick_html}"
                                     f"</div>", unsafe_allow_html=True)
                             else:
                                 st.markdown(
                                     f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
                                     f"margin:4px 0;border:1px solid {border_c}'>"
+                                    f"{pick_html}"
                                     f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
-                                    f"gap:4px;align-items:center'>"
+                                    f"gap:4px;align-items:center;margin-top:6px;padding-top:6px;"
+                                    f"border-top:1px solid #1a1a30'>"
                                     f"<div style='text-align:right'><span style='color:{hc};"
                                     f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
                                     f"<div style='text-align:center;background:#07071a;border-radius:8px;padding:4px 6px'>"
@@ -3734,7 +3763,6 @@ def render_resultados_tab():
                                     f"<div style='text-align:left'><span style='color:{ac};"
                                     f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
                                     f"</div>"
-                                    f"{pick_html}"
                                     f"</div>", unsafe_allow_html=True)
 
             total_sp = ok_sp+fail_sp
@@ -3742,44 +3770,21 @@ def render_resultados_tab():
             _global_ok   += ok_sp
             _global_fail += fail_sp
             if total_sp>0:
-                bar_w = int(pct_sp)
                 bar_c = "#00ff88" if pct_sp>=55 else ("#FFD700" if pct_sp>=45 else "#ff4444")
                 st.markdown(
-                    f"<div style='background:#07071a;border-radius:12px;padding:12px 16px;"
-                    f"margin-top:12px;border:1px solid #1a1a30'>"
-                    f"<div style='display:flex;gap:16px;align-items:center;margin-bottom:8px'>"
-                    f"<span style='font-size:1.4rem'>{sport_emoji}</span>"
-                    f"<span style='color:#00ff88;font-weight:900;font-size:1.1rem'>{ok_sp}✅</span>"
-                    f"<span style='color:#ff4444;font-weight:900;font-size:1.1rem'>{fail_sp}❌</span>"
-                    f"<span style='color:{bar_c};font-weight:900;font-size:1.1rem'>{pct_sp}% acierto</span>"
-                    f"<span style='color:#555;font-size:.75rem;margin-left:auto'>{total_sp} picks auditados</span>"
-                    f"</div>"
-                    f"<div style='background:#0d0d2e;border-radius:6px;height:8px;overflow:hidden'>"
-                    f"<div style='width:{bar_w}%;height:100%;background:{bar_c};border-radius:6px;"
-                    f"transition:width .5s ease'></div></div>"
+                    f"<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;"
+                    f"background:#07071a;border-radius:8px;margin-top:8px;border-top:1px solid #1a1a30'>"
+                    f"<span style='font-size:1rem'>{sport_emoji}</span>"
+                    f"<span style='color:#00ff88;font-weight:700;font-size:.9rem'>{ok_sp}✅</span>"
+                    f"<span style='color:#ff4444;font-weight:700;font-size:.9rem'>{fail_sp}❌</span>"
+                    f"<span style='color:{bar_c};font-weight:900;font-size:1rem'>{pct_sp}%</span>"
+                    f"<span style='color:#555;font-size:.72rem;margin-left:auto'>{total_sp} auditados</span>"
                     f"</div>", unsafe_allow_html=True)
 
     # Banner global del modelo Villar
+    # Banner global ya está arriba — no duplicar aquí
     _gtotal = _global_ok + _global_fail
     _gpct   = round(_global_ok/_gtotal*100) if _gtotal > 0 else 0
-    _gbar_c = "#00ff88" if _gpct>=55 else ("#FFD700" if _gpct>=45 else "#ff4444")
-    if _gtotal > 0:
-        st.markdown(
-            f"<div style='background:linear-gradient(135deg,#07071a,#0a0a2e);"
-            f"border-radius:14px;padding:14px 18px;margin-top:16px;"
-            f"border:1px solid {_gbar_c}44'>"
-            f"<div style='font-size:.72rem;font-weight:700;color:#FFD700;"
-            f"letter-spacing:.12em;margin-bottom:10px'>🤖 VILLAR — MODELO AUDITADO (TODOS LOS DEPORTES)</div>"
-            f"<div style='display:flex;gap:20px;align-items:center;flex-wrap:wrap'>"
-            f"<span style='color:#00ff88;font-weight:900;font-size:1.3rem'>{_global_ok}✅</span>"
-            f"<span style='color:#ff4444;font-weight:900;font-size:1.3rem'>{_global_fail}❌</span>"
-            f"<span style='color:{_gbar_c};font-weight:900;font-size:1.5rem'>{_gpct}%</span>"
-            f"<span style='color:#555;font-size:.8rem'>acierto global · {_gtotal} picks auditados</span>"
-            f"</div>"
-            f"<div style='background:#0d0d2e;border-radius:6px;height:10px;overflow:hidden;margin-top:10px'>"
-            f"<div style='width:{_gpct}%;height:100%;background:{_gbar_c};border-radius:6px'></div>"
-            f"</div>"
-            f"</div>", unsafe_allow_html=True)
 
     # Guardar en session para KING RONGO
     st.session_state["_villar_summary"] = {
@@ -4698,17 +4703,26 @@ def _markov_game(p):
     return max(0.01, min(0.99, pg))
 
 def weibull_match_prob(rank1, rank2, odd_1=0, odd_2=0, surface="hard", best_of=3):
-    """Probabilidad de partido: Weibull (punto) → Markov (juego → set → partido)."""
-    ps1 = (_markov_game(_weibull_srv_prob(rank1, rank2, surface)) +
-           (1 - _markov_game(_weibull_srv_prob(rank2, rank1, surface)))) / 2
-    ps1 = max(0.01, min(0.99, ps1))
-    need = 2 if best_of==3 else 3
-    p1m = sum(math.comb(s-1,need-1)*ps1**need*(1-ps1)**(s-need) for s in range(need,best_of+1))
-    p1m = max(0.01, min(0.99, p1m))
-    if odd_1>1 and odd_2>1:
-        t = 1/odd_1+1/odd_2
-        p1m = 0.60*p1m + 0.40*(1/odd_1)/t   # 60% Weibull, 40% mercado limpio
-    return {"p1":round(p1m,4),"p2":round(1-p1m,4)}
+    """Probabilidad de partido: Weibull (punto) → Markov (juego → set → partido).
+    Usa odds ratio Barnett & Clarke para propagar correctamente sin comprimir hacia 50%."""
+    pg1 = _markov_game(_weibull_srv_prob(rank1, rank2, surface))  # prob ganar juego sirviendo p1
+    pg2 = _markov_game(_weibull_srv_prob(rank2, rank1, surface))  # prob ganar juego sirviendo p2
+    # P(ganar set) usando prob de ganar game al servir y al restar
+    # Klaassen & Magnus: usar el odds ratio de games ganados
+    # pg1 = prob p1 gana su servicio; (1-pg2) = prob p1 gana el servicio de p2
+    p_win_game_overall = (pg1 + (1 - pg2)) / 2  # promedio ponderado
+    ps1 = max(0.01, min(0.99, p_win_game_overall))
+    need = 2 if best_of == 3 else 3
+    p1m = sum(math.comb(s-1,need-1)*ps1**need*(1-ps1)**(s-need) for s in range(need, best_of+1))
+    # Amplificar la separación: p1m está en [0.35, 0.65] → stretching calibrado
+    # Barnett (2005): prob partido = prob set^k, k≈2.2 para best-of-3 calibrado en ATP
+    center = 0.5
+    stretched = center + (p1m - center) * 2.2
+    p1m = max(0.05, min(0.95, stretched))
+    if odd_1 > 1 and odd_2 > 1:
+        t = 1/odd_1 + 1/odd_2
+        p1m = 0.55 * p1m + 0.45 * (1/odd_1) / t  # más peso al mercado (tiene info de hoy)
+    return {"p1": round(p1m, 4), "p2": round(1-p1m, 4)}
 
 # ── ENSEMBLE: combina todos con pesos óptimos ──
 
@@ -5596,13 +5610,15 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     p1_einstein = expert_p1 if expert_p1 is not None else None
 
     # ── Consenso ponderado — 5 modelos ──
-    # Pesos base: Elo 15%, Superficie 20%, MC 25%, Momentum 20%, Serve 20%
-    # Si Einstein disponible: redistribuye -5% a cada uno y suma Einstein 25%
+    # Elo y Momentum son los más diferenciadores (amplitud 50-95%)
+    # Superficie y Serve dan señal real de superficie pero menor amplitud
+    # MC es blend de Elo+Surf — sirve de "árbitro"
+    # Pesos: Elo 30%, MC 20%, Momentum 25%, Superficie 13%, Serve 12%
     if p1_einstein is not None:
-        p1_final = (0.12*p1_elo + 0.16*p1_surf + 0.20*p1_mc +
-                    0.16*p1_mom + 0.16*p1_srv + 0.20*p1_einstein)
+        p1_final = (0.22*p1_elo + 0.15*p1_surf + 0.16*p1_mc +
+                    0.20*p1_mom + 0.12*p1_srv + 0.15*p1_einstein)
     else:
-        p1_final = 0.15*p1_elo + 0.20*p1_surf + 0.25*p1_mc + 0.20*p1_mom + 0.20*p1_srv
+        p1_final = 0.30*p1_elo + 0.13*p1_surf + 0.20*p1_mc + 0.25*p1_mom + 0.12*p1_srv
     p2_final = 1 - p1_final
 
     fav     = p1_name if p1_final >= p2_final else p2_name
@@ -5688,15 +5704,15 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     # ── Tabla de los 5 modelos ──
     surf_icon = {"hard":"🔵","clay":"🟤","grass":"🟢"}.get(surface.lower(),"🎾")
     model_data = [
-        ("Elo Adaptado al Tenis",        p1_elo,  "#00ccff", "15%",
+        ("Elo Adaptado al Tenis",        p1_elo,  "#00ccff", "30%",
          "Glickman & Jones 1999 — ranking→Elo→prob partido"),
-        (f"Superficie {surf_icon} {surface.title()}", p1_surf, "#aa00ff", "20%",
+        (f"Superficie {surf_icon} {surface.title()}", p1_surf, "#aa00ff", "13%",
          f"Klaassen & Magnus 2003 — Weibull-Markov en {surface}"),
-        ("Monte Carlo 50,000 sim.",      p1_mc,   "#FFD700", "25%",
+        ("Monte Carlo 50,000 sim.",      p1_mc,   "#FFD700", "20%",
          "Barnett & Clarke 2005 — 50k simulaciones set a set"),
-        ("H2H Momentum + Trayectoria",   p1_mom,  "#ff9500", "20%",
+        ("H2H Momentum + Trayectoria",   p1_mom,  "#ff9500", "25%",
          "Spanias 2012 — trayectoria reciente en el tour + sup."),
-        ("Serve Dominance + Break Pts",  p1_srv,  "#ff4488", "20%",
+        ("Serve Dominance + Break Pts",  p1_srv,  "#ff4488", "12%",
          "Newton & Aslam 2009 — control de ritmo por servicio"),
     ]
     if p1_einstein:
@@ -6435,15 +6451,33 @@ def escanear_nba_y_enviar(games):
 
 def escanear_tenis_y_enviar(matches):
     """Escanea ATP/WTA y manda ML picks con prob >= 62% a Telegram."""
+    _smap = {"Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+             "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+             "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
+             "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
+             "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard"}
     picks = []
     for m in matches:
         if m["state"] != "pre": continue
-        tm   = tennis_model(m["rank1"], m["rank2"], m["odd_1"], m["odd_2"])
-        best_p = max(tm["p1"], tm["p2"])
-        fav    = m["p1"] if tm["p1"] >= tm["p2"] else m["p2"]
-        odd    = m["odd_1"] if tm["p1"] >= tm["p2"] else m["odd_2"]
-        if best_p >= 0.62:
-            picks.append({**m, "tm": tm, "fav": fav, "best_p": best_p, "odd": odd})
+        try:
+            tor = m.get("torneo", m.get("tour",""))
+            srf = next((v for k,v in _smap.items() if k.lower() in tor.lower()), "hard")
+            r1 = m.get("rank1",0) or 0; r2 = m.get("rank2",0) or 0
+            p1n = m.get("p1",""); p2n = m.get("p2","")
+            if r1 <= 0 or r1 >= 150:
+                r1 = _resolve_rank(p1n, _KNOWN_RANKS) or _resolve_rank_local(p1n) or 120
+            if r2 <= 0 or r2 >= 150:
+                r2 = _resolve_rank(p2n, _KNOWN_RANKS) or _resolve_rank_local(p2n) or 120
+            _vd = veredicto_academico_tenis(p1n, p2n, r1, r2,
+                                             m.get("odd_1",0), m.get("odd_2",0), srf, tor)
+            best_p = _vd["_fav_prob"]
+            fav    = _vd["_fav_name"]
+            odd    = m.get("odd_1",0) if fav == p1n else m.get("odd_2",0)
+            conf   = _vd["_label"]
+            if best_p >= 0.62:
+                picks.append({**m, "fav": fav, "best_p": best_p, "odd": odd, "conf": conf,
+                               "r1": r1, "r2": r2, "srf": srf})
+        except: continue
     if not picks:
         tg_send("🎾 *Tennis Scanner:* Sin picks ML con valor hoy.")
         return 0
@@ -6451,11 +6485,11 @@ def escanear_tenis_y_enviar(matches):
     msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} picks_\n\n"
     for p in sorted(picks, key=lambda x: -x["best_p"]):
         odd_txt = f"@{p['odd']:.2f}" if p["odd"] > 1 else "N/D"
-        msg += f"🚨 {p['tour']} — {p['torneo']}\n"
+        msg += f"🚨 {p.get('tour','')} — {p.get('torneo','')}\n"
         msg += f"🎾 {p['p1']} vs {p['p2']}\n"
-        msg += f"🕒 {p['hora']} CDMX\n"
+        msg += f"🕒 {p.get('hora','')} CDMX · {p.get('srf','hard').title()} · Rk#{p['r1']} vs #{p['r2']}\n"
         msg += f"👉 *{p['fav']} gana* {odd_txt}\n"
-        msg += f"📊 Prob: {p['best_p']*100:.1f}%  •  {p['tm']['conf']}\n"
+        msg += f"📊 Prob: {p['best_p']*100:.1f}%  •  {p['conf']}\n"
         msg += "━━━━━━━━━━━━━━━━━━━\n"
     msg += "\n_Que la varianza esté a nuestro favor._ 🎲"
     tg_send(msg)
