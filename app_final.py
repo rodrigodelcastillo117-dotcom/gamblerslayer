@@ -324,6 +324,7 @@ def get_cartelera():
     dates = [(now + timedelta(days=i)).strftime("%Y%m%d") for i in range(0, 6)]
     hoy   = now.strftime("%Y-%m-%d")  # desde hoy CDMX
     matches, seen = [], set()
+    _parse_errs = []
     for slug in LIGAS:
         for ds in dates:
             data = eg(f"{ESPN}/{slug}/scoreboard", {"dates": ds, "limit": 100})
@@ -381,7 +382,7 @@ def get_cartelera():
                         "score_a":  parse_score(ac.get("score", 0)),
                         "minute":   int((str(ev.get("status",{}).get("displayClock","0") or "0").split(":")[0] or "0").replace("+","") or 0),
                     })
-                except: continue
+                except Exception as _ce: _parse_errs.append(str(_ce)); continue
 
     now_cdmx = datetime.now(CDMX)
     hoy_str  = now_cdmx.strftime("%Y-%m-%d")
@@ -403,6 +404,13 @@ def get_cartelera():
         return (f_order, s_order, h)
 
     matches.sort(key=_sort_key)
+    # Debug: store parse errors in a tmp file for diagnosis
+    if not matches and _parse_errs:
+        try:
+            import json as _jd
+            with open("/tmp/gl_cartelera_errors.json","w") as _fd:
+                _jd.dump({"errors":_parse_errs[:20],"dates":dates,"hoy":hoy}, _fd)
+        except: pass
     return matches
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -10975,7 +10983,25 @@ if deporte == "futbol":
             except: pass
 
     if not all_matches:
-        st.info("⚽ No hay partidos de fútbol disponibles ahora. Intenta refrescar en unos minutos.")
+        c1, c2 = st.columns([3,1])
+        with c1:
+            st.warning("⚽ No hay partidos disponibles. Intenta limpiar el cache.")
+        with c2:
+            if st.button("🔄 Limpiar cache", use_container_width=True):
+                get_cartelera.clear()
+                st.rerun()
+        # Mostrar errores de parseo si existen
+        try:
+            import json as _jd2
+            with open("/tmp/gl_cartelera_errors.json") as _fd2:
+                _dbg = _jd2.load(_fd2)
+            if _dbg.get("errors"):
+                with st.expander("🔍 Debug — errores de parseo"):
+                    st.write(f"Fechas pedidas: {_dbg.get('dates')}")
+                    st.write(f"Hoy CDMX: {_dbg.get('hoy')}")
+                    for _e2 in _dbg["errors"][:10]:
+                        st.code(_e2)
+        except: pass
     else:
         liga_opts = ["Todas"] + sorted(set(m["league"] for m in all_matches))
         liga_sel  = st.selectbox("Liga", liga_opts, label_visibility="collapsed")
