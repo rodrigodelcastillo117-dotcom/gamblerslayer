@@ -6495,6 +6495,157 @@ def escanear_tenis_y_enviar(matches):
     tg_send(msg)
     return len(picks)
 
+def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
+    """
+    PACH — AI analyst. Llama a Claude con web_search tool activado.
+    Recibe la pregunta del usuario + contexto de la app.
+    """
+    if not ANTHROPIC_API_KEY:
+        return "❌ PACH necesita ANTHROPIC_API_KEY en secrets.toml"
+
+    fecha_hoy = datetime.now(CDMX).strftime("%d/%m/%Y")
+    hora_hoy  = datetime.now(CDMX).strftime("%H:%M")
+
+    # Contexto compacto para el system prompt
+    partidos_txt = ""
+    for p in context_data.get("partidos", [])[:12]:
+        partidos_txt += (f"  • {p.get('home','?')} vs {p.get('away','?')} "
+                         f"| {p.get('hora','')} | odds: {p.get('odd_h',0):.2f}/{p.get('odd_d',0):.2f}/{p.get('odd_a',0):.2f}\n")
+
+    kr_pick = context_data.get("kr_pick", "")
+    villar  = context_data.get("villar", "")
+
+    system = f"""Eres PACH, analista de apuestas deportivas de The Gamblers Layer. 
+Hoy es {fecha_hoy} a las {hora_hoy} CDMX. Deporte activo: {sport_label}.
+
+PARTIDOS DISPONIBLES HOY:
+{partidos_txt if partidos_txt else '  (sin datos cargados)'}
+
+KING RONGO PICK DEL DÍA: {kr_pick if kr_pick else 'no disponible'}
+VILLAR MODELO: {villar if villar else 'no disponible'}
+
+TU MISIÓN:
+- Analiza PICKS ESPECÍFICOS que el usuario no puede calcular con la app: handicaps, spread, \
+over/under de sets (tenis), triple dobles, player props, parlays combinados, \
+over de corners, tarjetas, etc.
+- USA web_search para buscar información ACTUAL: lesiones, alineaciones, forma reciente, \
+head-to-head, clima, contexto del torneo. SIEMPRE busca antes de responder.
+- Da una respuesta DIRECTA y CONCISA. Máximo 5 líneas. Termina con: 
+  VEREDICTO: [JUGAR / NO JUGAR / ESPERAR] + probabilidad estimada en %.
+- Habla en español, tono confiado pero honesto.
+- NUNCA inventes estadísticas — si no encuentras info, dilo.
+- Recuerda: las apuestas tienen riesgo. Siempre juega responsablemente."""
+
+    try:
+        import json as _j
+        payload = {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 600,
+            "system": system,
+            "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+            "messages": [{"role": "user", "content": pregunta}]
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "interleaved-thinking-2025-05-14"
+        }
+        import urllib.request as _ur
+        req  = _ur.Request("https://api.anthropic.com/v1/messages",
+                           data=_j.dumps(payload).encode(), headers=headers, method="POST")
+        with _ur.urlopen(req, timeout=30) as resp:
+            data = _j.loads(resp.read())
+        # Extraer solo texto (ignorar tool_use blocks)
+        texts = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
+        return "\n".join(texts).strip() or "⚠️ PACH no obtuvo respuesta."
+    except Exception as e:
+        return f"⚠️ Error al contactar PACH: {str(e)[:120]}"
+
+
+def render_pach(sport_label: str, context_data: dict):
+    """
+    🤖 PACH — Chat AI analista integrado en el tab de Bot.
+    1 pregunta a la vez, respuesta con web_search en vivo.
+    """
+    api_ok = bool(ANTHROPIC_API_KEY)
+
+    st.markdown("""
+    <div style='background:linear-gradient(135deg,#0a0020,#001a10);
+    border:2px solid #bb00ff88;border-radius:16px;padding:14px 18px;
+    margin:16px 0 10px 0;display:flex;align-items:center;gap:12px'>
+    <div style='font-size:2.2rem'>🤖</div>
+    <div>
+      <div style='font-size:1.15rem;font-weight:900;color:#cc44ff;
+      letter-spacing:.08em'>PACH</div>
+      <div style='font-size:.72rem;color:#666'>Analista AI · Busca en la web en tiempo real · Powered by Claude</div>
+    </div>
+    <div style='margin-left:auto;font-size:.65rem;padding:3px 8px;border-radius:20px;
+    background:{"#00ff8820" if api_ok else "#ff000020"};
+    color:{"#00ff88" if api_ok else "#ff4444"};border:1px solid {"#00ff8855" if api_ok else "#ff444455"}'>
+    {"● ONLINE" if api_ok else "● SIN API KEY"}</div>
+    </div>""", unsafe_allow_html=True)
+
+    if not api_ok:
+        st.warning("Agrega `ANTHROPIC_API_KEY` en Streamlit secrets para activar PACH.")
+        return
+
+    # Historial de la sesión (solo últimas 6 para no saturar UI)
+    hist_key = f"pach_hist_{sport_label}"
+    if hist_key not in st.session_state:
+        st.session_state[hist_key] = []
+
+    # Mostrar historial
+    hist = st.session_state[hist_key]
+    if hist:
+        for entry in hist[-6:]:
+            # Pregunta del usuario
+            st.markdown(
+                f"<div style='background:#1a0a2e;border-radius:10px 10px 2px 10px;"
+                f"padding:8px 12px;margin:4px 0;font-size:.85rem;"
+                f"border-left:3px solid #bb00ff;color:#ddd'>"
+                f"<span style='color:#bb00ff;font-size:.65rem;font-weight:700'>TÚ</span><br>"
+                f"{entry['q']}</div>", unsafe_allow_html=True)
+            # Respuesta de PACH
+            resp_color = "#00ff88" if "JUGAR" in entry['a'].upper() else \
+                         ("#ff4444" if "NO JUGAR" in entry['a'].upper() else "#FFD700")
+            st.markdown(
+                f"<div style='background:#07071a;border-radius:2px 10px 10px 10px;"
+                f"padding:10px 12px;margin:4px 0 10px 0;font-size:.82rem;"
+                f"border-left:3px solid {resp_color};color:#ccc;white-space:pre-wrap'>"
+                f"<span style='color:#cc44ff;font-size:.65rem;font-weight:700'>🤖 PACH</span><br>"
+                f"{entry['a']}</div>", unsafe_allow_html=True)
+
+    # Input
+    _pk = f"pach_input_{sport_label}"
+    _bk = f"pach_send_{sport_label}"
+    _ck = f"pach_clear_{sport_label}"
+
+    col_in, col_btn = st.columns([5, 1])
+    with col_in:
+        pregunta = st.text_input(
+            "Pregúntale a PACH",
+            placeholder="Ej: Alcaraz -1.5 sets vs Ruud hoy · Over 2.5 en City vs Arsenal · Triple doble LeBron...",
+            key=_pk, label_visibility="collapsed")
+    with col_btn:
+        enviar = st.button("▶", key=_bk, use_container_width=True,
+                           help="Enviar a PACH")
+
+    col_hint, col_clear = st.columns([4,1])
+    with col_hint:
+        st.caption("💡 PACH busca en internet antes de responder · 1 pregunta a la vez")
+    with col_clear:
+        if st.button("🗑️", key=_ck, help="Limpiar historial"):
+            st.session_state[hist_key] = []
+            st.rerun()
+
+    if enviar and pregunta.strip():
+        with st.spinner("🌐 PACH buscando en la web..."):
+            respuesta = _pach_call(pregunta.strip(), sport_label, context_data)
+        st.session_state[hist_key].append({"q": pregunta.strip(), "a": respuesta})
+        st.rerun()
+
+
 def render_bot_tab(sport_label, scan_fn, scan_args, preview_fn=None):
     """Renderiza el tab de Bot de Telegram reutilizable para cualquier deporte."""
     bot_ok = bool(BOT_TOKEN and CHAT_ID and BOT_TOKEN != "Pega_Aqui_Tu_Token_De_BotFather")
@@ -6530,6 +6681,28 @@ def render_bot_tab(sport_label, scan_fn, scan_args, preview_fn=None):
         3. Agrega <code>CHAT_ID = "tu_chat_id"</code><br>
         4. Guarda y reinicia la app
         </div>""", unsafe_allow_html=True)
+
+    # ── PACH siempre aparece, independiente del bot Telegram ──
+    st.markdown("<div class='shdr'>🤖 PACH — Analista AI</div>", unsafe_allow_html=True)
+    # Construir contexto con datos disponibles en session_state
+    _kr_raw   = st.session_state.get("_king_el_pick", {})
+    _vl_raw   = st.session_state.get("_villar_summary", {})
+    _sp_key   = {"⚽ Fútbol":"futbol","🏀 NBA":"nba","🎾 Tenis":"tenis"}.get(sport_label,"futbol")
+    _pach_matches = []
+    try:
+        if _sp_key == "futbol":
+            _pach_matches = st.session_state.get("_kr_cache_fut", [])
+        elif _sp_key == "nba":
+            _pach_matches = st.session_state.get("_kr_cache_nba", [])
+        else:
+            _pach_matches = st.session_state.get("_kr_cache_ten", [])
+    except: pass
+    _pach_ctx = {
+        "partidos":  _pach_matches[:15],
+        "kr_pick":   _kr_raw.get("pick","") if isinstance(_kr_raw, dict) else str(_kr_raw)[:80],
+        "villar":    f"{_vl_raw.get('modelo_ok',0)}✅ {_vl_raw.get('modelo_fail',0)}❌ {_vl_raw.get('modelo_pct',0)}%" if _vl_raw else "",
+    }
+    render_pach(sport_label, _pach_ctx)
 
 # ══════════════════════════════════════════════════════════
 # TRILAY / PATO
