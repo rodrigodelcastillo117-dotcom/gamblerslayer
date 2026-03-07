@@ -3665,20 +3665,31 @@ def render_resultados_tab():
                             # 1. Pick manual guardado por usuario
                             manual_pks = [pk for pk in pick_history
                                           if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — SIEMPRE recalcular con jerarquía Diamante
-                            # (ML > DO > O2.5 > AA) — igual que Jugada Diamante en analisis
+                            # 2. Pick automático — snap congelado si existe, si no recalcular
                             _mid = p.get("id","")
                             auto_pk = None
                             if not manual_pks:
-                                _mid = p.get("id","")
                                 _p_state = p.get("state","pre")
-                                # Para partidos terminados: usar pick congelado del snapshot
-                                _frozen_snap = _load_picks_snap().get(_mid)
+                                _snap_all = _load_picks_snap()
+                                # Buscar snap por ID directo
+                                _frozen_snap = _snap_all.get(_mid)
+                                # Fallback: buscar por home_id+away_id+fecha (como lo guarda la cartelera)
+                                if not _frozen_snap:
+                                    _alt_gid = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
+                                    _frozen_snap = _snap_all.get(_alt_gid)
+                                # Fallback 2: buscar por cualquier key que contenga home+fecha
+                                if not _frozen_snap:
+                                    _ph = (p.get("home","") or "")[:6].lower().replace(" ","")
+                                    _pf = p.get("fecha","")
+                                    for _sk, _sv in _snap_all.items():
+                                        if _ph and _pf and _ph in _sk and _pf.replace("-","") in _sk:
+                                            _frozen_snap = _sv
+                                            break
                                 if _frozen_snap and _p_state == "post":
-                                    auto_pk = _frozen_snap
+                                    auto_pk = dict(_frozen_snap)
                                     auto_pk.setdefault("home", p.get("home",""))
                                     auto_pk.setdefault("away", p.get("away",""))
-                                    auto_pk.setdefault("sport", _p_state)
+                                    auto_pk.setdefault("sport", p.get("deporte","futbol"))
                                 else:
                                     try:
                                         auto_pk = _villar_auto_pick(_p_fixed)
@@ -9444,6 +9455,24 @@ if deporte == "futbol":
         except Exception as _e:
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
+
+    # ── PRE-SNAP BACKGROUND: calcular y guardar pick de cada partido ──
+    # Solo si aún no tiene snap guardado. Silencioso, sin mostrar nada.
+    if all_matches:
+        _snap_existing = _load_picks_snap()
+        for _pm in all_matches:
+            try:
+                _pid  = _pm.get("id","")
+                _pid2 = f"{_pm.get('home_id','')}_{_pm.get('away_id','')}_{_pm.get('fecha','')}"
+                # Si ya tiene snap con cualquiera de los 2 IDs → saltar
+                if _pid in _snap_existing or _pid2 in _snap_existing: continue
+                # Calcular pick automático
+                _bk_pk = _villar_auto_pick(_pm)
+                if _bk_pk:
+                    _st = _pm.get("state","pre")
+                    if _pid:  _snap_auto_pick(_pid,  _bk_pk, state=_st)
+                    if _pid2: _snap_auto_pick(_pid2, _bk_pk, state=_st)
+            except: continue
     if not all_matches:
         st.info("⚽ No hay partidos de fútbol disponibles ahora. Intenta refrescar en unos minutos.")
     else:
@@ -10451,12 +10480,21 @@ else:
             unsafe_allow_html=True)
 
         # ── GUARDAR PICK — y snapshot automático ──
-        # El snapshot captura la Jugada Diamante real que se mostró
-        _gid = g.get("id", f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}")
-        _snap_auto_pick(_gid, {
-            "pick": main_lbl, "prob": main_prob, "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
-            "odd": main_odd, "src": f"💎 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}"
-        }, state=g.get("state","pre"))
+        # Guardar con TODOS los IDs posibles para que Resultados lo encuentre
+        _pick_data = {
+            "pick": main_lbl, "prob": main_prob,
+            "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
+            "odd": main_odd, "src": f"💎 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
+            "home": g.get("home",""), "away": g.get("away",""),
+            "sport": "futbol", "fecha": g.get("fecha",""),
+        }
+        _state_g = g.get("state","pre")
+        # ID 1: ESPN event ID directo (lo que usa results_db)
+        _gid = g.get("id", "")
+        if _gid: _snap_auto_pick(_gid, _pick_data, state=_state_g)
+        # ID 2: home_id+away_id+fecha (fallback)
+        _gid2 = f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}"
+        if _gid2 != _gid: _snap_auto_pick(_gid2, _pick_data, state=_state_g)
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
