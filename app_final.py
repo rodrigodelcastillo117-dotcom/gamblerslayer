@@ -2352,127 +2352,268 @@ def get_results_db():
         st.session_state["results_last_check"] = now_ts
     return st.session_state["results_db"]
 
-def render_resultados_tab():
-    """Full Resultados Pasados tab — shared across all sports."""
-    db = get_results_db()
-    partidos = db.get("partidos",[])
-    ultima = db.get("ultima_actualizacion","Nunca")
+# ══════════════════════════════════════════════════════════
+# VILLAR BOT — Limpieza automática y auditoría de resultados
+# ══════════════════════════════════════════════════════════
 
-    # Header with refresh
-    col_h, col_r = st.columns([3,1])
-    with col_h:
-        st.markdown(f"<div class='shdr'>📊 Resultados Pasados</div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='color:#555;font-size:.75rem;margin-bottom:12px'>Última actualización: {ultima} · Se actualiza cada 2h automáticamente</div>", unsafe_allow_html=True)
-    with col_r:
-        if st.button("🔄 Actualizar ahora", key="refresh_results", use_container_width=True):
-            with st.spinner("Actualizando base de datos..."):
+def _villar_check_pick(pick, score_h, score_a, sport):
+    """
+    Villar evalúa si el pick que dio el sistema ganó o perdió.
+    Retorna: "✅ GANÓ", "❌ PERDIÓ", "↩️ EMPUJÓ", "❓ No verificable"
+    """
+    lbl = pick.get("pick","").lower()
+    sh, sa = score_h, score_a
+    if sh < 0 or sa < 0: return "❓", "#555"
+
+    if sport == "futbol":
+        won_h = sh > sa; won_a = sa > sh; draw = sh == sa
+        total = sh + sa
+        if any(x in lbl for x in ["gana","local","home","🏠"]):
+            team = pick.get("home","")
+            if team and team.lower() in lbl:
+                return ("✅ GANÓ","#00ff88") if won_h else ("❌ PERDIÓ","#ff4444")
+            return ("✅ GANÓ","#00ff88") if won_h else ("❌ PERDIÓ","#ff4444")
+        elif any(x in lbl for x in ["visitante","away","✈️"]):
+            return ("✅ GANÓ","#00ff88") if won_a else ("❌ PERDIÓ","#ff4444")
+        elif "empate" in lbl or "draw" in lbl:
+            return ("✅ GANÓ","#00ff88") if draw else ("❌ PERDIÓ","#ff4444")
+        elif "dc:" in lbl or "doble chance" in lbl or "o emp" in lbl:
+            if "🔵" in lbl or "local" in lbl: return ("✅ GANÓ","#00ff88") if (won_h or draw) else ("❌ PERDIÓ","#ff4444")
+            if "🟣" in lbl or "visita" in lbl: return ("✅ GANÓ","#00ff88") if (won_a or draw) else ("❌ PERDIÓ","#ff4444")
+            if "🔴" in lbl: return ("✅ GANÓ","#00ff88") if (won_h or won_a) else ("↩️ EMPUJÓ","#FFD700")
+        elif "over 2.5" in lbl: return ("✅ GANÓ","#00ff88") if total>2 else ("❌ PERDIÓ","#ff4444")
+        elif "over 3.5" in lbl: return ("✅ GANÓ","#00ff88") if total>3 else ("❌ PERDIÓ","#ff4444")
+        elif "over 1.5" in lbl: return ("✅ GANÓ","#00ff88") if total>1 else ("❌ PERDIÓ","#ff4444")
+        elif "ambos" in lbl or "btts" in lbl or "aa" in lbl: return ("✅ GANÓ","#00ff88") if (sh>0 and sa>0) else ("❌ PERDIÓ","#ff4444")
+    elif sport == "nba":
+        if "over" in lbl:
+            try:
+                line = float(''.join(c for c in lbl if c.isdigit() or c=='.'))
+                return ("✅ GANÓ","#00ff88") if (sh+sa)>line else ("❌ PERDIÓ","#ff4444")
+            except: pass
+        elif "under" in lbl:
+            try:
+                line = float(''.join(c for c in lbl if c.isdigit() or c=='.'))
+                return ("✅ GANÓ","#00ff88") if (sh+sa)<line else ("❌ PERDIÓ","#ff4444")
+            except: pass
+        won_h = sh > sa; won_a = sa > sh
+        if any(x in lbl for x in ["local","home","🏠"]): return ("✅ GANÓ","#00ff88") if won_h else ("❌ PERDIÓ","#ff4444")
+        if any(x in lbl for x in ["visita","away","✈️"]): return ("✅ GANÓ","#00ff88") if won_a else ("❌ PERDIÓ","#ff4444")
+    elif sport == "tenis":
+        won_p1 = sh > sa
+        p1n = pick.get("p1","").lower()
+        p2n = pick.get("p2","").lower()
+        if p1n and p1n[:6] in lbl: return ("✅ GANÓ","#00ff88") if won_p1 else ("❌ PERDIÓ","#ff4444")
+        if p2n and p2n[:6] in lbl: return ("✅ GANÓ","#00ff88") if not won_p1 else ("❌ PERDIÓ","#ff4444")
+    return ("❓","#555")
+
+def _villar_precache_tomorrow():
+    """
+    Villar corre el análisis Einstein de los partidos de mañana en background.
+    Se guarda en disco para que mañana sea instantáneo.
+    """
+    import hashlib, json as _j, os as _os
+    tomorrow = (datetime.now(CDMX)+timedelta(days=1)).strftime("%Y-%m-%d")
+    try:
+        ten = get_tennis_cartelera()
+        pre = [m for m in ten if m.get("fecha")==tomorrow and m.get("state")=="pre"]
+        _smap = {"Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+                 "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+                 "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay"}
+        cached = 0
+        for m in pre[:6]:
+            torneo  = m.get("torneo","")
+            surface = next((v for k,v in _smap.items() if k.lower() in torneo.lower()), "hard")
+            key = hashlib.md5(f"{m['p1']}|{m['p2']}|{surface}|{torneo}".encode()).hexdigest()[:16]
+            cp  = f"/tmp/tenis_ai_{key}_{tomorrow}.json"
+            if not _os.path.exists(cp):
+                result = tennis_expert_analysis(m["p1"],m["p2"],m["rank1"],m["rank2"],
+                                                 m["odd_1"],m["odd_2"],surface,torneo)
+                if result:
+                    with open(cp,'w') as f: _j.dump(result,f)
+                    cached += 1
+        return cached
+    except: return 0
+
+def render_resultados_tab():
+    """VILLAR BOT — Resultados, limpieza automática y auditoría de picks."""
+    from collections import defaultdict
+
+    # ── VILLAR HEADER ──
+    st.markdown("""
+    <div style='background:linear-gradient(135deg,#0a001a,#001a0a);border:1px solid #00ff8855;
+    border-radius:16px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px'>
+    <div style='font-size:2.2rem'>🤖</div>
+    <div>
+      <div style='font-size:1.1rem;font-weight:900;color:#00ff88;letter-spacing:.04em'>VILLAR</div>
+      <div style='font-size:.78rem;color:#555'>Bot de limpieza · Auditoría de picks · Resultados en tiempo real</div>
+    </div>
+    </div>""", unsafe_allow_html=True)
+
+    # ── ACCIONES VILLAR ──
+    v1, v2, v3 = st.columns(3)
+    with v1:
+        if st.button("🧹 Limpiar cartelera", use_container_width=True, key="villar_clean",
+                     help="Mueve partidos terminados a Resultados"):
+            with st.spinner("🤖 Villar revisando scores en línea..."):
+                update_results_db(force=True)
+                st.session_state["results_db"] = _load_results_db()
+            st.success("✅ Villar limpió la cartelera")
+            st.rerun()
+    with v2:
+        if st.button("⚡ Pre-cachear mañana", use_container_width=True, key="villar_precache",
+                     help="Einstein analiza los partidos de mañana ahora, para que sean instantáneos"):
+            with st.spinner("🧠 Einstein pre-analizando partidos de mañana..."):
+                n = _villar_precache_tomorrow()
+            st.success(f"✅ {n} partidos de tenis pre-analizados para mañana")
+    with v3:
+        if st.button("🔄 Actualizar todo", use_container_width=True, key="villar_refresh"):
+            with st.spinner("🤖 Villar actualizando scores..."):
                 update_results_db(force=True)
                 st.session_state["results_db"] = _load_results_db()
                 st.session_state["results_last_check"] = datetime.now(pytz.UTC).timestamp()
-            st.success("✅ Actualizado")
-            st.rerun()
+            st.success("✅ Actualizado"); st.rerun()
+
+    db = get_results_db()
+    partidos = db.get("partidos",[])
+    ultima = db.get("ultima_actualizacion","Nunca")
+    st.caption(f"🕐 Última actualización: {ultima}")
 
     if not partidos:
-        st.info("Base de datos vacía. Haz clic en 'Actualizar ahora' para cargar los últimos 10 días.")
+        st.info("🤖 Villar no tiene datos aún. Haz clic en 'Limpiar cartelera' para cargar resultados.")
         return
 
-    # Filter tabs by sport
+    # ── PICKS GUARDADOS para auditoría ──
+    brain = st.session_state.get("brain",{})
+    saved_picks = brain.get("picks",[]) if brain else []
+
+    # ── TABS POR DEPORTE ──
     rt1, rt2, rt3 = st.tabs(["⚽ Fútbol", "🏀 NBA", "🎾 Tenis"])
 
-    for tab_obj, sport_key, sport_label in [(rt1,"futbol","⚽ Fútbol"),(rt2,"nba","🏀 NBA"),(rt3,"tenis","🎾 Tenis")]:
+    for tab_obj, sport_key, sport_label, sport_emoji in [
+        (rt1,"futbol","Fútbol","⚽"),
+        (rt2,"nba","NBA","🏀"),
+        (rt3,"tenis","Tenis","🎾"),
+    ]:
         with tab_obj:
-            sport_p = [p for p in partidos if p.get("deporte")==sport_key]
-            finalizados = [p for p in sport_p if p.get("state")=="post"]
+            sport_p     = [p for p in partidos if p.get("deporte")==sport_key]
+            finalizados = sorted([p for p in sport_p if p.get("state")=="post"],
+                                  key=lambda x:x.get("fecha",""), reverse=True)
             en_juego    = [p for p in sport_p if p.get("state")=="in"]
-            proximos    = [p for p in sport_p if p.get("state")=="pre"]
 
-            # KPIs
+            # ── KPIs ──
+            picks_sport = [pk for pk in saved_picks if pk.get("deporte",sport_emoji)==sport_emoji]
+            ganados = sum(1 for pk in picks_sport if pk.get("result")=="✅")
+            perdidos= sum(1 for pk in picks_sport if pk.get("result")=="❌")
             st.markdown(
-                f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px'>"
-                f"<div class='mbox'><div class='mval' style='color:#00ff88;font-size:1.3rem'>{len(finalizados)}</div><div class='mlbl'>Finalizados</div></div>"
-                f"<div class='mbox'><div class='mval' style='color:#ff9500;font-size:1.3rem'>{len(en_juego)}</div><div class='mlbl'>En juego</div></div>"
-                f"<div class='mbox'><div class='mval' style='color:#00ccff;font-size:1.3rem'>{len(proximos)}</div><div class='mlbl'>Próximos</div></div>"
+                f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px'>"
+                f"<div class='mbox'><div class='mval' style='color:#00ff88'>{len(finalizados)}</div><div class='mlbl'>Terminados</div></div>"
+                f"<div class='mbox'><div class='mval' style='color:#ff9500'>{len(en_juego)}</div><div class='mlbl'>En Vivo</div></div>"
+                f"<div class='mbox'><div class='mval' style='color:#00ff88'>{ganados}</div><div class='mlbl'>Picks ✅</div></div>"
+                f"<div class='mbox'><div class='mval' style='color:#ff4444'>{perdidos}</div><div class='mlbl'>Picks ❌</div></div>"
                 f"</div>", unsafe_allow_html=True)
 
-            # ── EN JUEGO ──
+            # ── EN VIVO ──
             if en_juego:
-                st.markdown("<div class='shdr' style='color:#ff9500!important'>🔴 En Juego Ahora</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:.72rem;font-weight:700;color:#ff9500;text-transform:uppercase;letter-spacing:.1em;margin:8px 0 6px'>🔴 EN VIVO AHORA</div>", unsafe_allow_html=True)
                 for p in en_juego:
-                    sh = p.get("score_h",-1); sa = p.get("score_a",-1)
-                    score_txt = f"{sh} - {sa}" if sh>=0 else "En curso"
-                    st.markdown(
-                        f"<div class='mrow' style='border-left:3px solid #ff9500'>"
-                        f"<div style='display:flex;justify-content:space-between;align-items:center'>"
-                        f"<div><span style='color:#ff9500;font-size:.72rem;font-weight:700'>🔴 EN VIVO</span><br>"
-                        f"<b>{p['home']} vs {p['away']}</b><br>"
-                        f"<span style='color:#555;font-size:.78rem'>{p.get('liga','')} · {p.get('fecha','')}</span></div>"
-                        f"<div style='text-align:right'><div style='font-size:1.6rem;font-weight:900;color:#ff9500'>{score_txt}</div></div>"
-                        f"</div></div>", unsafe_allow_html=True)
-
-            # ── FINALIZADOS — grouped by date ──
-            if finalizados:
-                st.markdown("<div class='shdr'>✅ Resultados por Fecha</div>", unsafe_allow_html=True)
-                from collections import defaultdict
-                por_fecha = defaultdict(list)
-                for p in finalizados: por_fecha[p.get("fecha","")].append(p)
-                for fecha in sorted(por_fecha.keys(), reverse=True):
-                    dia_ps = por_fecha[fecha]
-                    try:
-                        d = datetime.strptime(fecha,"%Y-%m-%d")
-                        dias = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
-                        meses = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-                        label = f"📅 {dias[d.weekday()]} {d.day} {meses[d.month]}"
-                    except: label = f"📅 {fecha}"
-                    with st.expander(f"{label} — {len(dia_ps)} partidos", expanded=(fecha==sorted(por_fecha.keys(),reverse=True)[0])):
-                        # Group by league
-                        por_liga = defaultdict(list)
-                        for p in dia_ps: por_liga[p.get("liga","")].append(p)
-                        for liga, liga_ps in sorted(por_liga.items()):
-                            st.markdown(f"<div style='font-size:.72rem;font-weight:700;color:#FFD700;text-transform:uppercase;letter-spacing:.1em;margin:10px 0 5px'>{liga}</div>", unsafe_allow_html=True)
-                            for p in liga_ps:
-                                sh = p.get("score_h",-1); sa = p.get("score_a",-1)
-                                if sh < 0: continue
-                                if sport_key == "futbol":
-                                    won_h = sh > sa; won_a = sa > sh; draw = sh == sa
-                                    h_col = "#00ff88" if won_h else ("#FFD700" if draw else "#555")
-                                    a_col = "#00ff88" if won_a else ("#FFD700" if draw else "#555")
-                                    resultado = "Empate" if draw else (f"{p['home'].split()[-1]} gana" if won_h else f"{p['away'].split()[-1]} gana")
-                                else:
-                                    won_h = sh > sa; won_a = sa > sh
-                                    h_col = "#00ff88" if won_h else "#555"
-                                    a_col = "#00ff88" if won_a else "#555"
-                                    total_pts = sh + sa
-                                    resultado = f"Total: {total_pts} pts"
-                                st.markdown(
-                                    f"<div style='display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;"
-                                    f"padding:8px 10px;border-bottom:1px solid #1a1a40;font-size:.88rem'>"
-                                    f"<div style='text-align:right;color:{h_col};font-weight:{'700' if won_h else '400'}'>{p['home']}</div>"
-                                    f"<div style='text-align:center;background:#0d0d2e;border-radius:8px;padding:4px 12px;"
-                                    f"font-weight:900;font-size:1rem;min-width:70px'>"
-                                    f"<span style='color:{h_col}'>{sh}</span> - <span style='color:{a_col}'>{sa}</span></div>"
-                                    f"<div style='text-align:left;color:{a_col};font-weight:{'700' if won_a else '400'}'>{p['away']}</div>"
-                                    f"</div>", unsafe_allow_html=True)
-
-            # ── PRÓXIMOS ──
-            if proximos:
-                st.markdown("<div class='shdr'>📅 Próximos Partidos</div>", unsafe_allow_html=True)
-                proximos_sorted = sorted(proximos, key=lambda x: x.get("fecha",""))
-                prev_fecha = None
-                for p in proximos_sorted[:30]:
-                    if p["fecha"] != prev_fecha:
-                        try:
-                            d = datetime.strptime(p["fecha"],"%Y-%m-%d")
-                            dias = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
-                            meses = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-                            st.markdown(f"<div style='font-size:.72rem;color:#FFD700;font-weight:700;margin:10px 0 4px'>{dias[d.weekday()]} {d.day} {meses[d.month]}</div>", unsafe_allow_html=True)
-                        except: st.markdown(f"<div style='color:#FFD700;font-size:.72rem;margin:8px 0 4px'>{p['fecha']}</div>", unsafe_allow_html=True)
-                        prev_fecha = p["fecha"]
+                    sh=p.get("score_h",-1); sa=p.get("score_a",-1)
+                    sc = f"{sh}–{sa}" if sh>=0 else "🔴"
+                    home_name = p.get("home",p.get("p1","?"))
+                    away_name = p.get("away",p.get("p2","?"))
                     st.markdown(
                         f"<div style='display:flex;justify-content:space-between;align-items:center;"
-                        f"padding:6px 10px;border-bottom:1px solid #1a1a40;font-size:.85rem'>"
-                        f"<span style='color:#aaa'>{p['home']} <span style='color:#555'>vs</span> {p['away']}</span>"
-                        f"<span style='color:#555;font-size:.75rem'>{p.get('liga','')} · 🕒</span>"
+                        f"padding:8px 14px;background:#1a0800;border-radius:10px;margin:3px 0;"
+                        f"border-left:3px solid #ff9500'>"
+                        f"<div style='font-size:.85rem'><b>{home_name}</b> <span style='color:#555'>vs</span> <b>{away_name}</b>"
+                        f"<div style='font-size:.7rem;color:#555'>{p.get('liga',p.get('tour',''))} · {p.get('hora','')}</div></div>"
+                        f"<div style='font-size:1.4rem;font-weight:900;color:#ff9500'>{sc}</div>"
                         f"</div>", unsafe_allow_html=True)
+
+            # ── FINALIZADOS — por fecha con auditoría Villar ──
+            if not finalizados:
+                st.info(f"🤖 Villar: No hay partidos {sport_label} finalizados registrados. Haz clic en 'Limpiar cartelera'.")
+                continue
+
+            por_fecha = defaultdict(list)
+            for p in finalizados: por_fecha[p.get("fecha","?")].append(p)
+
+            dias_  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
+            meses_ = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+            def _fl(f):
+                try:
+                    d=datetime.strptime(f,"%Y-%m-%d")
+                    return f"📅 {dias_[d.weekday()]} {d.day} {meses_[d.month]}"
+                except: return f"📅 {f}"
+
+            for fecha in sorted(por_fecha.keys(), reverse=True):
+                dia_ps = por_fecha[fecha]
+                is_today = fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
+                with st.expander(f"{_fl(fecha)}  ·  {len(dia_ps)} partidos {'· HOY' if is_today else ''}",
+                                  expanded=is_today or fecha==sorted(por_fecha.keys(),reverse=True)[0]):
+
+                    # Group by liga/tour
+                    por_liga = defaultdict(list)
+                    for p in dia_ps: por_liga[p.get("liga",p.get("tour","Sin liga"))].append(p)
+
+                    for liga, lps in sorted(por_liga.items()):
+                        st.markdown(f"<div style='font-size:.7rem;font-weight:700;color:#FFD700;"
+                                    f"text-transform:uppercase;letter-spacing:.1em;margin:10px 0 5px'>"
+                                    f"{sport_emoji} {liga}</div>", unsafe_allow_html=True)
+
+                        for p in lps:
+                            sh = p.get("score_h",-1); sa = p.get("score_a",-1)
+                            if sh < 0: continue  # No score yet
+
+                            home_n = p.get("home",p.get("p1","?"))
+                            away_n = p.get("away",p.get("p2","?"))
+
+                            # Resultado del partido
+                            if sport_key == "futbol":
+                                won_h=sh>sa; won_a=sa>sh; draw=sh==sa
+                                hc="#00ff88" if won_h else ("#FFD700" if draw else "#aaa")
+                                ac="#00ff88" if won_a else ("#FFD700" if draw else "#aaa")
+                            elif sport_key == "nba":
+                                won_h=sh>sa; won_a=sa>sh
+                                hc="#00ff88" if won_h else "#aaa"
+                                ac="#00ff88" if won_a else "#aaa"
+                                draw=False
+                            else:  # tenis
+                                won_h=sh>sa; won_a=sa>sh
+                                hc="#00ff88" if won_h else "#aaa"
+                                ac="#00ff88" if won_a else "#aaa"
+                                draw=False
+
+                            # Villar: ¿hubo pick guardado en este partido?
+                            match_picks = [pk for pk in saved_picks
+                                          if (pk.get("home","").lower()==home_n.lower() or
+                                              pk.get("p1","").lower()==home_n.lower())]
+                            pick_html = ""
+                            for pk in match_picks:
+                                verd, vcol = _villar_check_pick(pk, sh, sa, sport_key)
+                                pick_html += (
+                                    f"<div style='margin-top:6px;padding:5px 10px;border-radius:7px;"
+                                    f"background:{vcol}18;border:1px solid {vcol}44'>"
+                                    f"<span style='font-size:.68rem;color:{vcol};font-weight:700'>🤖 VILLAR: {verd}</span>"
+                                    f"<span style='font-size:.68rem;color:#555;margin-left:8px'>Pick: {pk.get('pick','')}</span>"
+                                    f"</div>"
+                                )
+
+                            st.markdown(
+                                f"<div style='background:#0a0a1e;border-radius:10px;padding:10px 12px;"
+                                f"margin:4px 0;border:1px solid #1a1a40'>"
+                                f"<div style='display:grid;grid-template-columns:1fr 80px 1fr;gap:6px;align-items:center'>"
+                                f"<div style='text-align:right'>"
+                                f"<span style='color:{hc};font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
+                                f"<div style='text-align:center;background:#07071a;border-radius:8px;padding:4px 6px'>"
+                                f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
+                                f"<span style='color:#333;font-size:.9rem'> – </span>"
+                                f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
+                                f"<div style='text-align:left'>"
+                                f"<span style='color:{ac};font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
+                                f"</div>"
+                                f"{pick_html}"
+                                f"</div>", unsafe_allow_html=True)
 
 
 def avg(lst): return sum(lst)/len(lst) if lst else 0.0
@@ -4703,6 +4844,15 @@ def get_tennis_cartelera():
                     tour = "WTA" if "WTA" in tour_type else "ATP"
                 else:
                     continue  # filtrar ITF y challengers
+                ev_status = str(ev.get("event_status","")).lower()
+                ev_finished = str(ev.get("event_final","0"))
+                is_live = ev.get("event_live","0") == "1"
+                is_post = (ev_finished == "1" or
+                           any(x in ev_status for x in ["finished","ft","final","completed","awarded"]))
+                t_state = "post" if is_post else ("in" if is_live else "pre")
+                # Score for tennis
+                sc1 = str(ev.get("event_first_player_result",""))
+                sc2 = str(ev.get("event_second_player_result",""))
                 matches.append({
                     "id":    str(ev.get("event_key","")),
                     "p1":    ev.get("event_first_player","?"),
@@ -4712,7 +4862,8 @@ def get_tennis_cartelera():
                     "torneo": ev.get("tournament_name",""),
                     "hora":  hora,
                     "fecha": fecha,
-                    "state": "in" if ev.get("event_live","0")=="1" else "pre",
+                    "state": t_state,
+                    "score_p1": sc1, "score_p2": sc2,
                     "odd_1": 0.0, "odd_2": 0.0,
                 })
             except: continue
@@ -4736,8 +4887,28 @@ def tennis_model(rank1, rank2, odd_1=0, odd_2=0, surface="hard"):
     return {"p1":round(p1,3),"p2":round(p2,3),"edge_1":edge_1,"edge_2":edge_2,"conf":conf}
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def tennis_expert_analysis(p1_name, p2_name, rank1, rank2, odd_1, odd_2,
+                            surface, torneo, model_p1=0.5, model_p2=0.5):
+    """Wrapper con caché en disco — llama al análisis real si no hay resultado cacheado."""
+    import hashlib, json as _j, os as _os, time as _t
+    # Clave basada solo en jugadores + superficie + torneo (no en probs flotantes)
+    key = hashlib.md5(f"{p1_name}|{p2_name}|{surface}|{torneo}".encode()).hexdigest()[:16]
+    today = __import__('datetime').datetime.now().strftime("%Y-%m-%d")
+    cache_path = f"/tmp/tenis_ai_{key}_{today}.json"
+    # Intentar leer del disco primero
+    if _os.path.exists(cache_path):
+        try:
+            with open(cache_path) as f: return _j.load(f)
+        except: pass
+    result = _tennis_expert_analysis_raw(p1_name, p2_name, rank1, rank2,
+                                          odd_1, odd_2, surface, torneo, model_p1, model_p2)
+    if result:
+        try:
+            with open(cache_path, 'w') as f: _j.dump(result, f)
+        except: pass
+    return result
+
+def _tennis_expert_analysis_raw(p1_name, p2_name, rank1, rank2, odd_1, odd_2,
                             surface, torneo, model_p1, model_p2):
     """
     Einstein experto en tenis:
@@ -5283,61 +5454,116 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.info("Los picks unificados de todos los deportes están en ⚽ Fútbol → 🎯 Picks.")
             st.markdown("<div class='shdr'>🎯 Picks Tenis del Día — ML + Valor</div>", unsafe_allow_html=True)
-            # ── TOP 3 picks por probabilidad usando Einstein Tenis ──
-            with st.spinner("🧠 Einstein analizando H2H, superficie, forma de cada jugador..."):
-                ten_picks_raw = []
-                _surface_map = {
-                    "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
-                    "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
-                    "Monte Carlo":"clay","Madrid":"clay","Rome":"clay","Cincinnati":"hard",
-                    "Toronto":"hard","Montreal":"hard","Paris":"hard","Vienna":"hard",
-                    "Basel":"hard","Rotterdam":"hard","Dubai":"hard","Doha":"hard",
-                    "Barcelona":"clay","Hamburg":"clay","Geneva":"clay","Lyon":"clay",
-                    "Halle":"grass","Queen":"grass","Eastbourne":"grass","Birmingham":"grass",
-                }
-                for m in ten_matches:
-                    if m["state"]!="pre": continue
-                    torneo = m.get("torneo","")
-                    surface = next((v for k,v in _surface_map.items() if k.lower() in torneo.lower()), "hard")
-                    # Use Einstein expert analysis for every match
-                    base_tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"],surface)
-                    expert  = tennis_expert_analysis(
-                        m["p1"],m["p2"],m["rank1"],m["rank2"],
-                        m["odd_1"],m["odd_2"],surface,torneo,
-                        base_tm["p1"],base_tm["p2"]
-                    )
-                    if expert:
-                        p1_f = expert["p1"]; p2_f = expert["p2"]
-                        conf  = expert["conf"]
-                        resumen = expert.get("resumen","")
-                        h2h_txt = expert.get("h2h","")
-                        factor  = expert.get("factor","")
-                        forma_p1= expert.get("forma_p1","")
-                        forma_p2= expert.get("forma_p2","")
-                        surf_adv= expert.get("surface_adv","")
-                    else:
-                        p1_f = base_tm["p1"]; p2_f = base_tm["p2"]
-                        conf = base_tm["conf"]
-                        resumen = h2h_txt = factor = forma_p1 = forma_p2 = surf_adv = ""
+            # ── PASO 1: Weibull rápido en TODOS los partidos (~0s) ──
+            _surface_map = {
+                "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+                "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+                "Monte Carlo":"clay","Madrid":"clay","Rome":"clay","Cincinnati":"hard",
+                "Toronto":"hard","Montreal":"hard","Paris":"hard","Vienna":"hard",
+                "Basel":"hard","Rotterdam":"hard","Dubai":"hard","Doha":"hard",
+                "Barcelona":"clay","Hamburg":"clay","Geneva":"clay","Lyon":"clay",
+                "Halle":"grass","Queen":"grass","Eastbourne":"grass","Birmingham":"grass",
+            }
+            candidates = []
+            for m in ten_matches:
+                if m["state"]!="pre": continue
+                torneo  = m.get("torneo","")
+                surface = next((v for k,v in _surface_map.items() if k.lower() in torneo.lower()), "hard")
+                base_tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"],surface)
+                best_p  = max(base_tm["p1"], base_tm["p2"])
+                candidates.append((best_p, m, surface, torneo, base_tm))
+            candidates.sort(key=lambda x:-x[0])
+            top6 = candidates[:6]  # Solo top 6 candidatos van a Einstein
 
-                    fav = m["p1"] if p1_f >= p2_f else m["p2"]
-                    best_p = max(p1_f, p2_f)
-                    best_odd = m["odd_1"] if p1_f>=p2_f else m["odd_2"]
-                    edge_v = (p1_f-(1/m["odd_1"])) if p1_f>=p2_f and m["odd_1"]>1 else                              (p2_f-(1/m["odd_2"])) if m["odd_2"]>1 else 0
+            # ── PASO 2: Einstein — usa caché disco si existe, paralelo solo si hay misses ──
+            import concurrent.futures
+            def _analyze_one(args):
+                best_p, m, surface, torneo, base_tm = args
+                expert = tennis_expert_analysis(
+                    m["p1"],m["p2"],m["rank1"],m["rank2"],
+                    m["odd_1"],m["odd_2"],surface,torneo,
+                    base_tm["p1"],base_tm["p2"]
+                )
+                return (m, surface, torneo, base_tm, expert)
 
-                    ten_picks_raw.append({
-                        "p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
-                        "torneo":torneo,"surface":surface,
-                        "pick":f"🎾 {fav}","prob":best_p,"odd":best_odd,
-                        "conf":conf,"edge":edge_v,
-                        "resumen":resumen,"h2h":h2h_txt,"factor":factor,
-                        "forma_p1":forma_p1,"forma_p2":forma_p2,"surf_adv":surf_adv,
-                        "p1_pct":p1_f*100,"p2_pct":p2_f*100,
-                    })
+            # ── Separar hits de caché vs misses (llamadas API reales) ──
+            import hashlib as _hlib, json as _jcache, os as _oscache
+            today_str = __import__('datetime').datetime.now().strftime("%Y-%m-%d")
+            ten_picks_raw = []
 
-                # TOP 3 por probabilidad más alta
-                ten_picks_raw.sort(key=lambda x:-x["prob"])
-                ten_picks = ten_picks_raw[:3]
+            cached_results, need_api = [], []
+            for c in top6:
+                _, m, surface, torneo, base_tm = c
+                key = _hlib.md5(f"{m['p1']}|{m['p2']}|{surface}|{torneo}".encode()).hexdigest()[:16]
+                cp  = f"/tmp/tenis_ai_{key}_{today_str}.json"
+                if _oscache.path.exists(cp):
+                    try:
+                        cached_results.append((m, surface, torneo, base_tm, _jcache.load(open(cp))))
+                        continue
+                    except: pass
+                need_api.append(c)
+
+            # Partidos cacheados = resultado instantáneo
+            for m, surface, torneo, base_tm, expert in cached_results:
+                p1_f = expert["p1"]; p2_f = expert["p2"]
+                fav = m["p1"] if p1_f>=p2_f else m["p2"]
+                best_p = max(p1_f, p2_f)
+                best_odd = m["odd_1"] if p1_f>=p2_f else m["odd_2"]
+                edge_v = (p1_f-(1/m["odd_1"])) if p1_f>=p2_f and m["odd_1"]>1 else                          (p2_f-(1/m["odd_2"])) if m["odd_2"]>1 else 0
+                ten_picks_raw.append({
+                    "p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
+                    "torneo":torneo,"surface":surface,
+                    "pick":f"🎾 {fav}","prob":best_p,"odd":best_odd,
+                    "conf":expert["conf"],"edge":edge_v,
+                    "resumen":expert.get("resumen",""),"h2h":expert.get("h2h",""),
+                    "factor":expert.get("factor",""),
+                    "forma_p1":expert.get("forma_p1",""),"forma_p2":expert.get("forma_p2",""),
+                    "surf_adv":expert.get("surface_adv",""),
+                    "p1_pct":p1_f*100,"p2_pct":p2_f*100,"_from_cache":True,
+                })
+
+            # Partidos sin caché = llamada API (paralela, con barra de progreso)
+            if need_api:
+                n_api = len(need_api)
+                prog_ten = st.progress(0, f"🧠 Einstein analizando {n_api} partido(s) nuevos... ({len(cached_results)} del caché)")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+                    futures = {ex.submit(_analyze_one, c): i for i,c in enumerate(need_api)}
+                    done = 0
+                    for fut in concurrent.futures.as_completed(futures):
+                        done += 1
+                        prog_ten.progress(done/n_api, f"🧠 Einstein {done}/{n_api} nuevos · {len(cached_results)} del caché ✓")
+                        try:
+                            m, surface, torneo, base_tm, expert = fut.result()
+                        except: continue
+                        if expert:
+                            p1_f = expert["p1"]; p2_f = expert["p2"]
+                            conf = expert["conf"]
+                            resumen=expert.get("resumen",""); h2h_txt=expert.get("h2h","")
+                            factor=expert.get("factor",""); forma_p1=expert.get("forma_p1","")
+                            forma_p2=expert.get("forma_p2",""); surf_adv=expert.get("surface_adv","")
+                        else:
+                            p1_f=base_tm["p1"]; p2_f=base_tm["p2"]; conf=base_tm["conf"]
+                            resumen=h2h_txt=factor=forma_p1=forma_p2=surf_adv=""
+                        fav=m["p1"] if p1_f>=p2_f else m["p2"]
+                        best_p=max(p1_f,p2_f)
+                        best_odd=m["odd_1"] if p1_f>=p2_f else m["odd_2"]
+                        edge_v=(p1_f-(1/m["odd_1"])) if p1_f>=p2_f and m["odd_1"]>1 else                                (p2_f-(1/m["odd_2"])) if m["odd_2"]>1 else 0
+                        ten_picks_raw.append({
+                            "p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
+                            "torneo":torneo,"surface":surface,
+                            "pick":f"🎾 {fav}","prob":best_p,"odd":best_odd,
+                            "conf":conf,"edge":edge_v,
+                            "resumen":resumen,"h2h":h2h_txt,"factor":factor,
+                            "forma_p1":forma_p1,"forma_p2":forma_p2,"surf_adv":surf_adv,
+                            "p1_pct":p1_f*100,"p2_pct":p2_f*100,
+                        })
+                prog_ten.empty()
+            elif len(cached_results) > 0:
+                st.caption(f"⚡ {len(cached_results)} análisis del caché — instantáneo")
+
+            # TOP 3 por probabilidad más alta
+            ten_picks_raw.sort(key=lambda x:-x["prob"])
+            ten_picks = ten_picks_raw[:3]
 
             if not ten_picks:
                 st.info("No hay picks de tenis disponibles hoy.")
@@ -5925,6 +6151,15 @@ else:
         if st.button(f"💾 AA ({mc['btts']*100:.0f}%)", use_container_width=True, key="save_btts"):
             add_pick(g, "⚡ Ambos Anotan", mc["btts"], 0)
             st.success("✅ Pick guardado")
+
+    # ══════════════════════════════════════════════════════════
+    # VEREDICTO ACADÉMICO — Semáforo 🟢🟡🔴
+    # ══════════════════════════════════════════════════════════
+    v_html = veredicto_academico(mc, dp,
+        g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0),
+        g["home"], g["away"],
+        best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
+    st.markdown(v_html, unsafe_allow_html=True)
 
     # ── TABLA DE POSICIONES ──
     st.markdown("<div class='shdr'>📊 Tabla de Posiciones</div>", unsafe_allow_html=True)
