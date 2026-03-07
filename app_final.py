@@ -3963,8 +3963,34 @@ def tg_send(msg):
         return r.ok
     except: return False
 
+def _best_market_soccer(m, dp, mc):
+    """
+    Evalúa todos los mercados válidos y devuelve el de MAYOR probabilidad.
+    Mercados: 1X2, Doble Chance, Over 2.5, Over 3.5, Ambos Anotan.
+    NO incluye O1.5, ML simple sin cuota, Handicap.
+    """
+    opts = []
+    # 1X2
+    if m.get("odd_h",0)>1: opts.append(("🏠 "+m["home"][:15]+" gana",    dp["ph"], m["odd_h"], dp["ph"]-(1/m["odd_h"])))
+    if m.get("odd_d",0)>1: opts.append(("🤝 Empate",                      dp["pd"], m["odd_d"], dp["pd"]-(1/m["odd_d"])))
+    if m.get("odd_a",0)>1: opts.append(("✈️ "+m["away"][:15]+" gana",      dp["pa"], m["odd_a"], dp["pa"]-(1/m["odd_a"])))
+    # Doble Chance
+    dc_1x = dp["ph"]+dp["pd"]; dc_x2 = dp["pd"]+dp["pa"]; dc_12 = dp["ph"]+dp["pa"]
+    opts.append(("🔵 DC: "+m["home"][:12]+" o Emp",    dc_1x, 0, dc_1x-0.65))
+    opts.append(("🟣 DC: "+m["away"][:12]+" o Emp",    dc_x2, 0, dc_x2-0.65))
+    opts.append(("🔴 DC: "+m["home"][:10]+" o "+m["away"][:10], dc_12, 0, dc_12-0.65))
+    # Over / BTTS
+    opts.append(("⚽ Over 2.5",             mc["o25"],  0, mc["o25"]-0.52))
+    opts.append(("⚽ Over 3.5",             mc["o35"],  0, mc["o35"]-0.45))
+    opts.append(("⚡ Ambos Anotan (AA)",    mc["btts"], 0, mc["btts"]-0.52))
+    # Ordenar: mayor probabilidad primero (el pick DIAMANTE = max prob con edge+)
+    opts.sort(key=lambda x: (-x[1], -x[3]))
+    valid = [o for o in opts if o[3] > 0.0 and o[1] >= 0.55]
+    return valid[0] if valid else None
+
 def escanear_y_enviar(matches):
-    """Escanea todos los partidos y manda picks con edge > 8% a Telegram."""
+    """Escanea todos los partidos y manda picks a Telegram.
+    El pick de cada partido es el mercado de MAYOR probabilidad con edge positivo."""
     picks = []
     for m in matches:
         if m["state"] != "pre": continue
@@ -3976,13 +4002,12 @@ def escanear_y_enviar(matches):
         h2s = h2h_stats(h2h, m["home"], m["away"])
         mc  = ensemble_football(hxg, axg, h2s, hf, af, m["home_id"], m["away_id"])
         dp  = diamond_engine(mc, h2s, hf, af)
-        odd_h = m["odd_h"]
-        if odd_h > 1:
-            edge = dp["ph"] - (1/odd_h)
-            if edge >= 0.08 and dp["ph"] >= 0.45:
-                b = odd_h - 1; p = dp["ph"]
-                kelly = max(0, (b*p-(1-p))/b*100)
-                picks.append({**m,"dp":dp,"mc":mc,"edge":edge,"kelly":kelly})
+        best = _best_market_soccer(m, dp, mc)
+        if best and best[3] >= 0.05:  # edge mínimo 5%
+            p = best[1]; b = (best[2]-1) if best[2]>1 else 1
+            kelly = max(0, (b*p-(1-p))/b*100) if b>0 else 0
+            picks.append({**m,"dp":dp,"mc":mc,"edge":best[3],"kelly":kelly,
+                          "pick_label":best[0],"pick_prob":best[1],"pick_odd":best[2]})
 
     if not picks:
         tg_send("🛡️ *Escáner Diario:* No hay picks con Edge > 8% hoy. Mantén el dinero en la bolsa.")
@@ -3990,9 +4015,12 @@ def escanear_y_enviar(matches):
 
     msg  = "🦅 *THE GAMBLERS LAYER | ESCÁNER DIARIO* 🦅\n"
     msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} picks_\n\n"
-    for p in sorted(picks, key=lambda x:-x["edge"]):
-        msg += f"🚨 *SHARP ALERT:* {p['league']}\n"
+    for p in sorted(picks, key=lambda x:-x["pick_prob"]):
+        msg += f"🚨 *PICK DIAMANTE:* {p['league']}\n"
         msg += f"⚽ {p['home']} vs {p['away']}\n"
+        msg += f"👉 *{p.get('pick_label','?')}* — {p['pick_prob']*100:.1f}%"
+        if p.get('pick_odd',0)>1: msg += f" @{p['pick_odd']:.2f}"
+        msg += f" | Edge: {p['edge']*100:.1f}%\n"
         msg += f"🕒 {p['hora']} CDMX\n"
         msg += f"👉 *Local gana @{p['odd_h']}*\n"
         msg += f"📊 Prob: {p['dp']['ph']*100:.1f}%  •  Edge: *{p['edge']*100:.1f}%*\n"
@@ -5137,14 +5165,28 @@ if st.session_state["view"] == "cartelera":
                         h2h = get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"])
                         h2s = h2h_stats(h2h,m["home"],m["away"])
                         dp  = diamond_engine(mc_,h2s,hf,af)
+                        # ── Evalúa solo mercados válidos para DIAMANTE ──
                         opts=[]
-                        if m["odd_h"]>1: opts.append(("🏠 "+m["home"][:15]+" gana",dp["ph"],m["odd_h"],dp["ph"]-(1/m["odd_h"])))
-                        if m["odd_a"]>1: opts.append(("✈️ "+m["away"][:15]+" gana",dp["pa"],m["odd_a"],dp["pa"]-(1/m["odd_a"])))
-                        opts.append(("⚽ Over 2.5",mc_["o25"],0,mc_["o25"]-0.50))
-                        opts.append(("⚡ Ambos Anotan",mc_["btts"],0,mc_["btts"]-0.50))
-                        opts.sort(key=lambda x:-x[3])
-                        best=opts[0]
-                        if best[3]>0.03:
+                        # 1X2 — Ganador
+                        if m["odd_h"]>1: opts.append(("🏠 "+m["home"][:15]+" gana", dp["ph"], m["odd_h"], dp["ph"]-(1/m["odd_h"])))
+                        if m["odd_d"]>1: opts.append(("🤝 Empate",                  dp["pd"], m["odd_d"], dp["pd"]-(1/m["odd_d"])))
+                        if m["odd_a"]>1: opts.append(("✈️ "+m["away"][:15]+" gana",  dp["pa"], m["odd_a"], dp["pa"]-(1/m["odd_a"])))
+                        # Doble Chance
+                        dc_1x = dp["ph"]+dp["pd"]; dc_x2 = dp["pd"]+dp["pa"]; dc_12 = dp["ph"]+dp["pa"]
+                        opts.append(("🔵 DC: "+m["home"][:12]+" o Empate", dc_1x, 0, dc_1x-0.65))
+                        opts.append(("🟣 DC: "+m["away"][:12]+" o Empate", dc_x2, 0, dc_x2-0.65))
+                        opts.append(("🔴 DC: "+m["home"][:11]+" o "+m["away"][:11], dc_12, 0, dc_12-0.65))
+                        # Over 2.5 y Over 3.5
+                        opts.append(("⚽ Over 2.5", mc_["o25"], 0, mc_["o25"]-0.52))
+                        opts.append(("⚽ Over 3.5", mc_["o35"], 0, mc_["o35"]-0.45))
+                        # Ambos Anotan
+                        opts.append(("⚡ Ambos Anotan (AA)", mc_["btts"], 0, mc_["btts"]-0.52))
+                        # Ordenar por probabilidad — el pick es el de MAYOR prob con edge positivo
+                        opts.sort(key=lambda x: (-x[1], -x[3]))
+                        # Filtrar solo los que tienen edge positivo
+                        valid = [o for o in opts if o[3] > 0.0]
+                        best = valid[0] if valid else max(opts, key=lambda x: x[1])
+                        if best[1] >= 0.55:  # prob mínima 55% para aparecer como pick
                             picks.append({"deporte":"⚽","home":m["home"],"away":m["away"],
                                          "league":m["league"],"hora":m["hora"],
                                          "pick":best[0],"prob":best[1],"odd":best[2],
@@ -5343,37 +5385,67 @@ else:
         f"<span style='color:#00ff88'>{g['home'][:14]}: {src_h}</span>"
         f"<span style='color:#00ff88'>{g['away'][:14]}: {src_a}</span></div>",unsafe_allow_html=True)
 
-    # ── JUGADA DIAMANTE ──
-    picks_s = sorted([
-        (f"🏠 {g['home'][:16]} gana",dp["ph"]),
-        ("⚖️ Empate",dp["pd"]),
-        (f"✈️ {g['away'][:16]} gana",dp["pa"]),
-    ],key=lambda x:-x[1])
-    main=picks_s[0]
+    # ── JUGADA DIAMANTE — pick = mercado con mayor probabilidad ──
+    _all_markets = [
+        (f"🏠 {g['home'][:16]} gana",      dp["ph"],  g.get("odd_h",0)),
+        ("🤝 Empate",                        dp["pd"],  g.get("odd_d",0)),
+        (f"✈️ {g['away'][:16]} gana",        dp["pa"],  g.get("odd_a",0)),
+        (f"🔵 DC: {g['home'][:12]} o Emp",   dp["ph"]+dp["pd"], 0),
+        (f"🟣 DC: {g['away'][:12]} o Emp",   dp["pd"]+dp["pa"], 0),
+        (f"🔴 DC: {g['home'][:10]} o {g['away'][:10]}", dp["ph"]+dp["pa"], 0),
+        ("⚽ Over 2.5",                       mc["o25"],  0),
+        ("⚽ Over 3.5",                       mc["o35"],  0),
+        ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
+    ]
+    # El pick DIAMANTE = el mercado con probabilidad más alta
+    main_mkt = max(_all_markets, key=lambda x: x[1])
+    main_lbl, main_prob, main_odd = main_mkt
+
+    # Badges de todos los mercados ordenados por prob
+    _mkt_sorted = sorted(_all_markets, key=lambda x:-x[1])
+    top3 = _mkt_sorted[:4]  # mostrar top 4 en la card
+
+    mkt_badges = "".join(
+        f"<div class='mbox' style='flex:1;min-width:90px'>"
+        f"<div class='mval' style='color:{'#FFD700' if i==0 else ('#7c00ff' if i==1 else '#555')};font-size:{1.1 if i==0 else 0.9}rem'>"
+        f"{v*100:.1f}%{'  ✦' if i==0 else ''}</div>"
+        f"<div class='mlbl' style='font-size:.65rem'>{l[:20]}</div></div>"
+        for i,(l,v,_) in enumerate(top3)
+    )
+
     st.markdown(
         f"<div class='diamond-hero'>"
-        f"<div style='font-size:.82rem;font-weight:700;color:#FFD700;letter-spacing:.14em;margin-bottom:14px'>✦ JUGADA DIAMANTE — {dp['conf']}</div>"
-        f"<div style='font-size:3rem;font-weight:900;line-height:1;margin-bottom:10px'>{main[0]}</div>"
-        f"<div style='font-size:1.4rem;font-weight:700;color:#FFD700;margin-bottom:24px'>{main[1]*100:.1f}% de probabilidad</div>"
-        f"<div style='display:flex;gap:12px;flex-wrap:wrap'>"
-        +"".join(f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:{'#7c00ff' if i==0 else '#555'}'>{v*100:.1f}%</div><div class='mlbl'>{l[:18]}</div></div>" for i,(l,v) in enumerate(picks_s))
-        +f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:#ff9500'>{mc['btts']*100:.0f}%</div><div class='mlbl'>⚡ Ambos Anotan</div></div>"
-        +f"<div class='mbox' style='flex:1;min-width:90px'><div class='mval' style='color:#00ccff'>{mc['o25']*100:.0f}%</div><div class='mlbl'>⚽ Over 2.5</div></div>"
-        +f"</div><div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'><div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ccff'>{mc.get('dc_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Dixon-Coles</div></div><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#aa00ff'>{mc.get('bvp_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Poisson BV</div></div><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ff88'>{mc.get('elo_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Elo Dinámico</div></div><div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#FFD700'>{mc.get('h2h_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>H2H</div></div></div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div></div></div>",
+        f"<div style='font-size:.78rem;font-weight:700;color:#FFD700;letter-spacing:.14em;margin-bottom:10px'>"
+        f"✦ JUGADA DIAMANTE — {dp['conf']} · Mayor probabilidad del partido</div>"
+        f"<div style='font-size:2.4rem;font-weight:900;line-height:1.1;margin-bottom:8px'>{main_lbl}</div>"
+        f"<div style='font-size:1.3rem;font-weight:700;color:#FFD700;margin-bottom:6px'>"
+        f"{main_prob*100:.1f}% de probabilidad"
+        + (f" · @{main_odd:.2f}" if main_odd>1 else "") + "</div>"
+        f"<div style='font-size:.75rem;color:#888;margin-bottom:16px'>"
+        f"Evaluados: 1X2 · Doble Chance · Over 2.5 · Over 3.5 · Ambos Anotan</div>"
+        f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{mkt_badges}</div>"
+        f"<div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'>"
+        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'>"
+        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ccff'>{mc.get('dc_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Dixon-Coles</div></div>"
+        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#aa00ff'>{mc.get('bvp_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Poisson BV</div></div>"
+        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ff88'>{mc.get('elo_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Elo Dinámico</div></div>"
+        f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#FFD700'>{mc.get('h2h_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>H2H</div></div>"
+        f"</div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div>"
+        f"</div></div>",
         unsafe_allow_html=True)
 
     # ── GUARDAR PICK ──
     sc1, sc2, sc3 = st.columns(3)
     with sc1:
-        if st.button(f"💾 Guardar: {main[0][:20]}", use_container_width=True, key="save_main"):
-            add_pick(g, main[0], main[1], g.get("odd_h",0) if "gana" in main[0] and "🏠" in main[0] else g.get("odd_a",0))
+        if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
+            add_pick(g, main_lbl, main_prob, main_odd)
             st.success("✅ Pick guardado en Historial")
     with sc2:
-        if st.button(f"💾 Guardar: Over 2.5", use_container_width=True, key="save_o25"):
+        if st.button(f"💾 Over 2.5 ({mc['o25']*100:.0f}%)", use_container_width=True, key="save_o25"):
             add_pick(g, "⚽ Over 2.5", mc["o25"], 0)
             st.success("✅ Pick guardado")
     with sc3:
-        if st.button(f"💾 Guardar: Ambos Anotan", use_container_width=True, key="save_btts"):
+        if st.button(f"💾 AA ({mc['btts']*100:.0f}%)", use_container_width=True, key="save_btts"):
             add_pick(g, "⚡ Ambos Anotan", mc["btts"], 0)
             st.success("✅ Pick guardado")
 
