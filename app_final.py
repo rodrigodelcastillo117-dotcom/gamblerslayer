@@ -3266,55 +3266,72 @@ def _villar_auto_pick(partido_db):
             p_aa  = mc["btts"]
             p_d   = mc.get("pd", max(0, 1 - p_h - p_a))
 
-            p_fav_lbl = f"🏠 {home} gana" if p_h >= p_a else f"✈️ {away} gana"
-            p_fav_odd = odd_h if p_h >= p_a else odd_a
-            p_ml_best = max(p_h, p_a)
+            # Usar diamond_engine igual que la cartelera
+            dp = diamond_engine(mc, {}, hf, af)
+            _ph_d = dp["ph"]; _pa_d = dp["pa"]; _pd_d = dp["pd"]
+            _o25_d = mc["o25"]; _aa_d = mc["btts"]
+            _xg_tot_d = hxg + axg
+            _do_h_d = min(0.95, _ph_d + _pd_d)
+            _do_a_d = min(0.95, _pa_d + _pd_d)
+            _best_ml = max(_ph_d, _pa_d)
+            _fav_ml_lbl = f"🏠 {home} gana" if _ph_d >= _pa_d else f"✈️ {away} gana"
+            _fav_ml_p   = max(_ph_d, _pa_d)
+            _fav_ml_odd = odd_h if _ph_d >= _pa_d else odd_a
+            _ninguno_d  = _best_ml < 0.52
+            _eq_d       = abs(_ph_d - _pa_d) < 0.05
 
-            # ── Pick ML (siempre el favorito) ──
-            ml_pick = {
-                "pick": p_fav_lbl, "prob": p_ml_best, "mkt": "ML",
-                "odd": p_fav_odd, "sport": "futbol", "home": home, "away": away,
-                "src": f"🤖 ML {p_ml_best*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
-            }
-            # ── Pick Over 2.5 ──
-            o25_pick = {
-                "pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O25",
-                "odd": 0, "sport": "futbol", "home": home, "away": away,
-                "src": f"🤖 O2.5 {p_o25*100:.0f}% · xG total {hxg+axg:.2f}",
-            }
-            # ── Pick AA ──
-            aa_pick = {
-                "pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "AA",
-                "odd": 0, "sport": "futbol", "home": home, "away": away,
-                "src": f"🤖 AA {p_aa*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
-            }
+            _odd_h = odd_h; _odd_a = odd_a
+            _has_odds = _odd_h > 1 and _odd_a > 1
+            _edge_ml_h = (_ph_d - 1/_odd_h) if _odd_h > 1 else (_ph_d - 0.50)
+            _edge_ml_a = (_pa_d - 1/_odd_a) if _odd_a > 1 else (_pa_d - 0.50)
+            _best_ml_edge = max(_edge_ml_h, _edge_ml_a)
 
-            # El pick "principal" sigue la jerarquía para el contador global
-            p_do_h = min(0.95, p_h+p_d); p_do_a = min(0.95, p_a+p_d)
-            _xg_total = hxg+axg; _ninguno = p_ml_best<0.52 and p_do_h<0.72 and p_o25<0.54
-            if p_ml_best >= 0.55:
-                best = ml_pick
-            elif p_do_h >= 0.78 and p_h >= 0.50:
-                best = {"pick":f"🔵 {home[:14]} o Emp","prob":p_do_h,"mkt":"DO","odd":0,
-                        "sport":"futbol","home":home,"away":away,
-                        "src":f"🤖 DO {p_do_h*100:.0f}%"}
-            elif p_o25 >= 0.56:
-                best = o25_pick
-            elif p_ml_best >= 0.50:
-                best = ml_pick
-            elif _ninguno and p_aa >= 0.52:
-                best = aa_pick
+            # Misma jerarquía exacta que la cartelera (main_mkt)
+            if _pa_d > _ph_d and (_pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03)):
+                main_lbl, main_prob, main_odd = f"✈️ {away} gana", _pa_d, odd_a
+            elif _ph_d >= 0.55 or (_has_odds and _edge_ml_h >= 0.03):
+                main_lbl, main_prob, main_odd = f"🏠 {home} gana", _ph_d, odd_h
+            elif _pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03):
+                main_lbl, main_prob, main_odd = f"✈️ {away} gana", _pa_d, odd_a
+            elif _do_h_d >= 0.76 and _ph_d >= 0.48:
+                main_lbl, main_prob, main_odd = f"🔵 {home[:14]} o Emp", _do_h_d, 0
+            elif _do_a_d >= 0.76 and _pa_d >= 0.43:
+                main_lbl, main_prob, main_odd = f"🟣 {away[:14]} o Emp", _do_a_d, 0
+            elif _xg_tot_d >= 2.6 and _o25_d >= 0.54:
+                main_lbl, main_prob, main_odd = "⚽ Over 2.5", _o25_d, 0
+            elif _best_ml >= 0.46:
+                main_lbl, main_prob, main_odd = _fav_ml_lbl, _fav_ml_p, _fav_ml_odd
+            elif _o25_d >= 0.52:
+                main_lbl, main_prob, main_odd = "⚽ Over 2.5", _o25_d, 0
+            elif _ninguno_d and _eq_d and _aa_d >= 0.52:
+                main_lbl, main_prob, main_odd = "⚡ Ambos Anotan (AA)", _aa_d, 0
             else:
-                best = ml_pick
+                main_lbl, main_prob, main_odd = _fav_ml_lbl, _fav_ml_p, _fav_ml_odd
+
+            ml_pick = {
+                "pick": f"🏠 {home} gana" if _ph_d >= _pa_d else f"✈️ {away} gana",
+                "prob": max(_ph_d, _pa_d), "mkt": "ML",
+                "odd": _fav_ml_odd, "sport": "futbol", "home": home, "away": away,
+                "src": f"🤖 ML {max(_ph_d,_pa_d)*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
+            }
+            o25_pick = {
+                "pick": "⚽ Over 2.5", "prob": _o25_d, "mkt": "O25",
+                "odd": 0, "sport": "futbol", "home": home, "away": away,
+                "src": f"🤖 O2.5 {_o25_d*100:.0f}% · xG total {hxg+axg:.2f}",
+            }
+            aa_pick = {
+                "pick": "⚡ Ambos Anotan", "prob": _aa_d, "mkt": "AA",
+                "odd": 0, "sport": "futbol", "home": home, "away": away,
+                "src": f"🤖 AA {_aa_d*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
+            }
 
             return {
-                "pick":      best["pick"],
-                "prob":      best["prob"],
+                "pick":      main_lbl,
+                "prob":      main_prob,
                 "sport":     "futbol",
                 "home":      home,
                 "away":      away,
-                "src":       best["src"],
-                # LOS 3 MERCADOS para auditoría en Resultados
+                "src":       f"🤖 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
                 "all_picks": [ml_pick, o25_pick, aa_pick],
             }
     except:
