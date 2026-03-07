@@ -3253,47 +3253,38 @@ def _villar_auto_pick(partido_db):
             _partido_muy_of = _xg_total >= 3.0  # xG muy alto → goles probables → O2.5
             _partido_of_med = _xg_total >= 2.5 and _xg_total < 3.0  # ofensivo moderado → AA
 
-            # ── JERARQUÍA 50/20/20/10 ──
+            # ── JERARQUÍA: ML > DO > O2.5 > AA (solo si los demás son muy bajos) ──
+            # AA es el ÚLTIMO recurso — solo entra cuando ningún otro pick tiene ventaja real
+            _ninguno_domina = p_ml_best < 0.52 and p_do_h < 0.72 and p_do_a < 0.72 and p_o25 < 0.54
+
             if p_h >= 0.60:
-                # ML claro favorito local
                 best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h,
                         "src": f"ML local · modelo {p_h*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
             elif p_a >= 0.60:
-                # ML claro favorito visitante
                 best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a,
                         "src": f"ML visita · modelo {p_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
             elif p_do_h >= 0.78 and p_h >= 0.50:
-                # DO local solo cuando favorito es muy claro
                 best = {"pick": f"🔵 {home[:14]} o Emp", "prob": p_do_h, "mkt": "DO", "odd": 0,
                         "src": f"DC {p_do_h*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
             elif p_do_a >= 0.78 and p_a >= 0.45:
-                # DO visitante
                 best = {"pick": f"🟣 {away[:14]} o Emp", "prob": p_do_a, "mkt": "DO", "odd": 0,
                         "src": f"DC {p_do_a*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
             elif _partido_muy_of and p_o25 >= 0.58:
-                # O2.5: xG total muy alto (≥3.0) — partido ultra-ofensivo
                 best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
                         "src": f"O2.5 {p_o25*100:.0f}% · xG total {_xg_total:.2f} (muy alto)"}
-            elif _partido_eq and _partido_of_med and p_aa >= 0.54:
-                # AA: equilibrado Y ofensivo moderado — ambos van a anotar
-                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0,
-                        "src": f"AA {p_aa*100:.0f}% · xG {hxg:.2f}–{axg:.2f} · equilibrado"}
             elif p_o25 >= 0.56:
-                # O2.5 cuando hay dominio ofensivo claro (no equilibrado)
                 best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
                         "src": f"O2.5 {p_o25*100:.0f}% · xG {_xg_total:.2f}"}
             elif p_ml_best >= 0.52:
-                # ML con ventaja mínima
                 best = {"pick": p_fav_lbl, "prob": p_ml_best, "mkt": "1X2", "odd": p_fav_odd,
                         "src": f"ML {p_ml_best*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
-            elif _partido_eq and p_aa >= 0.50:
-                # AA segunda oportunidad — partido parejo sin favorito claro
-                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0,
-                        "src": f"AA {p_aa*100:.0f}% · partido parejo xG {hxg:.2f}–{axg:.2f}"}
             elif p_o25 >= 0.54:
-                # O2.5 segunda oportunidad
                 best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0,
                         "src": f"O2.5 {p_o25*100:.0f}% · xG {_xg_total:.2f}"}
+            elif _ninguno_domina and _partido_eq and p_aa >= 0.52:
+                # AA: SOLO cuando ningún otro pick tiene ventaja real Y partido es equilibrado
+                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0,
+                        "src": f"AA {p_aa*100:.0f}% · sin favorito claro · xG {hxg:.2f}–{axg:.2f}"}
             else:
                 # Fallback final: siempre ML
                 best = {"pick": p_fav_lbl, "prob": p_ml_best, "mkt": "1X2", "odd": p_fav_odd,
@@ -7121,6 +7112,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 _muy_of_kr = _xg_total_kr >= 3.0
                 _of_med_kr = 2.5 <= _xg_total_kr < 3.0
 
+                # ── Jerarquía King Rongo: ML > DO > O2.5 > AA solo si los demás son bajos ──
+                _ninguno_kr = max(_ph,_pa) < 0.52 and _do_h < 0.72 and _do_a < 0.72 and _o25 < 0.54
+
                 if _ph >= 0.60:
                     lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
                 elif _pa >= 0.60:
@@ -7131,8 +7125,6 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     lbl, prob, odd, mkt = f"🟣 {m['away'][:14]} o Emp", _do_a, 0, "DO"
                 elif _muy_of_kr and _o25 >= 0.58:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif _eq_kr and _of_med_kr and _aa >= 0.54:
-                    lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
                 elif _o25 >= 0.56:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
                 elif max(_ph,_pa) >= 0.52:
@@ -7140,17 +7132,18 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                         lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
                     else:
                         lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
-                elif _eq_kr and _aa >= 0.50:
-                    lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
                 elif _o25 >= 0.54:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
+                elif _ninguno_kr and _eq_kr and _aa >= 0.52:
+                    # AA: SOLO cuando ningún otro pick tiene ventaja real
+                    lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
                 else:
                     if _ph >= _pa:
                         lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
                     else:
                         lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
 
-                if prob < 0.45: continue
+                if prob < 0.40: continue
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -7270,7 +7263,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     # Cascada — siempre retorna algo si hay candidatos
     el_pick = (
         next((c for c in candidates if not c.get("contradiccion") and c.get("edge",0) > 0), None) or
-        next((c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.52), None) or
+        next((c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.45), None) or
         next((c for c in candidates if not c.get("contradiccion")), None) or
         (candidates[0] if candidates else None)
     )
@@ -9045,7 +9038,7 @@ if st.session_state["view"] == "cartelera":
                     # Under 4.5: 1 - P(O4.5). Usamos P(O3.5) como proxy — si O3.5 es bajo, U4.5 es alto
                     _p_o35 = _mc.get("o35", max(0, _mc.get("o25",0.5) - 0.18))
                     _p_u45 = max(0, 1.0 - _p_o35)
-                    if _p_u45 >= 0.60:  # umbral bajado de 0.68 a 0.60
+                    if _p_u45 >= 0.55:  # umbral bajado a 0.55 para más picks
                         pato_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),"hora":_m.get("hora",""),"prob":_p_u45})
                 except: pass
             pato_picks.sort(key=lambda x:-x["prob"])
@@ -9068,10 +9061,13 @@ if st.session_state["view"] == "cartelera":
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
                     _dp  = diamond_engine(_mc,_h2s,_hf,_af)
-                    # Jerarquía de picks — sin AA/BTTS como pick principal
+                    # Jerarquía de picks — AA solo si los demás son muy bajos
                     _ph  = _dp["ph"]; _pa = _dp["pa"]; _pd = _dp.get("pd", max(0,1-_ph-_pa))
-                    _o25 = _mc["o25"]; _do_h = min(0.95,_ph+_pd); _do_a = min(0.95,_pa+_pd)
+                    _o25 = _mc["o25"]; _aa = _mc["btts"]
+                    _do_h = min(0.95,_ph+_pd); _do_a = min(0.95,_pa+_pd)
                     _xg_tot_p = _hxg + _axg
+                    _ninguno_p = max(_ph,_pa) < 0.52 and _do_h < 0.72 and _do_a < 0.72 and _o25 < 0.54
+                    _eq_p = abs(_hxg - _axg) < 0.55
                     if _ph >= 0.60:
                         _lbl, _p, _odd = "🏠 "+_m["home"], _ph, _m.get("odd_h",0)
                     elif _pa >= 0.60:
@@ -9087,6 +9083,8 @@ if st.session_state["view"] == "cartelera":
                         else:          _lbl, _p, _odd = "✈️ "+_m["away"], _pa, _m.get("odd_a",0)
                     elif _o25 >= 0.54:
                         _lbl, _p, _odd = "⚽ Over 2.5", _o25, 0
+                    elif _ninguno_p and _eq_p and _aa >= 0.52:
+                        _lbl, _p, _odd = "⚡ Ambos Anotan", _aa, 0
                     else:
                         if _ph >= _pa: _lbl, _p, _odd = "🏠 "+_m["home"], _ph, _m.get("odd_h",0)
                         else:          _lbl, _p, _odd = "✈️ "+_m["away"], _pa, _m.get("odd_a",0)
