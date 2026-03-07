@@ -2455,9 +2455,8 @@ def _fetch_tennis_results_web(desde, hoy):
 
     def _call_claude(user_msg):
         """
-        Llama a Claude con web_search_20250305 (server-side tool).
-        Con server-side tools el modelo maneja el loop internamente —
-        solo necesitamos UNA llamada y Claude devuelve el texto final.
+        Llama a Claude con web_search_20250305.
+        Este es un server-side tool — una sola llamada, Claude hace la búsqueda internamente.
         """
         try:
             resp = requests.post(
@@ -2465,6 +2464,7 @@ def _fetch_tennis_results_web(desde, hoy):
                 headers={
                     "x-api-key": ANTHROPIC_API_KEY,
                     "anthropic-version": "2023-06-01",
+                    "anthropic-beta": "web-search-2025-03-05",
                     "content-type": "application/json",
                 },
                 json={
@@ -2475,11 +2475,17 @@ def _fetch_tennis_results_web(desde, hoy):
                 },
                 timeout=60,
             )
+            data = resp.json()
             if resp.status_code != 200:
+                # Guardar error en session_state para debug
+                import streamlit as _st2
+                _st2.session_state["_tennis_api_error"] = f"HTTP {resp.status_code}: {data}"
                 return ""
-            content = resp.json().get("content", [])
+            content = data.get("content", [])
             return "".join(b.get("text","") for b in content if b.get("type")=="text")
-        except:
+        except Exception as _ex:
+            import streamlit as _st2
+            _st2.session_state["_tennis_api_error"] = str(_ex)
             return ""
 
     def _parse_json_matches(text, tour_default, torneo_default):
@@ -2487,7 +2493,7 @@ def _fetch_tennis_results_web(desde, hoy):
         if not text:
             return []
         clean = _re.sub(r"```[a-z]*|```", "", text).strip()
-        m = _re.search(r"\[.*?\]", clean, _re.DOTALL)
+        m = _re.search(r"\[.*\]", clean, _re.DOTALL)  # greedy — captura array completo
         if not m:
             return []
         try:
@@ -3053,7 +3059,39 @@ def render_resultados_tab():
                     f"</div>", unsafe_allow_html=True)
 
             if not finalizados:
-                st.info(f"Sin resultados {sport_emoji}. Haz clic en '🧹 Auditar todo'.")
+                if sport_key == "tenis":
+                    # Debug: mostrar qué pasó en la última llamada a web_search
+                    _api_err = st.session_state.get("_tennis_api_error","")
+                    _all_ten = [p for p in partidos if p.get("deporte")=="tenis"]
+                    st.info(f"🎾 Sin resultados de tenis. Partidos en DB: {len(_all_ten)}")
+                    if _api_err:
+                        st.error(f"🔴 Error API tenis: {_api_err}")
+                    if st.button("🔄 Buscar resultados de tenis ahora", key="ten_force_fetch"):
+                        with st.spinner("🔍 Buscando en ATP/WTA..."):
+                            _tw = _fetch_tennis_results_web(
+                                (datetime.now(CDMX)-timedelta(days=5)).strftime("%Y-%m-%d"),
+                                datetime.now(CDMX).strftime("%Y-%m-%d")
+                            )
+                            st.write(f"Encontrados: {len(_tw)} partidos")
+                            if _tw:
+                                _db2 = _load_results_db()
+                                _seen2 = {p["id"] for p in _db2["partidos"]}
+                                for _wr in _tw:
+                                    _eid = f"ten_web_{_wr['p1'][:6]}_{_wr['p2'][:6]}_{_wr['fecha']}"
+                                    if _eid not in _seen2:
+                                        _wr["id"] = _eid
+                                        _db2["partidos"].append(_wr)
+                                _db2["ultima_actualizacion"] = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
+                                _save_results_db(_db2)
+                                st.session_state["results_db"] = _db2
+                                st.success(f"✅ {len(_tw)} partidos guardados")
+                                st.rerun()
+                            else:
+                                _api_err2 = st.session_state.get("_tennis_api_error","")
+                                if _api_err2:
+                                    st.error(f"Error: {_api_err2}")
+                else:
+                    st.info(f"Sin resultados {sport_emoji}. Haz clic en '🧹 Auditar todo'.")
                 continue
 
             # Contadores sport
@@ -6433,7 +6471,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     # ── ⚽ FÚTBOL ─────────────────────────────────────────────────────────
     try:
         for m in (matches_fut or [])[:40]:
-            if m.get("state") != "pre": continue
+            if m.get("state") == "post": continue  # solo excluir terminados
             try:
                 hf  = get_form(m["home_id"], m["slug"]) or []
                 af  = get_form(m["away_id"], m["slug"]) or []
@@ -6545,7 +6583,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
              "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard"}
     try:
         for m in (ten_matches or [])[:45]:
-            if m.get("state") != "pre": continue
+            if m.get("state") == "post": continue  # solo excluir terminados
             try:
                 tor = m.get("torneo", m.get("tour",""))
                 srf = next((v for k,v in _smap.items() if k.lower() in tor.lower()), "hard")
@@ -7274,12 +7312,10 @@ def _kr_sync_session_from_cache():
     st.session_state["_king_target"]   = cache.get("target_date","")
 
 def _kr_filter_by_date(matches, target_date):
-    """Filtra partidos por fecha objetivo. Solo pre-match."""
+    """Filtra partidos por fecha objetivo. Excluye solo terminados."""
     out = []
     for m in (matches or []):
-        if m.get("state") not in ("pre","scheduled","upcoming",None,""):
-            # Incluir también si state es None/empty (algunos no tienen state)
-            if m.get("state") == "post": continue
+        if m.get("state") == "post": continue  # excluir solo terminados
         fecha = m.get("fecha","")
         if fecha and fecha != target_date:
             continue
