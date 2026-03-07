@@ -381,6 +381,27 @@ def get_cartelera():
                         "score_a":  parse_score(ac.get("score", 0)),
                     })
                 except: continue
+
+    now_cdmx = datetime.now(CDMX)
+    hoy_str  = now_cdmx.strftime("%Y-%m-%d")
+    hora_now = int(now_cdmx.strftime("%H"))
+
+    # A partir de las 12:00 CDMX: ocultar partidos de ayer/pasados ya terminados
+    if hora_now >= 12:
+        matches = [m for m in matches if m.get("fecha","") >= hoy_str or m.get("state") in ("in","pre")]
+
+    # Ordenar: hoy primero, luego por hora ASC (partido más próximo arriba)
+    def _sort_key(m):
+        f = m.get("fecha", "9999-99-99")
+        h = m.get("hora", "99:99")
+        # Estado: en vivo primero, luego pre, luego post
+        s = m.get("state","")
+        s_order = 0 if s == "in" else (1 if s == "pre" else 2)
+        # Hoy primero, mañana después
+        f_order = 0 if f == hoy_str else (1 if f > hoy_str else 2)
+        return (f_order, s_order, h)
+
+    matches.sort(key=_sort_key)
     return matches
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -2502,21 +2523,6 @@ def _fetch_tennis_results_web(desde, hoy):
             _st2.session_state["_tennis_api_error"] = str(_ex)
             return ""
 
-    def _resolve_rank_local(name):
-        """Resuelve ranking desde tabla local sin llamada API."""
-        if not name: return 150
-        nl = name.lower().strip()
-        # Buscar apellido (última palabra larga)
-        parts = [w for w in nl.split() if len(w) > 3]
-        for part in reversed(parts):
-            if part in _KNOWN_RANKS:
-                return _KNOWN_RANKS[part]
-        # Buscar substring
-        for key, rank in _KNOWN_RANKS.items():
-            if key in nl or nl in key:
-                return rank
-        return 150  # desconocido = rank medio
-
     def _parse_json_matches(text, tour_default, torneo_default):
         """Extrae array JSON de partidos del texto de Claude."""
         if not text:
@@ -2938,6 +2944,19 @@ def _villar_match_pick_to_result(pk, partido_db):
         return "❓ N/V", "#555", f"Score: {sc_fmt}"
 
 
+def _resolve_rank_local(name):
+    """Resuelve ranking de un jugador de tenis desde tabla local."""
+    if not name: return 150
+    nl = name.lower().strip()
+    parts = [w for w in nl.split() if len(w) > 3]
+    for part in reversed(parts):
+        if part in _KNOWN_RANKS:
+            return _KNOWN_RANKS[part]
+    for key, rank in _KNOWN_RANKS.items():
+        if key in nl or nl in key:
+            return rank
+    return 150
+
 def _villar_auto_pick(partido_db):
     """
     Corre los MODELOS sobre el partido (como si fuera antes de jugarse)
@@ -3019,14 +3038,15 @@ def _villar_auto_pick(partido_db):
                 {"pick": f"🔵 {home[:10]} o Emp",   "prob": mc["ph"]+mc["pd"], "mkt": "DC", "odd": 0},
                 {"pick": f"🟣 {away[:10]} o Emp",   "prob": mc["pd"]+mc["pa"], "mkt": "DC", "odd": 0},
                 {"pick": "⚽ Over 2.5",             "prob": mc["o25"],  "mkt": "O/U",  "odd": 0},
-                {"pick": "⚽ Over 1.5",             "prob": mc["o15"],  "mkt": "O/U",  "odd": 0},
+                {"pick": "⚽ Over 3.5",             "prob": mc.get("o35",0.18), "mkt": "O/U", "odd": 0},
                 {"pick": "⚡ Ambos Anotan",         "prob": mc["btts"], "mkt": "BTTS", "odd": 0},
+                # Over 1.5 EXCLUIDO — prob siempre alta pero sin valor real
             ]
             # Filtrar: solo los que superen 52% de prob
             strong = [m for m in all_mkts if m["prob"] >= 0.52]
             if not strong:
                 strong = sorted(all_mkts, key=lambda x: -x["prob"])[:2]
-            # Pick principal = el de mayor prob (o mayor edge si hay cuotas)
+            # Pick principal = el de mayor EDGE (no solo prob)
             def _edge_score(m):
                 o = m["odd"]
                 return (m["prob"] - 1/o) if o > 1 else (m["prob"] - 0.50)
@@ -3151,35 +3171,68 @@ def render_resultados_tab():
     pick_history = st.session_state.get("pick_history", [])
     st.caption(f"🕐 Última actualización: {ultima}")
 
-    # ── Global KPIs ──
-    total_g=0; total_f=0; total_p=0
-    for pk in pick_history:
-        r = pk.get("result","⏳")
-        if r=="✅": total_g+=1
-        elif r=="❌": total_f+=1
-        else: total_p+=1
-    total_jg = total_g+total_f
-    pct = round(total_g/total_jg*100) if total_jg>0 else 0
-    roi = sum((float(pk.get("odd",0))-1) for pk in pick_history if pk.get("result")=="✅") - \
-          sum(1 for pk in pick_history if pk.get("result")=="❌")
+    # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
+    _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
+    _pre_fail = {"futbol":0,"nba":0,"tenis":0}
+    _catorce  = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
+    _fut_c = 0
+    for _fp in [p for p in partidos if p.get("state")=="post"]:
+        _sp = _fp.get("deporte","")
+        _fd = _fp.get("fecha","")
+        if _sp == "futbol":
+            if _fut_c >= 30: continue
+            _fut_c += 1
+        elif _fd < _catorce:
+            continue
+        _has_manual = any(_villar_find_result(pk,[_fp]) is not None for pk in pick_history)
+        if _has_manual: continue
+        try:
+            _apk2 = _villar_auto_pick(_fp)
+            if not _apk2: continue
+            _vd2,_,_ = _villar_match_pick_to_result(_apk2, _fp)
+            if "GANÓ"  in _vd2: _pre_ok[_sp]   = _pre_ok.get(_sp,0)+1
+            elif "FALLÓ" in _vd2: _pre_fail[_sp] = _pre_fail.get(_sp,0)+1
+        except: continue
+
+    _total_ok   = sum(_pre_ok.values())
+    _total_fail = sum(_pre_fail.values())
+    _total_all  = _total_ok + _total_fail
+    _pct_all    = round(_total_ok/_total_all*100) if _total_all>0 else 0
+    _bar_c_hdr  = "#00ff88" if _pct_all>=55 else ("#FFD700" if _pct_all>=45 else "#ff4444")
+    _global_ok  = _total_ok
+    _global_fail= _total_fail
+
+    roi = sum((float(pk.get("odd",0))-1) for pk in pick_history if pk.get("result")=="✅") -           sum(1 for pk in pick_history if pk.get("result")=="❌")
 
     st.markdown(
-        f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px'>"
-        f"<div class='mbox'><div class='mval' style='color:#00ff88'>{total_g}</div><div class='mlbl'>✅ Ganados</div></div>"
-        f"<div class='mbox'><div class='mval' style='color:#ff4444'>{total_f}</div><div class='mlbl'>❌ Fallados</div></div>"
-        f"<div class='mbox'><div class='mval' style='color:#FFD700'>{total_p}</div><div class='mlbl'>⏳ Pend.</div></div>"
-        f"<div class='mbox'><div class='mval' style='color:#00ccff'>{pct}%</div><div class='mlbl'>Acierto</div></div>"
-        f"<div class='mbox'><div class='mval' style='color:{'#00ff88' if roi>=0 else '#ff4444'}'>{roi:+.1f}u</div><div class='mlbl'>ROI</div></div>"
-        f"</div>", unsafe_allow_html=True)
+        f"<div style='background:linear-gradient(135deg,#07071a,#0a0a2e);"
+        f"border-radius:14px;padding:14px 18px;margin-bottom:14px;"
+        f"border:1px solid {_bar_c_hdr}55'>"
+        f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
+        f"letter-spacing:.12em;margin-bottom:10px'>🤖 VILLAR — PICKS AUDITADOS</div>"
+        f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
+        f"<div style='text-align:center'>"
+        f"<div style='font-size:1.8rem;font-weight:900;color:#00ff88'>{_total_ok}</div>"
+        f"<div style='font-size:.7rem;color:#555'>✅ Acertados</div></div>"
+        f"<div style='text-align:center'>"
+        f"<div style='font-size:1.8rem;font-weight:900;color:#ff4444'>{_total_fail}</div>"
+        f"<div style='font-size:.7rem;color:#555'>❌ Fallados</div></div>"
+        f"<div style='text-align:center'>"
+        f"<div style='font-size:1.8rem;font-weight:900;color:{_bar_c_hdr}'>{_pct_all}%</div>"
+        f"<div style='font-size:.7rem;color:#555'>Acierto global</div></div>"
+        f"<div style='text-align:center;font-size:.85rem;font-weight:700;color:#aaa'>"
+        f"⚽{_pre_ok.get('futbol',0)+_pre_fail.get('futbol',0)}<br>"
+        f"🏀{_pre_ok.get('nba',0)+_pre_fail.get('nba',0)}<br>"
+        f"🎾{_pre_ok.get('tenis',0)+_pre_fail.get('tenis',0)}</div>"
+        f"</div>"
+        f"<div style='background:#0d0d2e;border-radius:6px;height:10px;overflow:hidden'>"
+        f"<div style='width:{_pct_all}%;height:100%;background:{_bar_c_hdr};border-radius:6px'></div>"
+        f"</div></div>", unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════
     # RESULTADOS POR DEPORTE — pick de mayor prob + auditoría
     # ════════════════════════════════════════════════════════
     st.markdown("<div class='shdr'>📊 Resultados + Pick del Modelo Auditado</div>", unsafe_allow_html=True)
-
-    # ── PRE-CALCULAR contadores globales del modelo para el header ──
-    _global_ok = 0; _global_fail = 0
-    # (se acumularán mientras se renderizan los tabs, luego se muestran abajo)
 
     rt1,rt2,rt3 = st.tabs(["⚽ Fútbol","🏀 NBA","🎾 Tenis"])
 
@@ -6124,6 +6177,20 @@ def compute_pato(matches):
 # NBA DATA
 # ══════════════════════════════════════════════════════════
 @st.cache_data(ttl=300, show_spinner=False)
+
+def _sort_cartelera(matches, hoy_str, hora_now):
+    """Ordena cartelera: hoy primero, en vivo arriba, oculta pasados si >= 12:00."""
+    if hora_now >= 12:
+        matches = [m for m in matches
+                   if m.get("fecha","") >= hoy_str or m.get("state") in ("in","pre")]
+    def _key(m):
+        f = m.get("fecha","9999-99-99")
+        h = m.get("hora","99:99")
+        s = m.get("state","")
+        return (0 if f==hoy_str else 1, 0 if s=="in" else (1 if s=="pre" else 2), h)
+    matches.sort(key=_key)
+    return matches
+
 def get_nba_cartelera():
     now = datetime.now(CDMX)
     dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(0,5)]
@@ -6160,6 +6227,8 @@ def get_nba_cartelera():
                     "score_a":parse_score(ac.get("score",0)),
                 })
             except: continue
+    _now2 = datetime.now(CDMX)
+    games = _sort_cartelera(games, _now2.strftime("%Y-%m-%d"), int(_now2.strftime("%H")))
     return games
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -6532,6 +6601,8 @@ def get_tennis_cartelera():
             except: continue
     except Exception as e:
         pass
+    _now3 = datetime.now(CDMX)
+    matches = _sort_cartelera(matches, _now3.strftime("%Y-%m-%d"), int(_now3.strftime("%H")))
     return matches
 
 def tennis_model(rank1, rank2, odd_1=0, odd_2=0, surface="hard"):
@@ -6722,7 +6793,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     (f"🔵 {m['home'][:10]} o Empate",      dp["ph"]+dp["pd"], 0, "DC"),
                     (f"🟣 {m['away'][:10]} o Empate",      dp["pd"]+dp["pa"], 0, "DC"),
                     ("⚽ Over 2.5",                        mc["o25"],         0, "O/U"),
+                    ("⚽ Over 3.5",                        mc.get("o35",0.18),0, "O/U"),
                     ("⚡ Ambos Anotan",                    mc["btts"],        0, "BTTS"),
+                    # Over 1.5 excluido — siempre alta prob pero sin valor real
                 ]
                 # Sin odds: aceptar cualquier prob >= 50%
                 mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.50]
@@ -7744,13 +7817,13 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     _ten_target = _kr_filter_by_date(_ten, _target_date)
                     if not _ten_target: _ten_target = _ten
 
-                    _kr_status.update(label=f"🧠 Modelos xG · Elo · Monte Carlo · {_target_label}...")
+                    _kr_status.update(label=f"🧠 Analizando {len(_mf_target)} fútbol · {len(_nbg_target)} NBA · {len(_ten_target)} tenis...")
                     el_pick, contradicciones, todos = _king_rongo_scan_all(
                         _mf_target, _nbg_target, _ten_target
                     )
 
                     _kr_status.update(
-                        label=f"💎 {len(todos)} candidatos analizados — pick de {_target_label} listo",
+                        label=f"💎 {len(todos)} candidatos — ⚽{sum(1 for c in todos if 'Fútbol' in c.get('deporte',''))} 🏀{sum(1 for c in todos if 'NBA' in c.get('deporte',''))} 🎾{sum(1 for c in todos if 'Tenis' in c.get('deporte',''))}",
                         state="complete"
                     )
                     _ts_now = datetime.now(CDMX).strftime("%H:%M")
