@@ -2301,9 +2301,10 @@ def fetch_nba_results(days_back=10):
                         odds = comp.get("odds",[])
                         if odds: ou_line = float(odds[0].get("overUnder",0) or 0)
                     except: pass
+                    hora_nba = utc.astimezone(CDMX).strftime("%H:%M")
                     partidos.append({
                         "id":ev.get("id",""), "deporte":"nba",
-                        "liga":"NBA 🏀", "slug":"nba",
+                        "liga":"NBA 🏀", "slug":"nba", "_sport":"nba",
                         "home":hc["team"]["displayName"],
                         "away":ac["team"]["displayName"],
                         "home_id":str(hc["team"]["id"]),
@@ -2311,7 +2312,7 @@ def fetch_nba_results(days_back=10):
                         "score_h":parse_score(hc.get("score",0)) if state=="post" else -1,
                         "score_a":parse_score(ac.get("score",0)) if state=="post" else -1,
                         "ou_line":ou_line,
-                        "fecha":fecha, "state":state,
+                        "hora":hora_nba, "fecha":fecha, "state":state,
                     })
                 except: continue
         except: continue
@@ -2320,12 +2321,15 @@ def fetch_nba_results(days_back=10):
 def fetch_tennis_results(days_back=10):
     """
     Trae partidos de tenis finalizados (state=post) de los últimos N días.
-    Usa la misma API de tenis que get_tennis_cartelera pero con rango histórico.
+    Usa dos fuentes: TENNIS_API histórico + get_tennis_cartelera state=post del día.
     """
-    now  = datetime.now(CDMX)
-    hoy  = now.strftime("%Y-%m-%d")
+    now   = datetime.now(CDMX)
+    hoy   = now.strftime("%Y-%m-%d")
     desde = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
     results = []
+    seen_ids = set()
+
+    # ── FUENTE 1: Tennis API histórico ──
     try:
         r = requests.get(TENNIS_API, params={
             "method":  "get_fixtures",
@@ -2344,47 +2348,61 @@ def fetch_tennis_results(days_back=10):
                     fecha = utc_t.astimezone(CDMX).strftime("%Y-%m-%d")
                 except: pass
                 if fecha < desde or fecha > hoy: continue
-
                 tour_type = ev.get("event_type_type","").upper()
                 if not any(x in tour_type for x in ["ATP","WTA","GRAND SLAM","MASTERS"]):
                     continue
                 tour = "WTA" if "WTA" in tour_type else "ATP"
-
                 ev_status   = str(ev.get("event_status","")).lower()
                 ev_finished = str(ev.get("event_final","0"))
                 is_post = (ev_finished == "1" or
                            any(x in ev_status for x in ["finished","ft","final","completed","awarded"]))
-                if not is_post:
-                    continue   # solo los ya terminados
-
+                if not is_post: continue
                 p1 = ev.get("event_first_player","?")
                 p2 = ev.get("event_second_player","?")
-                # Score: sets ganados (result field = "2" / "1" etc)
                 sc1_raw = str(ev.get("event_first_player_result","0"))
                 sc2_raw = str(ev.get("event_second_player_result","0"))
-                try:  sc1 = int(sc1_raw)
+                try:  sc1 = max(0, int(sc1_raw))
                 except: sc1 = 0
-                try:  sc2 = int(sc2_raw)
+                try:  sc2 = max(0, int(sc2_raw))
                 except: sc2 = 0
-
+                eid = f"ten_{ev.get('event_key','')}"
+                if eid in seen_ids: continue
+                seen_ids.add(eid)
                 results.append({
-                    "id":      f"ten_{ev.get('event_key','')}",
-                    "deporte": "tenis",
-                    "home":    p1,   # p1 = local convention para tenis
-                    "away":    p2,
-                    "p1":      p1,
-                    "p2":      p2,
-                    "liga":    f"{tour} · {ev.get('tournament_name','')}",
-                    "tour":    tour,
-                    "torneo":  ev.get("tournament_name",""),
-                    "fecha":   fecha,
-                    "hora":    hora,
-                    "state":   "post",
-                    "score_h": sc1,  # sets ganados p1
-                    "score_a": sc2,  # sets ganados p2
+                    "id": eid, "deporte":"tenis",
+                    "home":p1, "away":p2, "p1":p1, "p2":p2,
+                    "liga":f"{tour} · {ev.get('tournament_name','')}",
+                    "tour":tour, "torneo":ev.get("tournament_name",""),
+                    "fecha":fecha, "hora":hora, "state":"post",
+                    "score_h":sc1, "score_a":sc2,
                 })
             except: continue
     except: pass
+
+    # ── FUENTE 2: Cartelera tenis de hoy — partidos state=post ──
+    try:
+        cartelera_ten = get_tennis_cartelera()
+        for m in cartelera_ten:
+            if m.get("state") != "post": continue
+            eid = f"ten_live_{m.get('id','')}"
+            if eid in seen_ids: continue
+            seen_ids.add(eid)
+            sc1 = m.get("score_p1", m.get("score_h", 0))
+            sc2 = m.get("score_p2", m.get("score_a", 0))
+            try: sc1 = max(0, int(str(sc1)))
+            except: sc1 = 0
+            try: sc2 = max(0, int(str(sc2)))
+            except: sc2 = 0
+            results.append({
+                "id": eid, "deporte":"tenis",
+                "home":m["p1"], "away":m["p2"], "p1":m["p1"], "p2":m["p2"],
+                "liga":f"{m.get('tour','ATP')} · {m.get('torneo','')}",
+                "tour":m.get("tour","ATP"), "torneo":m.get("torneo",""),
+                "fecha":m.get("fecha",hoy), "hora":m.get("hora",""),
+                "state":"post", "score_h":sc1, "score_a":sc2,
+            })
+    except: pass
+
     return results
 
 
@@ -2716,6 +2734,17 @@ def render_resultados_tab():
     """VILLAR — Auditoría automática pick vs resultado real."""
     from collections import defaultdict
 
+    # ── AUTO-AUDITORÍA al entrar al tab ──
+    # Villar corre solo, sin que el usuario tenga que picar nada
+    _villar_key = "villar_last_auto"
+    _now_ts = datetime.now(CDMX).timestamp()
+    _last   = st.session_state.get(_villar_key, 0)
+    if _now_ts - _last > 300:  # auto-refresh cada 5 min
+        with st.spinner("🤖 Villar auditando resultados..."):
+            update_results_db(force=False)
+            st.session_state["results_db"] = _load_results_db()
+        st.session_state[_villar_key] = _now_ts
+
     st.markdown("""
     <div style='background:linear-gradient(135deg,#0a001a,#001a0a);
     border:2px solid #00ff8855;border-radius:16px;padding:14px 18px;
@@ -2723,26 +2752,15 @@ def render_resultados_tab():
     <div style='font-size:2.2rem'>🤖</div>
     <div>
       <div style='font-size:1.1rem;font-weight:900;color:#00ff88;letter-spacing:.06em'>VILLAR</div>
-      <div style='font-size:.75rem;color:#555'>Auditoría automática · Pick de mayor prob vs resultado real</div>
+      <div style='font-size:.75rem;color:#555'>Auditoría automática · Se actualiza al entrar al tab</div>
     </div></div>""", unsafe_allow_html=True)
 
-    v1,v2,v3 = st.columns(3)
-    with v1:
-        if st.button("🧹 Auditar todo", use_container_width=True, key="villar_clean"):
-            with st.spinner("Revisando scores..."):
-                update_results_db(force=True)
-                st.session_state["results_db"] = _load_results_db()
-            st.rerun()
-    with v2:
-        if st.button("⚡ Pre-cachear mañana", use_container_width=True, key="villar_precache"):
-            with st.spinner("Pre-cacheando..."):
-                n = _villar_precache_tomorrow()
-            st.success(f"✅ {n} cacheados")
-    with v3:
-        if st.button("🔄 Refresh", use_container_width=True, key="villar_refresh"):
-            with st.spinner("..."):
-                update_results_db(force=True)
-                st.session_state["results_db"] = _load_results_db()
+    # Botón de force-refresh manual (secundario)
+    _c1, _c2 = st.columns([3,1])
+    with _c2:
+        if st.button("🔄 Forzar", use_container_width=True, key="villar_force"):
+            st.session_state.pop(_villar_key, None)
+            st.session_state.pop("results_db", None)
             st.rerun()
 
     db       = get_results_db()
@@ -2833,7 +2851,8 @@ def render_resultados_tab():
 
                         for p in lps:
                             sh=p.get("score_h",-1); sa=p.get("score_a",-1)
-                            if sh<0: continue
+                            if sh<0 or sa<0: continue
+                            if sport_key=="tenis" and sh==0 and sa==0: continue
                             home_n=p.get("home",p.get("p1","?")); away_n=p.get("away",p.get("p2","?"))
 
                             won_h=sh>sa; won_a=sa>sh; draw=(sh==sa and sport_key=="futbol")
@@ -2899,7 +2918,7 @@ def render_resultados_tab():
                                     f"</div>"
                                 )
 
-                            sc_fmt = f"{sh}–{sa}" if sport_key!="nba" else f"{sh}–{sa} pts"
+                            sc_fmt = f"Sets {sh}–{sa}" if sport_key=="tenis" else (f"{sh}–{sa} pts" if sport_key=="nba" else f"{sh}–{sa}")
                             st.markdown(
                                 f"<div style='background:#0a0a1e;border-radius:12px;padding:10px 12px;"
                                 f"margin:4px 0;border:1px solid {border_c}'>"
@@ -7074,23 +7093,39 @@ if _king_pick:
 # ══════════════════════════════════════════════════════════
 # CARGAR DATA SEGÚN DEPORTE
 # ══════════════════════════════════════════════════════════
+matches     = []
+nba_games   = []
+ten_matches = []
+
 if deporte == "futbol":
     with st.spinner("Cargando cartelera..."):
-        all_matches = get_cartelera()
+        try:
+            all_matches = get_cartelera()
+        except Exception as _e:
+            all_matches = []
+            st.warning(f"⚠️ Error cargando fútbol: {_e}")
     if not all_matches:
-        st.warning("No hay partidos disponibles.")
-        st.stop()
-    liga_opts = ["Todas"] + sorted(set(m["league"] for m in all_matches))
-    liga_sel  = st.selectbox("Liga", liga_opts, label_visibility="collapsed")
-    matches   = all_matches if liga_sel=="Todas" else [m for m in all_matches if m["league"]==liga_sel]
+        st.info("⚽ No hay partidos de fútbol disponibles ahora. Intenta refrescar en unos minutos.")
+    else:
+        liga_opts = ["Todas"] + sorted(set(m["league"] for m in all_matches))
+        liga_sel  = st.selectbox("Liga", liga_opts, label_visibility="collapsed")
+        matches   = all_matches if liga_sel=="Todas" else [m for m in all_matches if m["league"]==liga_sel]
 
 elif deporte == "nba":
     with st.spinner("Cargando NBA..."):
-        nba_games = get_nba_cartelera()
+        try:
+            nba_games = get_nba_cartelera()
+        except Exception as _e:
+            nba_games = []
+            st.warning(f"⚠️ Error cargando NBA: {_e}")
 
 elif deporte == "tenis":
     with st.spinner("Cargando Tenis..."):
-        ten_matches = get_tennis_cartelera()
+        try:
+            ten_matches = get_tennis_cartelera()
+        except Exception as _e:
+            ten_matches = []
+            st.warning(f"⚠️ Error cargando Tenis: {_e}")
 
 # ══════════════════════════════════════════════════════════
 # CARTELERA
@@ -7452,6 +7487,220 @@ if st.session_state["view"] == "cartelera":
                                         st.session_state["view"] = "analisis"
                                         st.rerun()
 
+        with tab2:
+            st.markdown("<div class='shdr'>🎰 TRILAY Tenis</div>", unsafe_allow_html=True)
+            ten_cands = []
+            for _m in ten_matches[:20]:
+                if _m["state"] != "pre": continue
+                try:
+                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0))
+                    _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
+                    _p   = max(_tm["p1"],_tm["p2"])
+                    if _p >= 0.58:
+                        ten_cands.append({"teams":f"{_m['p1']} vs {_m['p2']}","liga":_m.get("torneo","Tenis"),"hora":_m.get("hora",""),"pick":f"🎾 {_fav}","prob":_p})
+                except: pass
+            ten_cands.sort(key=lambda x:-x["prob"])
+            if len(ten_cands) >= 2:
+                _comb = 1.0
+                for _t in ten_cands[:3]: _comb *= _t["prob"]
+                st.markdown(f"<div class='trilay-card'><div style='font-size:.8rem;font-weight:700;color:#00ccff'>🎾 TRILAY TENIS · {_comb*100:.1f}%</div>", unsafe_allow_html=True)
+                for _i,_t in enumerate(ten_cands[:3]):
+                    _cc = "#FFD700" if _t["prob"]>0.65 else ("#00ff88" if _t["prob"]>0.58 else "#aaa")
+                    st.markdown(f"<div class='mrow'><span style='color:{_cc}'>{_i+1}. {_t['teams']}</span><span style='color:{_cc};float:right'>{_t['prob']*100:.1f}%</span></div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.info("No hay suficientes picks de tenis para TRILAY.")
+        with tab3:
+            st.info("PATO es exclusivo de fútbol.")
+        with tab4:
+            st.markdown("<div class='shdr'>🎯 Picks Tenis del Día</div>", unsafe_allow_html=True)
+            ten_picks = []
+            for _m in ten_matches[:30]:
+                if _m["state"] != "pre": continue
+                try:
+                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0))
+                    _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
+                    _p   = max(_tm["p1"],_tm["p2"])
+                    _odd = _m.get("odd_1",0) if _fav==_m["p1"] else _m.get("odd_2",0)
+                    _edge = _p-(1/_odd if _odd>1 else _p)
+                    if _edge > 0.03:
+                        _conf = "💎 DIAMANTE" if _p>0.68 else ("🔥 ALTA" if _p>0.62 else "⚡ MEDIA")
+                        ten_picks.append({"home":_m["p1"],"away":_m["p2"],"hora":_m.get("hora",""),"pick":f"🎾 {_fav} gana","prob":_p,"conf":_conf,"odd":_odd,"edge":_edge})
+                except: pass
+            ten_picks.sort(key=lambda x:-x["prob"])
+            if not ten_picks: st.info("No hay picks tenis con edge positivo hoy.")
+            for _pk in ten_picks:
+                _cc = "#FFD700" if "DIAMANTE" in _pk["conf"] else ("#00ff88" if "ALTA" in _pk["conf"] else "#aaa")
+                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-size:.78rem;color:#555'>{_pk['home']} vs {_pk['away']} · {_pk['hora']}</div><div style='color:{_cc};font-weight:700'>{_pk['conf']} {_pk['pick']}</div></div><div style='text-align:right'><div style='font-size:1rem;font-weight:900;color:{_cc}'>{_pk['prob']*100:.1f}%</div><div style='font-size:.65rem;color:#555'>Edge {_pk['edge']*100:+.1f}%</div></div></div>", unsafe_allow_html=True)
+        with tab5:
+            render_bot_tab("🎾 Tenis", None, [], None)
+        with tab6:
+            st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
+            init_history()
+            render_history()
+        with tab7:
+            st.markdown("<div class='shdr'>🎓 Califica tu Pick — Einstein 🧠</div>", unsafe_allow_html=True)
+            render_einstein_califica("tenis")
+        with tab8:
+            render_resultados_tab()
+        with tab_king:
+            render_king_rongo(matches_fut=None, nba_games=None, ten_matches=ten_matches)
+
+    # ─── FÚTBOL ──────────────────────────────────────────
+    elif deporte == "futbol":
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","👑 KING"])
+        with tab1:
+            st.markdown("<div class='shdr'>⚽ Cartelera — Partidos del Día</div>", unsafe_allow_html=True)
+            if not matches:
+                st.info("No hay partidos de fútbol disponibles.")
+            else:
+                from collections import defaultdict
+                fut_por_fecha = defaultdict(lambda: defaultdict(list))
+                for _m in matches:
+                    fut_por_fecha[_m["fecha"]][_m.get("league","")].append(_m)
+                def _fecha_lbl_fut(f):
+                    try:
+                        d=datetime.strptime(f,"%Y-%m-%d")
+                        dias=["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+                        meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+                        return f"⚽ {dias[d.weekday()]} {d.day} {meses[d.month]}"
+                    except: return f
+                for _fi, _fecha in enumerate(sorted(fut_por_fecha.keys())):
+                    _ligas = fut_por_fecha[_fecha]
+                    _total = sum(len(v) for v in _ligas.values())
+                    _is_hoy = _fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
+                    with st.expander(f"{_fecha_lbl_fut(_fecha)}  ·  {_total} partidos", expanded=(_fi==0)):
+                        for _liga, _lms in sorted(_ligas.items()):
+                            st.markdown(f"<div style='font-size:.72rem;font-weight:700;color:#FFD700;text-transform:uppercase;letter-spacing:.1em;margin:10px 0 6px'>⚽ {_liga}</div>", unsafe_allow_html=True)
+                            _post_ms = [m for m in _lms if m["state"]=="post"]
+                            _pre_ms  = [m for m in _lms if m["state"]!="post"]
+                            # Finalizados — clickeables
+                            for _m in _post_ms:
+                                _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
+                                _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
+                                _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
+                                if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}", key=f"fut_post_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
+                                    st.session_state["sel"]  = _m
+                                    st.session_state["view"] = "analisis"
+                                    st.rerun()
+                            # Pre/live en 2 columnas
+                            for _gi in range(0, len(_pre_ms), 2):
+                                _pair = _pre_ms[_gi:_gi+2]
+                                _ncols = st.columns(len(_pair))
+                                for _ncol, _m in zip(_ncols, _pair):
+                                    with _ncol:
+                                        _live = _m["state"]=="in"
+                                        _sc = f"{_m['score_h']}-{_m['score_a']}" if _live else _m.get("hora","")
+                                        _lbl = f"{'🔴 ' if _live else '⚽ '}{_m['home']} vs {_m['away']}  ·  {_sc}"
+                                        if st.button(_lbl, key=f"fut_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
+                                            st.session_state["sel"]  = _m
+                                            st.session_state["view"] = "analisis"
+                                            st.rerun()
+        with tab2:
+            st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
+            with st.spinner("Calculando TRILAY..."):
+                trilay_picks = compute_trilay(matches)
+            if not trilay_picks:
+                st.info("No hay suficientes partidos con edge para armar TRILAY hoy.")
+            else:
+                _comb_p = 1.0
+                for _t in trilay_picks: _comb_p *= _t["prob"]
+                _cuota_c = round(1/_comb_p,2) if _comb_p>0 else 0
+                st.markdown(f"<div class='trilay-card'><div style='font-size:.8rem;font-weight:700;color:#aa00ff;letter-spacing:.1em'>🎰 TRILAY DEL DÍA · Prob: {_comb_p*100:.1f}% · Cuota aprox {_cuota_c}</div>", unsafe_allow_html=True)
+                for _i,_t in enumerate(trilay_picks):
+                    _cc = "#FFD700" if _t["prob"]>0.65 else ("#00ff88" if _t["prob"]>0.58 else "#aaa")
+                    st.markdown(f"<div class='mrow'><span style='color:{_cc};font-weight:700'>{_i+1}. {_t['teams']}</span><span style='color:{_cc};float:right'>{_t['pick']} · {_t['prob']*100:.1f}%</span></div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+        with tab3:
+            st.markdown("<div class='shdr'>🦆 PATO — Under 4.5 Seguros</div>", unsafe_allow_html=True)
+            pato_picks = []
+            for _m in matches:
+                if _m["state"] != "pre": continue
+                try:
+                    _hf = get_form(_m["home_id"],_m["slug"]) or []
+                    _af = get_form(_m["away_id"],_m["slug"]) or []
+                    _hxg = xg_weighted(_hf,True) if _hf else xg_from_record(_m.get("home_rec","5-5-5"),True)
+                    _axg = xg_weighted(_af,False) if _af else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                    _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
+                    _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
+                    _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
+                    _p_u45 = max(0, 1 - _mc.get("o25",0.5) - 0.12)
+                    if _p_u45 >= 0.68:
+                        pato_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),"hora":_m.get("hora",""),"prob":_p_u45})
+                except: pass
+            pato_picks.sort(key=lambda x:-x["prob"])
+            if not pato_picks:
+                st.info("🦆 PATO no encontró partidos Under 4.5 seguros hoy (prob < 68%).")
+            for _pk in pato_picks:
+                _cc = "#FFD700" if _pk["prob"]>0.75 else "#00ff88"
+                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-size:.78rem;color:#555'>{_pk['liga']} · {_pk['hora']}</div><div style='font-size:.88rem;font-weight:700'>{_pk['home']} vs {_pk['away']}</div><div style='color:{_cc};font-weight:700'>🦆 Under 4.5 goles</div></div><div style='font-size:1.1rem;font-weight:900;color:{_cc}'>{_pk['prob']*100:.1f}%</div></div>", unsafe_allow_html=True)
+        with tab4:
+            st.markdown("<div class='shdr'>🎯 Picks del Día — Fútbol</div>", unsafe_allow_html=True)
+            fut_picks = []
+            for _m in matches[:30]:
+                if _m["state"] != "pre": continue
+                try:
+                    _hf = get_form(_m["home_id"],_m["slug"]) or []
+                    _af = get_form(_m["away_id"],_m["slug"]) or []
+                    _hxg = xg_weighted(_hf,True) if _hf else xg_from_record(_m.get("home_rec","5-5-5"),True)
+                    _axg = xg_weighted(_af,False) if _af else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                    _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
+                    _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
+                    _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
+                    _dp  = diamond_engine(_mc,_h2s,_hf,_af)
+                    _bests = [("🏠 "+_m["home"],_dp["ph"],_m.get("odd_h",0)),("✈️ "+_m["away"],_dp["pa"],_m.get("odd_a",0)),("⚽ Over 2.5",_mc["o25"],0),("⚡ BTTS",_mc["btts"],0)]
+                    _best = max(_bests, key=lambda x:x[1])
+                    _lbl,_p,_odd = _best
+                    _edge = _p-(1/_odd if _odd>1 else _p)
+                    if _p >= 0.58 and _edge > 0.03:
+                        _conf = "💎 DIAMANTE" if _p>0.68 else ("🔥 ALTA" if _p>0.62 else "⚡ MEDIA")
+                        fut_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),"hora":_m.get("hora",""),"pick":_lbl,"prob":_p,"conf":_conf,"odd":_odd,"edge":_edge})
+                except: pass
+            fut_picks.sort(key=lambda x:-x["prob"])
+            if not fut_picks: st.info("No hay picks de fútbol con edge positivo hoy.")
+            for _pk in fut_picks:
+                _cc = "#FFD700" if "DIAMANTE" in _pk["conf"] else ("#00ff88" if "ALTA" in _pk["conf"] else "#aaa")
+                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-size:.78rem;color:#555'>{_pk['liga']} · {_pk['hora']}</div><div style='font-size:.78rem;color:#777'>{_pk['home']} vs {_pk['away']}</div><div style='color:{_cc};font-weight:700'>{_pk['conf']} {_pk['pick']}</div></div><div style='text-align:right'><div style='font-size:1rem;font-weight:900;color:{_cc}'>{_pk['prob']*100:.1f}%</div><div style='font-size:.65rem;color:#555'>Edge {_pk['edge']*100:+.1f}%</div></div></div>", unsafe_allow_html=True)
+        with tab5:
+            def _fut_preview():
+                with st.spinner("Calculando preview fútbol..."):
+                    _prev = []
+                    for _m in matches[:15]:
+                        if _m["state"] != "pre": continue
+                        try:
+                            _hf = get_form(_m["home_id"],_m["slug"]) or []
+                            _af = get_form(_m["away_id"],_m["slug"]) or []
+                            _hxg = xg_weighted(_hf,True) if _hf else xg_from_record(_m.get("home_rec","5-5-5"),True)
+                            _axg = xg_weighted(_af,False) if _af else xg_from_record(_m.get("away_rec","5-5-5"),False)
+                            _mc  = ensemble_football(_hxg,_axg,{},_hf,_af,_m["home_id"],_m["away_id"])
+                            _dp  = diamond_engine(_mc,{},_hf,_af)
+                            _bm  = max([(_dp["ph"],f"🏠 {_m['home']}"),(_dp["pa"],f"✈️ {_m['away']}"),(_mc["o25"],"⚽ Over 2.5")],key=lambda x:x[0])
+                            if _bm[0] >= 0.58:
+                                _prev.append({"teams":f"{_m['home']} vs {_m['away']}","hora":_m.get("hora",""),"pick":_bm[1],"prob":_bm[0]})
+                        except: pass
+                    _prev.sort(key=lambda x:-x["prob"])
+                for _p in _prev[:5]:
+                    _cc = "#FFD700" if _p["prob"]>0.65 else "#00ff88"
+                    st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-size:.72rem;color:#555'>{_p['teams']} · {_p['hora']}</div><div style='color:{_cc};font-weight:700'>{_p['pick']}</div></div><div style='font-size:1rem;font-weight:900;color:{_cc}'>{_p['prob']*100:.1f}%</div></div>", unsafe_allow_html=True)
+            render_bot_tab("⚽ Fútbol", escanear_y_enviar, [matches], _fut_preview)
+        with tab6:
+            st.markdown("<div class='shdr'>📋 Historial de Picks</div>", unsafe_allow_html=True)
+            init_history()
+            render_history()
+        with tab7:
+            st.markdown("<div class='shdr'>🎓 Califica tu Pick — Einstein 🧠</div>", unsafe_allow_html=True)
+            if matches:
+                _an_pro = get_action_network_pro(matches[0]["home"], matches[0]["away"], "soccer")
+                render_fix_detector("futbol", matches[0]["home"], matches[0]["away"],
+                                    get_form(matches[0]["home_id"], matches[0]["slug"]) or {},
+                                    get_form(matches[0]["away_id"], matches[0]["slug"]) or {}, {},
+                                    matches[0], an_data=_an_pro)
+            render_einstein_califica("futbol")
+        with tab8:
+            render_resultados_tab()
+        with tab_king:
+            render_king_rongo(matches_fut=matches, nba_games=None, ten_matches=None)
+
 else:
     g = st.session_state["sel"]
     if st.button("← Volver"):
@@ -7567,6 +7816,70 @@ else:
                 _vd_p1, _vd_p2, _vd_fav, _vd_fav_p, _ten_conf,
                 _ei or {}
             )
+
+    elif _sport == "nba":
+        # ── NBA ANALYSIS ──
+        st.markdown(
+            f"<div style='text-align:center;padding:16px 0 8px'>"
+            f"<div style='font-size:.75rem;color:#ff9500;letter-spacing:.12em;font-weight:700'>🏀 NBA</div>"
+            f"<div style='font-size:2rem;font-weight:900;margin:6px 0'>"
+            f"{g.get('away','?')} <span style='color:#333'>@</span> {g.get('home','?')}</div>"
+            f"<div style='color:#555;font-size:.85rem'>🕒 {g.get('hora','')} CDMX · O/U {g.get('ou_line',0)}</div>"
+            + (f"<div style='margin-top:8px;font-size:1.4rem;font-weight:900;color:#00ff88'>"
+               f"{g['score_h']} – {g['score_a']} pts</div>" if g.get('state')=='post' and g.get('score_h',-1)>=0 else "")
+            + "</div>",
+            unsafe_allow_html=True)
+        if g.get("state") == "post":
+            st.info("✅ Partido finalizado. Resultado final mostrado arriba.")
+        else:
+            with st.spinner("🏀 Calculando modelo O/U + ML..."):
+                _nba_res = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",0))
+            _p_over  = _nba_res.get("p_over", 0.5)
+            _p_under = _nba_res.get("p_under", 0.5)
+            _p_home  = _nba_res.get("p_h_win", 0.5)
+            _p_away  = 1 - _p_home
+            _line    = _nba_res.get("line", g.get("ou_line",0))
+            _proj    = _nba_res.get("proj", 0)
+            _ou_rec  = _nba_res.get("rec","OVER")
+            # Card principal
+            _ou_col  = "#00ff88" if _p_over >= _p_under else "#00ccff"
+            _ml_fav  = g.get("home","?") if _p_home >= _p_away else g.get("away","?")
+            _ml_p    = max(_p_home, _p_away)
+            _conf_ou = "💎 DIAMANTE" if max(_p_over,_p_under)>0.68 else ("🔥 ALTA" if max(_p_over,_p_under)>0.62 else "⚡ MEDIA")
+            st.markdown(
+                f"<div class='diamond-hero'>"
+                f"<div style='font-size:.75rem;font-weight:700;color:#ff9500;letter-spacing:.14em;margin-bottom:8px'>🏀 ANÁLISIS O/U + ML</div>"
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px'>"
+                f"<div style='background:#0a0a1e;border-radius:12px;padding:14px;border:1px solid {_ou_col}44'>"
+                f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em'>OVER / UNDER</div>"
+                f"<div style='font-size:.75rem;color:#777;margin:4px 0'>Línea: {_line} pts · Proy: {_proj:.0f} pts</div>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:{_ou_col}'>{_ou_rec}</div>"
+                f"<div style='display:flex;gap:8px;margin-top:6px'>"
+                f"<span style='font-size:.78rem;color:#00ff88'>Over {_p_over*100:.1f}%</span>"
+                f"<span style='font-size:.78rem;color:#00ccff'>Under {_p_under*100:.1f}%</span></div></div>"
+                f"<div style='background:#0a0a1e;border-radius:12px;padding:14px;border:1px solid #FFD70044'>"
+                f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em'>MONEY LINE</div>"
+                f"<div style='font-size:.75rem;color:#777;margin:4px 0'>Favorito</div>"
+                f"<div style='font-size:1.2rem;font-weight:900;color:#FFD700'>{_ml_fav[:16]}</div>"
+                f"<div style='font-size:.85rem;color:#FFD700;margin-top:6px'>{_ml_p*100:.1f}% prob</div>"
+                f"<div style='font-size:.72rem;color:#555'>🏠 {g.get('home','')[:14]}: {_p_home*100:.1f}%  ✈️ {g.get('away','')[:14]}: {_p_away*100:.1f}%</div>"
+                f"</div></div>"
+                f"<div style='font-size:.72rem;color:#555;padding-top:10px;border-top:1px solid #1a1a40'>"
+                f"{_conf_ou} · Modelos: xG ESPN + Pace + DefRtg</div></div>",
+                unsafe_allow_html=True)
+            # Save pick button
+            _nba_pick_lbl = f"{'🔥 Over' if _p_over>_p_under else '❄️ Under'} {_line}"
+            _nba_odd = 1.91  # standard -110
+            if st.button("💾 Guardar Pick", key="save_nba_pick"):
+                if "pick_history" not in st.session_state: st.session_state["pick_history"]=[]
+                st.session_state["pick_history"].append({
+                    "equipos":f"{g.get('away','')} @ {g.get('home','')}",
+                    "pick":_nba_pick_lbl, "deporte":"🏀 NBA",
+                    "mercado":"NBA O/U","odd":_nba_odd,
+                    "prob":max(_p_over,_p_under),"result":"⏳",
+                    "fecha":g.get("fecha",datetime.now(CDMX).strftime("%Y-%m-%d"))
+                })
+                st.success("✅ Pick guardado")
 
     else:
         # ── SOCCER ANALYSIS ──
@@ -8588,238 +8901,3 @@ def _kr_render_memory(pick_history):
 # ────────────────────────────────────────────────────────────────────────────
 # RENDER PRINCIPAL
 # ────────────────────────────────────────────────────────────────────────────
-
-def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
-    """
-    👑 KING RONGO — Tab completo. El amo y maestro.
-    """
-    pick_history = st.session_state.get("pick_history", [])
-
-    # ── Header ──
-    _kr_render_header()
-
-    # ── Bankroll ──
-    bk = _king_rongo_bankroll_advice(pick_history)
-    _kr_render_bankroll(bk)
-
-    # ── Botones ──
-    b1, b2, b3 = st.columns([4, 1, 1])
-    with b1:
-        do_scan = st.button(
-            "👑 ESCANEAR ⚽ Fútbol · 🏀 NBA · 🎾 Tenis",
-            use_container_width=True, key="king_scan",
-            help="King Rongo corre todos los modelos y elige EL pick con mayor edge real"
-        )
-    with b2:
-        do_tg = st.button("📡 TG", use_container_width=True, key="king_tg")
-    with b3:
-        if st.button("🔄", use_container_width=True, key="king_reset"):
-            for k in ["_king_el_pick","_king_contras","_king_todos",
-                      "_king_scanned","_king_ts","_king_narr","_king_parlay"]:
-                st.session_state.pop(k, None)
-            st.rerun()
-
-    # ── Scan ──
-    if do_scan or st.session_state.get("_king_scanned"):
-
-        if do_scan:
-            prog = st.progress(0, "👑 Iniciando escaneo...")
-            try:
-                prog.progress(5,  "⚽ Cargando partidos de fútbol...")
-                _mf = matches_fut
-                try:
-                    if _mf is None: _mf = get_cartelera()
-                except: _mf = []
-
-                prog.progress(22, "🏀 Cargando partidos NBA...")
-                _nbg = nba_games
-                try:
-                    if _nbg is None: _nbg = get_nba_cartelera()
-                except: _nbg = []
-
-                prog.progress(40, "🎾 Cargando partidos de tenis...")
-                _ten = ten_matches
-                try:
-                    if _ten is None: _ten = get_tennis_cartelera()
-                except: _ten = []
-
-                prog.progress(58, "🧠 Corriendo todos los modelos...")
-                el_pick, contras, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
-
-                prog.progress(80, "💬 King Rongo narrando el pick...")
-                narr = ""
-                if el_pick:
-                    try: narr = _kr_ia_narracion(el_pick, bk, todos)
-                    except: pass
-
-                prog.progress(100, f"✅ {len(todos)} partidos analizados")
-                prog.empty()
-
-                st.session_state.update({
-                    "_king_el_pick": el_pick,
-                    "_king_contras": contras,
-                    "_king_todos":   todos,
-                    "_king_scanned": True,
-                    "_king_ts":      datetime.now(CDMX).strftime("%H:%M"),
-                    "_king_narr":    narr,
-                    "_king_parlay":  _kr_parlay_del_rey(todos),
-                })
-            except Exception as e:
-                prog.empty()
-                st.error(f"Error en escaneo: {e}")
-
-        el_pick = st.session_state.get("_king_el_pick")
-        contras = st.session_state.get("_king_contras", [])
-        todos   = st.session_state.get("_king_todos", [])
-        narr    = st.session_state.get("_king_narr", "")
-        parlay  = st.session_state.get("_king_parlay", [])
-        ts      = st.session_state.get("_king_ts","")
-
-        # Meta-stats del escaneo
-        nf = sum(1 for c in todos if "Fútbol" in c["deporte"])
-        nn = sum(1 for c in todos if "NBA"    in c["deporte"])
-        nt = sum(1 for c in todos if "Tenis"  in c["deporte"])
-        np = sum(1 for c in todos if c.get("edge",0)>0)
-        nb = len(contras)
-
-        st.markdown(
-            f"<div style='display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:10px'>"
-            f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{nf}</div><div class='mlbl'>⚽</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#ff9500'>{nn}</div><div class='mlbl'>🏀</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{nt}</div><div class='mlbl'>🎾</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{np}</div><div class='mlbl'>Edge+</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#ff4444'>{nb}</div><div class='mlbl'>Bloq</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#555;font-size:.75rem'>{ts}</div><div class='mlbl'>CDMX</div></div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-
-        if el_pick:
-            # ── PICK CARD ──
-            _kr_render_pick_card(el_pick, bk, narr)
-
-            # ── ACCIONES ──
-            a1, a2, a3 = st.columns(3)
-            with a1:
-                if st.button("💾 Guardar pick", key="save_king", use_container_width=True):
-                    m    = el_pick.get("match", {})
-                    home = m.get("home", m.get("p1","?"))
-                    away = m.get("away", m.get("p2","?"))
-                    add_pick(
-                        {"home":home,"away":away,
-                         "league":el_pick.get("liga",""),
-                         "fecha":m.get("fecha",datetime.now(CDMX).strftime("%Y-%m-%d"))},
-                        f"👑 {el_pick['pick']}", el_pick["prob"],
-                        el_pick.get("odd",0), sport=el_pick["sport"]
-                    )
-                    st.success("✅ Pick guardado")
-            with a2:
-                if st.button("💬 Re-narrar IA", key="king_renarr", use_container_width=True):
-                    with st.spinner("King Rongo pensando..."):
-                        try:
-                            nn2 = _kr_ia_narracion(el_pick, bk, todos)
-                            st.session_state["_king_narr"] = nn2
-                        except: pass
-                    st.rerun()
-            with a3:
-                if el_pick.get("match") and st.button("🔎 Partido completo", key="king_open", use_container_width=True):
-                    _m = el_pick["match"]
-                    if el_pick["sport"] == "tenis":
-                        sel = {**_m,
-                               "home":_m.get("p1",_m.get("home","")),
-                               "away":_m.get("p2",_m.get("away","")),
-                               "home_id":_m.get("id","")+"_p1",
-                               "away_id":_m.get("id","")+"_p2",
-                               "league":_m.get("torneo",_m.get("tour","Tenis")),
-                               "slug":"tennis","home_rec":"","away_rec":"",
-                               "odd_h":_m.get("odd_1",0),"odd_a":_m.get("odd_2",0),
-                               "odd_d":0,"_sport":"tennis"}
-                    else:
-                        sel = {**_m}
-                    st.session_state["sel"]  = sel
-                    st.session_state["view"] = "analisis"
-                    st.rerun()
-
-            # ── PARLAY DEL REY ──
-            _kr_render_parlay(parlay)
-
-            # ── CONTRADICCIONES ──
-            _kr_render_contradictions(contras)
-
-            # ── TABLA RANKING ──
-            _kr_render_table(todos, el_pick)
-
-            # ── MEMORIA ──
-            _kr_render_memory(pick_history)
-
-            # ── TELEGRAM ──
-            if do_tg:
-                _nl = chr(10)
-                prob_pct = el_pick["prob"]*100
-                edge_pct = el_pick["edge"]*100
-                models_t = " | ".join(f"{k}: {v}%" for k,v in list(el_pick.get("models",{}).items())[:3])
-                parlay_t = ""
-                if len(parlay) >= 2:
-                    parlay_t = (
-                        f"{_nl}🃏 *PARLAY DEL REY*{_nl}"
-                        + "".join(f"  • {p['pick']} ({p['prob']*100:.0f}%){_nl}" for p in parlay)
-                        + f"  Prob combinada: {( __import__('math').prod(p['prob'] for p in parlay) if hasattr(__import__('math'),'prod') else sum(p['prob'] for p in parlay)/len(parlay) )*100:.1f}%{_nl}"
-                    )
-                narr_t = f"{_nl}_{narr}_{_nl}" if narr else ""
-                msg = (
-                    f"👑 *KING RONGO — PICK DEL DÍA*{_nl}"
-                    f"━━━━━━━━━━━━━━━━━━━━{_nl}"
-                    f"{el_pick['deporte']} · {el_pick.get('liga','')}{_nl}"
-                    f"🆚 *{el_pick['label']}*{_nl}"
-                    f"🕒 {el_pick.get('hora','')} CDMX{_nl}{_nl}"
-                    f"{el_pick.get('conf_emoji','⚡')} *PICK: {el_pick['pick']}*{_nl}"
-                    f"📊 Prob: *{prob_pct:.1f}%* · Edge: *{edge_pct:+.1f}%*{_nl}"
-                    f"🎯 Kelly: *{bk['kelly_rec']}%* · {'@'+str(round(el_pick['odd'],2)) if el_pick.get('odd',0)>1 else 'Sin cuota'}{_nl}"
-                    f"🧠 {models_t}{_nl}"
-                    f"{narr_t}"
-                    f"{parlay_t}"
-                    f"📈 Bankroll: {bk['racha_sign']}{abs(bk['racha'])} racha · {bk['pct']}% acierto · ROI {bk['roi']:+.1f}u{_nl}"
-                    f"_{bk['consejo']}_{_nl}"
-                    f"━━━━━━━━━━━━━━━━━━━━{_nl}"
-                    f"_Gamblers Layer · King Rongo v3 · ⚽{nf} 🏀{nn} 🎾{nt}_"
-                )
-                if tg_send(msg):
-                    st.success("✅ Enviado a Telegram")
-                else:
-                    st.error("❌ Error Telegram")
-
-        else:
-            st.markdown(
-                "<div style='text-align:center;padding:32px 20px;"
-                "background:#07071a;border-radius:14px;border:1px solid #1a1a30;margin:12px 0'>"
-                "<div style='font-size:2rem;margin-bottom:8px'>🤔</div>"
-                "<div style='font-size:.95rem;font-weight:700;color:#444'>Sin picks con edge positivo hoy.</div>"
-                "<div style='font-size:.78rem;color:#333;margin-top:6px'>"
-                "Proteger el bankroll también es ganar. Mañana habrá mejores oportunidades.</div>"
-                "</div>",
-                unsafe_allow_html=True
-            )
-
-    else:
-        # Pre-scan
-        st.markdown(
-            "<div style='text-align:center;padding:40px 20px;"
-            "background:linear-gradient(160deg,#0c001a,#000c00,#0c001a);"
-            "border-radius:18px;border:1px solid #1a1a30;margin:10px 0'>"
-            "<div style='font-size:3.5rem;margin-bottom:14px;"
-            "filter:drop-shadow(0 0 14px #FFD70055)'>👑</div>"
-            "<div style='font-size:1.05rem;font-weight:700;color:#444;margin-bottom:10px'>"
-            "King Rongo está listo</div>"
-            "<div style='font-size:.78rem;color:#2a2a40;line-height:2;max-width:360px;margin:0 auto'>"
-            "⚽ xG · Dixon-Coles · Poisson BV · Elo Dinámico · H2H<br>"
-            "🏀 Net Rating · O/U Proyectado · Money Line<br>"
-            "🎾 Weibull · Elo ATP/WTA · Superficie · Bayes<br><br>"
-            "<span style='color:#333'>Presiona ESCANEAR y King Rongo elegirá<br>"
-            "EL PICK con mayor edge real del día.</span>"
-            "</div></div>",
-            unsafe_allow_html=True
-        )
-        _kr_render_memory(pick_history)
-
-
-
