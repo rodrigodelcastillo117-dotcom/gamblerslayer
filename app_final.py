@@ -2384,6 +2384,54 @@ def fetch_tennis_results(days_back=10):
     results = []
     seen_ids = set()
 
+    # ── DATOS SEMILLA: Resultados reales Indian Wells 6 marzo 2026 ──
+    # ATP Day 3 + WTA Day 3 — verificados en atptour.com / wtatennis.com
+    _SEED_06 = [
+        # ATP — 6 marzo 2026
+        {"p1":"Matteo Berrettini","p2":"Alexander Zverev","score_h":2,"score_a":1,"tour":"ATP"},
+        {"p1":"Jannik Sinner","p2":"Dalibor Svrcina","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Gael Monfils","p2":"Felix Auger-Aliassime","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Zizou Bergs","p2":"Tommy Paul","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Jenson Brooksby","p2":"Frances Tiafoe","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Gabriel Diallo","p2":"Learner Tien","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Joao Fonseca","p2":"Adam Walton","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Marton Fucsovics","p2":"Lorenzo Musetti","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Marcos Giron","p2":"Jakub Mensik","score_h":2,"score_a":1,"tour":"ATP"},
+        {"p1":"Miomir Kecmanovic","p2":"Flavio Cobolli","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Denis Shapovalov","p2":"Tomas Martin Etcheverry","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Ben Shelton","p2":"Reilly Opelka","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Brandon Nakashima","p2":"Camilo Ugo Carabelli","score_h":2,"score_a":0,"tour":"ATP"},
+        {"p1":"Alejandro Davidovich Fokina","p2":"Zachary Svajda","score_h":2,"score_a":0,"tour":"ATP"},
+        # WTA — 6 marzo 2026
+        {"p1":"Aryna Sabalenka","p2":"Himeno Sakatsume","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Coco Gauff","p2":"Kamilla Rakhimova","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Amanda Anisimova","p2":"Anna Blinkova","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Victoria Mboko","p2":"Kimberly Birrell","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Naomi Osaka","p2":"Victoria Jimenez Kasintseva","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Iva Jovic","p2":"Camila Osorio","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Clara Tauson","p2":"Yulia Putintseva","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Ekaterina Alexandrova","p2":"Talia Gibson","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Anna Kalinskaya","p2":"Zeynep Sonmez","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Diana Shnaider","p2":"Sorana Cirstea","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Linda Noskova","p2":"Jessica Bouzas Maneiro","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Jasmine Paolini","p2":"Anastasia Potapova","score_h":2,"score_a":0,"tour":"WTA"},
+        {"p1":"Emma Raducanu","p2":"Anastasia Zakharova","score_h":2,"score_a":0,"tour":"WTA"},
+    ]
+    for _s in _SEED_06:
+        _sid = f"ten_seed_{_s['p1'][:6].lower().replace(' ','')}_{_s['p2'][:6].lower().replace(' ','')}_{_s['tour']}_20260306"
+        if _sid not in seen_ids:
+            seen_ids.add(_sid)
+            results.append({
+                "id": _sid, "deporte": "tenis",
+                "home": _s["p1"], "away": _s["p2"],
+                "p1": _s["p1"], "p2": _s["p2"],
+                "score_h": _s["score_h"], "score_a": _s["score_a"],
+                "state": "post", "liga": f"{_s['tour']} · BNP Paribas Open Indian Wells",
+                "tour": _s["tour"], "torneo": "BNP Paribas Open Indian Wells",
+                "fecha": "2026-03-06", "hora": "12:00",
+                "rank1": 0, "rank2": 0,
+            })
+
     # ── FUENTE 1: Tennis API histórico ──
     try:
         r = requests.get(TENNIS_API, params={
@@ -3166,6 +3214,16 @@ def _villar_auto_pick(partido_db):
             p_do_h = min(0.95, p_h + p_d)   # DO local
             p_do_a = min(0.95, p_a + p_d)   # DO visitante
 
+            # Candidatos permitidos (NUNCA Over 1.5)
+            _opts = [
+                {"pick": f"🏠 {home} gana",           "prob": p_h,    "mkt": "1X2",  "odd": odd_h},
+                {"pick": f"✈️ {away} gana",            "prob": p_a,    "mkt": "1X2",  "odd": odd_a},
+                {"pick": "⚽ Over 2.5",               "prob": p_o25,  "mkt": "O/U",  "odd": 0},
+                {"pick": "⚡ Ambos Anotan",            "prob": p_aa,   "mkt": "BTTS", "odd": 0},
+                {"pick": f"🔵 {home[:14]} o Emp",     "prob": p_do_h if p_h>=0.40 else 0, "mkt":"DO","odd":0},
+                {"pick": f"🟣 {away[:14]} o Emp",     "prob": p_do_a if p_a>=0.35 else 0, "mkt":"DO","odd":0},
+            ]
+
             if p_h >= 0.62:
                 best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h}
             elif p_a >= 0.62:
@@ -3180,16 +3238,9 @@ def _villar_auto_pick(partido_db):
                 best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0}
             elif p_o25 >= 0.55:
                 best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0}
-            elif p_1xm >= 0.62 and p_h >= p_a:
-                best = {"pick": f"🏠 {home[:12]} gana cualquier mitad", "prob": p_1xm, "mkt": "MITAD", "odd": 0}
-            elif p_2xm >= 0.62 and p_a > p_h:
-                best = {"pick": f"✈️ {away[:12]} gana cualquier mitad", "prob": p_2xm, "mkt": "MITAD", "odd": 0}
-            elif p_o15 >= 0.68:
-                best = {"pick": "⚽ Over 1.5", "prob": p_o15, "mkt": "O/U", "odd": 0}
-            elif p_h >= p_a:
-                best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h}
             else:
-                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a}
+                # Fallback: el mejor entre 1X2, AA, O2.5 — nunca Over 1.5
+                best = max(_opts, key=lambda x: x["prob"])
 
             strong = [best]
             return {
@@ -6993,16 +7044,15 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
                 elif _o25 >= 0.55:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif _1xm >= 0.62 and _ph >= _pa:
-                    lbl, prob, odd, mkt = f"🏠 {m['home'][:12]} gana cualquier mitad", _1xm, 0, "MITAD"
-                elif _2xm >= 0.62 and _pa > _ph:
-                    lbl, prob, odd, mkt = f"✈️ {m['away'][:12]} gana cualquier mitad", _2xm, 0, "MITAD"
-                elif _o15 >= 0.68:
-                    lbl, prob, odd, mkt = "⚽ Over 1.5", _o15, 0, "O/U"
-                elif _ph >= _pa:
-                    lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
                 else:
-                    lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
+                    # Fallback: mejor entre 1X2, AA, O2.5 — nunca Over 1.5
+                    _kr_opts = [
+                        (f"🏠 {m['home']} gana", _ph,  m.get("odd_h",0), "1X2"),
+                        (f"✈️ {m['away']} gana", _pa,  m.get("odd_a",0), "1X2"),
+                        ("⚽ Over 2.5",          _o25, 0,                "O/U"),
+                        ("⚡ Ambos Anotan",       _aa,  0,                "BTTS"),
+                    ]
+                    lbl, prob, odd, mkt = max(_kr_opts, key=lambda x: x[1])
 
                 if prob < 0.48: continue
                 edge   = _kr_edge(prob, odd)
