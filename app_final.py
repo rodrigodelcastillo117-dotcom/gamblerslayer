@@ -2549,6 +2549,9 @@ def _fetch_tennis_results_web(desde, hoy):
                 if sc1 == 0 and sc2 == 0: continue
                 # Guardar tal cual — p1/home = como vino del JSON
                 # score_h = sets de p1, score_a = sets de p2
+                # Skip doubles pairs
+                if "/" in p1 or "/" in p2 or "&" in p1 or "&" in p2: continue
+                if p1.count(" ") >= 3 or p2.count(" ") >= 3: continue  # "A. Smith / B. Jones"
                 r1 = _resolve_rank_local(p1)
                 r2 = _resolve_rank_local(p2)
                 out.append({
@@ -2591,6 +2594,7 @@ def _fetch_tennis_results_web(desde, hoy):
             f'[{{"p1":"Nombre completo","p2":"Nombre completo",'
             f'"sets_p1":2,"sets_p2":1,"torneo":"Nombre del torneo",'
             f'"tour":"WTA","fecha":"{now_str}"}}]'
+            f" EXCLUIR: dobles, doubles, mixtos, pares. Solo singles/individuales ATP y WTA."
         )
         wta_text = _call_claude(wta_prompt)
         wta_matches = _parse_json_matches(wta_text, "WTA", "WTA Tour")
@@ -2866,10 +2870,29 @@ def _villar_match_pick_to_result(pk, partido_db):
 
     # ══ TENIS ══
     if sport in ("tenis","tennis") or "🎾" in raw_pick:
+        import unicodedata as _ud
+        def _norm(s):
+            """Normaliza: quita tildes, minúsculas, quita puntuación."""
+            s = s.lower().strip()
+            s = _ud.normalize("NFD", s)
+            s = "".join(c for c in s if _ud.category(c) != "Mn")
+            return s
+        def _apellido_norm(name):
+            parts = [w for w in _norm(name).split() if len(w) > 2]
+            return parts[-1] if parts else _norm(name)[:5]
+        def _name_hits(name, pick_str):
+            nn = _norm(name); pn = _norm(pick_str)
+            # cualquier palabra >=3 chars del nombre en el pick
+            for w in nn.split():
+                if len(w) >= 3 and w in pn: return True
+            # apellido (última palabra) en el pick
+            ap = _apellido_norm(name)
+            return ap in pn
+
         p1 = home_db or home_pk
         p2 = away_db or away_pk
-        pick_hits_p1 = _name_in_pick(p1, pick) or _apellido(p1) in pick
-        pick_hits_p2 = _name_in_pick(p2, pick) or _apellido(p2) in pick
+        pick_hits_p1 = _name_hits(p1, pick)
+        pick_hits_p2 = _name_hits(p2, pick)
         if pick_hits_p1 and not pick_hits_p2:
             ok = won_h
         elif pick_hits_p2 and not pick_hits_p1:
@@ -2877,7 +2900,7 @@ def _villar_match_pick_to_result(pk, partido_db):
         else:
             # último recurso: el pick menciona al ganador?
             winner = p1 if won_h else p2
-            ok = _name_in_pick(winner, pick) or _apellido(winner) in pick
+            ok = _name_hits(winner, pick)
 
     # ══ NBA ══
     elif sport in ("nba","basketball") or "🏀" in raw_pick:
@@ -3030,28 +3053,59 @@ def _villar_auto_pick(partido_db):
             axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0) if af else xg_from_record(away_rec, False)
             mc  = mc50k(hxg, axg)
 
-            # Todos los mercados relevantes con su prob real del modelo
-            all_mkts = [
-                {"pick": f"🏠 {home} gana",       "prob": mc["ph"],   "mkt": "1X2",  "odd": odd_h},
-                {"pick": f"✈️ {away} gana",         "prob": mc["pa"],   "mkt": "1X2",  "odd": odd_a},
-                {"pick": f"🤝 Empate",              "prob": mc["pd"],   "mkt": "1X2",  "odd": odd_d},
-                {"pick": f"🔵 {home[:10]} o Emp",   "prob": mc["ph"]+mc["pd"], "mkt": "DC", "odd": 0},
-                {"pick": f"🟣 {away[:10]} o Emp",   "prob": mc["pd"]+mc["pa"], "mkt": "DC", "odd": 0},
-                {"pick": "⚽ Over 2.5",             "prob": mc["o25"],  "mkt": "O/U",  "odd": 0},
-                {"pick": "⚽ Over 3.5",             "prob": mc.get("o35",0.18), "mkt": "O/U", "odd": 0},
-                {"pick": "⚡ Ambos Anotan",         "prob": mc["btts"], "mkt": "BTTS", "odd": 0},
-                # Over 1.5 EXCLUIDO — prob siempre alta pero sin valor real
-            ]
-            # Filtrar: solo los que superen 52% de prob
-            strong = [m for m in all_mkts if m["prob"] >= 0.52]
-            if not strong:
-                strong = sorted(all_mkts, key=lambda x: -x["prob"])[:2]
-            # Pick principal = el de mayor EDGE (no solo prob)
-            def _edge_score(m):
-                o = m["odd"]
-                return (m["prob"] - 1/o) if o > 1 else (m["prob"] - 0.50)
-            strong.sort(key=_edge_score, reverse=True)
-            best = strong[0]
+            # ── Calcular todas las probs ──
+            p_h   = mc["ph"]
+            p_a   = mc["pa"]
+            p_d   = mc["pd"]
+            p_do_h = p_h + p_d   # DO: local o empate
+            p_do_a = p_a + p_d   # DO: visitante o empate
+            p_do_12= p_h + p_a   # DO: cualquiera gana (sin empate)
+            p_o25  = mc["o25"]
+            p_aa   = mc["btts"]
+            # "Gana cualquier mitad" — aprox: prob de que haya equipo dominante
+            p_1x_mitad = min(0.82, p_h + 0.12)  # local gana al menos 1 mitad
+            p_2x_mitad = min(0.78, p_a + 0.12)  # visitante gana al menos 1 mitad
+
+            # ── JERARQUÍA DE PICKS ──
+            # 1º DO si ≥ 58%
+            # 2º Over 2.5 si ≥ 55%
+            # 3º AA si ≥ 52%
+            # 4º 1X gana cualquier mitad si ≥ 60%
+            # 5º 2X gana cualquier mitad si ≥ 58%
+            # Solo como último recurso: 1X2 (si todo lo anterior < umbral)
+            UMBRAL_DO   = 0.58
+            UMBRAL_O25  = 0.55
+            UMBRAL_AA   = 0.52
+            UMBRAL_MITAD= 0.60
+            UMBRAL_1X2  = 0.60  # 1X2 solo si prob muy alta
+
+            # Elegir DO más alto
+            best_do = max(
+                {"pick": f"🔵 DO: {home[:12]} o Emp", "prob": p_do_h, "mkt": "DO", "odd": 0},
+                {"pick": f"🟣 DO: {away[:12]} o Emp", "prob": p_do_a, "mkt": "DO", "odd": 0},
+                {"pick": f"🔴 DO: {home[:9]} o {away[:9]}", "prob": p_do_12, "mkt": "DO", "odd": 0},
+                key=lambda x: x["prob"]
+            )
+
+            if best_do["prob"] >= UMBRAL_DO:
+                best = best_do
+            elif p_o25 >= UMBRAL_O25:
+                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0}
+            elif p_aa >= UMBRAL_AA:
+                best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0}
+            elif p_1x_mitad >= UMBRAL_MITAD and p_h >= p_a:
+                best = {"pick": f"🏠 {home[:12]} gana cualquier mitad", "prob": p_1x_mitad, "mkt": "MITAD", "odd": 0}
+            elif p_2x_mitad >= UMBRAL_MITAD and p_a > p_h:
+                best = {"pick": f"✈️ {away[:12]} gana cualquier mitad", "prob": p_2x_mitad, "mkt": "MITAD", "odd": 0}
+            elif p_h >= UMBRAL_1X2 and p_h >= p_a:
+                best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h}
+            elif p_a >= UMBRAL_1X2:
+                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a}
+            else:
+                # Último recurso: mejor DO disponible
+                best = best_do
+
+            strong = [best]  # un solo pick limpio
             return {
                 "pick":      best["pick"],
                 "prob":      best["prob"],
@@ -3174,16 +3228,16 @@ def render_resultados_tab():
     # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
     _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
     _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-    _catorce  = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
+    _inicio_conteo = "2025-03-06"   # contar picks desde 6 de marzo
     _fut_c = 0
     for _fp in [p for p in partidos if p.get("state")=="post"]:
         _sp = _fp.get("deporte","")
         _fd = _fp.get("fecha","")
+        if _fd < _inicio_conteo:
+            continue   # ignorar partidos antes del 6 mar
         if _sp == "futbol":
             if _fut_c >= 30: continue
             _fut_c += 1
-        elif _fd < _catorce:
-            continue
         _has_manual = any(_villar_find_result(pk,[_fp]) is not None for pk in pick_history)
         if _has_manual: continue
         try:
@@ -3517,7 +3571,7 @@ def render_resultados_tab():
 
     # Guardar en session para KING RONGO
     st.session_state["_villar_summary"] = {
-        "ok": total_g, "fail": total_f, "pct": pct, "roi": roi,
+        "ok": _total_ok, "fail": _total_fail, "pct": _pct_all, "roi": roi,
         "modelo_ok": _global_ok, "modelo_fail": _global_fail, "modelo_pct": _gpct,
     }
 
@@ -5437,8 +5491,8 @@ def veredicto_academico(mc, dp, odd_h, odd_a, odd_d, home, away, best_market=Non
         mkt_lbl  = best_market
         mkt_prob = best_prob
         mkt_odd  = best_odd or 0
-        # Si es Over 2.5 / AA / Doble Chance, usar su prob directamente
-        is_totals  = any(x in best_market for x in ["Over","Ambos","AA","DC","o Emp","o "])
+        # Si es Over 2.5 / AA / Doble Oportunidad, usar su prob directamente
+        is_totals  = any(x in best_market for x in ["Over","Ambos","AA","DO","o Emp","o "])
         fav_name   = best_market  if is_totals else (home if ph>=pa else away)
     else:
         fav_is_home = ph >= pa
@@ -5775,7 +5829,7 @@ def tg_send(msg):
 def _best_market_soccer(m, dp, mc):
     """
     Evalúa todos los mercados válidos y devuelve el de MAYOR probabilidad.
-    Mercados: 1X2, Doble Chance, Over 2.5, Over 3.5, Ambos Anotan.
+    Mercados: 1X2, Doble Oportunidad, Over 2.5, Over 3.5, Ambos Anotan.
     NO incluye O1.5, ML simple sin cuota, Handicap.
     """
     opts = []
@@ -5783,11 +5837,11 @@ def _best_market_soccer(m, dp, mc):
     if m.get("odd_h",0)>1: opts.append(("🏠 "+m["home"][:15]+" gana",    dp["ph"], m["odd_h"], dp["ph"]-(1/m["odd_h"])))
     if m.get("odd_d",0)>1: opts.append(("🤝 Empate",                      dp["pd"], m["odd_d"], dp["pd"]-(1/m["odd_d"])))
     if m.get("odd_a",0)>1: opts.append(("✈️ "+m["away"][:15]+" gana",      dp["pa"], m["odd_a"], dp["pa"]-(1/m["odd_a"])))
-    # Doble Chance
+    # Doble Oportunidad
     dc_1x = dp["ph"]+dp["pd"]; dc_x2 = dp["pd"]+dp["pa"]; dc_12 = dp["ph"]+dp["pa"]
-    opts.append(("🔵 DC: "+m["home"][:12]+" o Emp",    dc_1x, 0, dc_1x-0.65))
-    opts.append(("🟣 DC: "+m["away"][:12]+" o Emp",    dc_x2, 0, dc_x2-0.65))
-    opts.append(("🔴 DC: "+m["home"][:10]+" o "+m["away"][:10], dc_12, 0, dc_12-0.65))
+    opts.append(("🔵 DO: "+m["home"][:12]+" o Emp",    dc_1x, 0, dc_1x-0.65))
+    opts.append(("🟣 DO: "+m["away"][:12]+" o Emp",    dc_x2, 0, dc_x2-0.65))
+    opts.append(("🔴 DO: "+m["home"][:10]+" o "+m["away"][:10], dc_12, 0, dc_12-0.65))
     # Over / BTTS
     opts.append(("⚽ Over 2.5",             mc["o25"],  0, mc["o25"]-0.52))
     opts.append(("⚽ Over 3.5",             mc["o35"],  0, mc["o35"]-0.45))
@@ -6528,10 +6582,13 @@ def get_tennis_cartelera():
                 # Detectar ITF/Challenger (excluir) — queremos ATP, WTA y Grand Slams
                 p1n = ev.get("event_first_player","")
                 p2n = ev.get("event_second_player","")
-                # Skip doubles: player names contain "/" 
+                # Skip doubles: player names contain "/" or "&"
                 if "/" in p1n or "/" in p2n: continue
-                if any(x in all_text for x in ["ITF","JUNIOR","WHEELCHAIR","EXHIBITION","DOUBLES"]):
+                if "&" in p1n or "&" in p2n: continue  # some APIs use & for doubles pairs
+                if any(x in all_text for x in ["ITF","JUNIOR","WHEELCHAIR","EXHIBITION","DOUBLES","DOUBLE","DBL"]):
                     continue
+                # Skip if either player name has multiple last names separated by / or looks like pair
+                if len(p1n.split("/")) > 1 or len(p2n.split("/")) > 1: continue
 
                 # Determinar tour por nombre del torneo + tipo
                 if "WTA" in all_text:
@@ -6786,23 +6843,32 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                                         odd_d=m.get("odd_d",0))
                 dp  = diamond_engine(mc, h2s, hf, af)
 
-                mkts = [
-                    (f"🏠 {m['home']} gana",             dp["ph"],          m.get("odd_h",0), "1X2"),
-                    (f"✈️  {m['away']} gana",              dp["pa"],          m.get("odd_a",0), "1X2"),
-                    ("🤝 Empate",                          dp["pd"],          m.get("odd_d",0), "1X2"),
-                    (f"🔵 {m['home'][:10]} o Empate",      dp["ph"]+dp["pd"], 0, "DC"),
-                    (f"🟣 {m['away'][:10]} o Empate",      dp["pd"]+dp["pa"], 0, "DC"),
-                    ("⚽ Over 2.5",                        mc["o25"],         0, "O/U"),
-                    ("⚽ Over 3.5",                        mc.get("o35",0.18),0, "O/U"),
-                    ("⚡ Ambos Anotan",                    mc["btts"],        0, "BTTS"),
-                    # Over 1.5 excluido — siempre alta prob pero sin valor real
-                ]
-                # Sin odds: aceptar cualquier prob >= 50%
-                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.50]
-                if not mkts: continue
+                # ── Jerarquía DO → O25 → AA → Mitad → 1X2 último recurso ──
+                _ph  = dp["ph"]; _pa = dp["pa"]; _pd = dp["pd"]
+                _do_h  = _ph+_pd; _do_a = _pa+_pd
+                _best_do_lbl = f"🔵 DO: {m['home'][:12]} o Emp" if _do_h>=_do_a else f"🟣 DO: {m['away'][:12]} o Emp"
+                _best_do_p   = max(_do_h, _do_a)
+                _o25 = mc["o25"]; _aa = mc["btts"]
+                _1xm = min(0.82, _ph+0.12); _2xm = min(0.78, _pa+0.12)
 
-                best = max(mkts, key=lambda x: _kr_edge(x[1],x[2]) if x[2]>1 else x[1]-0.48)
-                lbl, prob, odd, mkt = best
+                if _best_do_p >= 0.58:
+                    lbl, prob, odd, mkt = _best_do_lbl, _best_do_p, 0, "DO"
+                elif _o25 >= 0.55:
+                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
+                elif _aa >= 0.52:
+                    lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
+                elif _1xm >= 0.60 and _ph >= _pa:
+                    lbl, prob, odd, mkt = f"🏠 {m['home'][:12]} gana cualquier mitad", _1xm, 0, "MITAD"
+                elif _2xm >= 0.60 and _pa > _ph:
+                    lbl, prob, odd, mkt = f"✈️ {m['away'][:12]} gana cualquier mitad", _2xm, 0, "MITAD"
+                elif _ph >= 0.60 and _ph >= _pa:
+                    lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
+                elif _pa >= 0.60:
+                    lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
+                else:
+                    lbl, prob, odd, mkt = _best_do_lbl, _best_do_p, 0, "DO"
+
+                if prob < 0.50: continue
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -8905,9 +8971,9 @@ else:
             (f"🏠 {g['home'][:16]} gana",      dp["ph"],  g.get("odd_h",0)),
             ("🤝 Empate",                        dp["pd"],  g.get("odd_d",0)),
             (f"✈️ {g['away'][:16]} gana",        dp["pa"],  g.get("odd_a",0)),
-            (f"🔵 DC: {g['home'][:12]} o Emp",   dp["ph"]+dp["pd"], 0),
-            (f"🟣 DC: {g['away'][:12]} o Emp",   dp["pd"]+dp["pa"], 0),
-            (f"🔴 DC: {g['home'][:10]} o {g['away'][:10]}", dp["ph"]+dp["pa"], 0),
+            (f"🔵 DO: {g['home'][:12]} o Emp",   dp["ph"]+dp["pd"], 0),
+            (f"🟣 DO: {g['away'][:12]} o Emp",   dp["pd"]+dp["pa"], 0),
+            (f"🔴 DO: {g['home'][:10]} o {g['away'][:10]}", dp["ph"]+dp["pa"], 0),
             ("⚽ Over 2.5",                       mc["o25"],  0),
             ("⚽ Over 3.5",                       mc["o35"],  0),
             ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
@@ -8940,7 +9006,7 @@ else:
             f"{main_prob*100:.1f}% de probabilidad"
             + (f" · @{main_odd:.2f}" if main_odd>1 else "") + "</div>"
             f"<div style='font-size:.75rem;color:#888;margin-bottom:16px'>"
-            f"Evaluados: 1X2 · Doble Chance · Over 2.5 · Over 3.5 · Ambos Anotan</div>"
+            f"Evaluados: 1X2 · Doble Oportunidad · Over 2.5 · Over 3.5 · Ambos Anotan</div>"
             f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{mkt_badges}</div>"
             f"<div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'>"
             f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'>"
