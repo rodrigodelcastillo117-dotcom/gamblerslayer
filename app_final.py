@@ -6444,8 +6444,26 @@ def compute_trilay(matches):
             hxg = xg_weighted(hf, is_home=True,  odds_prior=1/m.get("odd_h",0) if m.get("odd_h",0)>1 else 0) if hf else xg_from_record(m.get("home_rec","5-5-5"),True)
             axg = xg_weighted(af, is_home=False, odds_prior=1/m.get("odd_a",0) if m.get("odd_a",0)>1 else 0) if af else xg_from_record(m.get("away_rec","5-5-5"),False)
             mc  = mc50k(hxg,axg)
-            bp  = max(mc["btts"],mc["o25"])
-            bm  = "AA (BTTS)" if mc["btts"]>=mc["o25"] else "Over 2.5"
+            # Jerarquía TRILAY — sin AA/BTTS como pick principal
+            _ph = mc["ph"]; _pa = mc["pa"]; _pd = mc.get("pd", 1-_ph-_pa)
+            _o25 = mc["o25"]; _do_h = min(0.95,_ph+_pd); _do_a = min(0.95,_pa+_pd)
+            _xg_tot = hxg + axg
+            if _ph >= 0.60:
+                bp, bm = _ph, f"🏠 {m['home']} gana"
+            elif _pa >= 0.60:
+                bp, bm = _pa, f"✈️ {m['away']} gana"
+            elif _do_h >= 0.75 and _ph >= 0.48:
+                bp, bm = _do_h, f"🔵 {m['home'][:12]} o Emp"
+            elif _xg_tot >= 2.8 and _o25 >= 0.56:
+                bp, bm = _o25, "⚽ Over 2.5"
+            elif max(_ph,_pa) >= 0.52:
+                if _ph >= _pa: bp, bm = _ph, f"🏠 {m['home']} gana"
+                else:          bp, bm = _pa, f"✈️ {m['away']} gana"
+            elif _o25 >= 0.54:
+                bp, bm = _o25, "⚽ Over 2.5"
+            else:
+                if _ph >= _pa: bp, bm = _ph, f"🏠 {m['home']} gana"
+                else:          bp, bm = _pa, f"✈️ {m['away']} gana"
             cands.append({**m,"mc":mc,"best_p":bp,"best_m":bm,"hxg":hxg,"axg":axg})
         except: continue
     cands.sort(key=lambda x:-x["best_p"])
@@ -7072,7 +7090,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     # ── ⚽ FÚTBOL ─────────────────────────────────────────────────────────
     try:
         for m in (matches_fut or [])[:40]:
-            if m.get("state") == "post": continue  # solo excluir terminados
+            # King Rongo analiza todos los partidos del día (pre, in, post)
             try:
                 hf  = get_form(m["home_id"], m["slug"]) or []
                 af  = get_form(m["away_id"], m["slug"]) or []
@@ -7132,7 +7150,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     else:
                         lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
 
-                if prob < 0.48: continue
+                if prob < 0.45: continue
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -7167,7 +7185,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     # ── 🏀 NBA ────────────────────────────────────────────────────────────
     try:
         for g in (nba_games or [])[:20]:
-            if g.get("state") == "post": continue  # acepta pre/scheduled/None
+            # King Rongo analiza todos los juegos del día
             try:
                 res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
                 p_h = res.get("p_h_win", 0.55); p_a = 1-p_h
@@ -7213,7 +7231,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
              "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard"}
     try:
         for m in (ten_matches or [])[:45]:
-            if m.get("state") == "post": continue  # solo excluir terminados
+            # King Rongo analiza todos los partidos del día
             try:
                 tor = m.get("torneo", m.get("tour",""))
                 srf = next((v for k,v in _smap.items() if k.lower() in tor.lower()), "hard")
@@ -9024,8 +9042,10 @@ if st.session_state["view"] == "cartelera":
                     _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
-                    _p_u45 = max(0, 1 - _mc.get("o25",0.5) - 0.12)
-                    if _p_u45 >= 0.68:
+                    # Under 4.5: 1 - P(O4.5). Usamos P(O3.5) como proxy — si O3.5 es bajo, U4.5 es alto
+                    _p_o35 = _mc.get("o35", max(0, _mc.get("o25",0.5) - 0.18))
+                    _p_u45 = max(0, 1.0 - _p_o35)
+                    if _p_u45 >= 0.60:  # umbral bajado de 0.68 a 0.60
                         pato_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),"hora":_m.get("hora",""),"prob":_p_u45})
                 except: pass
             pato_picks.sort(key=lambda x:-x["prob"])
@@ -9048,15 +9068,28 @@ if st.session_state["view"] == "cartelera":
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
                     _dp  = diamond_engine(_mc,_h2s,_hf,_af)
-                    _bests = [
-                        ("🏠 "+_m["home"], _dp["ph"], _m.get("odd_h",0)),
-                        ("✈️ "+_m["away"],  _dp["pa"], _m.get("odd_a",0)),
-                        ("⚽ Over 2.5",     _mc["o25"],0),
-                        ("⚡ BTTS",         _mc["btts"],0),
-                        ("🤝 Empate",       _dp["pd"], _m.get("odd_d",0)),
-                    ]
-                    _best = max(_bests, key=lambda x:x[1])
-                    _lbl,_p,_odd = _best
+                    # Jerarquía de picks — sin AA/BTTS como pick principal
+                    _ph  = _dp["ph"]; _pa = _dp["pa"]; _pd = _dp.get("pd", max(0,1-_ph-_pa))
+                    _o25 = _mc["o25"]; _do_h = min(0.95,_ph+_pd); _do_a = min(0.95,_pa+_pd)
+                    _xg_tot_p = _hxg + _axg
+                    if _ph >= 0.60:
+                        _lbl, _p, _odd = "🏠 "+_m["home"], _ph, _m.get("odd_h",0)
+                    elif _pa >= 0.60:
+                        _lbl, _p, _odd = "✈️ "+_m["away"], _pa, _m.get("odd_a",0)
+                    elif _do_h >= 0.76 and _ph >= 0.50:
+                        _lbl, _p, _odd = f"🔵 {_m['home'][:14]} o Emp", _do_h, 0
+                    elif _do_a >= 0.76 and _pa >= 0.45:
+                        _lbl, _p, _odd = f"🟣 {_m['away'][:14]} o Emp", _do_a, 0
+                    elif _xg_tot_p >= 2.8 and _o25 >= 0.56:
+                        _lbl, _p, _odd = "⚽ Over 2.5", _o25, 0
+                    elif max(_ph,_pa) >= 0.52:
+                        if _ph >= _pa: _lbl, _p, _odd = "🏠 "+_m["home"], _ph, _m.get("odd_h",0)
+                        else:          _lbl, _p, _odd = "✈️ "+_m["away"], _pa, _m.get("odd_a",0)
+                    elif _o25 >= 0.54:
+                        _lbl, _p, _odd = "⚽ Over 2.5", _o25, 0
+                    else:
+                        if _ph >= _pa: _lbl, _p, _odd = "🏠 "+_m["home"], _ph, _m.get("odd_h",0)
+                        else:          _lbl, _p, _odd = "✈️ "+_m["away"], _pa, _m.get("odd_a",0)
                     # Edge: vs cuota si existe, sino vs 50% base
                     _edge = (_p - 1/_odd) if _odd>1 else (_p - 0.50)
                     # Umbral: tomar si prob >= 0.52 (siempre habrá algo)
@@ -9082,7 +9115,7 @@ if st.session_state["view"] == "cartelera":
                             _axg = xg_weighted(_af,False) if _af else xg_from_record(_m.get("away_rec","5-5-5"),False)
                             _mc  = ensemble_football(_hxg,_axg,{},_hf,_af,_m["home_id"],_m["away_id"])
                             _dp  = diamond_engine(_mc,{},_hf,_af)
-                            _bm  = max([(_dp["ph"],f"🏠 {_m['home']}"),(_dp["pa"],f"✈️ {_m['away']}"),(_mc["o25"],"⚽ Over 2.5"),(_mc["btts"],"⚡ BTTS")],key=lambda x:x[0])
+                            _bm  = max([(_dp["ph"],f"🏠 {_m['home']}"),(_dp["pa"],f"✈️ {_m['away']}"),(_mc["o25"],"⚽ Over 2.5")],key=lambda x:x[0])
                             if _bm[0] >= 0.52:
                                 _prev.append({"teams":f"{_m['home']} vs {_m['away']}","hora":_m.get("hora",""),"pick":_bm[1],"prob":_bm[0]})
                         except: pass
