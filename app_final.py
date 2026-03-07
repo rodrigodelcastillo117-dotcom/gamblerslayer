@@ -3616,7 +3616,10 @@ def render_resultados_tab():
                 _manual = [pk for pk in pick_history if _villar_find_result(pk,[_fp]) is not None]
                 if not _manual:
                     try:
-                        _apk = _villar_auto_pick(_fp)
+                        # Pasar copia sin score para que el modelo no se contamine
+                        _fp_clean = {k:v for k,v in _fp.items() if k not in ("score_h","score_a")}
+                        _fp_clean["score_h"] = 0  # _villar_auto_pick necesita score_h >= 0
+                        _apk = _villar_auto_pick(_fp_clean)
                         _auto_pk_cache[_mid] = _apk
                         _snap_auto_pick(_mid, _apk, state=_fp.get("state","pre"))
                     except: _auto_pk_cache[_mid] = None
@@ -3682,38 +3685,33 @@ def render_resultados_tab():
                             # 1. Pick manual guardado por usuario
                             manual_pks = [pk for pk in pick_history
                                           if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — snap congelado si existe, si no recalcular
+                            # 2. Pick automático — prioridad: cache → snap → recalcular
                             _mid = p.get("id","")
                             auto_pk = None
                             if not manual_pks:
                                 _p_state = p.get("state","pre")
-                                _snap_all = _load_picks_snap()
-                                # Buscar snap por ID directo
-                                _frozen_snap = _snap_all.get(_mid)
-                                # Fallback: buscar por home_id+away_id+fecha (como lo guarda la cartelera)
-                                if not _frozen_snap:
-                                    _alt_gid = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
-                                    _frozen_snap = _snap_all.get(_alt_gid)
-                                # Fallback 2: buscar por cualquier key que contenga home+fecha
-                                if not _frozen_snap:
-                                    _ph = (p.get("home","") or "")[:6].lower().replace(" ","")
-                                    _pf = p.get("fecha","")
-                                    for _sk, _sv in _snap_all.items():
-                                        if _ph and _pf and _ph in _sk and _pf.replace("-","") in _sk:
-                                            _frozen_snap = _sv
-                                            break
-                                if _frozen_snap and _p_state == "post":
-                                    auto_pk = dict(_frozen_snap)
-                                    auto_pk.setdefault("home", p.get("home",""))
-                                    auto_pk.setdefault("away", p.get("away",""))
-                                    auto_pk.setdefault("sport", p.get("deporte","futbol"))
-                                else:
+                                # PRIORIDAD 1: cache de esta sesión (calculado arriba, mismo modelo)
+                                auto_pk = _auto_pk_cache.get(_mid)
+                                # PRIORIDAD 2: snap persistente (de sesiones anteriores)
+                                if not auto_pk:
+                                    _snap_all = _load_picks_snap()
+                                    _frozen_snap = _snap_all.get(_mid)
+                                    if not _frozen_snap:
+                                        _alt_gid = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
+                                        _frozen_snap = _snap_all.get(_alt_gid)
+                                    if _frozen_snap:
+                                        auto_pk = dict(_frozen_snap)
+                                        auto_pk.setdefault("home",  p.get("home",""))
+                                        auto_pk.setdefault("away",  p.get("away",""))
+                                        auto_pk.setdefault("sport", p.get("deporte","futbol"))
+                                # PRIORIDAD 3: recalcular solo si no hay nada (partidos sin cache)
+                                if not auto_pk:
                                     try:
                                         auto_pk = _villar_auto_pick(_p_fixed)
                                         if auto_pk:
+                                            _auto_pk_cache[_mid] = auto_pk
                                             _snap_auto_pick(_mid, auto_pk, state=_p_state)
-                                    except:
-                                        auto_pk = _auto_pk_cache.get(_mid)
+                                    except: pass
 
                             pick_rows = []
                             for pk in manual_pks:
