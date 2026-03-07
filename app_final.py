@@ -2561,65 +2561,287 @@ def _villar_precache_tomorrow():
         return cached
     except: return 0
 
+def _villar_match_pick_to_result(pk, partido_db):
+    """
+    Compara un pick guardado con el resultado real del partido.
+    Devuelve (veredicto_str, color, explicacion)
+    """
+    sh = partido_db.get("score_h", -1)
+    sa = partido_db.get("score_a", -1)
+    if sh < 0 or sa < 0:
+        return "❓ Sin score", "#555", "Score no disponible"
+
+    pick = pk.get("pick", "").lower()
+    home = pk.get("home", "").lower()
+    away = pk.get("away", "").lower()
+    sport = pk.get("sport", pk.get("deporte", "futbol")).lower()
+    total = sh + sa
+
+    # ── Fútbol ──
+    won_h = sh > sa; won_a = sa > sh; draw = sh == sa
+
+    if any(x in pick for x in ["gana local","home win","🏠","gana casa"]) or (home and home[:5] in pick):
+        ok = won_h
+    elif any(x in pick for x in ["gana visita","away win","✈️","visitante gana"]) or (away and away[:5] in pick):
+        ok = won_a
+    elif any(x in pick for x in ["empate","draw","x2","1x"]):
+        if "1x" in pick:  ok = won_h or draw
+        elif "x2" in pick: ok = won_a or draw
+        else: ok = draw
+    elif "over 3.5" in pick: ok = total > 3
+    elif "over 2.5" in pick: ok = total > 2
+    elif "over 1.5" in pick: ok = total > 1
+    elif "under 2.5" in pick: ok = total <= 2
+    elif "under 1.5" in pick: ok = total <= 1
+    elif any(x in pick for x in ["ambos","btts","aa","both"]):  ok = sh>0 and sa>0
+    elif "over" in pick:
+        # NBA O/U — extraer línea
+        try:
+            import re
+            nums = re.findall(r"\d+\.?\d*", pick)
+            line = float(nums[0]) if nums else 220
+            ok = total > line
+        except: ok = None
+    elif "under" in pick:
+        try:
+            import re
+            nums = re.findall(r"\d+\.?\d*", pick)
+            line = float(nums[0]) if nums else 220
+            ok = total < line
+        except: ok = None
+    elif "tenis" in sport or "tennis" in sport or "🎾" in pick:
+        # Tenis: sh/sa = sets ganados
+        p1_name = pk.get("home", pk.get("p1",""))
+        if p1_name and p1_name.lower()[:5] in pick:
+            ok = sh > sa
+        else:
+            ok = sa > sh
+    else:
+        ok = None
+
+    if ok is True:
+        sc = f"{sh}–{sa}" if sh < 50 else f"{sh}–{sa} pts"
+        return "✅ GANÓ", "#00ff88", f"Score: {sc}"
+    elif ok is False:
+        sc = f"{sh}–{sa}" if sh < 50 else f"{sh}–{sa} pts"
+        return "❌ PERDIÓ", "#ff4444", f"Score: {sc}"
+    else:
+        return "❓ No verificable", "#555", f"Score: {sh}–{sa}"
+
+
+def _villar_find_result(pk, all_partidos):
+    """
+    Busca el partido correspondiente al pick en la DB de resultados.
+    Usa fuzzy match por nombre de equipo + fecha.
+    """
+    pk_home = pk.get("home","").lower().strip()
+    pk_away = pk.get("away","").lower().strip()
+    pk_date = pk.get("date", pk.get("fecha",""))[:10]
+
+    best = None; best_score = 0
+    for p in all_partidos:
+        if p.get("state") != "post": continue
+        p_home = p.get("home","").lower()
+        p_away = p.get("away","").lower()
+        p_date = p.get("fecha","")
+
+        # Date match (allow ±1 day)
+        date_ok = False
+        if pk_date and p_date:
+            try:
+                from datetime import datetime as _dt
+                d1 = _dt.strptime(pk_date, "%Y-%m-%d")
+                d2 = _dt.strptime(p_date,  "%Y-%m-%d")
+                date_ok = abs((d1-d2).days) <= 1
+            except: date_ok = pk_date[:7] == p_date[:7]  # same month fallback
+        else:
+            date_ok = True  # no date = don't filter by date
+
+        if not date_ok: continue
+
+        # Name match: check if any word of pk_home appears in p_home (or vice versa)
+        def _name_score(a, b):
+            if not a or not b: return 0
+            a_parts = [x for x in a.split() if len(x) > 2]
+            b_parts = [x for x in b.split() if len(x) > 2]
+            for ap in a_parts:
+                for bp in b_parts:
+                    if ap in bp or bp in ap: return 1
+            return 0
+
+        score = _name_score(pk_home, p_home) + _name_score(pk_away, p_away)
+        # Also try reversed (home/away swap)
+        score2 = _name_score(pk_home, p_away) + _name_score(pk_away, p_home)
+        match_score = max(score, score2)
+
+        if match_score > best_score:
+            best_score = match_score
+            best = p
+
+    return best if best_score >= 1 else None
+
+
 def render_resultados_tab():
-    """VILLAR BOT — Resultados, limpieza automática y auditoría de picks."""
+    """VILLAR BOT — Resultados, auditoría de picks con resultados reales."""
     from collections import defaultdict
+    import re as _re
 
     # ── VILLAR HEADER ──
     st.markdown("""
-    <div style='background:linear-gradient(135deg,#0a001a,#001a0a);border:1px solid #00ff8855;
+    <div style='background:linear-gradient(135deg,#0a001a,#001a0a);border:2px solid #00ff8844;
     border-radius:16px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px'>
-    <div style='font-size:2.2rem'>🤖</div>
+    <div style='font-size:2.4rem'>🤖</div>
     <div>
-      <div style='font-size:1.1rem;font-weight:900;color:#00ff88;letter-spacing:.04em'>VILLAR</div>
-      <div style='font-size:.78rem;color:#555'>Bot de limpieza · Auditoría de picks · Resultados en tiempo real</div>
+      <div style='font-size:1.2rem;font-weight:900;color:#00ff88;letter-spacing:.06em'>VILLAR</div>
+      <div style='font-size:.8rem;color:#555'>Bot de limpieza · Auditoría de picks · Resultados en tiempo real</div>
     </div>
     </div>""", unsafe_allow_html=True)
 
-    # ── ACCIONES VILLAR ──
+    # ── ACCIONES ──
     v1, v2, v3 = st.columns(3)
     with v1:
-        if st.button("🧹 Limpiar cartelera", use_container_width=True, key="villar_clean",
-                     help="Mueve partidos terminados a Resultados"):
+        if st.button("🧹 Limpiar + Auditar", use_container_width=True, key="villar_clean"):
             with st.spinner("🤖 Villar revisando scores en línea..."):
                 update_results_db(force=True)
                 st.session_state["results_db"] = _load_results_db()
-            st.success("✅ Villar limpió la cartelera")
+            st.success("✅ Villar terminó la auditoría")
             st.rerun()
     with v2:
-        if st.button("⚡ Pre-cachear mañana", use_container_width=True, key="villar_precache",
-                     help="Einstein analiza los partidos de mañana ahora, para que sean instantáneos"):
-            with st.spinner("🧠 Einstein pre-analizando partidos de mañana..."):
+        if st.button("⚡ Pre-cachear mañana", use_container_width=True, key="villar_precache"):
+            with st.spinner("🧠 Einstein pre-analizando mañana..."):
                 n = _villar_precache_tomorrow()
-            st.success(f"✅ {n} partidos de tenis pre-analizados para mañana")
+            st.success(f"✅ {n} partidos de tenis pre-cacheados")
     with v3:
-        if st.button("🔄 Actualizar todo", use_container_width=True, key="villar_refresh"):
-            with st.spinner("🤖 Villar actualizando scores..."):
+        if st.button("🔄 Actualizar scores", use_container_width=True, key="villar_refresh"):
+            with st.spinner("Actualizando..."):
                 update_results_db(force=True)
                 st.session_state["results_db"] = _load_results_db()
                 st.session_state["results_last_check"] = datetime.now(pytz.UTC).timestamp()
-            st.success("✅ Actualizado"); st.rerun()
+            st.rerun()
 
-    db = get_results_db()
-    partidos = db.get("partidos",[])
-    ultima = db.get("ultima_actualizacion","Nunca")
+    db       = get_results_db()
+    partidos = db.get("partidos", [])
+    ultima   = db.get("ultima_actualizacion", "Nunca")
     st.caption(f"🕐 Última actualización: {ultima}")
 
+    # ── PICK HISTORY ──
+    pick_history = st.session_state.get("pick_history", [])
+
+    # ══════════════════════════════════════════════════════
+    # SECCIÓN 1 — MIS PICKS (auditoría automática de Villar)
+    # ══════════════════════════════════════════════════════
+    st.markdown("<div class='shdr'>🎯 Mis Picks — Auditoría Villar</div>", unsafe_allow_html=True)
+
+    if not pick_history:
+        st.info("🤖 Villar: No tienes picks guardados aún. Abre un partido → 💾 Guardar Pick.")
+    else:
+        # Auto-audit: match each pick to a result
+        auditados = []
+        for pk in reversed(pick_history[-50:]):  # últimos 50
+            resultado_partido = _villar_find_result(pk, partidos)
+            if resultado_partido:
+                verd, vcol, expl = _villar_match_pick_to_result(pk, resultado_partido)
+                # Auto-update result if still pending
+                if pk.get("result") == "⏳" and verd in ("✅ GANÓ","❌ PERDIÓ"):
+                    pk["result"] = "✅" if "GANÓ" in verd else "❌"
+            else:
+                verd  = pk.get("result","⏳")
+                vcol  = "#00ff88" if verd=="✅" else ("#ff4444" if verd=="❌" else "#555")
+                expl  = "Resultado pendiente"
+                resultado_partido = None
+            auditados.append((pk, resultado_partido, verd, vcol, expl))
+
+        # KPI row
+        ganados  = sum(1 for _,_,v,_,_ in auditados if "GANÓ" in v or v=="✅")
+        perdidos = sum(1 for _,_,v,_,_ in auditados if "PERDIÓ" in v or v=="❌")
+        pend     = sum(1 for _,_,v,_,_ in auditados if "pend" in v.lower() or v=="⏳")
+        total_jg = ganados + perdidos
+        pct      = round(ganados/total_jg*100) if total_jg > 0 else 0
+        roi      = 0.0
+        for pk,_,v,_,_ in auditados:
+            odd = float(pk.get("odd",0))
+            if "GANÓ" in v or v=="✅":
+                roi += (odd - 1) if odd > 1 else 0
+            elif "PERDIÓ" in v or v=="❌":
+                roi -= 1
+
+        st.markdown(
+            f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px'>"
+            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{ganados}</div><div class='mlbl'>✅ Ganados</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#ff4444'>{perdidos}</div><div class='mlbl'>❌ Perdidos</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#FFD700'>{pend}</div><div class='mlbl'>⏳ Pendientes</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{pct}%</div><div class='mlbl'>Acierto</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:{'#00ff88' if roi>=0 else '#ff4444'}'>{roi:+.1f}u</div><div class='mlbl'>ROI</div></div>"
+            f"</div>", unsafe_allow_html=True)
+
+        # Picks list
+        for pk, partido_db, verd, vcol, expl in auditados:
+            sh = partido_db.get("score_h",-1) if partido_db else -1
+            sa = partido_db.get("score_a",-1) if partido_db else -1
+            home_n = pk.get("home","?"); away_n = pk.get("away","?")
+            pick_lbl = pk.get("pick","?")
+            prob_pct = pk.get("prob",0)
+            if isinstance(prob_pct, float) and prob_pct <= 1: prob_pct *= 100
+            odd_v    = pk.get("odd",0)
+            fecha_pk = pk.get("date", pk.get("fecha",""))[:10]
+            league   = pk.get("league","")
+
+            score_txt = f"{sh}–{sa}" if sh >= 0 else "⏳"
+            if sh >= 50:  score_txt = f"{sh}–{sa} pts"  # NBA
+
+            # Color border by result
+            brd = vcol if verd not in ("❓ No verificable","❓") else "#333"
+
+            st.markdown(
+                f"<div style='background:#0a0a1e;border-radius:12px;padding:12px 14px;"
+                f"margin:5px 0;border-left:4px solid {brd}'>"
+                # Header row: result + teams
+                f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px'>"
+                f"<div>"
+                f"<div style='font-size:.72rem;color:#555;margin-bottom:2px'>{fecha_pk} · {league}</div>"
+                f"<div style='font-size:.95rem;font-weight:700;color:#eee'>{home_n} <span style='color:#333'>vs</span> {away_n}</div>"
+                f"</div>"
+                f"<div style='text-align:right'>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:{brd}'>{score_txt}</div>"
+                f"<div style='font-size:.68rem;color:#555'>Score real</div>"
+                f"</div>"
+                f"</div>"
+                # Pick details
+                f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:8px'>"
+                f"<div style='background:#07071a;border-radius:7px;padding:4px 10px'>"
+                f"<span style='font-size:.7rem;color:#555'>PICK</span> "
+                f"<span style='font-size:.82rem;color:#fff;font-weight:700'>{pick_lbl}</span></div>"
+                f"<div style='background:#07071a;border-radius:7px;padding:4px 10px'>"
+                f"<span style='font-size:.7rem;color:#555'>PROB</span> "
+                f"<span style='font-size:.82rem;color:#00ccff;font-weight:700'>{prob_pct:.0f}%</span></div>"
+                + (f"<div style='background:#07071a;border-radius:7px;padding:4px 10px'>"
+                   f"<span style='font-size:.7rem;color:#555'>CUOTA</span> "
+                   f"<span style='font-size:.82rem;color:#FFD700;font-weight:700'>{odd_v:.2f}</span></div>"
+                   if odd_v > 1 else "")
+                + f"</div>"
+                # Villar verdict
+                f"<div style='margin-top:8px;padding:6px 10px;border-radius:7px;"
+                f"background:{vcol}18;border:1px solid {vcol}44'>"
+                f"<span style='font-size:.78rem;font-weight:700;color:{vcol}'>🤖 VILLAR: {verd}</span>"
+                f"<span style='font-size:.72rem;color:#555;margin-left:8px'>{expl}</span>"
+                f"</div>"
+                f"</div>", unsafe_allow_html=True)
+
+    st.markdown("<div style='margin:20px 0 8px;border-top:1px solid #1a1a40'></div>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════
+    # SECCIÓN 2 — RESULTADOS POR DEPORTE (todos los partidos terminados)
+    # ══════════════════════════════════════════════════════
+    st.markdown("<div class='shdr'>📊 Resultados Finales</div>", unsafe_allow_html=True)
+
     if not partidos:
-        st.info("🤖 Villar no tiene datos aún. Haz clic en 'Limpiar cartelera' para cargar resultados.")
+        st.info("🤖 Villar: No hay resultados. Haz clic en 'Limpiar + Auditar'.")
         return
 
-    # ── PICKS GUARDADOS para auditoría ──
-    brain = st.session_state.get("brain",{})
-    saved_picks = brain.get("picks",[]) if brain else []
-
-    # ── TABS POR DEPORTE ──
     rt1, rt2, rt3 = st.tabs(["⚽ Fútbol", "🏀 NBA", "🎾 Tenis"])
 
-    for tab_obj, sport_key, sport_label, sport_emoji in [
-        (rt1,"futbol","Fútbol","⚽"),
-        (rt2,"nba","NBA","🏀"),
-        (rt3,"tenis","Tenis","🎾"),
+    for tab_obj, sport_key, sport_emoji in [
+        (rt1,"futbol","⚽"), (rt2,"nba","🏀"), (rt3,"tenis","🎾")
     ]:
         with tab_obj:
             sport_p     = [p for p in partidos if p.get("deporte")==sport_key]
@@ -2627,116 +2849,93 @@ def render_resultados_tab():
                                   key=lambda x:x.get("fecha",""), reverse=True)
             en_juego    = [p for p in sport_p if p.get("state")=="in"]
 
-            # ── KPIs ──
-            picks_sport = [pk for pk in saved_picks if pk.get("deporte",sport_emoji)==sport_emoji]
-            ganados = sum(1 for pk in picks_sport if pk.get("result")=="✅")
-            perdidos= sum(1 for pk in picks_sport if pk.get("result")=="❌")
+            # KPIs
             st.markdown(
-                f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px'>"
+                f"<div style='display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:12px'>"
                 f"<div class='mbox'><div class='mval' style='color:#00ff88'>{len(finalizados)}</div><div class='mlbl'>Terminados</div></div>"
                 f"<div class='mbox'><div class='mval' style='color:#ff9500'>{len(en_juego)}</div><div class='mlbl'>En Vivo</div></div>"
-                f"<div class='mbox'><div class='mval' style='color:#00ff88'>{ganados}</div><div class='mlbl'>Picks ✅</div></div>"
-                f"<div class='mbox'><div class='mval' style='color:#ff4444'>{perdidos}</div><div class='mlbl'>Picks ❌</div></div>"
                 f"</div>", unsafe_allow_html=True)
 
-            # ── EN VIVO ──
+            # En vivo
             if en_juego:
-                st.markdown("<div style='font-size:.72rem;font-weight:700;color:#ff9500;text-transform:uppercase;letter-spacing:.1em;margin:8px 0 6px'>🔴 EN VIVO AHORA</div>", unsafe_allow_html=True)
                 for p in en_juego:
                     sh=p.get("score_h",-1); sa=p.get("score_a",-1)
                     sc = f"{sh}–{sa}" if sh>=0 else "🔴"
-                    home_name = p.get("home",p.get("p1","?"))
-                    away_name = p.get("away",p.get("p2","?"))
                     st.markdown(
-                        f"<div style='display:flex;justify-content:space-between;align-items:center;"
-                        f"padding:8px 14px;background:#1a0800;border-radius:10px;margin:3px 0;"
-                        f"border-left:3px solid #ff9500'>"
-                        f"<div style='font-size:.85rem'><b>{home_name}</b> <span style='color:#555'>vs</span> <b>{away_name}</b>"
-                        f"<div style='font-size:.7rem;color:#555'>{p.get('liga',p.get('tour',''))} · {p.get('hora','')}</div></div>"
-                        f"<div style='font-size:1.4rem;font-weight:900;color:#ff9500'>{sc}</div>"
+                        f"<div style='display:flex;justify-content:space-between;padding:8px 12px;"
+                        f"background:#1a0800;border-radius:10px;margin:3px 0;border-left:3px solid #ff9500'>"
+                        f"<div><b>{p.get('home',p.get('p1','?'))}</b> <span style='color:#333'>vs</span> <b>{p.get('away',p.get('p2','?'))}</b>"
+                        f"<div style='font-size:.7rem;color:#555'>{p.get('liga',p.get('tour',''))} · 🔴 EN VIVO</div></div>"
+                        f"<div style='font-size:1.5rem;font-weight:900;color:#ff9500'>{sc}</div>"
                         f"</div>", unsafe_allow_html=True)
 
-            # ── FINALIZADOS — por fecha con auditoría Villar ──
             if not finalizados:
-                st.info(f"🤖 Villar: No hay partidos {sport_label} finalizados registrados. Haz clic en 'Limpiar cartelera'.")
+                st.info(f"🤖 Villar: Sin partidos {sport_emoji} finalizados. Haz clic en 'Limpiar + Auditar'.")
                 continue
 
+            # Finalizados agrupados por fecha → liga
             por_fecha = defaultdict(list)
             for p in finalizados: por_fecha[p.get("fecha","?")].append(p)
-
             dias_  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
             meses_ = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-            def _fl(f):
-                try:
-                    d=datetime.strptime(f,"%Y-%m-%d")
-                    return f"📅 {dias_[d.weekday()]} {d.day} {meses_[d.month]}"
-                except: return f"📅 {f}"
 
             for fecha in sorted(por_fecha.keys(), reverse=True):
                 dia_ps = por_fecha[fecha]
+                try:
+                    d = datetime.strptime(fecha,"%Y-%m-%d")
+                    dlbl = f"📅 {dias_[d.weekday()]} {d.day} {meses_[d.month]}"
+                except: dlbl = f"📅 {fecha}"
                 is_today = fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
-                with st.expander(f"{_fl(fecha)}  ·  {len(dia_ps)} partidos {'· HOY' if is_today else ''}",
-                                  expanded=is_today or fecha==sorted(por_fecha.keys(),reverse=True)[0]):
 
-                    # Group by liga/tour
+                with st.expander(f"{dlbl} · {len(dia_ps)} partidos", expanded=is_today):
                     por_liga = defaultdict(list)
                     for p in dia_ps: por_liga[p.get("liga",p.get("tour","Sin liga"))].append(p)
-
                     for liga, lps in sorted(por_liga.items()):
                         st.markdown(f"<div style='font-size:.7rem;font-weight:700;color:#FFD700;"
                                     f"text-transform:uppercase;letter-spacing:.1em;margin:10px 0 5px'>"
                                     f"{sport_emoji} {liga}</div>", unsafe_allow_html=True)
-
                         for p in lps:
-                            sh = p.get("score_h",-1); sa = p.get("score_a",-1)
-                            if sh < 0: continue  # No score yet
+                            sh=p.get("score_h",-1); sa=p.get("score_a",-1)
+                            if sh < 0: continue
+                            home_n = p.get("home", p.get("p1","?"))
+                            away_n = p.get("away", p.get("p2","?"))
 
-                            home_n = p.get("home",p.get("p1","?"))
-                            away_n = p.get("away",p.get("p2","?"))
-
-                            # Resultado del partido
-                            if sport_key == "futbol":
-                                won_h=sh>sa; won_a=sa>sh; draw=sh==sa
+                            if sport_key in ("futbol","tenis"):
+                                won_h=sh>sa; won_a=sa>sh; draw=sh==sa and sport_key=="futbol"
                                 hc="#00ff88" if won_h else ("#FFD700" if draw else "#aaa")
                                 ac="#00ff88" if won_a else ("#FFD700" if draw else "#aaa")
-                            elif sport_key == "nba":
-                                won_h=sh>sa; won_a=sa>sh
+                            else:  # nba
+                                won_h=sh>sa; won_a=sa>sh; draw=False
                                 hc="#00ff88" if won_h else "#aaa"
                                 ac="#00ff88" if won_a else "#aaa"
-                                draw=False
-                            else:  # tenis
-                                won_h=sh>sa; won_a=sa>sh
-                                hc="#00ff88" if won_h else "#aaa"
-                                ac="#00ff88" if won_a else "#aaa"
-                                draw=False
 
-                            # Villar: ¿hubo pick guardado en este partido?
-                            match_picks = [pk for pk in saved_picks
-                                          if (pk.get("home","").lower()==home_n.lower() or
-                                              pk.get("p1","").lower()==home_n.lower())]
+                            # ¿Hay un pick guardado para este partido?
+                            related_picks = [pk for pk in pick_history
+                                            if _villar_find_result(pk,[p]) is not None]
                             pick_html = ""
-                            for pk in match_picks:
-                                verd, vcol = _villar_check_pick(pk, sh, sa, sport_key)
+                            for pk in related_picks:
+                                vd, vc, ex = _villar_match_pick_to_result(pk, p)
+                                brd2 = vc if vd not in ("❓ No verificable","❓") else "#333"
                                 pick_html += (
                                     f"<div style='margin-top:6px;padding:5px 10px;border-radius:7px;"
-                                    f"background:{vcol}18;border:1px solid {vcol}44'>"
-                                    f"<span style='font-size:.68rem;color:{vcol};font-weight:700'>🤖 VILLAR: {verd}</span>"
-                                    f"<span style='font-size:.68rem;color:#555;margin-left:8px'>Pick: {pk.get('pick','')}</span>"
+                                    f"background:{vc}18;border:1px solid {vc}44;display:flex;justify-content:space-between'>"
+                                    f"<span style='font-size:.72rem;font-weight:700;color:{vc}'>🤖 {vd}</span>"
+                                    f"<span style='font-size:.7rem;color:#555'>{pk.get('pick','')} · {ex}</span>"
                                     f"</div>"
                                 )
 
                             st.markdown(
                                 f"<div style='background:#0a0a1e;border-radius:10px;padding:10px 12px;"
-                                f"margin:4px 0;border:1px solid #1a1a40'>"
+                                f"margin:4px 0;border:1px solid {'#00ff8833' if related_picks else '#1a1a40'}'>"
                                 f"<div style='display:grid;grid-template-columns:1fr 80px 1fr;gap:6px;align-items:center'>"
-                                f"<div style='text-align:right'>"
-                                f"<span style='color:{hc};font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
+                                f"<div style='text-align:right'><span style='color:{hc};"
+                                f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
                                 f"<div style='text-align:center;background:#07071a;border-radius:8px;padding:4px 6px'>"
                                 f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
                                 f"<span style='color:#333;font-size:.9rem'> – </span>"
                                 f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
-                                f"<div style='text-align:left'>"
-                                f"<span style='color:{ac};font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
+                                f"<div style='text-align:left'><span style='color:{ac};"
+                                f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
                                 f"</div>"
                                 f"{pick_html}"
                                 f"</div>", unsafe_allow_html=True)
@@ -5652,11 +5851,27 @@ def get_tennis_cartelera():
                     fecha = utc_t.astimezone(CDMX).strftime("%Y-%m-%d")
                 except: pass
                 if fecha < hoy or fecha > fin: continue
-                tour_type = ev.get("event_type_type","").upper()
-                if "ATP" in tour_type or "WTA" in tour_type or "GRAND SLAM" in tour_type or "MASTERS" in tour_type:
-                    tour = "WTA" if "WTA" in tour_type else "ATP"
+                tour_type   = ev.get("event_type_type","").upper()
+                tour_name   = ev.get("tournament_name","").upper()
+                league_name = ev.get("league_name","").upper()
+                all_text    = tour_type + " " + tour_name + " " + league_name
+
+                # Detectar ITF/Challenger (excluir) — queremos ATP, WTA y Grand Slams
+                if any(x in all_text for x in ["ITF","JUNIOR","WHEELCHAIR","EXHIBITION","DOUBLES ONLY"]):
+                    continue
+
+                # Determinar tour por nombre del torneo + tipo
+                if "WTA" in all_text:
+                    tour = "WTA"
+                elif "ATP" in all_text or "GRAND SLAM" in all_text or "MASTERS" in all_text:
+                    tour = "ATP"
+                elif any(x in all_text for x in ["CHALLENGER","FUTURES"]):
+                    continue  # skip challengers
                 else:
-                    continue  # filtrar ITF y challengers
+                    # Si es femenino por jugadoras conocidas o tournament_type = "WTA"
+                    ev_gender = ev.get("event_type","").upper()
+                    tour = "WTA" if "WTA" in ev_gender or "WOMEN" in ev_gender else "ATP"
+                    # Sin contexto — incluir igual, clasificar como ATP por defecto
                 ev_status = str(ev.get("event_status","")).lower()
                 ev_finished = str(ev.get("event_final","0"))
                 is_live = ev.get("event_live","0") == "1"
@@ -5902,111 +6117,124 @@ if st.session_state["view"] == "cartelera":
             for fi, fecha in enumerate(sorted(nba_por_fecha.keys())):
                 gs = nba_por_fecha[fecha]
                 with st.expander(f"{fecha_label_nba(fecha)}  ·  {len(gs)} juegos", expanded=(fi==0)):
-                    for g in gs:
-                        if g["state"] == "post":
-                            sh=g.get("score_h",-1); sa=g.get("score_a",-1)
-                            sf=f"{sh}-{sa}" if sh>=0 else "FT"
-                            st.markdown(f"<div style='display:flex;justify-content:space-between;padding:6px 14px;background:#0a0a1e;border-radius:8px;margin:2px 0;border-left:3px solid #333;opacity:.6'><div style='font-size:.82rem;color:#555'>✅ 🏀 {g['away']} @ {g['home']}</div><div style='font-size:.9rem;font-weight:700;color:#555'>{sf}</div></div>", unsafe_allow_html=True)
-                            continue
-                        live = g["state"]=="in"
-                        sc   = f"{g['score_h']}-{g['score_a']}" if live else g["hora"]
-                        ou   = f" · Línea {g['ou_line']}" if g["ou_line"]>0 else ""
-                        lbl  = f"{'🔴 ' if live else '🏀 '}{g['away']} @ {g['home']}  ·  {sc}{ou}"
-                        if st.button(lbl, key=f"nba_{g['id']}", use_container_width=True):
-                            with st.spinner("🤖 IA analizando partido..."):
-                                res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
-                                ai_prompt = (
-                                    f"Eres analista NBA experto. Analiza:\n"
-                                    f"{g['away']} (visitante) @ {g['home']} (local)\n"
-                                    f"Proyección total: {res['proj']} pts | Línea O/U: {res['line']}\n"
-                                    f"Modelo: Over={res['p_over']*100:.1f}% Under={res['p_under']*100:.1f}%\n\n"
-                                    f"Responde SOLO en JSON sin texto extra:\n"
-                                    f"{{\"over\": 58, \"under\": 42, \"ml_local\": 55, \"ml_visita\": 45, "
-                                    f"\"rec_ou\": \"OVER\", \"rec_ml\": \"{g['home']}\", "
-                                    f"\"conf\": \"Alta\", \"resumen\": \"2-3 lineas: O/U razon, ML quien gana y por que\"}}\n"
-                                    f"over+under=100, ml_local+ml_visita=100. Considera ritmo de juego, defensa, forma reciente."
-                                )
-                                ai_over = res["p_over"]*100
-                                ai_under = res["p_under"]*100
-                                ai_ml_h = 55.0; ai_ml_a = 45.0
-                                ai_rec_ou = res["rec"]; ai_rec_ml = g["home"]
-                                ai_txt = ""; ai_conf = "⚡ MEDIA"
-                                try:
-                                    ai_r = requests.post("https://api.anthropic.com/v1/messages",
-                                        headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-                                        json={"model":"claude-sonnet-4-20250514","max_tokens":400,
-                                              "messages":[{"role":"user","content":ai_prompt}]},timeout=15)
-                                    raw = ai_r.json()["content"][0]["text"].strip()
-                                    raw = raw.replace("```json","").replace("```","").strip()
-                                    import json as _json
-                                    ad = _json.loads(raw)
-                                    ai_over   = float(ad.get("over", ai_over))
-                                    ai_under  = float(ad.get("under", ai_under))
-                                    ai_ml_h   = float(ad.get("ml_local", ai_ml_h))
-                                    ai_ml_a   = float(ad.get("ml_visita", ai_ml_a))
-                                    ai_rec_ou = ad.get("rec_ou", "OVER")
-                                    ai_rec_ml = ad.get("rec_ml", g["home"])
-                                    ai_txt    = ad.get("resumen","")
-                                    c = ad.get("conf","Media")
-                                    ai_conf   = "💎 DIAMANTE" if "alta" in c.lower() and max(ai_over,ai_under)>62 else ("🔥 ALTA" if "alta" in c.lower() else "⚡ MEDIA")
-                                except: ai_txt = raw if 'raw' in dir() else ""
-                            ou_color  = "#ff4444" if "OVER" in ai_rec_ou.upper() else "#00ccff"
-                            ml_color  = "#00ff88"
-                            conf_color2 = "#FFD700" if "DIAMANTE" in ai_conf else ("#00ff88" if "ALTA" in ai_conf else "#aaa")
-                            st.markdown(
-                                f"<div class='acard' style='border-color:{conf_color2}'>"
-                                f"<div style='font-size:1.1rem;font-weight:900;color:{conf_color2};margin-bottom:14px'>"
-                                f"📊 {ai_rec_ou} · ML: {ai_rec_ml}  <span style='font-size:.75rem;font-weight:400;color:#555'>{ai_conf}</span></div>"
-                                f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Over / Under {res['line']}</div>"
-                                f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'>"
-                                f"<div class='mbox' style='flex:1'>"
-                                f"<div class='mval' style='color:#ff4444'>{ai_over:.0f}%</div>"
-                                f"<div class='mlbl'>🔥 Over {res['line']}</div>"
-                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                f"<div style='height:5px;width:{ai_over:.0f}%;background:#ff4444;border-radius:3px'></div></div></div>"
-                                f"<div class='mbox' style='flex:1'>"
-                                f"<div class='mval' style='color:#00ccff'>{ai_under:.0f}%</div>"
-                                f"<div class='mlbl'>❄️ Under {res['line']}</div>"
-                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                f"<div style='height:5px;width:{ai_under:.0f}%;background:#00ccff;border-radius:3px'></div></div></div>"
-                                f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{res['proj']}</div><div class='mlbl'>Proy pts</div></div>"
-                                f"</div>"
-                                f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Money Line</div>"
-                                f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
-                                f"<div class='mbox' style='flex:1'>"
-                                f"<div class='mval' style='color:#00ff88'>{ai_ml_h:.0f}%</div>"
-                                f"<div class='mlbl'>🏠 {g['home'][:12]}</div>"
-                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                f"<div style='height:5px;width:{ai_ml_h:.0f}%;background:#00ff88;border-radius:3px'></div></div></div>"
-                                f"<div class='mbox' style='flex:1'>"
-                                f"<div class='mval' style='color:#aa00ff'>{ai_ml_a:.0f}%</div>"
-                                f"<div class='mlbl'>✈️ {g['away'][:12]}</div>"
-                                f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                f"<div style='height:5px;width:{ai_ml_a:.0f}%;background:#aa00ff;border-radius:3px'></div></div></div>"
-                                f"</div>"
-                                + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
-                                   f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
-                                   f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
-                                + f"</div>", unsafe_allow_html=True)
-                            # ── VEREDICTO ACADÉMICO NBA ──
-                            nba_mc_fake = {
-                                "dc_ph": ai_ml_h/100, "bvp_ph": ai_ml_h/100,
-                                "elo_ph": ai_ml_h/100, "h2h_ph": ai_ml_h/100,
-                                "xg_h": res.get("proj",220)/2/100, "xg_a": res.get("proj",220)/2/100,
-                                "o25": ai_over/100, "o35": 0.35, "btts": 0.5,
-                            }
-                            nba_dp_fake = {"ph": ai_ml_h/100, "pa": ai_ml_a/100, "pd": 0.0, "conf": ai_conf}
-                            _nba_best_mkt  = f"O/U {g.get('ou_line','')}" if g.get("ou_line") else (g["home"] if ai_ml_h >= ai_ml_a else g["away"])
-                            _nba_best_prob = (ai_over/100) if g.get("ou_line") else max(ai_ml_h, ai_ml_a)/100
-                            nba_verdict_html = veredicto_academico(
-                                nba_mc_fake, nba_dp_fake,
-                                g.get("odd_h",0), g.get("odd_a",0), 0,
-                                g["home"], g["away"],
-                                best_market=_nba_best_mkt,
-                                best_prob=_nba_best_prob,
-                                best_odd=0
-                            )
-                            st.markdown(nba_verdict_html, unsafe_allow_html=True)
+                    # ── Finalizados primero (compacto) ──
+                    for g in [x for x in gs if x["state"]=="post"]:
+                        sh=g.get("score_h",-1); sa=g.get("score_a",-1)
+                        sf=f"{sh}–{sa}" if sh>=0 else "FT"
+                        won_h=sh>sa; hc="#00ff88" if won_h else "#aaa"; ac="#00ff88" if sa>sh else "#aaa"
+                        st.markdown(
+                            f"<div style='display:flex;justify-content:space-between;padding:6px 14px;"
+                            f"background:#07071a;border-radius:8px;margin:2px 0;opacity:.55'>"
+                            f"<div style='font-size:.82rem;color:#555'>✅ {g['away']} @ {g['home']}</div>"
+                            f"<div style='font-size:.9rem;font-weight:700;color:#aaa'>{sf}</div></div>",
+                            unsafe_allow_html=True)
+
+                    # ── Pre/live en 2 COLUMNAS ──
+                    active_gs = [x for x in gs if x["state"]!="post"]
+                    for gi in range(0, len(active_gs), 2):
+                        pair = active_gs[gi:gi+2]
+                        ncols = st.columns(len(pair))
+                        for ncol, g in zip(ncols, pair):
+                            with ncol:
+                                live = g["state"]=="in"
+                                sc   = f"{g['score_h']}-{g['score_a']}" if live else g["hora"]
+                                ou   = f"  O/U {g['ou_line']}" if g["ou_line"]>0 else ""
+                                lbl  = f"{'🔴 ' if live else '🏀 '}{g['away']} @ {g['home']}  ·  {sc}{ou}"
+                                if st.button(lbl, key=f"nba_{g['id']}", use_container_width=True):
+                                    with st.spinner("🤖 IA analizando partido..."):
+                                        res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                                        ai_prompt = (
+                                            f"Eres analista NBA experto. Analiza:\n"
+                                            f"{g['away']} (visitante) @ {g['home']} (local)\n"
+                                            f"Proyección total: {res['proj']} pts | Línea O/U: {res['line']}\n"
+                                            f"Modelo: Over={res['p_over']*100:.1f}% Under={res['p_under']*100:.1f}%\n\n"
+                                            f"Responde SOLO en JSON sin texto extra:\n"
+                                            f"{{\"over\": 58, \"under\": 42, \"ml_local\": 55, \"ml_visita\": 45, "
+                                            f"\"rec_ou\": \"OVER\", \"rec_ml\": \"{g['home']}\", "
+                                            f"\"conf\": \"Alta\", \"resumen\": \"2-3 lineas: O/U razon, ML quien gana y por que\"}}\n"
+                                            f"over+under=100, ml_local+ml_visita=100. Considera ritmo de juego, defensa, forma reciente."
+                                        )
+                                        ai_over = res["p_over"]*100
+                                        ai_under = res["p_under"]*100
+                                        ai_ml_h = 55.0; ai_ml_a = 45.0
+                                        ai_rec_ou = res["rec"]; ai_rec_ml = g["home"]
+                                        ai_txt = ""; ai_conf = "⚡ MEDIA"
+                                        try:
+                                            ai_r = requests.post("https://api.anthropic.com/v1/messages",
+                                                headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+                                                json={"model":"claude-sonnet-4-20250514","max_tokens":400,
+                                                      "messages":[{"role":"user","content":ai_prompt}]},timeout=15)
+                                            raw = ai_r.json()["content"][0]["text"].strip()
+                                            raw = raw.replace("```json","").replace("```","").strip()
+                                            import json as _json
+                                            ad = _json.loads(raw)
+                                            ai_over   = float(ad.get("over", ai_over))
+                                            ai_under  = float(ad.get("under", ai_under))
+                                            ai_ml_h   = float(ad.get("ml_local", ai_ml_h))
+                                            ai_ml_a   = float(ad.get("ml_visita", ai_ml_a))
+                                            ai_rec_ou = ad.get("rec_ou", "OVER")
+                                            ai_rec_ml = ad.get("rec_ml", g["home"])
+                                            ai_txt    = ad.get("resumen","")
+                                            c = ad.get("conf","Media")
+                                            ai_conf   = "💎 DIAMANTE" if "alta" in c.lower() and max(ai_over,ai_under)>62 else ("🔥 ALTA" if "alta" in c.lower() else "⚡ MEDIA")
+                                        except: ai_txt = raw if 'raw' in dir() else ""
+                                    ou_color  = "#ff4444" if "OVER" in ai_rec_ou.upper() else "#00ccff"
+                                    ml_color  = "#00ff88"
+                                    conf_color2 = "#FFD700" if "DIAMANTE" in ai_conf else ("#00ff88" if "ALTA" in ai_conf else "#aaa")
+                                    st.markdown(
+                                        f"<div class='acard' style='border-color:{conf_color2}'>"
+                                        f"<div style='font-size:1.1rem;font-weight:900;color:{conf_color2};margin-bottom:14px'>"
+                                        f"📊 {ai_rec_ou} · ML: {ai_rec_ml}  <span style='font-size:.75rem;font-weight:400;color:#555'>{ai_conf}</span></div>"
+                                        f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Over / Under {res['line']}</div>"
+                                        f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'>"
+                                        f"<div class='mbox' style='flex:1'>"
+                                        f"<div class='mval' style='color:#ff4444'>{ai_over:.0f}%</div>"
+                                        f"<div class='mlbl'>🔥 Over {res['line']}</div>"
+                                        f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                        f"<div style='height:5px;width:{ai_over:.0f}%;background:#ff4444;border-radius:3px'></div></div></div>"
+                                        f"<div class='mbox' style='flex:1'>"
+                                        f"<div class='mval' style='color:#00ccff'>{ai_under:.0f}%</div>"
+                                        f"<div class='mlbl'>❄️ Under {res['line']}</div>"
+                                        f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                        f"<div style='height:5px;width:{ai_under:.0f}%;background:#00ccff;border-radius:3px'></div></div></div>"
+                                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{res['proj']}</div><div class='mlbl'>Proy pts</div></div>"
+                                        f"</div>"
+                                        f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Money Line</div>"
+                                        f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
+                                        f"<div class='mbox' style='flex:1'>"
+                                        f"<div class='mval' style='color:#00ff88'>{ai_ml_h:.0f}%</div>"
+                                        f"<div class='mlbl'>🏠 {g['home'][:12]}</div>"
+                                        f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                        f"<div style='height:5px;width:{ai_ml_h:.0f}%;background:#00ff88;border-radius:3px'></div></div></div>"
+                                        f"<div class='mbox' style='flex:1'>"
+                                        f"<div class='mval' style='color:#aa00ff'>{ai_ml_a:.0f}%</div>"
+                                        f"<div class='mlbl'>✈️ {g['away'][:12]}</div>"
+                                        f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                        f"<div style='height:5px;width:{ai_ml_a:.0f}%;background:#aa00ff;border-radius:3px'></div></div></div>"
+                                        f"</div>"
+                                        + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
+                                           f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
+                                           f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
+                                        + f"</div>", unsafe_allow_html=True)
+                                    # ── VEREDICTO ACADÉMICO NBA ──
+                                    nba_mc_fake = {
+                                        "dc_ph": ai_ml_h/100, "bvp_ph": ai_ml_h/100,
+                                        "elo_ph": ai_ml_h/100, "h2h_ph": ai_ml_h/100,
+                                        "xg_h": res.get("proj",220)/2/100, "xg_a": res.get("proj",220)/2/100,
+                                        "o25": ai_over/100, "o35": 0.35, "btts": 0.5,
+                                    }
+                                    nba_dp_fake = {"ph": ai_ml_h/100, "pa": ai_ml_a/100, "pd": 0.0, "conf": ai_conf}
+                                    _nba_best_mkt  = f"O/U {g.get('ou_line','')}" if g.get("ou_line") else (g["home"] if ai_ml_h >= ai_ml_a else g["away"])
+                                    _nba_best_prob = (ai_over/100) if g.get("ou_line") else max(ai_ml_h, ai_ml_a)/100
+                                    nba_verdict_html = veredicto_academico(
+                                        nba_mc_fake, nba_dp_fake,
+                                        g.get("odd_h",0), g.get("odd_a",0), 0,
+                                        g["home"], g["away"],
+                                        best_market=_nba_best_mkt,
+                                        best_prob=_nba_best_prob,
+                                        best_odd=0
+                                    )
+                                    st.markdown(nba_verdict_html, unsafe_allow_html=True)
 
         # ── PRE-MATCH INTELLIGENCE BOT — NBA ──
         _nba_ou = g.get("ou_line",220)
@@ -6126,12 +6354,28 @@ if st.session_state["view"] == "cartelera":
     elif deporte == "tenis":
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8 = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados"])
         with tab1:
-            st.markdown("<div class='shdr'>🎾 Tenis ATP / WTA</div>", unsafe_allow_html=True)
+            # ── TENNIS CARTELERA — 2 columnas, separado por ATP / WTA ──
+            pre_m  = [m for m in ten_matches if m["state"] == "pre"]
+            live_m = [m for m in ten_matches if m["state"] == "in"]
+            post_m = [m for m in ten_matches if m["state"] == "post"]
+            total_pre = len(pre_m) + len(live_m)
+
             if not ten_matches:
                 st.info("No hay partidos ATP/WTA disponibles para estas fechas.")
+            else:
+                st.markdown(
+                    f"<div style='display:flex;gap:10px;margin-bottom:12px'>"
+                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{total_pre}</div><div class='mlbl'>Hoy / Próximos</div></div>"
+                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff9500'>{len(live_m)}</div><div class='mlbl'>🔴 En Vivo</div></div>"
+                    f"<div class='mbox' style='flex:1'><div class='mval' style='color:#555'>{len(post_m)}</div><div class='mlbl'>Terminados</div></div>"
+                    f"</div>", unsafe_allow_html=True)
+
             from collections import defaultdict
             ten_por_fecha = defaultdict(lambda: defaultdict(list))
-            for m in ten_matches: ten_por_fecha[m["fecha"]][m["tour"]].append(m)
+            for m in ten_matches:
+                if m["state"] != "post":  # solo pre + live en cartelera
+                    ten_por_fecha[m["fecha"]][m["tour"]].append(m)
+
             def fecha_label_ten(f):
                 try:
                     d=datetime.strptime(f,"%Y-%m-%d")
@@ -6139,131 +6383,151 @@ if st.session_state["view"] == "cartelera":
                     meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
                     return f"🎾 {dias[d.weekday()]} {d.day} {meses[d.month]}"
                 except: return f
+
             for fi, fecha in enumerate(sorted(ten_por_fecha.keys())):
                 total_ms = sum(len(v) for v in ten_por_fecha[fecha].values())
+                is_hoy = fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
                 with st.expander(f"{fecha_label_ten(fecha)}  ·  {total_ms} partidos", expanded=(fi==0)):
                     for tour in ["ATP","WTA"]:
                         ms = ten_por_fecha[fecha].get(tour,[])
                         if not ms: continue
-                        st.markdown(f"<div class='shdr'>{tour} 🎾</div>", unsafe_allow_html=True)
-                        for m in ms:
-                            tm = tennis_model(m["rank1"], m["rank2"], m["odd_1"], m["odd_2"])
-                            fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
-                            fav_p = max(tm["p1"],tm["p2"])
-                            conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
-                            # Finished tennis = show score, don't show as button
-                        if m["state"] == "post":
+                        tour_color = "#00ccff" if tour == "ATP" else "#aa00ff"
+                        st.markdown(
+                            f"<div style='font-size:.72rem;font-weight:900;color:{tour_color};"
+                            f"text-transform:uppercase;letter-spacing:.12em;margin:10px 0 8px'>"
+                            f"{'🎾' if tour=='ATP' else '🎾'} {tour} · {len(ms)} partidos</div>",
+                            unsafe_allow_html=True)
+
+                        # ── 2 COLUMNAS ──
+                        # Finished matches first in muted row, then pre/live in 2-col grid
+                        fin_ms  = [m for m in ms if m["state"]=="post"]
+                        pre_ms  = [m for m in ms if m["state"]!="post"]
+
+                        # Show finished as compact row
+                        for m in fin_ms:
+                            sc = f"{m.get('score_p1','')}–{m.get('score_p2','')}" if m.get('score_p1') else "FT"
                             st.markdown(
                                 f"<div style='display:flex;justify-content:space-between;align-items:center;"
-                                f"padding:6px 12px;background:#0a0a1e;border-radius:8px;margin:2px 0;"
-                                f"border-left:3px solid #333;opacity:.6'>"
-                                f"<div style='font-size:.82rem;color:#555'>✅ {m['p1']} vs {m['p2']}</div>"
-                                f"<div style='font-size:.8rem;color:#555'>FT</div>"
+                                f"padding:5px 12px;background:#07071a;border-radius:7px;margin:2px 0;opacity:.55'>"
+                                f"<div style='font-size:.78rem;color:#555'>✅ {m['p1']} vs {m['p2']}</div>"
+                                f"<div style='font-size:.78rem;color:#555'>{sc}</div>"
                                 f"</div>", unsafe_allow_html=True)
-                            continue
-                        if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']} CDMX", key=f"ten_{m['id']}", use_container_width=True):
-                                # ═══════════════════════════════════════════════════
-                                # PIPELINE UNIFICADO — veredicto_academico_tenis
-                                # es la ÚNICA fuente de verdad para probs y pick.
-                                # Einstein entra como señal interna (no sobreescribe).
-                                # ═══════════════════════════════════════════════════
-                                _ten_surface_map = {
-                                    "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
-                                    "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
-                                    "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
-                                    "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
-                                    "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard",
-                                }
-                                _ten_tour    = m.get("torneo","")
-                                _ten_surface = next((v for k,v in _ten_surface_map.items()
-                                                     if k.lower() in _ten_tour.lower()), "hard")
-                                _weib = tennis_model(m["rank1"], m["rank2"],
-                                                     m["odd_1"], m["odd_2"], _ten_surface)
 
-                                # ── PASO 1: Einstein → señal interna ──
-                                _einstein_p1  = None
-                                _einstein_txt = ""
-                                with st.spinner("🧠 Einstein: H2H y forma reciente..."):
-                                    _ei = tennis_expert_analysis(
-                                        m["p1"], m["p2"],
-                                        m.get("rank1",200), m.get("rank2",200),
-                                        m.get("odd_1",0), m.get("odd_2",0),
-                                        _ten_surface, _ten_tour,
-                                        model_p1=_weib["p1"], model_p2=_weib["p2"]
-                                    )
-                                if _ei:
-                                    _einstein_p1  = _ei["p1"]
-                                    _einstein_txt = _ei.get("resumen","")
+                        # Pre/live in 2-column grid
+                        # We render them as pairs into 2 st.columns
+                        for i in range(0, len(pre_ms), 2):
+                            pair = pre_ms[i:i+2]
+                            cols = st.columns(len(pair))
+                            for col, m in zip(cols, pair):
+                                with col:
+                                    tm = tennis_model(m["rank1"], m["rank2"], m["odd_1"], m["odd_2"])
+                                    fav   = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
+                                    fav_p = max(tm["p1"],tm["p2"])
+                                    live_badge = " 🔴" if m["state"]=="in" else ""
+                                    conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
+                                    if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']}{live_badge}", key=f"ten_{m['id']}", use_container_width=True):
+                                        # ═══════════════════════════════════════════════════
+                                        # PIPELINE UNIFICADO — veredicto_academico_tenis
+                                        # es la ÚNICA fuente de verdad para probs y pick.
+                                        # Einstein entra como señal interna (no sobreescribe).
+                                        # ═══════════════════════════════════════════════════
+                                        _ten_surface_map = {
+                                            "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+                                            "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+                                            "Monte Carlo":"clay","Madrid":"clay","Barcelona":"clay",
+                                            "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
+                                            "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard",
+                                        }
+                                        _ten_tour    = m.get("torneo","")
+                                        _ten_surface = next((v for k,v in _ten_surface_map.items()
+                                                             if k.lower() in _ten_tour.lower()), "hard")
+                                        _weib = tennis_model(m["rank1"], m["rank2"],
+                                                             m["odd_1"], m["odd_2"], _ten_surface)
 
-                                # ── PASO 2: Veredicto unificado (ÚNICA fuente de verdad) ──
-                                with st.spinner("🎾 Calculando 50,000 simulaciones..."):
-                                    _vd = veredicto_academico_tenis(
-                                        p1_name=m["p1"], p2_name=m["p2"],
-                                        rank1=m.get("rank1",200), rank2=m.get("rank2",200),
-                                        odd_1=m.get("odd_1",0), odd_2=m.get("odd_2",0),
-                                        surface=_ten_surface, torneo=_ten_tour,
-                                        expert_p1=_einstein_p1
-                                    )
+                                        # ── PASO 1: Einstein → señal interna ──
+                                        _einstein_p1  = None
+                                        _einstein_txt = ""
+                                        with st.spinner("🧠 Einstein: H2H y forma reciente..."):
+                                            _ei = tennis_expert_analysis(
+                                                m["p1"], m["p2"],
+                                                m.get("rank1",200), m.get("rank2",200),
+                                                m.get("odd_1",0), m.get("odd_2",0),
+                                                _ten_surface, _ten_tour,
+                                                model_p1=_weib["p1"], model_p2=_weib["p2"]
+                                            )
+                                        if _ei:
+                                            _einstein_p1  = _ei["p1"]
+                                            _einstein_txt = _ei.get("resumen","")
 
-                                # ── Extraer valores del veredicto para TODA la UI ──
-                                _vd_p1    = _vd["_p1_final"]
-                                _vd_p2    = _vd["_p2_final"]
-                                _vd_fav   = _vd["_fav_name"]
-                                _vd_fav_p = _vd["_fav_prob"]
-                                _vd_score = _vd["_score"]
-                                _vd_html  = _vd["_html"]
+                                        # ── PASO 2: Veredicto unificado (ÚNICA fuente de verdad) ──
+                                        with st.spinner("🎾 Calculando 50,000 simulaciones..."):
+                                            _vd = veredicto_academico_tenis(
+                                                p1_name=m["p1"], p2_name=m["p2"],
+                                                rank1=m.get("rank1",200), rank2=m.get("rank2",200),
+                                                odd_1=m.get("odd_1",0), odd_2=m.get("odd_2",0),
+                                                surface=_ten_surface, torneo=_ten_tour,
+                                                expert_p1=_einstein_p1
+                                            )
 
-                                # Confianza coherente con veredicto
-                                if _vd_score >= 7 and _vd_fav_p >= 0.65:
-                                    _ten_conf   = "💎 DIAMANTE"; _conf_color = "#FFD700"
-                                elif _vd_score >= 4 and _vd_fav_p >= 0.58:
-                                    _ten_conf   = "🔥 ALTA";     _conf_color = "#00ff88"
-                                elif _vd_score >= 4:
-                                    _ten_conf   = "⚡ MEDIA";    _conf_color = "#aaa"
-                                else:
-                                    _ten_conf   = "🔻 NO APOSTAR"; _conf_color = "#ff4444"
+                                        # ── Extraer valores del veredicto para TODA la UI ──
+                                        _vd_p1    = _vd["_p1_final"]
+                                        _vd_p2    = _vd["_p2_final"]
+                                        _vd_fav   = _vd["_fav_name"]
+                                        _vd_fav_p = _vd["_fav_prob"]
+                                        _vd_score = _vd["_score"]
+                                        _vd_html  = _vd["_html"]
 
-                                # ── PASO 3: Card principal con probs del veredicto ──
-                                p1_is_fav = _vd_p1 >= _vd_p2
-                                p1_color  = "#00ccff" if p1_is_fav else "#aa00ff"
-                                p2_color  = "#aa00ff" if p1_is_fav else "#00ccff"
-                                st.markdown(
-                                    f"<div class='acard' style='border-color:{_conf_color}'>"
-                                    f"<div style='font-weight:900;font-size:1.1rem;color:{_conf_color};margin-bottom:10px'>"
-                                    f"{_vd_fav_p*100:.1f}% → {_vd_fav}  "
-                                    f"<span style='font-size:.78rem;font-weight:400;color:#555'>{_ten_conf}</span></div>"
-                                    f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
-                                    f"<div class='mbox' style='flex:1'>"
-                                    f"<div class='mval' style='color:{p1_color}'>{_vd_p1*100:.1f}%</div>"
-                                    f"<div class='mlbl'>{m['p1'][:14]}</div>"
-                                    f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                    f"<div style='height:5px;width:{_vd_p1*100:.0f}%;background:{p1_color};border-radius:3px'></div></div>"
-                                    f"</div>"
-                                    f"<div class='mbox' style='flex:1'>"
-                                    f"<div class='mval' style='color:{p2_color}'>{_vd_p2*100:.1f}%</div>"
-                                    f"<div class='mlbl'>{m['p2'][:14]}</div>"
-                                    f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
-                                    f"<div style='height:5px;width:{_vd_p2*100:.0f}%;background:{p2_color};border-radius:3px'></div></div>"
-                                    f"</div></div>"
-                                    + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
-                                       f"border-left:3px solid {_conf_color};font-size:.88rem;line-height:1.7'>"
-                                       f"🧠 <b>Einstein:</b><br>{_einstein_txt.replace(chr(10),'<br>')}</div>"
-                                       if _einstein_txt else "")
-                                    + f"</div>", unsafe_allow_html=True)
+                                        # Confianza coherente con veredicto
+                                        if _vd_score >= 7 and _vd_fav_p >= 0.65:
+                                            _ten_conf   = "💎 DIAMANTE"; _conf_color = "#FFD700"
+                                        elif _vd_score >= 4 and _vd_fav_p >= 0.58:
+                                            _ten_conf   = "🔥 ALTA";     _conf_color = "#00ff88"
+                                        elif _vd_score >= 4:
+                                            _ten_conf   = "⚡ MEDIA";    _conf_color = "#aaa"
+                                        else:
+                                            _ten_conf   = "🔻 NO APOSTAR"; _conf_color = "#ff4444"
 
-                                # ── PASO 4: Veredicto completo ──
-                                st.markdown(_vd_html, unsafe_allow_html=True)
+                                        # ── PASO 3: Card principal con probs del veredicto ──
+                                        p1_is_fav = _vd_p1 >= _vd_p2
+                                        p1_color  = "#00ccff" if p1_is_fav else "#aa00ff"
+                                        p2_color  = "#aa00ff" if p1_is_fav else "#00ccff"
+                                        st.markdown(
+                                            f"<div class='acard' style='border-color:{_conf_color}'>"
+                                            f"<div style='font-weight:900;font-size:1.1rem;color:{_conf_color};margin-bottom:10px'>"
+                                            f"{_vd_fav_p*100:.1f}% → {_vd_fav}  "
+                                            f"<span style='font-size:.78rem;font-weight:400;color:#555'>{_ten_conf}</span></div>"
+                                            f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
+                                            f"<div class='mbox' style='flex:1'>"
+                                            f"<div class='mval' style='color:{p1_color}'>{_vd_p1*100:.1f}%</div>"
+                                            f"<div class='mlbl'>{m['p1'][:14]}</div>"
+                                            f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                            f"<div style='height:5px;width:{_vd_p1*100:.0f}%;background:{p1_color};border-radius:3px'></div></div>"
+                                            f"</div>"
+                                            f"<div class='mbox' style='flex:1'>"
+                                            f"<div class='mval' style='color:{p2_color}'>{_vd_p2*100:.1f}%</div>"
+                                            f"<div class='mlbl'>{m['p2'][:14]}</div>"
+                                            f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
+                                            f"<div style='height:5px;width:{_vd_p2*100:.0f}%;background:{p2_color};border-radius:3px'></div></div>"
+                                            f"</div></div>"
+                                            + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
+                                               f"border-left:3px solid {_conf_color};font-size:.88rem;line-height:1.7'>"
+                                               f"🧠 <b>Einstein:</b><br>{_einstein_txt.replace(chr(10),'<br>')}</div>"
+                                               if _einstein_txt else "")
+                                            + f"</div>", unsafe_allow_html=True)
 
-                                # ── PASO 5: Badrino con probs del veredicto ──
-                                _ten_model = {"p1":_vd_p1,"p2":_vd_p2,"ph":_vd_p1,"pd":0.0,"pa":_vd_p2}
-                                render_prematch_bot(
-                                    sport="tennis", home=m["p1"], away=m["p2"],
-                                    league_slug=m.get("tour","tennis"),
-                                    league_name=m.get("torneo", m.get("tour","Tenis")),
-                                    model_result=_ten_model,
-                                    rank1=m.get("rank1",0), rank2=m.get("rank2",0),
-                                    hora_partido=m.get("hora","")
-                                )
+                                        # ── PASO 4: Veredicto completo ──
+                                        st.markdown(_vd_html, unsafe_allow_html=True)
+
+                                        # ── PASO 5: Badrino con probs del veredicto ──
+                                        _ten_model = {"p1":_vd_p1,"p2":_vd_p2,"ph":_vd_p1,"pd":0.0,"pa":_vd_p2}
+                                        render_prematch_bot(
+                                            sport="tennis", home=m["p1"], away=m["p2"],
+                                            league_slug=m.get("tour","tennis"),
+                                            league_name=m.get("torneo", m.get("tour","Tenis")),
+                                            model_result=_ten_model,
+                                            rank1=m.get("rank1",0), rank2=m.get("rank2",0),
+                                            hora_partido=m.get("hora","")
+                                        )
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick Tenis del día:")
