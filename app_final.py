@@ -9087,6 +9087,8 @@ def _kr_score(prob, edge, spread_pp, kelly, contradiccion):
     s += min(kelly / 8.0, 1.0)       # kelly                                0-1.0
     s -= min(spread_pp / 20.0, 1.0)  # penalizar dispersión                 0-1.0
     if contradiccion: s -= 2.2       # penalización conflicto
+    s += min(max((edge - 0.02) * 15, 0), 1.5)  # bonus extra si edge real >2%
+    s -= 0.8 if edge <= 0 else 0               # penalizar sin edge verificable
     return round(max(0.0, min(s, 10.0)), 2)
 
 
@@ -9308,17 +9310,21 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
                 elif _o25 >= 0.54:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif _best_ml_kr >= 0.46:
+                elif _best_ml_kr >= 0.55:
                     if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
                     else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
                 elif _ninguno_kr and _eq_kr and _aa >= 0.52:
                     lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
                 else:
+                    # fallback solo si hay alguien decente
+                    if max(_ph, _pa) < 0.50: continue  # nadie suficientemente bueno
+                    if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
+                    else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
                     # fallback: siempre ML
                     if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
                     else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
 
-                if prob < 0.30: continue  # solo descartar si modelo dice <30% (imposible casi)
+                if prob < 0.50: continue  # solo picks con prob real ≥50%
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -9510,7 +9516,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     # Cascada — siempre retorna algo si hay candidatos
     el_pick = (
         next((c for c in _pool if c.get("edge",0) > 0), None) or
-        next((c for c in _pool if c.get("prob",0) >= 0.45), None) or
+        next((c for c in _pool if c.get("prob",0) >= 0.55), None) or
         next((c for c in _pool), None) or
         (candidates[0] if candidates else None)
     )
