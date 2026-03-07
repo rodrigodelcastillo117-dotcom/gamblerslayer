@@ -4664,85 +4664,216 @@ def _xg_fallback(m, is_home, hf=None, af=None):
 # Slugs ESPN por liga para buscar forma reciente del equipo en SU liga
 _DIVISION_SLUGS = {
     # Inglaterra
-    "eng.1": ("Premier League", 1.00, 1.55),   # (nombre, factor_xg, xg_base)
+    "eng.1": ("Premier League", 1.00, 1.55),
     "eng.2": ("Championship",   0.78, 1.30),
     "eng.3": ("League One",     0.62, 1.15),
     "eng.4": ("League Two",     0.50, 1.05),
     # España
     "esp.1": ("La Liga",        1.00, 1.50),
     "esp.2": ("Segunda",        0.76, 1.25),
+    "esp.3": ("Primera RFEF",   0.58, 1.10),
     # Alemania
     "ger.1": ("Bundesliga",     1.00, 1.65),
     "ger.2": ("2. Bundesliga",  0.77, 1.30),
+    "ger.3": ("3. Liga",        0.60, 1.10),
     # Italia
     "ita.1": ("Serie A",        1.00, 1.45),
     "ita.2": ("Serie B",        0.74, 1.20),
     # Francia
     "fra.1": ("Ligue 1",        1.00, 1.50),
     "fra.2": ("Ligue 2",        0.75, 1.20),
-    # Copa de copas — liga base
-    "eng.fa":   ("FA Cup",       None, None),   # → buscar liga real
-    "eng.lc":   ("Carabao Cup",  None, None),
-    "esp.copa": ("Copa del Rey", None, None),
-    "ger.dfb":  ("DFB Pokal",    None, None),
-    "ita.coppa":("Coppa Italia", None, None),
-    "fra.coupe":("Coupe de France", None, None),
+    # Portugal
+    "por.1": ("Primeira Liga",  0.88, 1.40),
+    "por.2": ("Segunda Liga",   0.68, 1.15),
+    # Países Bajos
+    "ned.1": ("Eredivisie",     0.88, 1.50),
+    # Bélgica
+    "bel.1": ("Pro League",     0.82, 1.40),
+    # Turquía
+    "tur.1": ("Süper Lig",      0.82, 1.40),
+    # Escocia
+    "sco.1": ("Premiership",    0.75, 1.35),
+    "sco.2": ("Championship",   0.58, 1.10),
+    # Copas nacionales → buscar liga real del equipo
+    "eng.fa":    ("FA Cup",          None, None),
+    "eng.lc":    ("Carabao Cup",     None, None),
+    "esp.copa":  ("Copa del Rey",    None, None),
+    "ger.dfb":   ("DFB Pokal",       None, None),
+    "ita.coppa": ("Coppa Italia",    None, None),
+    "fra.coupe": ("Coupe de France", None, None),
+    "por.cup":   ("Taça de Portugal",None, None),
+    "ned.cup":   ("KNVB Cup",        None, None),
+    "sco.cup":   ("Scottish Cup",    None, None),
+    # Competiciones europeas → mismo mecanismo
+    "uefa.cl":   ("Champions League",None, None),
+    "uefa.el":   ("Europa League",   None, None),
+    "uefa.ecl":  ("Conference Lg",   None, None),
 }
 
-# Equipos conocidos con su liga real (para FA Cup sin historial API)
-# Top 20 PL + Championship completo + League One top (marzo 2026)
+# Equipos conocidos → su liga real (para copa y competiciones europeas)
 _TEAM_DIVISION: dict = {
-    # Premier League 2025-26
-    "liverpool":      "eng.1", "arsenal":          "eng.1",
-    "chelsea":        "eng.1", "manchester city":  "eng.1",
-    "manchester utd": "eng.1", "man utd":          "eng.1",
-    "newcastle":      "eng.1", "newcastle utd":    "eng.1",
-    "aston villa":    "eng.1", "tottenham":        "eng.1",
-    "spurs":          "eng.1", "bournemouth":      "eng.1",
-    "fulham":         "eng.1", "brentford":        "eng.1",
-    "brighton":       "eng.1", "west ham":         "eng.1",
-    "everton":        "eng.1", "leicester":        "eng.1",
-    "ipswich":        "eng.1", "southampton":      "eng.1",
-    "crystal palace": "eng.1", "nottm forest":     "eng.1",
-    "nottingham forest": "eng.1", "wolves":        "eng.1",
-    "wolverhampton":  "eng.1",
-    # Championship 2025-26
-    "leeds":          "eng.2", "leeds utd":        "eng.2",
-    "burnley":        "eng.2", "sheffield utd":    "eng.2",
-    "norwich":        "eng.2", "millwall":         "eng.2",
-    "coventry":       "eng.2", "bristol city":     "eng.2",
-    "cardiff":        "eng.2", "hull":             "eng.2",
-    "hull city":      "eng.2", "stoke":            "eng.2",
-    "stoke city":     "eng.2", "swansea":          "eng.2",
-    "blackburn":      "eng.2", "sunderland":       "eng.2",
-    "derby":          "eng.2", "derby county":     "eng.2",
-    "portsmouth":     "eng.2", "watford":          "eng.2",
-    "middlesbrough":  "eng.2", "qpr":              "eng.2",
-    "west brom":      "eng.2", "sheffield wed":    "eng.2",
-    "plymouth":       "eng.2", "oxford":           "eng.2",
-    "luton":          "eng.2", "Preston":          "eng.2",
-    # League One 2025-26
-    "birmingham":     "eng.3", "huddersfield":     "eng.3",
-    "wigan":          "eng.3", "charlton":         "eng.3",
-    "rotherham":      "eng.3", "stevenage":        "eng.3",
-    "peterborough":   "eng.3", "bristol rovers":   "eng.3",
-    # League Two
-    "newport":        "eng.4", "grimsby":          "eng.4",
-    "doncaster":      "eng.4", "tranmere":         "eng.4",
-    "notts county":   "eng.4", "colchester":       "eng.4",
-    "mansfield":      "eng.4", "mansfield town":   "eng.4",
-    "wrexham":        "eng.2",
-    "nurnberg":       "ger.2", "nürnberg":         "ger.2",
-    "1. fc nurnberg": "ger.2", "1. fc nürnberg":   "ger.2",
-    "fortuna düss":   "ger.2", "fortuna dusseldorf":"ger.2",
-    # La Liga
-    "barcelona":  "esp.1", "real madrid":     "esp.1",
-    "atletico":   "esp.1", "villarreal":      "esp.1",
-    "real sociedad":"esp.1","athletic bilbao":"esp.1",
-    # Bundesliga
-    "bayern":     "ger.1", "dortmund":        "ger.1",
-    "leverkusen": "ger.1", "rb leipzig":      "ger.1",
-    "frankfurt":  "ger.1", "freiburg":        "ger.1",
+    # ── PREMIER LEAGUE 2025-26 ──
+    "liverpool":         "eng.1", "arsenal":           "eng.1",
+    "chelsea":           "eng.1", "manchester city":   "eng.1",
+    "man city":          "eng.1", "manchester utd":    "eng.1",
+    "man utd":           "eng.1", "man united":        "eng.1",
+    "newcastle":         "eng.1", "newcastle utd":     "eng.1",
+    "aston villa":       "eng.1", "tottenham":         "eng.1",
+    "spurs":             "eng.1", "bournemouth":       "eng.1",
+    "fulham":            "eng.1", "brentford":         "eng.1",
+    "brighton":          "eng.1", "west ham":          "eng.1",
+    "everton":           "eng.1", "leicester":         "eng.1",
+    "ipswich":           "eng.1", "southampton":       "eng.1",
+    "crystal palace":    "eng.1", "nottm forest":      "eng.1",
+    "nottingham forest": "eng.1", "wolves":            "eng.1",
+    "wolverhampton":     "eng.1",
+    # ── CHAMPIONSHIP 2025-26 ──
+    "leeds":             "eng.2", "leeds utd":         "eng.2",
+    "burnley":           "eng.2", "sheffield utd":     "eng.2",
+    "norwich":           "eng.2", "millwall":          "eng.2",
+    "coventry":          "eng.2", "bristol city":      "eng.2",
+    "cardiff":           "eng.2", "hull":              "eng.2",
+    "hull city":         "eng.2", "stoke":             "eng.2",
+    "stoke city":        "eng.2", "swansea":           "eng.2",
+    "blackburn":         "eng.2", "sunderland":        "eng.2",
+    "derby":             "eng.2", "derby county":      "eng.2",
+    "portsmouth":        "eng.2", "watford":           "eng.2",
+    "middlesbrough":     "eng.2", "qpr":               "eng.2",
+    "west brom":         "eng.2", "sheffield wed":     "eng.2",
+    "plymouth":          "eng.2", "oxford":            "eng.2",
+    "luton":             "eng.2", "preston":           "eng.2",
+    "wrexham":           "eng.2",
+    # ── LEAGUE ONE 2025-26 ──
+    "birmingham":        "eng.3", "huddersfield":      "eng.3",
+    "wigan":             "eng.3", "charlton":          "eng.3",
+    "rotherham":         "eng.3", "stevenage":         "eng.3",
+    "peterborough":      "eng.3", "bristol rovers":    "eng.3",
+    "stockport":         "eng.3", "barnsley":          "eng.3",
+    "exeter":            "eng.3", "blackpool":         "eng.3",
+    "burton":            "eng.3", "wycombe":           "eng.3",
+    "cambridge":         "eng.3", "lincoln":           "eng.3",
+    "shrewsbury":        "eng.3", "northampton":       "eng.3",
+    # ── LEAGUE TWO 2025-26 ──
+    "mansfield":         "eng.4", "mansfield town":    "eng.4",
+    "newport":           "eng.4", "grimsby":           "eng.4",
+    "doncaster":         "eng.4", "tranmere":          "eng.4",
+    "notts county":      "eng.4", "colchester":        "eng.4",
+    "crawley":           "eng.4", "harrogate":         "eng.4",
+    "swindon":           "eng.4", "morecambe":         "eng.4",
+    "salford":           "eng.4", "accrington":        "eng.4",
+    # ── LA LIGA 2025-26 ──
+    "barcelona":         "esp.1", "real madrid":       "esp.1",
+    "atletico":          "esp.1", "atletico madrid":   "esp.1",
+    "villarreal":        "esp.1", "real sociedad":     "esp.1",
+    "athletic bilbao":   "esp.1", "athletic club":     "esp.1",
+    "sevilla":           "esp.1", "real betis":        "esp.1",
+    "betis":             "esp.1", "girona":            "esp.1",
+    "getafe":            "esp.1", "osasuna":           "esp.1",
+    "alaves":            "esp.1", "deportivo alaves":  "esp.1",
+    "celta":             "esp.1", "celta vigo":        "esp.1",
+    "rayo vallecano":    "esp.1", "rayo":              "esp.1",
+    "mallorca":          "esp.1", "las palmas":        "esp.1",
+    "valencia":          "esp.1", "espanyol":          "esp.1",
+    "leganes":           "esp.1", "valladolid":        "esp.1",
+    # ── SEGUNDA DIVISIÓN ──
+    "racing santander":  "esp.2", "sporting gijon":    "esp.2",
+    "huesca":            "esp.2", "elche":             "esp.2",
+    "burgos":            "esp.2", "tenerife":          "esp.2",
+    "zaragoza":          "esp.2", "albacete":          "esp.2",
+    "mirandes":          "esp.2", "eldense":           "esp.2",
+    # ── BUNDESLIGA 2025-26 ──
+    "bayern":            "ger.1", "bayern munich":     "ger.1",
+    "dortmund":          "ger.1", "borussia dortmund": "ger.1",
+    "leverkusen":        "ger.1", "bayer leverkusen":  "ger.1",
+    "rb leipzig":        "ger.1", "leipzig":           "ger.1",
+    "frankfurt":         "ger.1", "eintracht frankfurt":"ger.1",
+    "freiburg":          "ger.1", "wolfsburg":         "ger.1",
+    "hoffenheim":        "ger.1", "werder":            "ger.1",
+    "werder bremen":     "ger.1", "borussia mg":       "ger.1",
+    "monchengladbach":   "ger.1", "augsburg":          "ger.1",
+    "mainz":             "ger.1", "union berlin":      "ger.1",
+    "bochum":            "ger.1", "heidenheim":        "ger.1",
+    "stuttgart":         "ger.1", "vfb stuttgart":     "ger.1",
+    "st. pauli":         "ger.1", "holstein kiel":     "ger.1",
+    # ── 2. BUNDESLIGA ──
+    "hamburger":         "ger.2", "hsv":               "ger.2",
+    "hannover":          "ger.2", "karlsruhe":         "ger.2",
+    "schalke":           "ger.2", "fc schalke":        "ger.2",
+    "nurnberg":          "ger.2", "nürnberg":          "ger.2",
+    "1. fc nurnberg":    "ger.2", "1. fc nürnberg":    "ger.2",
+    "fortuna dusseldorf":"ger.2", "fortuna düsseldorf":"ger.2",
+    "kaiserslautern":    "ger.2", "hertha":            "ger.2",
+    "hertha berlin":     "ger.2", "greuther furth":    "ger.2",
+    "paderborn":         "ger.2", "magdeburg":         "ger.2",
+    # ── SERIE A 2025-26 ──
+    "napoli":            "ita.1", "inter":             "ita.1",
+    "inter milan":       "ita.1", "milan":             "ita.1",
+    "ac milan":          "ita.1", "juventus":          "ita.1",
+    "atalanta":          "ita.1", "lazio":             "ita.1",
+    "roma":              "ita.1", "as roma":           "ita.1",
+    "fiorentina":        "ita.1", "bologna":           "ita.1",
+    "torino":            "ita.1", "udinese":           "ita.1",
+    "genoa":             "ita.1", "cagliari":          "ita.1",
+    "como":              "ita.1", "monza":             "ita.1",
+    "lecce":             "ita.1", "empoli":            "ita.1",
+    "parma":             "ita.1", "venezia":           "ita.1",
+    "hellas verona":     "ita.1", "verona":            "ita.1",
+    # ── SERIE B ──
+    "sampdoria":         "ita.2", "palermo":           "ita.2",
+    "bari":              "ita.2", "catanzaro":         "ita.2",
+    "brescia":           "ita.2", "spezia":            "ita.2",
+    "pisa":              "ita.2", "cremonese":         "ita.2",
+    "sassuolo":          "ita.2", "cesena":            "ita.2",
+    # ── LIGUE 1 2025-26 ──
+    "paris saint-germain":"fra.1","psg":               "fra.1",
+    "marseille":         "fra.1", "lyon":              "fra.1",
+    "monaco":            "fra.1", "as monaco":         "fra.1",
+    "lille":             "fra.1", "nice":              "fra.1",
+    "lens":              "fra.1", "rc lens":           "fra.1",
+    "rennes":            "fra.1", "strasbourg":        "fra.1",
+    "nantes":            "fra.1", "reims":             "fra.1",
+    "montpellier":       "fra.1", "toulouse":          "fra.1",
+    "brest":             "fra.1", "auxerre":           "fra.1",
+    "saint-etienne":     "fra.1", "angers":            "fra.1",
+    "le havre":          "fra.1",
+    # ── LIGUE 2 ──
+    "metz":              "fra.2", "amiens":            "fra.2",
+    "laval":             "fra.2", "caen":              "fra.2",
+    "pau":               "fra.2", "grenoble":          "fra.2",
+    # ── PRIMEIRA LIGA ──
+    "benfica":           "por.1", "porto":             "por.1",
+    "sporting cp":       "por.1", "sporting":          "por.1",
+    "braga":             "por.1", "sp. braga":         "por.1",
+    "vitoria":           "por.1", "guimaraes":         "por.1",
+    "famalicao":         "por.1", "casa pia":          "por.1",
+    "boavista":          "por.1", "estrela":           "por.1",
+    # ── EREDIVISIE ──
+    "ajax":              "ned.1", "psv":               "ned.1",
+    "psv eindhoven":     "ned.1", "feyenoord":         "ned.1",
+    "az alkmaar":        "ned.1", "az":                "ned.1",
+    "utrecht":           "ned.1", "twente":            "ned.1",
+    "fc twente":         "ned.1", "sparta rotterdam":  "ned.1",
+    "heerenveen":        "ned.1", "vitesse":           "ned.1",
+    "groningen":         "ned.1", "nijmegen":          "ned.1",
+    "go ahead":          "ned.1", "almere":            "ned.1",
+    "nac breda":         "ned.1",
+    # ── PRO LEAGUE BÉLGICA ──
+    "club brugge":       "bel.1", "brugge":            "bel.1",
+    "anderlecht":        "bel.1", "gent":              "bel.1",
+    "union saint-gilloise":"bel.1","union sg":         "bel.1",
+    "standard liege":    "bel.1", "genk":              "bel.1",
+    "antwerp":           "bel.1", "royal antwerp":     "bel.1",
+    "mechelen":          "bel.1", "cercle brugge":     "bel.1",
+    # ── SÜPER LIG ──
+    "galatasaray":       "tur.1", "fenerbahce":        "tur.1",
+    "besiktas":          "tur.1", "trabzonspor":       "tur.1",
+    "basaksehir":        "tur.1", "istanbul basaksehir":"tur.1",
+    "sivasspor":         "tur.1", "konyaspor":         "tur.1",
+    # ── SCOTTISH PREMIERSHIP ──
+    "celtic":            "sco.1", "rangers":           "sco.1",
+    "hearts":            "sco.1", "hibernian":         "sco.1",
+    "aberdeen":          "sco.1", "motherwell":        "sco.1",
+    "kilmarnock":        "sco.1", "st mirren":         "sco.1",
 }
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -4796,12 +4927,32 @@ def _cup_get_form_in_league(team_id: str, team_name: str) -> dict:
             form_in_league = form_in_league[:10]
         except: pass
 
-    div_info = _DIVISION_SLUGS.get(div_slug, ("Desconocida", 0.70, 1.10))
+    div_info = _DIVISION_SLUGS.get(div_slug, ("Desconocida", 0.65, 1.05))
+
+    # Coeficiente de calidad de liga (UEFA rankings 2024-25, base = Premier League)
+    # Pondera el factor de división por el nivel internacional de esa liga
+    _LEAGUE_COEF = {
+        "eng": 1.000,  # Premier League — base
+        "ger": 0.970,  # Bundesliga
+        "esp": 0.960,  # La Liga
+        "ita": 0.940,  # Serie A
+        "fra": 0.910,  # Ligue 1
+        "por": 0.870,  # Primeira Liga
+        "ned": 0.860,  # Eredivisie
+        "bel": 0.820,  # Pro League
+        "tur": 0.800,  # Süper Lig
+        "sco": 0.760,  # Scottish Premiership
+    }
+    _country = (div_slug or "")[:3]  # "eng", "esp", "ger"...
+    _league_coef = _LEAGUE_COEF.get(_country, 0.780)  # desconocido → penalizar
+    _raw_factor  = div_info[1] or 0.65
+    _final_factor = round(_raw_factor * _league_coef, 4)
+
     return {
         "slug":     div_slug or "unknown",
         "div_name": div_info[0],
-        "factor":   div_info[1] or 0.70,
-        "xg_base":  div_info[2] or 1.10,
+        "factor":   _final_factor,
+        "xg_base":  div_info[2] or 1.05,
         "form":     form_in_league,
     }
 
@@ -4815,7 +4966,26 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
       3. Odds como calibración final
     """
     slug      = m.get("slug","")
-    _cup_slugs = {"eng.fa","eng.lc","esp.copa","ger.dfb","ita.coppa","fra.coupe"}
+    _cup_slugs = {
+        # Inglaterra
+        "eng.fa", "eng.lc",
+        # España
+        "esp.copa",
+        # Alemania
+        "ger.dfb",
+        # Italia
+        "ita.coppa",
+        # Francia
+        "fra.coupe",
+        # Portugal
+        "por.cup",
+        # Países Bajos
+        "ned.cup",
+        # Escocia
+        "sco.cup",
+        # UEFA
+        "uefa.cl", "uefa.el", "uefa.ecl",
+    }
     is_cup = slug in _cup_slugs
 
     # Si no es copa o hay forma directa disponible — usar pipeline normal
