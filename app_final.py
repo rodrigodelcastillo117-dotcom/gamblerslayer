@@ -3881,6 +3881,279 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None, home_id=None
         "model":"Ensemble DC+BVP+Elo+H2H",
     }
 
+
+def veredicto_academico(mc, dp, odd_h, odd_a, odd_d, home, away, best_market=None, best_prob=None, best_odd=None):
+    """
+    Veredicto académico único que integra TODOS los modelos:
+    Dixon-Coles 45% + Poisson BV 30% + Elo Dinámico 15% + H2H 10%
+    Evalúa el mercado con mayor probabilidad (no solo 1X2).
+
+    Semáforo:
+    🟢 APOSTAR       — señal fuerte (score ≥ 7)
+    🟡 BANK MEDIO    — señal moderada (score 4-6)
+    🔴 NO APOSTAR    — sin valor estadístico (score < 4)
+    """
+    import statistics, math
+
+    ph = dp["ph"]; pd = dp["pd"]; pa = dp["pa"]
+
+    # ── Identificar el mercado a evaluar ──
+    if best_market and best_prob:
+        mkt_lbl  = best_market
+        mkt_prob = best_prob
+        mkt_odd  = best_odd or 0
+        # Si es Over 2.5 / AA / Doble Chance, usar su prob directamente
+        is_totals  = any(x in best_market for x in ["Over","Ambos","AA","DC","o Emp","o "])
+        fav_name   = best_market  if is_totals else (home if ph>=pa else away)
+    else:
+        fav_is_home = ph >= pa
+        fav_name = home if fav_is_home else away
+        mkt_prob = max(ph, pa)
+        mkt_odd  = odd_h if fav_is_home else odd_a
+        is_totals = False
+
+    # ── Probabilidades de cada modelo apuntando al mismo favorito ──
+    fav_is_home = ph >= pa
+    dc_v  = mc.get("dc_ph",  ph*100)/100 if fav_is_home else max(0.01, 1 - mc.get("dc_ph",ph*100)/100  - 0.26)
+    bvp_v = mc.get("bvp_ph", ph*100)/100 if fav_is_home else max(0.01, 1 - mc.get("bvp_ph",ph*100)/100 - 0.26)
+    elo_v = mc.get("elo_ph", ph*100)/100 if fav_is_home else max(0.01, 1 - mc.get("elo_ph",ph*100)/100 - 0.26)
+    h2h_v = mc.get("h2h_ph", ph*100)/100 if fav_is_home else max(0.01, 1 - mc.get("h2h_ph",ph*100)/100 - 0.26)
+    modelos = [dc_v, bvp_v, elo_v, h2h_v]
+
+    # ── Métricas clave ──
+    std         = statistics.stdev(modelos) if len(modelos) >= 2 else 0.10
+    pct_acuerdo = sum(1 for m in modelos if m >= 0.50) / 4
+    ev          = mkt_prob - (1/mkt_odd) if mkt_odd > 1 else 0
+    xg_fav      = mc.get("hxg", 1.2) if fav_is_home else mc.get("axg", 1.0)
+    ensemble_ph = ph  # promedio ponderado final
+
+    # ── SISTEMA DE PUNTUACIÓN (máx ~11 pts) ──
+    score = 0
+    factores = []  # (texto, color)
+
+    # 1. CONSENSO entre modelos
+    if pct_acuerdo == 1.0:
+        score += 3
+        factores.append((f"✅ Los 4 modelos coinciden en el mismo favorito ({fav_name[:14]})", "#00ff88"))
+    elif pct_acuerdo >= 0.75:
+        score += 2
+        factores.append(("✅ 3 de 4 modelos apuntan al mismo resultado", "#00ff88"))
+    elif pct_acuerdo >= 0.50:
+        score += 1
+        factores.append(("⚠️ Solo 2 modelos alineados — señal mixta", "#FFD700"))
+    else:
+        score -= 2
+        factores.append(("🚫 Modelos divididos — no hay consenso estadístico", "#ff4444"))
+
+    # 2. DISPERSIÓN entre modelos
+    if std < 0.04:
+        score += 2
+        factores.append((f"✅ Modelos muy coherentes entre sí (σ={std*100:.1f}%) — señal robusta", "#00ff88"))
+    elif std < 0.08:
+        score += 1
+        factores.append((f"⚠️ Ligera divergencia entre modelos (σ={std*100:.1f}%)", "#FFD700"))
+    else:
+        score -= 1
+        factores.append((f"🚫 Alta dispersión entre modelos (σ={std*100:.1f}%) — incertidumbre", "#ff4444"))
+
+    # 3. VALOR ESPERADO (EV)
+    if ev > 0.08:
+        score += 3
+        factores.append((f"✅ Edge sólido vs cuota: +{ev*100:.1f}% — valor real de apuesta", "#00ff88"))
+    elif ev > 0.03:
+        score += 2
+        factores.append((f"✅ Edge positivo: +{ev*100:.1f}% sobre el momio de mercado", "#00ff88"))
+    elif ev > 0:
+        score += 1
+        factores.append((f"⚠️ Edge marginal: +{ev*100:.1f}% — cuota casi en el límite", "#FFD700"))
+    elif mkt_odd == 0:
+        factores.append(("⚠️ Sin cuota disponible — no se puede calcular valor de apuesta", "#FFD700"))
+    else:
+        score -= 2
+        factores.append((f"🚫 Sin valor en cuota: EV={ev*100:.1f}% — el mercado ya descontó esta prob.", "#ff4444"))
+
+    # 4. PROBABILIDAD DEL MERCADO
+    if mkt_prob > 0.70:
+        score += 2
+        factores.append((f"✅ Probabilidad alta: {mkt_prob*100:.0f}% según modelos estadísticos", "#00ff88"))
+    elif mkt_prob > 0.60:
+        score += 1
+        factores.append((f"✅ Probabilidad favorable: {mkt_prob*100:.0f}% — ventaja clara", "#00ff88"))
+    elif mkt_prob > 0.52:
+        factores.append((f"⚠️ Probabilidad ajustada: {mkt_prob*100:.0f}% — ventaja estrecha", "#FFD700"))
+    else:
+        score -= 1
+        factores.append((f"🚫 Sin favorito claro: {mkt_prob*100:.0f}% vs {(1-mkt_prob)*100:.0f}% — partido parejo", "#ff4444"))
+
+    # 5. xG ofensivo
+    if not is_totals:
+        if xg_fav > 1.8:
+            score += 1
+            factores.append((f"✅ xG ofensivo alto: {xg_fav:.2f} goles esperados — ataque en forma", "#00ff88"))
+        elif xg_fav < 0.80:
+            score -= 1
+            factores.append((f"🚫 xG bajo: {xg_fav:.2f} — ataque poco efectivo últimamente", "#ff4444"))
+    else:
+        o25 = mc.get("o25", 0.5); btts = mc.get("btts", 0.5)
+        hxg = mc.get("hxg", 1.2); axg = mc.get("axg", 1.0)
+        total_xg = hxg + axg
+        if total_xg > 2.6:
+            score += 1
+            factores.append((f"✅ xG total partido: {total_xg:.2f} — juego abierto, goles esperados", "#00ff88"))
+        elif total_xg < 1.8:
+            score -= 1
+            factores.append((f"🚫 xG total bajo ({total_xg:.2f}) — partido cerrado, pocos goles", "#ff4444"))
+
+    # ── VEREDICTO FINAL ──
+    MAX_SCORE = 11
+    score_pct = max(0, min(score, MAX_SCORE))
+
+    if score >= 7:
+        nivel      = "APOSTAR"
+        emoji_big  = "🟢"
+        color_bg   = "linear-gradient(135deg,#001a00,#002800)"
+        color_brd  = "#00ff88"
+        color_txt  = "#00ff88"
+        desc       = "Señal estadística fuerte. Los modelos convergen, existe valor real en la cuota y la probabilidad justifica la apuesta."
+        kelly_rec  = "Kelly completo — 1 a 3% del banco"
+        kelly_col  = "#00ff88"
+    elif score >= 4:
+        nivel      = "BANK MEDIO"
+        emoji_big  = "🟡"
+        color_bg   = "linear-gradient(135deg,#1a1200,#2a1e00)"
+        color_brd  = "#FFD700"
+        color_txt  = "#FFD700"
+        desc       = "Señal moderada. Hay elementos estadísticos a favor pero también incertidumbre. Apuesta pequeña o espera mejores condiciones de cuota."
+        kelly_rec  = "Mitad de Kelly — 0.5 a 1.5% del banco"
+        kelly_col  = "#FFD700"
+    else:
+        nivel      = "NO APOSTAR"
+        emoji_big  = "🔴"
+        color_bg   = "linear-gradient(135deg,#1a0000,#2a0000)"
+        color_brd  = "#ff4444"
+        color_txt  = "#ff4444"
+        desc       = "Los modelos no convergen o la cuota no ofrece ventaja matemática. Apostar aquí sería jugar sin ventaja estadística."
+        kelly_rec  = "Abstenerse — 0% del banco"
+        kelly_col  = "#ff4444"
+
+    # ── Barra de score visual ──
+    bar_pct   = int(score_pct / MAX_SCORE * 100)
+    bar_color = "#00ff88" if score >= 7 else ("#FFD700" if score >= 4 else "#ff4444")
+
+    # ── Tabla de modelos ──
+    model_rows = ""
+    model_data = [
+        ("Dixon-Coles",    dc_v,  "#00ccff", "45%", "Ajuste correlación goles (Coles & Jones 1996)"),
+        ("Poisson BV",     bvp_v, "#aa00ff", "30%", "Distribución conjunta de marcadores"),
+        ("Elo Dinámico",   elo_v, "#00ff88", "15%", "Rating adaptado fútbol (Hvattum & Arntzen 2010)"),
+        ("H2H Histórico",  h2h_v, "#FFD700", "10%", "Resultados directos ponderados por recencia"),
+    ]
+    for mname, mval, mcol, peso, ref in model_data:
+        bar_w   = int(mval * 100)
+        mcolor  = "#00ff88" if mval >= 0.60 else ("#FFD700" if mval >= 0.50 else "#ff4444")
+        arrow   = "▲" if mval >= 0.50 else "▼"
+        model_rows += (
+            f"<tr style='border-bottom:1px solid #0d0d2e'>"
+            f"<td style='padding:7px 10px'>"
+            f"  <span style='color:{mcol};font-weight:700;font-size:.78rem'>{mname}</span>"
+            f"  <span style='color:#333;font-size:.65rem;margin-left:4px'>({peso})</span>"
+            f"</td>"
+            f"<td style='padding:7px 10px;text-align:center'>"
+            f"  <span style='color:{mcolor};font-weight:900;font-size:.95rem'>{mval*100:.1f}%</span>"
+            f"  <span style='color:{mcolor};font-size:.68rem'> {arrow}</span>"
+            f"</td>"
+            f"<td style='padding:7px 10px'>"
+            f"  <div style='height:4px;background:#0d0d2e;border-radius:4px;overflow:hidden'>"
+            f"    <div style='width:{bar_w}%;height:100%;background:{mcolor};border-radius:4px'></div>"
+            f"  </div>"
+            f"</td>"
+            f"<td style='padding:7px 10px;color:#333;font-size:.65rem'>{ref}</td>"
+            f"</tr>"
+        )
+
+    # ── Factores detectados ──
+    factores_html = "".join(
+        f"<div style='color:{col};font-size:.78rem;padding:3px 0;line-height:1.4'>{txt}</div>"
+        for txt, col in factores
+    )
+
+    prom_modelos = sum(modelos) / len(modelos)
+
+    html = f"""
+<div style='background:{color_bg};border:2px solid {color_brd};border-radius:16px;padding:20px 18px;margin:20px 0'>
+
+  <!-- SEMÁFORO GRANDE -->
+  <div style='display:flex;align-items:center;gap:14px;margin-bottom:16px'>
+    <div style='font-size:3rem;line-height:1'>{emoji_big}</div>
+    <div style='flex:1'>
+      <div style='font-size:.68rem;color:#444;letter-spacing:.14em;font-weight:700;margin-bottom:2px'>
+        VEREDICTO ACADÉMICO — ENSEMBLE DE 4 MODELOS
+      </div>
+      <div style='font-size:2rem;font-weight:900;color:{color_txt};line-height:1.1'>{nivel}</div>
+      <div style='font-size:.75rem;color:#666;margin-top:2px'>{mkt_lbl}</div>
+    </div>
+    <div style='text-align:right;flex-shrink:0'>
+      <div style='font-size:.62rem;color:#444;margin-bottom:2px'>SCORE ESTADÍSTICO</div>
+      <div style='font-size:1.4rem;font-weight:900;color:{color_txt}'>{score_pct}<span style='font-size:.85rem;color:#444'>/{MAX_SCORE}</span></div>
+    </div>
+  </div>
+
+  <!-- BARRA PROGRESO -->
+  <div style='background:#0d0d2e;border-radius:8px;height:8px;margin-bottom:14px;overflow:hidden'>
+    <div style='width:{bar_pct}%;height:100%;background:{bar_color};border-radius:8px;
+                transition:width .5s ease'></div>
+  </div>
+
+  <!-- DESCRIPCIÓN -->
+  <div style='font-size:.82rem;color:#aaa;background:#07071a;border-radius:8px;padding:10px 14px;
+              border-left:4px solid {color_brd};margin-bottom:16px;line-height:1.65'>
+    {desc}
+  </div>
+
+  <!-- TABLA MODELOS -->
+  <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em;margin-bottom:6px'>
+    📐 ANÁLISIS POR MODELO — PROB. FAVORITO: {prom_modelos*100:.1f}% PROMEDIO
+  </div>
+  <div style='background:#07071a;border-radius:10px;overflow:hidden;margin-bottom:14px'>
+    <table style='width:100%;border-collapse:collapse'>
+      <thead>
+        <tr style='border-bottom:1px solid #151530'>
+          <th style='padding:6px 10px;text-align:left;color:#333;font-size:.65rem;font-weight:700'>Modelo</th>
+          <th style='padding:6px 10px;text-align:center;color:#333;font-size:.65rem;font-weight:700'>Prob.</th>
+          <th style='padding:6px 10px;color:#333;font-size:.65rem;font-weight:700'>Intensidad</th>
+          <th style='padding:6px 10px;text-align:left;color:#333;font-size:.65rem;font-weight:700'>Fuente</th>
+        </tr>
+      </thead>
+      <tbody>{model_rows}</tbody>
+    </table>
+  </div>
+
+  <!-- FACTORES -->
+  <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em;margin-bottom:8px'>
+    🔍 FACTORES QUE DETERMINARON EL VEREDICTO
+  </div>
+  <div style='background:#07071a;border-radius:8px;padding:10px 14px;margin-bottom:14px'>
+    {factores_html}
+  </div>
+
+  <!-- KELLY / BANKROLL -->
+  <div style='display:flex;justify-content:space-between;align-items:center;
+              padding-top:12px;border-top:1px solid #151530'>
+    <div>
+      <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em'>💰 GESTIÓN DE BANKROLL</div>
+      <div style='font-size:.82rem;font-weight:700;color:{kelly_col};margin-top:2px'>{kelly_rec}</div>
+    </div>
+    <div style='text-align:right'>
+      <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em'>EV vs CUOTA</div>
+      <div style='font-size:.88rem;font-weight:700;color:{"#00ff88" if ev>0 else "#ff4444"};margin-top:2px'>
+        {"+" if ev>0 else ""}{ev*100:.1f}% {"✅" if ev>0 else "🚫"}
+      </div>
+    </div>
+  </div>
+</div>"""
+    return html
+
+
 def diamond_engine(mc, h2h_s, hform, aform):
     ph, pd, pa = mc["ph"], mc["pd"], mc["pa"]
     if h2h_s.get("tot",0) >= 3:
@@ -4714,6 +4987,26 @@ if st.session_state["view"] == "cartelera":
                                    f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
                                    f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                 + f"</div>", unsafe_allow_html=True)
+        # ── VEREDICTO ACADÉMICO NBA ──
+        nba_mc_fake = {
+            "dc_ph": ai_ml_h/100, "bvp_ph": ai_ml_h/100,
+            "elo_ph": ai_ml_h/100, "h2h_ph": ai_ml_h/100,
+            "xg_h": res.get("proj",220)/2 / 100, "xg_a": res.get("proj",220)/2 / 100,
+            "o25": ai_over/100, "o35": 0.35, "btts": 0.5,
+        }
+        nba_dp_fake = {"ph": ai_ml_h/100, "pa": ai_ml_a/100, "pd": 0.0, "conf": ai_conf}
+        _nba_best_mkt = f"O/U {g.get('ou_line','')}" if g.get("ou_line") else (g["home"] if ai_ml_h >= ai_ml_a else g["away"])
+        _nba_best_prob = (ai_over/100) if g.get("ou_line") else max(ai_ml_h, ai_ml_a)/100
+        nba_verdict_html = veredicto_academico(
+            nba_mc_fake, nba_dp_fake,
+            g.get("odd_h",0), g.get("odd_a",0), 0,
+            g["home"], g["away"],
+            best_market=_nba_best_mkt,
+            best_prob=_nba_best_prob,
+            best_odd=0
+        )
+        st.markdown(nba_verdict_html, unsafe_allow_html=True)
+
         # ── PRE-MATCH INTELLIGENCE BOT — NBA ──
         _nba_ou = g.get("ou_line",220)
         adj_nba, _was_adj_nba = render_prematch_bot(
@@ -4928,6 +5221,27 @@ if st.session_state["view"] == "cartelera":
                                        f"border-left:3px solid {ai_color};font-size:.88rem;line-height:1.7'>"
                                        f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                     + f"</div>", unsafe_allow_html=True)
+                                # ── VEREDICTO ACADÉMICO TENIS ──
+                                _ten_mc_v = {
+                                    "dc_ph": ai_p1/100, "bvp_ph": ai_p1/100,
+                                    "elo_ph": ai_p1/100, "h2h_ph": ai_p1/100,
+                                    "xg_h": 1.0, "xg_a": 1.0,
+                                    "o25":0.5,"o35":0.3,"btts":0.5,
+                                }
+                                _ten_dp_v = {"ph": ai_p1/100, "pa": ai_p2/100, "pd": 0.0, "conf": ai_conf}
+                                _ten_odd1 = m.get("odd_1",0); _ten_odd2 = m.get("odd_2",0)
+                                _ten_fav = m["p1"] if ai_p1>=ai_p2 else m["p2"]
+                                _ten_fav_prob = max(ai_p1,ai_p2)/100
+                                _ten_fav_odd  = _ten_odd1 if ai_p1>=ai_p2 else _ten_odd2
+                                st.markdown(veredicto_academico(
+                                    _ten_mc_v, _ten_dp_v,
+                                    _ten_odd1, _ten_odd2, 0,
+                                    m["p1"], m["p2"],
+                                    best_market=f"🎾 ML: {_ten_fav}",
+                                    best_prob=_ten_fav_prob,
+                                    best_odd=_ten_fav_odd
+                                ), unsafe_allow_html=True)
+
                                 # ── PRE-MATCH BOT — Tenis ──
                                 _ten_model = {"p1": ai_p1/100, "p2": ai_p2/100, "ph": ai_p1/100, "pd": 0, "pa": ai_p2/100}
                                 render_prematch_bot(
@@ -5592,6 +5906,10 @@ else:
         f"</div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div>"
         f"</div></div>",
         unsafe_allow_html=True)
+
+    # ── VEREDICTO ACADÉMICO — semáforo ──
+    v_html = veredicto_academico(mc, dp, g.get("odd_h",0), g.get("odd_a",0), g.get("odd_d",0), g["home"], g["away"], best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
+    st.markdown(v_html, unsafe_allow_html=True)
 
     # ── GUARDAR PICK ──
     sc1, sc2, sc3 = st.columns(3)
