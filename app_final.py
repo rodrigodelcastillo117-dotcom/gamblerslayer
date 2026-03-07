@@ -2289,10 +2289,14 @@ def _save_picks_snap(snap):
     except: pass
 
 def _snap_auto_pick(partido_id, pick_data):
-    """Guarda pick automático en snapshot si no existe aún para ese partido."""
+    """Guarda pick automático en snapshot. Sobrescribe solo si el pick cambió de mercado."""
     if not partido_id or not pick_data: return
     snap = _load_picks_snap()
-    if partido_id not in snap:  # NO sobrescribir — conservar el pick original
+    existing = snap.get(partido_id, {})
+    old_mkt = existing.get("mkt","")
+    new_mkt = pick_data.get("mkt","")
+    # Sobrescribir si: no existe, o si el mercado cambió (ej: AA → 1X2 por corrección de jerarquía)
+    if partido_id not in snap or (old_mkt in ("BTTS","") and new_mkt not in ("BTTS","")):
         snap[partido_id] = {
             "pick":  pick_data.get("pick",""),
             "prob":  pick_data.get("prob",0),
@@ -6421,13 +6425,18 @@ def _ventana_22h(matches):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def compute_trilay(matches):
-    # Ventana 22h: 10pm CDMX hoy → 10pm CDMX mañana — siempre hay partidos
+    """
+    TRILAY estructurado: 1 pick ML (favorito fuerte) + 1 Over 2.5 + 1 AA (Ambos Anotan).
+    Cada pick viene de un partido diferente.
+    Si un mercado no tiene candidato con ventaja real, usa el mejor ML disponible.
+    """
     hoy_matches = _ventana_22h(matches)
-    # Fallback: si la ventana está vacía usar solo hoy
     if not hoy_matches:
         hoy = datetime.now(CDMX).strftime("%Y-%m-%d")
-        hoy_matches = [m for m in matches if m.get("fecha","") == hoy and m.get("state","pre") in ("pre","in")]
-    cands=[]
+        hoy_matches = [m for m in matches if m.get("fecha","") == hoy]
+
+    # Calcular modelo para cada partido
+    cands_ml, cands_o25, cands_aa = [], [], []
     for m in hoy_matches[:40]:
         try:
             hf  = get_form(m["home_id"],m["slug"])
@@ -6435,30 +6444,49 @@ def compute_trilay(matches):
             hxg = xg_weighted(hf, is_home=True,  odds_prior=1/m.get("odd_h",0) if m.get("odd_h",0)>1 else 0) if hf else xg_from_record(m.get("home_rec","5-5-5"),True)
             axg = xg_weighted(af, is_home=False, odds_prior=1/m.get("odd_a",0) if m.get("odd_a",0)>1 else 0) if af else xg_from_record(m.get("away_rec","5-5-5"),False)
             mc  = mc50k(hxg,axg)
-            # Jerarquía TRILAY — sin AA/BTTS como pick principal
-            _ph = mc["ph"]; _pa = mc["pa"]; _pd = mc.get("pd", 1-_ph-_pa)
-            _o25 = mc["o25"]; _do_h = min(0.95,_ph+_pd); _do_a = min(0.95,_pa+_pd)
-            _xg_tot = hxg + axg
-            if _ph >= 0.60:
-                bp, bm = _ph, f"🏠 {m['home']} gana"
-            elif _pa >= 0.60:
-                bp, bm = _pa, f"✈️ {m['away']} gana"
-            elif _do_h >= 0.75 and _ph >= 0.48:
-                bp, bm = _do_h, f"🔵 {m['home'][:12]} o Emp"
-            elif _xg_tot >= 2.8 and _o25 >= 0.56:
-                bp, bm = _o25, "⚽ Over 2.5"
-            elif max(_ph,_pa) >= 0.52:
-                if _ph >= _pa: bp, bm = _ph, f"🏠 {m['home']} gana"
-                else:          bp, bm = _pa, f"✈️ {m['away']} gana"
-            elif _o25 >= 0.54:
-                bp, bm = _o25, "⚽ Over 2.5"
-            else:
-                if _ph >= _pa: bp, bm = _ph, f"🏠 {m['home']} gana"
-                else:          bp, bm = _pa, f"✈️ {m['away']} gana"
-            cands.append({**m,"mc":mc,"best_p":bp,"best_m":bm,"hxg":hxg,"axg":axg})
+            _ph = mc["ph"]; _pa = mc["pa"]; _o25 = mc["o25"]; _aa = mc["btts"]
+            _best_ml_p = max(_ph,_pa)
+            _best_ml_m = f"🏠 {m['home']} gana" if _ph>=_pa else f"✈️ {m['away']} gana"
+            base = {**m, "mc":mc, "hxg":hxg, "axg":axg}
+            # ML: preferir cuando hay favorito claro (≥52%)
+            cands_ml.append({**base, "best_p":_best_ml_p, "best_m":_best_ml_m, "mkt":"ML"})
+            # Over 2.5
+            cands_o25.append({**base, "best_p":_o25, "best_m":"⚽ Over 2.5", "mkt":"O/U"})
+            # AA
+            cands_aa.append({**base, "best_p":_aa, "best_m":"⚡ Ambos Anotan", "mkt":"AA"})
         except: continue
-    cands.sort(key=lambda x:-x["best_p"])
-    return cands[:3]
+
+    cands_ml.sort(key=lambda x:-x["best_p"])
+    cands_o25.sort(key=lambda x:-x["best_p"])
+    cands_aa.sort(key=lambda x:-x["best_p"])
+
+    result = []
+    used_ids = set()
+
+    def _partido_id(c): return f"{c.get('home_id','')}_{c.get('away_id','')}"
+
+    # 1. Mejor ML
+    for c in cands_ml:
+        if _partido_id(c) not in used_ids:
+            result.append(c); used_ids.add(_partido_id(c)); break
+
+    # 2. Mejor Over 2.5 (partido distinto)
+    for c in cands_o25:
+        if _partido_id(c) not in used_ids:
+            result.append(c); used_ids.add(_partido_id(c)); break
+
+    # 3. Mejor AA (partido distinto)
+    for c in cands_aa:
+        if _partido_id(c) not in used_ids:
+            result.append(c); used_ids.add(_partido_id(c)); break
+
+    # Si no se completó con 3 partidos distintos, rellenar con el siguiente mejor ML
+    for c in cands_ml:
+        if len(result) >= 3: break
+        if _partido_id(c) not in used_ids:
+            result.append(c); used_ids.add(_partido_id(c))
+
+    return result[:3]
 
 @st.cache_data(ttl=600, show_spinner=False)
 def compute_pato(matches):
@@ -7083,14 +7111,16 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
         for m in (matches_fut or [])[:40]:
             # King Rongo analiza todos los partidos del día (pre, in, post)
             try:
-                hf  = get_form(m["home_id"], m["slug"]) or []
-                af  = get_form(m["away_id"], m["slug"]) or []
+                home_id = m.get("home_id",""); away_id = m.get("away_id",""); slug = m.get("slug","")
+                if not home_id or not slug: continue
+                hf  = get_form(home_id, slug) or []
+                af  = get_form(away_id, slug) or []
                 hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0) \
                       if hf else xg_from_record(m.get("home_rec","5-5-5"), True)
                 axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0) \
                       if af else xg_from_record(m.get("away_rec","5-5-5"), False)
-                h2h = get_h2h(m["home_id"], m["away_id"], m["slug"], m["home"], m["away"])
-                h2s = h2h_stats(h2h, m["home"], m["away"])
+                h2h = get_h2h(home_id, away_id, slug, m.get("home","?"), m.get("away","?"))
+                h2s = h2h_stats(h2h, m.get("home","?"), m.get("away","?"))
                 mc  = ensemble_football(hxg, axg, h2s, hf, af,
                                         m["home_id"], m["away_id"],
                                         odd_h=m.get("odd_h",0),
@@ -7112,38 +7142,34 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 _muy_of_kr = _xg_total_kr >= 3.0
                 _of_med_kr = 2.5 <= _xg_total_kr < 3.0
 
+                _home = m.get("home","?"); _away = m.get("away","?")
                 # ── Jerarquía King Rongo: ML > DO > O2.5 > AA solo si los demás son bajos ──
                 _ninguno_kr = max(_ph,_pa) < 0.52 and _do_h < 0.72 and _do_a < 0.72 and _o25 < 0.54
+                _best_ml_kr = max(_ph, _pa)
 
-                if _ph >= 0.60:
-                    lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
-                elif _pa >= 0.60:
-                    lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
-                elif _do_h >= 0.78 and _ph >= 0.50:
-                    lbl, prob, odd, mkt = f"🔵 {m['home'][:14]} o Emp", _do_h, 0, "DO"
-                elif _do_a >= 0.78 and _pa >= 0.45:
-                    lbl, prob, odd, mkt = f"🟣 {m['away'][:14]} o Emp", _do_a, 0, "DO"
-                elif _muy_of_kr and _o25 >= 0.58:
+                if _ph >= 0.55:
+                    lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
+                elif _pa >= 0.55:
+                    lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
+                elif _do_h >= 0.76 and _ph >= 0.48:
+                    lbl, prob, odd, mkt = f"🔵 {_home[:14]} o Emp", _do_h, 0, "DO"
+                elif _do_a >= 0.76 and _pa >= 0.43:
+                    lbl, prob, odd, mkt = f"🟣 {_away[:14]} o Emp", _do_a, 0, "DO"
+                elif _muy_of_kr and _o25 >= 0.56:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif _o25 >= 0.56:
-                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif max(_ph,_pa) >= 0.52:
-                    if _ph >= _pa:
-                        lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
-                    else:
-                        lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
                 elif _o25 >= 0.54:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
+                elif _best_ml_kr >= 0.46:
+                    if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
+                    else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
                 elif _ninguno_kr and _eq_kr and _aa >= 0.52:
-                    # AA: SOLO cuando ningún otro pick tiene ventaja real
                     lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
                 else:
-                    if _ph >= _pa:
-                        lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
-                    else:
-                        lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
+                    # fallback: siempre ML
+                    if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
+                    else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
 
-                if prob < 0.40: continue
+                if prob < 0.30: continue  # solo descartar si modelo dice <30% (imposible casi)
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -7154,7 +7180,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
 
                 c = {
                     "deporte":"⚽ Fútbol","sport":"futbol",
-                    "label":f"{m['home']} vs {m['away']}",
+                    "label":f"{_home} vs {_away}",
                     "liga":m.get("league",""),"hora":m.get("hora",""),
                     "pick":lbl,"prob":prob,"odd":odd,"edge":edge,
                     "kelly_pct":kelly,"mkt_type":mkt,
@@ -9354,35 +9380,46 @@ else:
             lbl, prob, odd = t
             return (prob - 1/odd) if odd > 1 else (prob - 0.50)
 
-        # Jerarquía: ML > DO > O2.5 > AA (solo si los demás son bajos)
+        # Jerarquía: ML > DO > O2.5 > AA
+        # Si hay cuotas reales, el ML con mejor edge siempre gana
         _ph_d = dp["ph"]; _pa_d = dp["pa"]; _pd_d = dp.get("pd", max(0,1-_ph_d-_pa_d))
         _o25_d = mc["o25"]; _aa_d = mc["btts"]
         _do_h_d = min(0.95, _ph_d+_pd_d); _do_a_d = min(0.95, _pa_d+_pd_d)
         _xg_tot_d = hxg + axg
-        _ninguno_d = max(_ph_d,_pa_d) < 0.52 and _do_h_d < 0.72 and _do_a_d < 0.72 and _o25_d < 0.54
+        _best_ml   = max(_ph_d, _pa_d)  # siempre hay un mejor ML
+        _fav_ml_lbl = f"🏠 {g['home'][:16]} gana" if _ph_d >= _pa_d else f"✈️ {g['away'][:16]} gana"
+        _fav_ml_p   = _ph_d if _ph_d >= _pa_d else _pa_d
+        _fav_ml_odd = g.get("odd_h",0) if _ph_d >= _pa_d else g.get("odd_a",0)
+        _ninguno_d = _best_ml < 0.50 and _do_h_d < 0.70 and _do_a_d < 0.70 and _o25_d < 0.52
         _eq_d = abs(hxg - axg) < 0.55
 
-        if _ph_d >= 0.60:
-            main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, g.get("odd_h",0))
-        elif _pa_d >= 0.60:
+        # Con cuotas reales: comparar edge ML vs O2.5
+        _odd_h = g.get("odd_h",0); _odd_a = g.get("odd_a",0)
+        _has_odds = _odd_h > 1 and _odd_a > 1
+        _edge_ml_h = (_ph_d - 1/_odd_h) if _odd_h > 1 else (_ph_d - 0.50)
+        _edge_ml_a = (_pa_d - 1/_odd_a) if _odd_a > 1 else (_pa_d - 0.50)
+        _best_ml_edge = max(_edge_ml_h, _edge_ml_a)
+
+        if _ph_d >= 0.55 or (_has_odds and _edge_ml_h >= 0.03):
+            main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, _odd_h)
+        elif _pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03):
             main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
-        elif _do_h_d >= 0.78 and _ph_d >= 0.50:
+        elif _do_h_d >= 0.76 and _ph_d >= 0.48:
             main_mkt = (f"🔵 {g['home'][:14]} o Emp", _do_h_d, 0)
-        elif _do_a_d >= 0.78 and _pa_d >= 0.45:
+        elif _do_a_d >= 0.76 and _pa_d >= 0.43:
             main_mkt = (f"🟣 {g['away'][:14]} o Emp", _do_a_d, 0)
-        elif _xg_tot_d >= 2.8 and _o25_d >= 0.56:
+        elif _xg_tot_d >= 2.6 and _o25_d >= 0.54:
             main_mkt = ("⚽ Over 2.5", _o25_d, 0)
-        elif max(_ph_d,_pa_d) >= 0.52:
-            if _ph_d >= _pa_d: main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, g.get("odd_h",0))
-            else:              main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
-        elif _o25_d >= 0.54:
+        elif _best_ml >= 0.46:
+            # Siempre mostrar ML si es el más probable — aunque sea parejo
+            main_mkt = (_fav_ml_lbl, _fav_ml_p, _fav_ml_odd)
+        elif _o25_d >= 0.52:
             main_mkt = ("⚽ Over 2.5", _o25_d, 0)
         elif _ninguno_d and _eq_d and _aa_d >= 0.52:
             main_mkt = ("⚡ Ambos Anotan (AA)", _aa_d, 0)
         else:
-            # Fallback: ML siempre — nunca AA por defecto
-            if _ph_d >= _pa_d: main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, g.get("odd_h",0))
-            else:              main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
+            # Fallback absoluto: siempre el mejor ML
+            main_mkt = (_fav_ml_lbl, _fav_ml_p, _fav_ml_odd)
 
         main_lbl, main_prob, main_odd = main_mkt
 
