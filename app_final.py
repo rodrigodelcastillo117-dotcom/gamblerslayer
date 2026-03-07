@@ -32,6 +32,7 @@ except:
 
 LIGAS = {
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "eng.fa":"FA Cup 🏆🏴󠁧󠁢󠁥󠁮󠁧󠁿",
     "esp.1":"La Liga 🇪🇸","esp.2":"Segunda 🇪🇸",
     "ger.1":"Bundesliga 🇩🇪","ger.2":"2. Bundesliga 🇩🇪",
     "ita.1":"Serie A 🇮🇹","fra.1":"Ligue 1 🇫🇷",
@@ -2376,9 +2377,9 @@ def render_resultados_tab():
         return
 
     # Filter tabs by sport
-    rt1, rt2 = st.tabs(["⚽ Fútbol", "🏀 NBA"])
+    rt1, rt2, rt3 = st.tabs(["⚽ Fútbol", "🏀 NBA", "🎾 Tenis"])
 
-    for tab_obj, sport_key, sport_label in [(rt1,"futbol","⚽ Fútbol"),(rt2,"nba","🏀 NBA")]:
+    for tab_obj, sport_key, sport_label in [(rt1,"futbol","⚽ Fútbol"),(rt2,"nba","🏀 NBA"),(rt3,"tenis","🎾 Tenis")]:
         with tab_obj:
             sport_p = [p for p in partidos if p.get("deporte")==sport_key]
             finalizados = [p for p in sport_p if p.get("state")=="post"]
@@ -4461,6 +4462,81 @@ def tennis_model(rank1, rank2, odd_1=0, odd_2=0, surface="hard"):
     conf="💎 DIAMANTE" if max(p1,p2)>0.68 else("🔥 ALTA" if max(p1,p2)>0.58 else "⚡ MEDIA")
     return {"p1":round(p1,3),"p2":round(p2,3),"edge_1":edge_1,"edge_2":edge_2,"conf":conf}
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def tennis_expert_analysis(p1_name, p2_name, rank1, rank2, odd_1, odd_2,
+                            surface, torneo, model_p1, model_p2):
+    """
+    Einstein experto en tenis:
+    - Analiza H2H real de ambos jugadores
+    - Forma reciente en esta superficie específica
+    - Historial en este torneo
+    - Lesiones conocidas, fatiga
+    - Da probabilidades REALES, no siempre 58/42
+    """
+    if not ANTHROPIC_API_KEY: return None
+    prompt = f"""Eres EINSTEIN TENIS, el analista de tenis más avanzado del mundo.
+Analiza en PROFUNDIDAD este partido ATP/WTA y da probabilidades REALES.
+
+PARTIDO: {p1_name} vs {p2_name}
+TORNEO: {torneo} — SUPERFICIE: {surface.upper()}
+RANKING: {p1_name} #{rank1 if rank1<900 else "?"} vs {p2_name} #{rank2 if rank2<900 else "?"}
+MOMIOS: {f"{p1_name} @{odd_1:.2f}" if odd_1>1 else "N/D"} / {f"{p2_name} @{odd_2:.2f}" if odd_2>1 else "N/D"}
+MODELO WEIBULL BASE: {p1_name} {model_p1*100:.1f}% / {p2_name} {model_p2*100:.1f}%
+
+ANALIZA EXHAUSTIVAMENTE:
+1. H2H histórico entre estos dos jugadores (¿cuántos partidos? ¿quién domina? ¿en qué superficie?)
+2. Forma reciente de {p1_name}: últimos 5-10 torneos, W/L, superficie actual, lesiones
+3. Forma reciente de {p2_name}: últimos 5-10 torneos, W/L, superficie actual, lesiones  
+4. Historial específico en {torneo} de ambos
+5. Estadísticas en {surface}: % victorias, profundidad de torneo habitual
+6. Variables ocultas: fatiga (cuántos sets esta semana), altura del torneo, temperatura
+7. Motivación: ¿quién NECESITA más esta victoria para ranking/clasificación?
+8. Estilo de juego: ¿el surface favorece más a uno? (servidor en hierba, defensor en tierra)
+
+REGLAS CRÍTICAS:
+- Si hay clara diferencia de nivel: da probabilidades reales (70/30, 75/25, etc.)
+- Si es parejo de verdad: 55/45 o 52/48 está bien
+- NO des siempre 58/42 — eso es inventar, no analizar
+- Si un jugador viene de lesión o jugó mucho: refléjalo en la prob
+- Basa el % final en los datos reales que conoces
+
+RESPONDE SOLO JSON:
+{{
+  "p1_pct": <float 0-100, prob real {p1_name}>,
+  "p2_pct": <float 0-100, prob real {p2_name}>,
+  "h2h_resumen": "<H2H: X-Y a favor de ?, en qué superficie domina>",
+  "forma_p1": "<últimos 5 resultados, lesiones, superficie>",
+  "forma_p2": "<últimos 5 resultados, lesiones, superficie>",
+  "factor_decisivo": "<qué factor inclina la balanza>",
+  "surface_ventaja": "<quién se beneficia más de {surface}>",
+  "resumen": "<2-3 líneas: análisis concreto con datos reales>",
+  "confianza_analisis": "<alta/media/baja>",
+  "edge_p1": <float, edge vs momio>,
+  "edge_p2": <float, edge vs momio>
+}}"""
+    try:
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-sonnet-4-20250514","max_tokens":800,
+                  "messages":[{"role":"user","content":prompt}]},timeout=20)
+        if r.status_code!=200: return None
+        raw = r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
+        if "{" in raw: raw=raw[raw.find("{"):raw.rfind("}")+1]
+        import json as _jt; d = _jt.loads(raw)
+        p1 = max(5,min(95,float(d.get("p1_pct",model_p1*100))))/100
+        p2 = 1-p1
+        conf = "💎 DIAMANTE" if max(p1,p2)>0.68 else ("🔥 ALTA" if max(p1,p2)>0.62 else "⚡ MEDIA")
+        return {
+            "p1": round(p1,3), "p2": round(p2,3), "conf": conf,
+            "h2h": d.get("h2h_resumen",""), "forma_p1": d.get("forma_p1",""),
+            "forma_p2": d.get("forma_p2",""), "factor": d.get("factor_decisivo",""),
+            "surface_adv": d.get("surface_ventaja",""), "resumen": d.get("resumen",""),
+            "confianza": d.get("confianza_analisis","media"),
+            "edge_p1": float(d.get("edge_p1",0)), "edge_p2": float(d.get("edge_p2",0)),
+        }
+    except: return None
+
 # ══════════════════════════════════════════════════════════
 # SESSION STATE
 # ══════════════════════════════════════════════════════════
@@ -4553,6 +4629,11 @@ if st.session_state["view"] == "cartelera":
                 gs = nba_por_fecha[fecha]
                 with st.expander(f"{fecha_label_nba(fecha)}  ·  {len(gs)} juegos", expanded=(fi==0)):
                     for g in gs:
+                        if g["state"] == "post":
+                            sh=g.get("score_h",-1); sa=g.get("score_a",-1)
+                            sf=f"{sh}-{sa}" if sh>=0 else "FT"
+                            st.markdown(f"<div style='display:flex;justify-content:space-between;padding:6px 14px;background:#0a0a1e;border-radius:8px;margin:2px 0;border-left:3px solid #333;opacity:.6'><div style='font-size:.82rem;color:#555'>✅ 🏀 {g['away']} @ {g['home']}</div><div style='font-size:.9rem;font-weight:700;color:#555'>{sf}</div></div>", unsafe_allow_html=True)
+                            continue
                         live = g["state"]=="in"
                         sc   = f"{g['score_h']}-{g['score_a']}" if live else g["hora"]
                         ou   = f" · Línea {g['ou_line']}" if g["ou_line"]>0 else ""
@@ -4776,7 +4857,17 @@ if st.session_state["view"] == "cartelera":
                             fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
                             fav_p = max(tm["p1"],tm["p2"])
                             conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
-                            if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']} CDMX", key=f"ten_{m['id']}", use_container_width=True):
+                            # Finished tennis = show score, don't show as button
+                        if m["state"] == "post":
+                            st.markdown(
+                                f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                                f"padding:6px 12px;background:#0a0a1e;border-radius:8px;margin:2px 0;"
+                                f"border-left:3px solid #333;opacity:.6'>"
+                                f"<div style='font-size:.82rem;color:#555'>✅ {m['p1']} vs {m['p2']}</div>"
+                                f"<div style='font-size:.8rem;color:#555'>FT</div>"
+                                f"</div>", unsafe_allow_html=True)
+                            continue
+                        if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']} CDMX", key=f"ten_{m['id']}", use_container_width=True):
                                 with st.spinner("🤖 IA analizando..."):
                                     ai_prompt = (
                                         f"Analista tenis experto. Partido ATP/WTA:\n"
@@ -4878,52 +4969,107 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.info("Los picks unificados de todos los deportes están en ⚽ Fútbol → 🎯 Picks.")
             st.markdown("<div class='shdr'>🎯 Picks Tenis del Día — ML + Valor</div>", unsafe_allow_html=True)
-            with st.spinner("🤖 IA calculando picks de tenis..."):
-                ten_picks = []
+            # ── TOP 3 picks por probabilidad usando Einstein Tenis ──
+            with st.spinner("🧠 Einstein analizando H2H, superficie, forma de cada jugador..."):
+                ten_picks_raw = []
+                _surface_map = {
+                    "Indian Wells":"hard","Miami":"hard","Roland Garros":"clay",
+                    "Wimbledon":"grass","US Open":"hard","Australian Open":"hard",
+                    "Monte Carlo":"clay","Madrid":"clay","Rome":"clay","Cincinnati":"hard",
+                    "Toronto":"hard","Montreal":"hard","Paris":"hard","Vienna":"hard",
+                    "Basel":"hard","Rotterdam":"hard","Dubai":"hard","Doha":"hard",
+                    "Barcelona":"clay","Hamburg":"clay","Geneva":"clay","Lyon":"clay",
+                    "Halle":"grass","Queen":"grass","Eastbourne":"grass","Birmingham":"grass",
+                }
                 for m in ten_matches:
                     if m["state"]!="pre": continue
-                    tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"])
-                    best_p = max(tm["p1"],tm["p2"])
-                    fav = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
-                    best_odd = m["odd_1"] if tm["p1"]>=tm["p2"] else m["odd_2"]
-                    edge = tm["edge_1"] if tm["p1"]>=tm["p2"] else tm["edge_2"]
-                    if best_p >= 0.57:
-                        conf = "💎 DIAMANTE" if best_p>0.68 else ("🔥 ALTA" if best_p>0.62 else "⚡ MEDIA")
-                        ten_picks.append({"p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
-                                         "torneo":m["torneo"],"pick":f"🎾 ML: {fav}","prob":best_p,
-                                         "odd":best_odd,"conf":conf,"edge":edge,"type":"ML"})
-                # AI picks for matches without clear ranking edge
-                try:
-                    _no_rank = [m for m in ten_matches if m["state"]=="pre" and m["rank1"]>=900 and m["rank2"]>=900][:5]
-                    if _no_rank and ANTHROPIC_API_KEY:
-                        _txt = "\n".join([f"{m['p1']} vs {m['p2']} ({m['tour']}) @{m['odd_1']}/{m['odd_2']}" for m in _no_rank])
-                        _ai_r = requests.post("https://api.anthropic.com/v1/messages",
-                            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-                            json={"model":"claude-sonnet-4-20250514","max_tokens":500,
-                                  "messages":[{"role":"user","content":
-                                    "Analista tenis experto. Para estos partidos ATP/WTA da picks con valor (prob>=58%). Solo JSON array: [{p1,p2,pick,prob,razon}]. Partidos: " + _txt}]},timeout=12)
-                        import json as _jt
-                        _ai_raw = _ai_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
-                        _ai_picks = _jt.loads(_ai_raw)
-                        for _ap in _ai_picks:
-                            _p = float(_ap.get("prob",0))/100
-                            if _p >= 0.58:
-                                _conf = "💎 DIAMANTE" if _p>0.68 else ("🔥 ALTA" if _p>0.62 else "⚡ MEDIA")
-                                ten_picks.append({"p1":_ap.get("p1",""),"p2":_ap.get("p2",""),
-                                                  "hora":"","tour":"ATP/WTA","torneo":"","pick":f"🎾 ML: {_ap.get('pick','')}",
-                                                  "prob":_p,"odd":0,"conf":_conf,"edge":0,"type":"ML-IA",
-                                                  "razon":_ap.get("razon","")})
-                except: pass
-                ten_picks.sort(key=lambda x:-x["prob"])
-            if not ten_picks: st.info("No hay picks de tenis con valor hoy.")
-            for p in ten_picks:
+                    torneo = m.get("torneo","")
+                    surface = next((v for k,v in _surface_map.items() if k.lower() in torneo.lower()), "hard")
+                    # Use Einstein expert analysis for every match
+                    base_tm = tennis_model(m["rank1"],m["rank2"],m["odd_1"],m["odd_2"],surface)
+                    expert  = tennis_expert_analysis(
+                        m["p1"],m["p2"],m["rank1"],m["rank2"],
+                        m["odd_1"],m["odd_2"],surface,torneo,
+                        base_tm["p1"],base_tm["p2"]
+                    )
+                    if expert:
+                        p1_f = expert["p1"]; p2_f = expert["p2"]
+                        conf  = expert["conf"]
+                        resumen = expert.get("resumen","")
+                        h2h_txt = expert.get("h2h","")
+                        factor  = expert.get("factor","")
+                        forma_p1= expert.get("forma_p1","")
+                        forma_p2= expert.get("forma_p2","")
+                        surf_adv= expert.get("surface_adv","")
+                    else:
+                        p1_f = base_tm["p1"]; p2_f = base_tm["p2"]
+                        conf = base_tm["conf"]
+                        resumen = h2h_txt = factor = forma_p1 = forma_p2 = surf_adv = ""
+
+                    fav = m["p1"] if p1_f >= p2_f else m["p2"]
+                    best_p = max(p1_f, p2_f)
+                    best_odd = m["odd_1"] if p1_f>=p2_f else m["odd_2"]
+                    edge_v = (p1_f-(1/m["odd_1"])) if p1_f>=p2_f and m["odd_1"]>1 else                              (p2_f-(1/m["odd_2"])) if m["odd_2"]>1 else 0
+
+                    ten_picks_raw.append({
+                        "p1":m["p1"],"p2":m["p2"],"hora":m["hora"],"tour":m["tour"],
+                        "torneo":torneo,"surface":surface,
+                        "pick":f"🎾 {fav}","prob":best_p,"odd":best_odd,
+                        "conf":conf,"edge":edge_v,
+                        "resumen":resumen,"h2h":h2h_txt,"factor":factor,
+                        "forma_p1":forma_p1,"forma_p2":forma_p2,"surf_adv":surf_adv,
+                        "p1_pct":p1_f*100,"p2_pct":p2_f*100,
+                    })
+
+                # TOP 3 por probabilidad más alta
+                ten_picks_raw.sort(key=lambda x:-x["prob"])
+                ten_picks = ten_picks_raw[:3]
+
+            if not ten_picks:
+                st.info("No hay picks de tenis disponibles hoy.")
+            else:
+                st.markdown(f"<div style='font-size:.72rem;color:#555;margin-bottom:8px'>🎾 Top 3 picks por mayor probabilidad · Einstein analiza H2H, superficie y forma</div>", unsafe_allow_html=True)
+
+            for rank_i, p in enumerate(ten_picks):
                 cc = "#FFD700" if "DIAMANTE" in p["conf"] else ("#00ff88" if "ALTA" in p["conf"] else "#aaa")
+                rank_badge = ["🥇","🥈","🥉"][rank_i] if rank_i<3 else "🎾"
                 os_ = f" @{p['odd']:.2f}" if p["odd"]>1 else ""
-                edge_txt = f"<span style='color:#00ff88;font-size:.75rem'> +{p['edge']*100:.1f}% edge</span>" if p.get("edge",0)>0.05 else ""
-                razon_txt = f"<div style='color:#555;font-size:.76rem'>{p.get('razon','')}</div>" if p.get("razon") else ""
-                tipo = p.get("type","ML")
-                tipo_badge = f"<span style='background:#00ccff22;color:#00ccff;border-radius:4px;padding:2px 6px;font-size:.7rem;margin-left:4px'>{tipo}</span>"
-                st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between;align-items:center'><div style='flex:1;min-width:0'><div style='font-weight:700;font-size:.9rem'>{p['p1']} vs {p['p2']}{tipo_badge}</div><div style='color:#555;font-size:.78rem'>{p['tour']}{' · '+p['torneo'] if p['torneo'] else ''}{' · '+p['hora'] if p['hora'] else ''}</div><div style='margin-top:4px;color:#00ccff;font-weight:700'>{p['pick']}{os_}{edge_txt}</div>{razon_txt}</div><div style='text-align:right;flex-shrink:0'><div style='font-size:1.3rem;font-weight:900;color:#FFD700'>{p['prob']*100:.1f}%</div><div style='font-size:.72rem;color:{cc}'>{p['conf']}</div></div></div>",unsafe_allow_html=True)
+                surf_icon = {"hard":"🔵","clay":"🟤","grass":"🟢"}.get(p.get("surface","hard"),"🎾")
+                edge_txt = f"<span style='color:#00ff88;font-size:.72rem'> edge +{p['edge']*100:.1f}%</span>" if p.get("edge",0)>0.02 else ""
+
+                st.markdown(
+                    f"<div class='mrow' style='margin-bottom:4px'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:flex-start'>"
+                    f"<div style='flex:1;min-width:0'>"
+                    f"<div style='font-weight:700;font-size:.92rem'>{rank_badge} {p['p1']} vs {p['p2']}</div>"
+                    f"<div style='color:#555;font-size:.75rem'>{p['tour']} · {p['torneo']} {surf_icon} · {p['hora']}</div>"
+                    f"<div style='margin-top:5px;color:#00ccff;font-weight:700;font-size:.95rem'>👉 {p['pick']}{os_}{edge_txt}</div>"
+                    f"</div>"
+                    f"<div style='text-align:right;flex-shrink:0;margin-left:12px'>"
+                    f"<div style='font-size:1.5rem;font-weight:900;color:{cc}'>{p['prob']*100:.1f}%</div>"
+                    f"<div style='font-size:.7rem;color:{cc}'>{p['conf']}</div>"
+                    f"<div style='font-size:.68rem;color:#555'>{p['p1'][:10]}: {p['p1_pct']:.1f}% / {p['p2'][:10]}: {p['p2_pct']:.1f}%</div>"
+                    f"</div></div>",
+                    unsafe_allow_html=True)
+
+                # Análisis Einstein expandido
+                if p.get("resumen") or p.get("h2h") or p.get("factor"):
+                    with st.expander(f"🧠 Análisis Einstein — {p['p1']} vs {p['p2']}"):
+                        if p.get("h2h"):
+                            st.markdown(f"<div style='font-size:.8rem;color:#00ccff;padding:4px 0'>⚔️ <b>H2H:</b> {p['h2h']}</div>",unsafe_allow_html=True)
+                        cols = st.columns(2)
+                        with cols[0]:
+                            if p.get("forma_p1"):
+                                st.markdown(f"<div style='font-size:.78rem;color:#aaa;background:#07071a;border-radius:8px;padding:8px'><b style='color:#00ff88'>{p['p1'][:16]}</b><br>{p['forma_p1']}</div>",unsafe_allow_html=True)
+                        with cols[1]:
+                            if p.get("forma_p2"):
+                                st.markdown(f"<div style='font-size:.78rem;color:#aaa;background:#07071a;border-radius:8px;padding:8px'><b style='color:#aa00ff'>{p['p2'][:16]}</b><br>{p['forma_p2']}</div>",unsafe_allow_html=True)
+                        if p.get("surf_adv"):
+                            st.markdown(f"<div style='font-size:.78rem;color:#FFD700;padding:4px 0'>{surf_icon} <b>Superficie:</b> {p['surf_adv']}</div>",unsafe_allow_html=True)
+                        if p.get("factor"):
+                            st.markdown(f"<div style='font-size:.78rem;color:#ff9500;padding:4px 0'>⚡ <b>Factor decisivo:</b> {p['factor']}</div>",unsafe_allow_html=True)
+                        if p.get("resumen"):
+                            st.markdown(f"<div style='font-size:.82rem;color:#aaa;background:#07071a;border-radius:8px;padding:10px;margin-top:4px;line-height:1.6'>🧠 {p['resumen']}</div>",unsafe_allow_html=True)
         with tab5:
             def _ten_preview():
                 with st.spinner("Calculando preview Tenis..."):
@@ -5024,8 +5170,21 @@ if st.session_state["view"] == "cartelera":
                         if not liga_matches: continue
                         st.markdown(f"<div class='shdr'>{liga}</div>", unsafe_allow_html=True)
                         for m in liga_matches:
+                            # Skip finished games — they go to Resultados tab
+                            if m["state"] == "post":
+                                sh = m.get("score_h",-1); sa = m.get("score_a",-1)
+                                score_f = f"{sh}-{sa}" if sh>=0 else "FT"
+                                st.markdown(
+                                    f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                                    f"padding:6px 14px;background:#0a0a1e;border-radius:8px;margin:2px 0;"
+                                    f"border-left:3px solid #333;opacity:.6'>"
+                                    f"<div style='font-size:.82rem;color:#555'>"
+                                    f"✅ {m['home']} vs {m['away']}</div>"
+                                    f"<div style='font-size:.9rem;font-weight:700;color:#555'>{score_f}</div>"
+                                    f"</div>", unsafe_allow_html=True)
+                                continue
                             live = m["state"] == "in"
-                            sc   = f"{m['score_h']}-{m['score_a']}" if live else m["hora"]
+                            sc   = f"🔴 {m['score_h']}-{m['score_a']}" if live else m["hora"]
                             conf_tag = f" · {m.get('_conf','')}" if m.get("_conf") else ""
                             lbl = f"{'🔴 ' if live else ''}{m['home']}  vs  {m['away']}   ·   {sc}{conf_tag}"
                             if st.button(lbl, key=f"b_{m['id']}", use_container_width=True):
