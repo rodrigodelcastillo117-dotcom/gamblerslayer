@@ -2983,255 +2983,6 @@ def _kr_edge_score(prob, odd):
     return prob - 0.50
 
 
-def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
-    """
-    👑 KING RONGO — El Cerebro Supremo de The Gamblers Layer.
-    Escanea ⚽🏀🎾, corre todos los modelos, detecta contradicciones,
-    gestiona bankroll, aprende del historial, y da EL PICK DEL DÍA.
-    """
-    pick_history = st.session_state.get("pick_history", [])
-
-    # ══════════════════════════════════════════════════════
-    # HEADER — presencia máxima
-    # ══════════════════════════════════════════════════════
-    st.markdown("""
-    <div style='position:relative;background:linear-gradient(160deg,#150030,#001500,#150030);
-    border:none;border-radius:20px;padding:0;margin-bottom:4px;overflow:hidden'>
-
-    <!-- Top glow bar -->
-    <div style='height:3px;background:linear-gradient(90deg,transparent,#FFD700,#ff9500,#FFD700,transparent)'></div>
-
-    <!-- Ambient orb left -->
-    <div style='position:absolute;top:-40px;left:-40px;width:140px;height:140px;
-    background:radial-gradient(circle,#FFD70015,transparent 70%);pointer-events:none'></div>
-    <!-- Ambient orb right -->
-    <div style='position:absolute;top:-40px;right:-40px;width:140px;height:140px;
-    background:radial-gradient(circle,#7c00ff15,transparent 70%);pointer-events:none'></div>
-
-    <div style='padding:20px 22px 18px;text-align:center;position:relative'>
-      <div style='font-size:3rem;margin-bottom:6px;line-height:1;
-      filter:drop-shadow(0 0 12px #FFD70088)'>👑</div>
-      <div style='font-size:1.8rem;font-weight:900;letter-spacing:.2em;
-      background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700,#ffcc00);
-      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-      text-shadow:none;margin-bottom:6px'>KING RONGO</div>
-      <div style='font-size:.72rem;color:#666;letter-spacing:.12em'>
-      EL CEREBRO SUPREMO · ÁRBITRO DE MODELOS · PICK DEFINITIVO</div>
-    </div>
-
-    <!-- Bottom glow bar -->
-    <div style='height:2px;background:linear-gradient(90deg,transparent,#7c00ff,#FFD700,#7c00ff,transparent)'></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════════
-    # BANKROLL PANEL — siempre visible
-    # ══════════════════════════════════════════════════════
-    bk = _king_rongo_bankroll_advice(pick_history)
-    _kr_render_bankroll(bk)
-
-    # ══════════════════════════════════════════════════════
-    # BOTONES DE ACCIÓN
-    # ══════════════════════════════════════════════════════
-    c1, c2, c3 = st.columns([3, 1, 1])
-    with c1:
-        do_scan = st.button(
-            "👑 ESCANEAR — ⚽ Fútbol + 🏀 NBA + 🎾 Tenis",
-            use_container_width=True, key="king_scan",
-            help="King Rongo analiza todos los partidos del día y elige EL pick con mayor edge real"
-        )
-    with c2:
-        do_tg = st.button("📡 Telegram", use_container_width=True, key="king_tg")
-    with c3:
-        do_reset = st.button("🔄 Reset", use_container_width=True, key="king_reset")
-
-    if do_reset:
-        for k in ["_king_el_pick","_king_contras","_king_todos","_king_scanned","_king_ts"]:
-            st.session_state.pop(k, None)
-        st.rerun()
-
-    # ══════════════════════════════════════════════════════
-    # SCAN + RESULTADOS
-    # ══════════════════════════════════════════════════════
-    if do_scan or st.session_state.get("_king_scanned"):
-
-        if do_scan:
-            prog = st.progress(0, "👑 King Rongo iniciando escaneo...")
-            try:
-                prog.progress(5, "⚽ Cargando fútbol...")
-                _mf = matches_fut
-                try:
-                    if _mf is None: _mf = get_cartelera()
-                except: _mf = []
-
-                prog.progress(25, "🏀 Cargando NBA...")
-                _nbg = nba_games
-                try:
-                    if _nbg is None: _nbg = get_nba_cartelera()
-                except: _nbg = []
-
-                prog.progress(45, "🎾 Cargando Tenis...")
-                _ten = ten_matches
-                try:
-                    if _ten is None: _ten = get_tennis_cartelera()
-                except: _ten = []
-
-                prog.progress(65, "🧠 Corriendo todos los modelos...")
-                el_pick, contradicciones, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
-
-                prog.progress(100, f"✅ {len(todos)} partidos analizados"); prog.empty()
-
-                st.session_state["_king_el_pick"]  = el_pick
-                st.session_state["_king_contras"]  = contradicciones
-                st.session_state["_king_todos"]    = todos
-                st.session_state["_king_scanned"]  = True
-                st.session_state["_king_ts"]       = datetime.now(CDMX).strftime("%H:%M")
-            except Exception as e:
-                prog.empty()
-                st.error(f"Error en escaneo: {e}")
-
-        el_pick        = st.session_state.get("_king_el_pick")
-        contradicciones= st.session_state.get("_king_contras", [])
-        todos          = st.session_state.get("_king_todos", [])
-        scan_ts        = st.session_state.get("_king_ts","")
-
-        # Meta-stats del escaneo
-        n_fut  = sum(1 for c in todos if "Fútbol" in c["deporte"])
-        n_nba  = sum(1 for c in todos if "NBA"    in c["deporte"])
-        n_ten  = sum(1 for c in todos if "Tenis"  in c["deporte"])
-        n_pos  = sum(1 for c in todos if c.get("edge",0) > 0)
-        n_blk  = len(contradicciones)
-
-        st.markdown(
-            f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:12px'>"
-            f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{n_fut}</div><div class='mlbl'>⚽</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#ff9500'>{n_nba}</div><div class='mlbl'>🏀</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{n_ten}</div><div class='mlbl'>🎾</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{n_pos}</div><div class='mlbl'>Edge+</div></div>"
-            f"<div class='mbox'><div class='mval' style='color:#ff4444'>{n_blk}</div><div class='mlbl'>Bloq.</div></div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-
-        if scan_ts:
-            st.caption(f"👑 Escaneo completado a las {scan_ts} CDMX")
-
-        # ── EL PICK DEL DÍA ──
-        if el_pick:
-            _kr_render_pick_card(el_pick, bk, todos)
-
-            # Botones de acción del pick
-            a1, a2, a3 = st.columns(3)
-            with a1:
-                if st.button(f"💾 Guardar pick de King Rongo", key="save_king", use_container_width=True):
-                    m = el_pick.get("match", {})
-                    fake = {
-                        "home":   m.get("home", m.get("p1", el_pick["label"].split(" vs ")[0])),
-                        "away":   m.get("away", m.get("p2", el_pick["label"].split(" vs ")[-1])),
-                        "league": el_pick.get("liga",""),
-                        "fecha":  m.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d")),
-                    }
-                    add_pick(fake, f"👑 {el_pick['pick']}", el_pick["prob"],
-                             el_pick.get("odd",0), sport=el_pick["sport"])
-                    st.success("✅ Pick guardado")
-            with a2:
-                if st.button("📡 Enviar a Telegram", key="king_tg2", use_container_width=True):
-                    do_tg = True
-            with a3:
-                # Abrir partido completo
-                if el_pick.get("match") and st.button("🔎 Ver análisis completo", key="king_open", use_container_width=True):
-                    _m = el_pick["match"]
-                    sport = el_pick["sport"]
-                    if sport == "tenis":
-                        sel = {**_m,
-                               "home": _m.get("p1",_m.get("home","")),
-                               "away": _m.get("p2",_m.get("away","")),
-                               "home_id": _m.get("id","")+"_p1",
-                               "away_id": _m.get("id","")+"_p2",
-                               "league":  _m.get("torneo",_m.get("tour","Tenis")),
-                               "slug":"tennis","home_rec":"","away_rec":"",
-                               "odd_h":_m.get("odd_1",0),"odd_a":_m.get("odd_2",0),
-                               "odd_d":0,"_sport":"tennis"}
-                    else:
-                        sel = {**_m}
-                    st.session_state["sel"]  = sel
-                    st.session_state["view"] = "analisis"
-                    st.rerun()
-
-            # ── CONTRADICCIONES ──
-            _kr_render_contradictions(contradicciones)
-
-            # ── TABLA DE PICKS ──
-            _kr_render_table(todos, el_pick)
-
-            # ── MEMORIA EVOLUTIVA ──
-            _kr_render_memory(pick_history)
-
-            # ── TELEGRAM ──
-            if do_tg:
-                _nl = chr(10)
-                prob_pct = el_pick["prob"] * 100
-                edge_pct = el_pick["edge"] * 100
-                conf_e   = el_pick.get("conf_emoji","⚡")
-                models_txt = " | ".join(f"{k}: {v}%" for k,v in list(el_pick.get("models",{}).items())[:3])
-                msg = (
-                    f"👑 *KING RONGO — PICK DEL DÍA*{_nl}"
-                    f"━━━━━━━━━━━━━━━━━━━{_nl}"
-                    f"{el_pick['deporte']} · {el_pick.get('liga','')}{_nl}"
-                    f"🆚 *{el_pick['label']}*{_nl}"
-                    f"🕒 {el_pick.get('hora','')} CDMX{_nl}{_nl}"
-                    f"{conf_e} *PICK: {el_pick['pick']}*{_nl}"
-                    f"📊 Prob: *{prob_pct:.1f}%*{_nl}"
-                    f"📈 Edge: *{edge_pct:+.1f}%*{_nl}"
-                    f"🎯 Kelly: *{bk['kelly_rec']}%* del banco{_nl}"
-                    f"{'💰 @' + str(round(el_pick['odd'],2)) if el_pick.get('odd',0)>1 else ''}{_nl}{_nl}"
-                    f"🧠 Modelos: {models_txt}{_nl}{_nl}"
-                    f"_{bk['consejo']}_{_nl}"
-                    f"━━━━━━━━━━━━━━━━━━━{_nl}"
-                    f"_The Gamblers Layer · King Rongo v2_{_nl}"
-                    f"_Escaneados: {len(todos)} partidos ⚽{n_fut} 🏀{n_nba} 🎾{n_ten}_"
-                )
-                if tg_send(msg):
-                    st.success("✅ Pick enviado a Telegram")
-                else:
-                    st.error("❌ Error Telegram")
-
-        else:
-            # No pick encontrado
-            st.markdown(
-                "<div style='text-align:center;padding:30px;background:#07071a;"
-                "border-radius:14px;border:1px solid #1a1a30;margin:12px 0'>"
-                "<div style='font-size:2rem'>🤔</div>"
-                "<div style='font-size:1rem;font-weight:700;color:#555;margin:8px 0'>"
-                "King Rongo no encontró picks con edge positivo hoy.</div>"
-                "<div style='font-size:.8rem;color:#333'>Día de descanso recomendado. "
-                "Proteger el bankroll también es ganar.</div>"
-                "</div>",
-                unsafe_allow_html=True
-            )
-
-    else:
-        # Pre-scan — estado inicial
-        st.markdown(
-            "<div style='text-align:center;padding:36px 20px;"
-            "background:linear-gradient(160deg,#0a0020,#07071a);"
-            "border-radius:16px;border:1px solid #1a1a30;margin:12px 0'>"
-            "<div style='font-size:3rem;margin-bottom:12px;"
-            "filter:drop-shadow(0 0 10px #FFD70044)'>👑</div>"
-            "<div style='font-size:1rem;font-weight:700;color:#555;margin-bottom:8px'>"
-            "King Rongo está listo para escanear</div>"
-            "<div style='font-size:.78rem;color:#333;line-height:1.8'>"
-            "Presiona el botón y King Rongo correrá todos los modelos simultáneamente:<br>"
-            "xG · Elo · Dixon-Coles · Monte Carlo · Weibull · Net Rating<br>"
-            "y elegirá EL PICK con mayor edge real ajustado a tu bankroll."
-            "</div></div>",
-            unsafe_allow_html=True
-        )
-        # Mostrar memoria aunque no haya escaneado
-        _kr_render_memory(pick_history)
-
-
-
 def avg(lst): return sum(lst)/len(lst) if lst else 0.0
 
 
@@ -8215,3 +7966,364 @@ def _kr_render_memory(pick_history):
 # ────────────────────────────────────────────────────────────────────────────
 # RENDER PRINCIPAL
 # ────────────────────────────────────────────────────────────────────────────
+
+
+def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
+    """
+    👑 KING RONGO — El Cerebro Supremo de The Gamblers Layer.
+    Escanea ⚽🏀🎾, corre todos los modelos, detecta contradicciones,
+    gestiona bankroll, aprende del historial, y da EL PICK DEL DÍA.
+    """
+    pick_history = st.session_state.get("pick_history", [])
+
+    # ══════════════════════════════════════════════════════
+    # HEADER — presencia máxima
+    # ══════════════════════════════════════════════════════
+    st.markdown("""
+    <div style='position:relative;background:linear-gradient(160deg,#150030,#001500,#150030);
+    border:none;border-radius:20px;padding:0;margin-bottom:4px;overflow:hidden'>
+
+    <!-- Top glow bar -->
+    <div style='height:3px;background:linear-gradient(90deg,transparent,#FFD700,#ff9500,#FFD700,transparent)'></div>
+
+    <!-- Ambient orb left -->
+    <div style='position:absolute;top:-40px;left:-40px;width:140px;height:140px;
+    background:radial-gradient(circle,#FFD70015,transparent 70%);pointer-events:none'></div>
+    <!-- Ambient orb right -->
+    <div style='position:absolute;top:-40px;right:-40px;width:140px;height:140px;
+    background:radial-gradient(circle,#7c00ff15,transparent 70%);pointer-events:none'></div>
+
+    <div style='padding:20px 22px 18px;text-align:center;position:relative'>
+      <div style='font-size:3rem;margin-bottom:6px;line-height:1;
+      filter:drop-shadow(0 0 12px #FFD70088)'>👑</div>
+      <div style='font-size:1.8rem;font-weight:900;letter-spacing:.2em;
+      background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700,#ffcc00);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+      text-shadow:none;margin-bottom:6px'>KING RONGO</div>
+      <div style='font-size:.72rem;color:#666;letter-spacing:.12em'>
+      EL CEREBRO SUPREMO · ÁRBITRO DE MODELOS · PICK DEFINITIVO</div>
+    </div>
+
+    <!-- Bottom glow bar -->
+    <div style='height:2px;background:linear-gradient(90deg,transparent,#7c00ff,#FFD700,#7c00ff,transparent)'></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════
+    # BANKROLL PANEL — siempre visible
+    # ══════════════════════════════════════════════════════
+    bk = _king_rongo_bankroll_advice(pick_history)
+    _kr_render_bankroll(bk)
+
+    # ══════════════════════════════════════════════════════
+    # BOTONES DE ACCIÓN
+    # ══════════════════════════════════════════════════════
+    c1, c2, c3 = st.columns([3, 1, 1])
+    with c1:
+        do_scan = st.button(
+            "👑 ESCANEAR — ⚽ Fútbol + 🏀 NBA + 🎾 Tenis",
+            use_container_width=True, key="king_scan",
+            help="King Rongo analiza todos los partidos del día y elige EL pick con mayor edge real"
+        )
+    with c2:
+        do_tg = st.button("📡 Telegram", use_container_width=True, key="king_tg")
+    with c3:
+        do_reset = st.button("🔄 Reset", use_container_width=True, key="king_reset")
+
+    if do_reset:
+        for k in ["_king_el_pick","_king_contras","_king_todos","_king_scanned","_king_ts"]:
+            st.session_state.pop(k, None)
+        st.rerun()
+
+    # ══════════════════════════════════════════════════════
+    # SCAN + RESULTADOS
+    # ══════════════════════════════════════════════════════
+    if do_scan or st.session_state.get("_king_scanned"):
+
+        if do_scan:
+            # ── ANIMACIÓN CORONA GIRATORIA ──
+            _kr_anim = st.empty()
+            def _kr_anim_show(msg, pct, sport_emoji="👑"):
+                bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+                _kr_anim.markdown(f"""
+<style>
+@keyframes kr-crown-spin {{
+  0%   {{ transform: rotate(0deg)   scale(1.0); filter: drop-shadow(0 0 6px #FFD700bb); }}
+  20%  {{ transform: rotate(72deg)  scale(1.1); filter: drop-shadow(0 0 20px #ff9500ff); }}
+  40%  {{ transform: rotate(144deg) scale(1.05);filter: drop-shadow(0 0 28px #FFD700ff); }}
+  60%  {{ transform: rotate(216deg) scale(1.12);filter: drop-shadow(0 0 22px #7c00ffcc); }}
+  80%  {{ transform: rotate(288deg) scale(1.06);filter: drop-shadow(0 0 16px #FFD700bb); }}
+  100% {{ transform: rotate(360deg) scale(1.0); filter: drop-shadow(0 0 6px #FFD700bb); }}
+}}
+@keyframes kr-glow-bar {{
+  0%,100% {{ opacity:.6; }} 50% {{ opacity:1; }}
+}}
+@keyframes kr-dots {{
+  0%  {{ content:'   '; }} 33% {{ content:'.  '; }}
+  66% {{ content:'.. '; }} 100%{{ content:'...'; }}
+}}
+@keyframes kr-shimmer {{
+  0%   {{ background-position: -400px 0; }}
+  100% {{ background-position:  400px 0; }}
+}}
+.kr-loading-wrap {{
+  background: linear-gradient(160deg,#120030 0%,#001a08 50%,#120030 100%);
+  border: 1px solid #FFD70044;
+  border-radius: 20px;
+  padding: 32px 28px 28px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  margin: 8px 0;
+}}
+.kr-loading-wrap::before {{
+  content:'';
+  position:absolute; top:0; left:0; right:0; height:3px;
+  background:linear-gradient(90deg,transparent 0%,#FFD700 40%,#ff9500 60%,transparent 100%);
+  animation: kr-glow-bar 1.4s ease-in-out infinite;
+}}
+.kr-loading-wrap::after {{
+  content:'';
+  position:absolute; bottom:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,transparent,#7c00ff,transparent);
+  animation: kr-glow-bar 1.8s ease-in-out infinite reverse;
+}}
+.kr-crown-icon {{
+  font-size: 4rem;
+  display: inline-block;
+  animation: kr-crown-spin 1.6s cubic-bezier(.4,0,.2,1) infinite;
+  line-height: 1;
+  margin-bottom: 16px;
+}}
+.kr-loading-title {{
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: .18em;
+  background: linear-gradient(135deg,#FFD700,#ff9500,#FFD700);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 6px;
+}}
+.kr-loading-msg {{
+  font-size: .82rem;
+  color: #888;
+  margin-bottom: 18px;
+  letter-spacing: .04em;
+}}
+.kr-bar-outer {{
+  background: #0a0a1e;
+  border-radius: 999px;
+  height: 8px;
+  width: 100%;
+  overflow: hidden;
+  margin: 0 auto 8px;
+  border: 1px solid #1a1a3a;
+}}
+.kr-bar-inner {{
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg,#7c00ff,#FFD700,#ff9500);
+  background-size: 200% 100%;
+  animation: kr-shimmer 1.2s linear infinite;
+  transition: width .4s ease;
+}}
+.kr-pct {{
+  font-size: .72rem;
+  color: #FFD700;
+  font-weight: 700;
+  letter-spacing: .08em;
+}}
+.kr-sport-badge {{
+  font-size: 1.2rem;
+  margin-bottom: 4px;
+}}
+</style>
+<div class="kr-loading-wrap">
+  <div class="kr-crown-icon">👑</div>
+  <div class="kr-loading-title">KING RONGO</div>
+  <div class="kr-sport-badge">{sport_emoji}</div>
+  <div class="kr-loading-msg">{msg}</div>
+  <div class="kr-bar-outer">
+    <div class="kr-bar-inner" style="width:{pct}%"></div>
+  </div>
+  <div class="kr-pct">{pct}% completado</div>
+</div>
+""", unsafe_allow_html=True)
+
+            try:
+                _kr_anim_show("Iniciando escaneo de todos los deportes...", 2, "⚽🏀🎾")
+
+                _kr_anim_show("Cargando cartelera de fútbol...", 8, "⚽")
+                _mf = matches_fut
+                try:
+                    if _mf is None: _mf = get_cartelera()
+                except: _mf = []
+
+                _kr_anim_show("Analizando partidos NBA...", 25, "🏀")
+                _nbg = nba_games
+                try:
+                    if _nbg is None: _nbg = get_nba_cartelera()
+                except: _nbg = []
+
+                _kr_anim_show("Cargando torneos de tenis...", 42, "🎾")
+                _ten = ten_matches
+                try:
+                    if _ten is None: _ten = get_tennis_cartelera()
+                except: _ten = []
+
+                _kr_anim_show("Corriendo modelos xG · Elo · Monte Carlo...", 60, "🧠")
+                el_pick, contradicciones, todos = _king_rongo_scan_all(_mf, _nbg, _ten)
+
+                _kr_anim_show(f"Eligiendo el pick supremo entre {len(todos)} candidatos...", 90, "💎")
+
+                _kr_anim.empty()
+
+                st.session_state["_king_el_pick"]  = el_pick
+                st.session_state["_king_contras"]  = contradicciones
+                st.session_state["_king_todos"]    = todos
+                st.session_state["_king_scanned"]  = True
+                st.session_state["_king_ts"]       = datetime.now(CDMX).strftime("%H:%M")
+            except Exception as e:
+                _kr_anim.empty()
+                st.error(f"Error en escaneo: {e}")
+
+        el_pick        = st.session_state.get("_king_el_pick")
+        contradicciones= st.session_state.get("_king_contras", [])
+        todos          = st.session_state.get("_king_todos", [])
+        scan_ts        = st.session_state.get("_king_ts","")
+
+        # Meta-stats del escaneo
+        n_fut  = sum(1 for c in todos if "Fútbol" in c["deporte"])
+        n_nba  = sum(1 for c in todos if "NBA"    in c["deporte"])
+        n_ten  = sum(1 for c in todos if "Tenis"  in c["deporte"])
+        n_pos  = sum(1 for c in todos if c.get("edge",0) > 0)
+        n_blk  = len(contradicciones)
+
+        st.markdown(
+            f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:12px'>"
+            f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{n_fut}</div><div class='mlbl'>⚽</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#ff9500'>{n_nba}</div><div class='mlbl'>🏀</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ccff'>{n_ten}</div><div class='mlbl'>🎾</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#00ff88'>{n_pos}</div><div class='mlbl'>Edge+</div></div>"
+            f"<div class='mbox'><div class='mval' style='color:#ff4444'>{n_blk}</div><div class='mlbl'>Bloq.</div></div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+        if scan_ts:
+            st.caption(f"👑 Escaneo completado a las {scan_ts} CDMX")
+
+        # ── EL PICK DEL DÍA ──
+        if el_pick:
+            _kr_render_pick_card(el_pick, bk, todos)
+
+            # Botones de acción del pick
+            a1, a2, a3 = st.columns(3)
+            with a1:
+                if st.button(f"💾 Guardar pick de King Rongo", key="save_king", use_container_width=True):
+                    m = el_pick.get("match", {})
+                    fake = {
+                        "home":   m.get("home", m.get("p1", el_pick["label"].split(" vs ")[0])),
+                        "away":   m.get("away", m.get("p2", el_pick["label"].split(" vs ")[-1])),
+                        "league": el_pick.get("liga",""),
+                        "fecha":  m.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d")),
+                    }
+                    add_pick(fake, f"👑 {el_pick['pick']}", el_pick["prob"],
+                             el_pick.get("odd",0), sport=el_pick["sport"])
+                    st.success("✅ Pick guardado")
+            with a2:
+                if st.button("📡 Enviar a Telegram", key="king_tg2", use_container_width=True):
+                    do_tg = True
+            with a3:
+                # Abrir partido completo
+                if el_pick.get("match") and st.button("🔎 Ver análisis completo", key="king_open", use_container_width=True):
+                    _m = el_pick["match"]
+                    sport = el_pick["sport"]
+                    if sport == "tenis":
+                        sel = {**_m,
+                               "home": _m.get("p1",_m.get("home","")),
+                               "away": _m.get("p2",_m.get("away","")),
+                               "home_id": _m.get("id","")+"_p1",
+                               "away_id": _m.get("id","")+"_p2",
+                               "league":  _m.get("torneo",_m.get("tour","Tenis")),
+                               "slug":"tennis","home_rec":"","away_rec":"",
+                               "odd_h":_m.get("odd_1",0),"odd_a":_m.get("odd_2",0),
+                               "odd_d":0,"_sport":"tennis"}
+                    else:
+                        sel = {**_m}
+                    st.session_state["sel"]  = sel
+                    st.session_state["view"] = "analisis"
+                    st.rerun()
+
+            # ── CONTRADICCIONES ──
+            _kr_render_contradictions(contradicciones)
+
+            # ── TABLA DE PICKS ──
+            _kr_render_table(todos, el_pick)
+
+            # ── MEMORIA EVOLUTIVA ──
+            _kr_render_memory(pick_history)
+
+            # ── TELEGRAM ──
+            if do_tg:
+                _nl = chr(10)
+                prob_pct = el_pick["prob"] * 100
+                edge_pct = el_pick["edge"] * 100
+                conf_e   = el_pick.get("conf_emoji","⚡")
+                models_txt = " | ".join(f"{k}: {v}%" for k,v in list(el_pick.get("models",{}).items())[:3])
+                msg = (
+                    f"👑 *KING RONGO — PICK DEL DÍA*{_nl}"
+                    f"━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"{el_pick['deporte']} · {el_pick.get('liga','')}{_nl}"
+                    f"🆚 *{el_pick['label']}*{_nl}"
+                    f"🕒 {el_pick.get('hora','')} CDMX{_nl}{_nl}"
+                    f"{conf_e} *PICK: {el_pick['pick']}*{_nl}"
+                    f"📊 Prob: *{prob_pct:.1f}%*{_nl}"
+                    f"📈 Edge: *{edge_pct:+.1f}%*{_nl}"
+                    f"🎯 Kelly: *{bk['kelly_rec']}%* del banco{_nl}"
+                    f"{'💰 @' + str(round(el_pick['odd'],2)) if el_pick.get('odd',0)>1 else ''}{_nl}{_nl}"
+                    f"🧠 Modelos: {models_txt}{_nl}{_nl}"
+                    f"_{bk['consejo']}_{_nl}"
+                    f"━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"_The Gamblers Layer · King Rongo v2_{_nl}"
+                    f"_Escaneados: {len(todos)} partidos ⚽{n_fut} 🏀{n_nba} 🎾{n_ten}_"
+                )
+                if tg_send(msg):
+                    st.success("✅ Pick enviado a Telegram")
+                else:
+                    st.error("❌ Error Telegram")
+
+        else:
+            # No pick encontrado
+            st.markdown(
+                "<div style='text-align:center;padding:30px;background:#07071a;"
+                "border-radius:14px;border:1px solid #1a1a30;margin:12px 0'>"
+                "<div style='font-size:2rem'>🤔</div>"
+                "<div style='font-size:1rem;font-weight:700;color:#555;margin:8px 0'>"
+                "King Rongo no encontró picks con edge positivo hoy.</div>"
+                "<div style='font-size:.8rem;color:#333'>Día de descanso recomendado. "
+                "Proteger el bankroll también es ganar.</div>"
+                "</div>",
+                unsafe_allow_html=True
+            )
+
+    else:
+        # Pre-scan — estado inicial
+        st.markdown(
+            "<div style='text-align:center;padding:36px 20px;"
+            "background:linear-gradient(160deg,#0a0020,#07071a);"
+            "border-radius:16px;border:1px solid #1a1a30;margin:12px 0'>"
+            "<div style='font-size:3rem;margin-bottom:12px;"
+            "filter:drop-shadow(0 0 10px #FFD70044)'>👑</div>"
+            "<div style='font-size:1rem;font-weight:700;color:#555;margin-bottom:8px'>"
+            "King Rongo está listo para escanear</div>"
+            "<div style='font-size:.78rem;color:#333;line-height:1.8'>"
+            "Presiona el botón y King Rongo correrá todos los modelos simultáneamente:<br>"
+            "xG · Elo · Dixon-Coles · Monte Carlo · Weibull · Net Rating<br>"
+            "y elegirá EL PICK con mayor edge real ajustado a tu bankroll."
+            "</div></div>",
+            unsafe_allow_html=True
+        )
+        # Mostrar memoria aunque no haya escaneado
+        _kr_render_memory(pick_history)
+
