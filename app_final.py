@@ -2315,6 +2315,77 @@ def fetch_nba_results(days_back=10):
         except: continue
     return partidos
 
+def fetch_tennis_results(days_back=10):
+    """
+    Trae partidos de tenis finalizados (state=post) de los últimos N días.
+    Usa la misma API de tenis que get_tennis_cartelera pero con rango histórico.
+    """
+    now  = datetime.now(CDMX)
+    hoy  = now.strftime("%Y-%m-%d")
+    desde = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    results = []
+    try:
+        r = requests.get(TENNIS_API, params={
+            "method":  "get_fixtures",
+            "APIkey":  TENNIS_API_KEY,
+            "date_start": desde,
+            "date_stop":  hoy,
+        }, headers=H, timeout=12)
+        data = r.json() if r.status_code == 200 else {}
+        for ev in data.get("result", []):
+            try:
+                fecha = ev.get("event_date","")
+                hora  = ev.get("event_time","00:00")
+                try:
+                    utc_t = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=pytz.UTC)
+                    hora  = utc_t.astimezone(CDMX).strftime("%H:%M")
+                    fecha = utc_t.astimezone(CDMX).strftime("%Y-%m-%d")
+                except: pass
+                if fecha < desde or fecha > hoy: continue
+
+                tour_type = ev.get("event_type_type","").upper()
+                if not any(x in tour_type for x in ["ATP","WTA","GRAND SLAM","MASTERS"]):
+                    continue
+                tour = "WTA" if "WTA" in tour_type else "ATP"
+
+                ev_status   = str(ev.get("event_status","")).lower()
+                ev_finished = str(ev.get("event_final","0"))
+                is_post = (ev_finished == "1" or
+                           any(x in ev_status for x in ["finished","ft","final","completed","awarded"]))
+                if not is_post:
+                    continue   # solo los ya terminados
+
+                p1 = ev.get("event_first_player","?")
+                p2 = ev.get("event_second_player","?")
+                # Score: sets ganados (result field = "2" / "1" etc)
+                sc1_raw = str(ev.get("event_first_player_result","0"))
+                sc2_raw = str(ev.get("event_second_player_result","0"))
+                try:  sc1 = int(sc1_raw)
+                except: sc1 = 0
+                try:  sc2 = int(sc2_raw)
+                except: sc2 = 0
+
+                results.append({
+                    "id":      f"ten_{ev.get('event_key','')}",
+                    "deporte": "tenis",
+                    "home":    p1,   # p1 = local convention para tenis
+                    "away":    p2,
+                    "p1":      p1,
+                    "p2":      p2,
+                    "liga":    f"{tour} · {ev.get('tournament_name','')}",
+                    "tour":    tour,
+                    "torneo":  ev.get("tournament_name",""),
+                    "fecha":   fecha,
+                    "hora":    hora,
+                    "state":   "post",
+                    "score_h": sc1,  # sets ganados p1
+                    "score_a": sc2,  # sets ganados p2
+                })
+            except: continue
+    except: pass
+    return results
+
+
 def update_results_db(force=False):
     """Main update function — fetches results and merges into DB."""
     if not force and not _needs_update():
@@ -2322,9 +2393,10 @@ def update_results_db(force=False):
     db = _load_results_db()
     existing_ids = {p["id"] for p in db["partidos"]}
     # Fetch new data
-    new_soccer = fetch_soccer_results(10)
-    new_nba    = fetch_nba_results(10)
-    all_new    = new_soccer + new_nba
+    new_soccer  = fetch_soccer_results(10)
+    new_nba     = fetch_nba_results(10)
+    new_tennis  = fetch_tennis_results(10)
+    all_new     = new_soccer + new_nba + new_tennis
     # Merge: update existing, add new
     existing_map = {p["id"]: i for i,p in enumerate(db["partidos"])}
     for p in all_new:
@@ -5916,25 +5988,25 @@ if st.session_state["view"] == "cartelera":
                                    f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
                                    f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                 + f"</div>", unsafe_allow_html=True)
-        # ── VEREDICTO ACADÉMICO NBA ──
-        nba_mc_fake = {
-            "dc_ph": ai_ml_h/100, "bvp_ph": ai_ml_h/100,
-            "elo_ph": ai_ml_h/100, "h2h_ph": ai_ml_h/100,
-            "xg_h": res.get("proj",220)/2 / 100, "xg_a": res.get("proj",220)/2 / 100,
-            "o25": ai_over/100, "o35": 0.35, "btts": 0.5,
-        }
-        nba_dp_fake = {"ph": ai_ml_h/100, "pa": ai_ml_a/100, "pd": 0.0, "conf": ai_conf}
-        _nba_best_mkt = f"O/U {g.get('ou_line','')}" if g.get("ou_line") else (g["home"] if ai_ml_h >= ai_ml_a else g["away"])
-        _nba_best_prob = (ai_over/100) if g.get("ou_line") else max(ai_ml_h, ai_ml_a)/100
-        nba_verdict_html = veredicto_academico(
-            nba_mc_fake, nba_dp_fake,
-            g.get("odd_h",0), g.get("odd_a",0), 0,
-            g["home"], g["away"],
-            best_market=_nba_best_mkt,
-            best_prob=_nba_best_prob,
-            best_odd=0
-        )
-        st.markdown(nba_verdict_html, unsafe_allow_html=True)
+                            # ── VEREDICTO ACADÉMICO NBA ──
+                            nba_mc_fake = {
+                                "dc_ph": ai_ml_h/100, "bvp_ph": ai_ml_h/100,
+                                "elo_ph": ai_ml_h/100, "h2h_ph": ai_ml_h/100,
+                                "xg_h": res.get("proj",220)/2/100, "xg_a": res.get("proj",220)/2/100,
+                                "o25": ai_over/100, "o35": 0.35, "btts": 0.5,
+                            }
+                            nba_dp_fake = {"ph": ai_ml_h/100, "pa": ai_ml_a/100, "pd": 0.0, "conf": ai_conf}
+                            _nba_best_mkt  = f"O/U {g.get('ou_line','')}" if g.get("ou_line") else (g["home"] if ai_ml_h >= ai_ml_a else g["away"])
+                            _nba_best_prob = (ai_over/100) if g.get("ou_line") else max(ai_ml_h, ai_ml_a)/100
+                            nba_verdict_html = veredicto_academico(
+                                nba_mc_fake, nba_dp_fake,
+                                g.get("odd_h",0), g.get("odd_a",0), 0,
+                                g["home"], g["away"],
+                                best_market=_nba_best_mkt,
+                                best_prob=_nba_best_prob,
+                                best_odd=0
+                            )
+                            st.markdown(nba_verdict_html, unsafe_allow_html=True)
 
         # ── PRE-MATCH INTELLIGENCE BOT — NBA ──
         _nba_ou = g.get("ou_line",220)
@@ -7085,5 +7157,6 @@ else:
     _snaps    = _line_history.get(f"{g["home"][:8]}_{g["away"][:8]}", {}).get("snapshots",[])
     render_fix_detector("soccer", g["home"], g["away"], mc, dp, real_odds, g,
                         an_data=_an_pro, sbr_data=_sbr_fix, line_snapshots=_snaps)
+
 
 
