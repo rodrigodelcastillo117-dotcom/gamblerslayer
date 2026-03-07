@@ -2568,12 +2568,17 @@ def _fetch_tennis_results_web(desde, hoy):
     # ── LLAMADA 1: ATP Indian Wells ──
     try:
         atp_prompt = (
-            f"Ve a esta URL y extrae TODOS los partidos completados: "
-            f"https://www.atptour.com/es/scores/current/indian-wells/404/results\n"
-            f"Para cada partido dame: ganador, perdedor, sets ganados por cada uno.\n"
-            f"Responde SOLO con un JSON array sin markdown ni texto extra:\n"
-            f'[{{"p1":"Nombre completo ganador","p2":"Nombre completo perdedor",'
-            f'"sets_p1":2,"sets_p2":0,"torneo":"BNP Paribas Open Indian Wells",'
+            f"Busca los resultados de SINGLES ATP de hoy {now_str} en Indian Wells 2026.\n"
+            f"Intenta estas URLs en orden hasta encontrar resultados:\n"
+            f"1. https://www.atptour.com/en/scores/current/indian-wells/404/results\n"
+            f"2. https://www.atptour.com/es/scores/current/indian-wells/404/results\n"
+            f"3. Busca en Google: 'ATP Indian Wells 2026 results {now_str} site:atptour.com'\n"
+            f"Extrae SOLO partidos FINALIZADOS de SINGLES masculinos de hoy.\n"
+            f"EXCLUIR absolutamente: dobles, mixtos, nombres con '/', 'vs', '&'.\n"
+            f"Si el jugador 1 ganó: sets_p1 > sets_p2. Si perdió: sets_p1 < sets_p2.\n"
+            f"Responde SOLO con JSON array sin texto ni markdown:\n"
+            f'[{{"p1":"Nombre Apellido completo","p2":"Nombre Apellido completo",'
+            f'"sets_p1":2,"sets_p2":1,"torneo":"BNP Paribas Open Indian Wells",'
             f'"tour":"ATP","fecha":"{now_str}"}}]'
         )
         atp_text = _call_claude(atp_prompt)
@@ -2585,20 +2590,37 @@ def _fetch_tennis_results_web(desde, hoy):
     # ── LLAMADA 2: WTA del día ──
     try:
         wta_prompt = (
-            f"Ve a esta URL y extrae TODOS los partidos completados: "
-            f"https://www.wtatennis.com/scores?status=All&date={now_str}\n"
-            f"Si no hay partidos hoy, prueba también: "
-            f"https://www.wtatennis.com/scores?status=All&date={hoy}\n"
-            f"Para cada partido dame: jugadora 1, jugadora 2, sets ganados.\n"
-            f"Responde SOLO con un JSON array sin markdown ni texto extra:\n"
-            f'[{{"p1":"Nombre completo","p2":"Nombre completo",'
-            f'"sets_p1":2,"sets_p2":1,"torneo":"Nombre del torneo",'
+            f"Busca los resultados de SINGLES WTA de hoy {now_str} en Indian Wells 2026.\n"
+            f"Intenta estas URLs en orden hasta encontrar resultados:\n"
+            f"1. https://www.wtatennis.com/tournament/1121/indian-wells/2026/scores\n"
+            f"2. https://www.wtatennis.com/scores?status=All&date={now_str}\n"
+            f"3. Busca en Google: 'WTA Indian Wells 2026 results {now_str} site:wtatennis.com'\n"
+            f"Extrae SOLO partidos FINALIZADOS de SINGLES femeninos de hoy.\n"
+            f"EXCLUIR absolutamente: dobles, mixtos, nombres con '/', '&', pares.\n"
+            f"Si jugadora 1 ganó: sets_p1 > sets_p2. Si perdió: sets_p1 < sets_p2.\n"
+            f"Responde SOLO con JSON array sin texto ni markdown:\n"
+            f'[{{"p1":"Nombre Apellido completo","p2":"Nombre Apellido completo",'
+            f'"sets_p1":2,"sets_p2":1,"torneo":"BNP Paribas Open Indian Wells",'
             f'"tour":"WTA","fecha":"{now_str}"}}]'
-            f" EXCLUIR: dobles, doubles, mixtos, pares. Solo singles/individuales ATP y WTA."
         )
         wta_text = _call_claude(wta_prompt)
         wta_matches = _parse_json_matches(wta_text, "WTA", "WTA Tour")
         results.extend(wta_matches)
+        # Fallback: si no encontró nada, hacer búsqueda más genérica
+        if not wta_matches:
+            wta_fallback = (
+                f"Busca en internet los resultados de tenis femenino WTA de hoy {now_str}.\n"
+                f"Indian Wells 2026 o cualquier torneo WTA activo hoy.\n"
+                f"Dame los resultados de singles completados.\n"
+                f"SOLO JSON array sin texto:\n"
+                f'[{{"p1":"Nombre Apellido","p2":"Nombre Apellido",'
+                f'"sets_p1":2,"sets_p2":0,"torneo":"Indian Wells","tour":"WTA","fecha":"{now_str}"}}]'
+            )
+            try:
+                wta_text2 = _call_claude(wta_fallback)
+                wta_m2 = _parse_json_matches(wta_text2, "WTA", "WTA Tour")
+                results.extend(wta_m2)
+            except: pass
     except:
         pass
 
@@ -2975,14 +2997,16 @@ def _villar_match_pick_to_result(pk, partido_db):
         # Empate
         elif any(x in pick_clean for x in ["empate","draw","🤝"," x "]):
             ok = draw
-        # Doble chance
-        elif any(x in pick_clean for x in ["o emp","o empate","1x","x1"]):
+        # Doble Oportunidad — "team o emp" / "o emp" / 1x / x1 / x2
+        elif any(x in pick_clean for x in ["o emp","o empate","1x","x1"," o emp"]):
+            # DO local: si el nombre del local aparece en el pick → local o empate
             if _name_in_pick(home, pick_clean) or "local" in pick_clean:
                 ok = won_h or draw
-            elif _name_in_pick(away, pick_clean) or "visita" in pick_clean or "x2" in pick_clean:
+            # DO visitante
+            elif _name_in_pick(away, pick_clean) or "visita" in pick_clean:
                 ok = won_a or draw
             else:
-                ok = won_h or draw  # default DC
+                ok = won_h or draw  # fallback DO local
         elif any(x in pick_clean for x in ["x2","2x"]):
             ok = won_a or draw
         # 1X2 por nombre — buscar en pick el nombre de local o visitante
@@ -3068,21 +3092,40 @@ def _villar_auto_pick(partido_db):
             away_id = partido_db.get("away_id","")
             ou_line = partido_db.get("ou_line", 220)
             r  = nba_ou_model(home_id, away_id, ou_line)
+
+            # ML pick
             if r["p_h_win"] >= 0.5:
-                pick_lbl = f"🏀 {home} gana ML"
-                prob     = r["p_h_win"]
+                ml_lbl = f"🏀 {home} gana ML"
+                ml_prob = r["p_h_win"]
             else:
-                pick_lbl = f"🏀 {away} gana ML"
-                prob     = 1 - r["p_h_win"]
-            # Compare vs O/U — take whichever is higher prob
-            ou_prob = max(r["p_over"], r["p_under"])
-            if ou_prob > prob:
-                rec = r.get("rec","OVER")
-                pick_lbl = f"{'🔥 Over' if rec=='OVER' else '❄️ Under'} {r['line']}"
-                prob = ou_prob
+                ml_lbl = f"🏀 {away} gana ML"
+                ml_prob = r["p_a_win"]
+
+            # O/U pick — solo si hay ventaja real (≥ 55%)
+            p_over  = r["p_over"]
+            p_under = r["p_under"]
+            line    = r["line"]
+            if p_over >= 0.55:
+                ou_lbl  = f"🔥 Over {line:.1f}"
+                ou_prob = p_over
+            elif p_under >= 0.55:
+                ou_lbl  = f"❄️ Under {line:.1f}"
+                ou_prob = p_under
+            else:
+                ou_lbl  = None
+                ou_prob = 0
+
+            # Elegir el pick con mayor probabilidad (siempre hay ML)
+            if ou_prob > ml_prob and ou_lbl:
+                pick_lbl = ou_lbl
+                prob     = ou_prob
+            else:
+                pick_lbl = ml_lbl
+                prob     = ml_prob
+
             return {"pick": pick_lbl, "prob": prob, "sport": "nba",
                     "home": home, "away": away,
-                    "src": f"🤖 Modelo NBA · {prob*100:.0f}%"}
+                    "src": f"🤖 NBA · ML {r['p_h_win']*100:.0f}%/O{p_over*100:.0f}%/U{p_under*100:.0f}%"}
 
         else:  # futbol — correr ensemble completo
             home_id  = partido_db.get("home_id","")
@@ -3108,19 +3151,41 @@ def _villar_auto_pick(partido_db):
             p_1xm = min(0.82, p_h + 0.12)
             p_2xm = min(0.78, p_a + 0.12)
 
-            # ── JERARQUÍA (sin DO) ──
-            # 1º Over 2.5 si ≥ 55%
-            # 2º AA si ≥ 52%
-            # 3º Gana cualquier mitad si ≥ 60%
-            # 4º 1X2 si ≥ 55% — o el mejor disponible
-            if p_o25 >= 0.55:
-                best = {"pick": "⚽ Over 2.5",  "prob": p_o25, "mkt": "O/U",  "odd": 0}
-            elif p_aa >= 0.52:
+            # ── JERARQUÍA DE PICKS ──
+            # 1. 1X2 directo si equipo muy dominante (≥62%)
+            # 2. Over 2.5 si prob alta (≥60%)
+            # 3. DO local ("home o Emp") si (ph+pd) ≥72% y ph≥45%
+            # 4. DO visitante ("away o Emp") si (pa+pd) ≥72% y pa≥40%
+            # 5. AA si genuinamente alta (≥58%)
+            # 6. Over 2.5 segunda oportunidad (≥55%)
+            # 7. Gana cualquier mitad (≥62%)
+            # 8. Over 1.5 solo como último recurso (≥68%)
+            # 9. Fallback: mejor 1X2 sin umbral
+            p_d   = mc.get("pd", 1 - p_h - p_a)  # prob empate
+            p_o15 = mc.get("o15", min(0.90, p_o25 + 0.18))
+            p_do_h = min(0.95, p_h + p_d)   # DO local
+            p_do_a = min(0.95, p_a + p_d)   # DO visitante
+
+            if p_h >= 0.62:
+                best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h}
+            elif p_a >= 0.62:
+                best = {"pick": f"✈️ {away} gana", "prob": p_a, "mkt": "1X2", "odd": odd_a}
+            elif p_o25 >= 0.60:
+                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0}
+            elif p_do_h >= 0.72 and p_h >= 0.45:
+                best = {"pick": f"🔵 {home[:14]} o Emp", "prob": p_do_h, "mkt": "DO", "odd": 0}
+            elif p_do_a >= 0.72 and p_a >= 0.40:
+                best = {"pick": f"🟣 {away[:14]} o Emp", "prob": p_do_a, "mkt": "DO", "odd": 0}
+            elif p_aa >= 0.58:
                 best = {"pick": "⚡ Ambos Anotan", "prob": p_aa, "mkt": "BTTS", "odd": 0}
-            elif p_1xm >= 0.60 and p_h >= p_a:
+            elif p_o25 >= 0.55:
+                best = {"pick": "⚽ Over 2.5", "prob": p_o25, "mkt": "O/U", "odd": 0}
+            elif p_1xm >= 0.62 and p_h >= p_a:
                 best = {"pick": f"🏠 {home[:12]} gana cualquier mitad", "prob": p_1xm, "mkt": "MITAD", "odd": 0}
-            elif p_2xm >= 0.60 and p_a > p_h:
+            elif p_2xm >= 0.62 and p_a > p_h:
                 best = {"pick": f"✈️ {away[:12]} gana cualquier mitad", "prob": p_2xm, "mkt": "MITAD", "odd": 0}
+            elif p_o15 >= 0.68:
+                best = {"pick": "⚽ Over 1.5", "prob": p_o15, "mkt": "O/U", "odd": 0}
             elif p_h >= p_a:
                 best = {"pick": f"🏠 {home} gana", "prob": p_h, "mkt": "1X2", "odd": odd_h}
             else:
@@ -3249,7 +3314,7 @@ def render_resultados_tab():
     # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
     _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
     _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-    _inicio_conteo = datetime.now(CDMX).strftime("%Y-%m-%d")  # contar solo desde hoy
+    _inicio_conteo = "2026-03-06"  # contar desde viernes 6 marzo 2026
     _fut_c = 0
     for _fp in [p for p in partidos if p.get("state")=="post"]:
         _sp = _fp.get("deporte","")
@@ -3389,7 +3454,7 @@ def render_resultados_tab():
             # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
             # NBA/Tenis: hasta 14 días atrás
             _catorce_dias = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
-            _inicio_conteo_tab = datetime.now(CDMX).strftime("%Y-%m-%d")  # contar desde hoy
+            _inicio_conteo_tab = "2026-03-06"  # contar desde viernes 6 marzo 2026
             _auto_pk_cache = {}
             _fut_count = 0
             for _fp in finalizados:
@@ -3645,10 +3710,10 @@ def render_resultados_tab():
 # ══════════════════════════════════════════════════════════════════════════
 
 # ── Constantes de confianza King Rongo ──
-_KR_DIAMOND_THRESHOLD = 0.68   # pick diamante
-_KR_GOLD_THRESHOLD    = 0.62   # pick oro
-_KR_MIN_EDGE          = 0.01   # edge mínimo para recomendar
-_KR_MIN_PROB          = 0.51   # prob mínima para aparecer en lista
+_KR_DIAMOND_THRESHOLD = 0.65   # pick diamante
+_KR_GOLD_THRESHOLD    = 0.58   # pick oro
+_KR_MIN_EDGE          = 0.00   # sin edge mínimo — KR decide
+_KR_MIN_PROB          = 0.50   # prob mínima para aparecer en lista
 _KR_CONFLICT_SPREAD   = 0.22   # dispersión modelos → conflicto
 
 
@@ -4520,8 +4585,16 @@ def elo_win_prob(home_id, away_id, hform=None, aform=None, home_adv=50):
 
 # ── Weibull + Markov para tenis (Klaassen & Magnus 2001) ──
 def _weibull_srv_prob(rank_srv, rank_ret, surface="hard"):
+    """Probabilidad de ganar punto de servicio — Elo logarítmico para rankings reales."""
+    import math as _m
     base = {"hard":0.630,"clay":0.600,"grass":0.662,"carpet":0.645}.get(surface.lower(),0.630)
-    return max(0.35, min(0.78, base - (rank_srv - rank_ret)*0.00015))
+    # Convertir ranking a Elo: top1≈2400, top10≈2161, top50≈1994, top150≈1880
+    def _r2e(r): return 2400 - 550 * _m.log(max(1,min(500,r))) / _m.log(200)
+    elo_srv = _r2e(rank_srv)
+    elo_ret = _r2e(rank_ret)
+    # Mejor servidor (mayor Elo) gana más puntos de servicio
+    adj = (elo_srv - elo_ret) * 0.00030   # 100 Elo pts → +0.030
+    return max(0.35, min(0.78, base + adj))
 
 def _markov_game(p):
     """P(ganar juego) dado p(ganar punto) — fórmula cerrada exacta."""
@@ -6898,25 +6971,40 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                                         odd_d=m.get("odd_d",0))
                 dp  = diamond_engine(mc, h2s, hf, af)
 
-                # ── Jerarquía sin DO: O25 → AA → Mitad → 1X2 ──
+                # ── Jerarquía King Rongo: igual a _villar_auto_pick ──
                 _ph = dp["ph"]; _pa = dp["pa"]
-                _o25 = mc["o25"]; _aa = mc["btts"]
-                _1xm = min(0.82, _ph+0.12); _2xm = min(0.78, _pa+0.12)
+                _pd   = mc.get("pd", max(0, 1-_ph-_pa))
+                _o25  = mc["o25"]; _aa = mc["btts"]
+                _o15  = mc.get("o15", min(0.90, _o25+0.18))
+                _1xm  = min(0.82, _ph+0.12); _2xm = min(0.78, _pa+0.12)
+                _do_h = min(0.95, _ph+_pd); _do_a = min(0.95, _pa+_pd)
 
-                if _o25 >= 0.55:
+                if _ph >= 0.62:
+                    lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
+                elif _pa >= 0.62:
+                    lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
+                elif _o25 >= 0.60:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif _aa >= 0.52:
+                elif _do_h >= 0.72 and _ph >= 0.45:
+                    lbl, prob, odd, mkt = f"🔵 {m['home'][:14]} o Emp", _do_h, 0, "DO"
+                elif _do_a >= 0.72 and _pa >= 0.40:
+                    lbl, prob, odd, mkt = f"🟣 {m['away'][:14]} o Emp", _do_a, 0, "DO"
+                elif _aa >= 0.58:
                     lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
-                elif _1xm >= 0.60 and _ph >= _pa:
+                elif _o25 >= 0.55:
+                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
+                elif _1xm >= 0.62 and _ph >= _pa:
                     lbl, prob, odd, mkt = f"🏠 {m['home'][:12]} gana cualquier mitad", _1xm, 0, "MITAD"
-                elif _2xm >= 0.60 and _pa > _ph:
+                elif _2xm >= 0.62 and _pa > _ph:
                     lbl, prob, odd, mkt = f"✈️ {m['away'][:12]} gana cualquier mitad", _2xm, 0, "MITAD"
+                elif _o15 >= 0.68:
+                    lbl, prob, odd, mkt = "⚽ Over 1.5", _o15, 0, "O/U"
                 elif _ph >= _pa:
                     lbl, prob, odd, mkt = f"🏠 {m['home']} gana", _ph, m.get("odd_h",0), "1X2"
                 else:
                     lbl, prob, odd, mkt = f"✈️ {m['away']} gana", _pa, m.get("odd_a",0), "1X2"
 
-                if prob < 0.50: continue
+                if prob < 0.48: continue
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -7008,7 +7096,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 spread = round(abs(tm["p1"]-tm["p2"])*100, 1)
-                contra = spread < 6
+                contra = spread < 4  # solo 50/50 exacto es contradicción
                 ce,cl,cc = _kr_conf(prob, edge, _KR_CONFLICT_PP+5 if contra else 10)
                 rd   = abs(m.get("rank1",200)-m.get("rank2",200))
                 c = {
@@ -7033,20 +7121,39 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     candidates.sort(key=lambda x: -x.get("score",0))
     contras = [c for c in candidates if c.get("contradiccion")]
 
-    # El pick: cascada — siempre retorna algo si hay candidatos
+    # Cascada — siempre retorna algo si hay candidatos
     el_pick = (
-        # 1º: sin contradicción + edge positivo
         next((c for c in candidates if not c.get("contradiccion") and c.get("edge",0) > 0), None) or
-        # 2º: sin contradicción, prob >= 52%
         next((c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.52), None) or
-        # 3º: cualquiera sin contradicción
         next((c for c in candidates if not c.get("contradiccion")), None) or
-        # 4º: el mejor aunque tenga contradicción
         (candidates[0] if candidates else None)
     )
     if el_pick:
         el_pick = {**el_pick, "is_rongo_pick": True}
-    return el_pick, contras, candidates[:20]
+
+    # TOP 3 DEL REY — el mejor de cada deporte, priorizando sin contradicción
+    _top3 = []
+    _deps_usados = set()
+    # Primero: mejores sin contradicción
+    for _c in candidates:
+        if _c.get("contradiccion"): continue
+        _dep = _c.get("deporte","")
+        if _dep not in _deps_usados:
+            _deps_usados.add(_dep)
+            _top3.append({**_c, "is_rongo_pick": True})
+        if len(_top3) == 3: break
+    # Completar si hace falta (incluso con contradicción)
+    if len(_top3) < 3:
+        for _c in candidates:
+            _dep = _c.get("deporte","")
+            already = any(t.get("label")==_c.get("label") for t in _top3)
+            if not already and _dep not in {t.get("deporte") for t in _top3}:
+                _top3.append({**_c, "is_rongo_pick": True})
+            elif not already and len(_top3) < 3:
+                _top3.append({**_c, "is_rongo_pick": True})
+            if len(_top3) == 3: break
+
+    return el_pick, contras, candidates[:20], _top3
 
 
 def _kr_parlay_del_rey(todos):
@@ -7932,7 +8039,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     if not _ten_target: _ten_target = _ten
 
                     _kr_status.update(label=f"🧠 Analizando {len(_mf_target)} fútbol · {len(_nbg_target)} NBA · {len(_ten_target)} tenis...")
-                    el_pick, contradicciones, todos = _king_rongo_scan_all(
+                    el_pick, contradicciones, todos, top3 = _king_rongo_scan_all(
                         _mf_target, _nbg_target, _ten_target
                     )
 
@@ -7954,6 +8061,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     st.session_state["_king_el_pick"]  = el_pick
                     st.session_state["_king_contras"]  = contradicciones
                     st.session_state["_king_todos"]    = todos
+                    st.session_state["_king_top3"]     = top3
                     st.session_state["_king_scanned"]  = True
                     st.session_state["_king_ts"]       = _ts_now
                     st.session_state["_king_target"]   = _target_date
@@ -7982,6 +8090,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         el_pick        = st.session_state.get("_king_el_pick")
         contradicciones= st.session_state.get("_king_contras", [])
         todos          = st.session_state.get("_king_todos", [])
+        top3           = st.session_state.get("_king_top3", [])
         scan_ts        = st.session_state.get("_king_ts","")
         scan_target    = st.session_state.get("_king_target", _target_date)
 
@@ -8009,6 +8118,44 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         # ── EL PICK DEL DÍA ──
         if el_pick:
             _kr_render_pick_card(el_pick, bk, todos)
+
+            # ── TOP 3 DEL REY ──
+            if top3 and len(top3) > 0:
+                st.markdown(
+                    "<div style='font-size:.72rem;font-weight:700;color:#FFD700;"
+                    "text-transform:uppercase;letter-spacing:.15em;margin:18px 0 8px;"
+                    "text-align:center'>👑 LOS 3 PICKS DEL REY</div>",
+                    unsafe_allow_html=True)
+                _t3_cols = st.columns(min(len(top3), 3))
+                for _t3i, _t3c in enumerate(top3[:3]):
+                    with _t3_cols[_t3i]:
+                        _t3_prob  = _t3c.get("prob", 0)
+                        _t3_edge  = _t3c.get("edge", 0)
+                        _t3_odd   = _t3c.get("odd", 0)
+                        _t3_sport = _t3c.get("deporte","")
+                        _t3_cc    = _t3c.get("conf_color","#FFD700")
+                        _t3_ce    = _t3c.get("conf_emoji","⚡")
+                        _t3_medal = ["👑","🥇","🥈"][_t3i]
+                        _t3_odd_txt = f"@{_t3_odd:.2f}" if _t3_odd > 1 else "S/C"
+                        _t3_edge_c  = "#00ff88" if _t3_edge >= 0 else "#ff4444"
+                        st.markdown(
+                            f"<div style='background:linear-gradient(145deg,#0a0020,#07071a);"
+                            f"border:1px solid {_t3_cc}66;border-radius:14px;padding:12px;"
+                            f"text-align:center;height:100%'>"
+                            f"<div style='font-size:1.4rem'>{_t3_medal}</div>"
+                            f"<div style='font-size:.68rem;color:#888;margin:2px 0'>{_t3_sport}</div>"
+                            f"<div style='font-size:.72rem;font-weight:700;color:#ddd;"
+                            f"margin:4px 0;line-height:1.3'>{_t3c.get('label','')}</div>"
+                            f"<div style='font-size:.85rem;font-weight:900;color:{_t3_cc};"
+                            f"margin:6px 0'>{_t3c.get('pick','')}</div>"
+                            f"<div style='font-size:1.2rem;font-weight:900;color:#fff'>"
+                            f"{_t3_prob*100:.0f}%</div>"
+                            f"<div style='font-size:.65rem;color:{_t3_edge_c}'>"
+                            f"Edge {_t3_edge*100:+.1f}% · {_t3_odd_txt}</div>"
+                            f"<div style='font-size:.6rem;color:#555;margin-top:4px'>"
+                            f"{_t3_ce} {_t3c.get('conf_label','')}</div>"
+                            f"</div>",
+                            unsafe_allow_html=True)
 
             # Botones de acción del pick
             a1, a2, a3 = st.columns(3)
@@ -8064,6 +8211,14 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                 edge_pct = el_pick["edge"] * 100
                 conf_e   = el_pick.get("conf_emoji","⚡")
                 models_txt = " | ".join(f"{k}: {v}%" for k,v in list(el_pick.get("models",{}).items())[:3])
+                # Construir texto del TOP 3
+                _top3_txt = ""
+                for _ti, _tc in enumerate(top3[:3]):
+                    _medal = ["👑","🥇","🥈"][_ti]
+                    _t_odd = f" @{_tc['odd']:.2f}" if _tc.get('odd',0)>1 else ""
+                    _top3_txt += f"{_medal} {_tc['deporte']} · {_tc['label']}{_nl}"
+                    _top3_txt += f"   ➜ *{_tc['pick']}* {_tc['prob']*100:.0f}%{_t_odd}{_nl}"
+
                 msg = (
                     f"👑 *KING RONGO — PICK DEL DÍA*{_nl}"
                     f"━━━━━━━━━━━━━━━━━━━{_nl}"
@@ -8076,8 +8231,11 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     f"🎯 Kelly: *{bk['kelly_rec']}%* del banco{_nl}"
                     f"{'💰 @' + str(round(el_pick['odd'],2)) if el_pick.get('odd',0)>1 else ''}{_nl}{_nl}"
                     f"🧠 Modelos: {models_txt}{_nl}{_nl}"
-                    f"_{bk['consejo']}_{_nl}"
                     f"━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"🎯 *LOS 3 PICKS DEL REY:*{_nl}"
+                    f"{_top3_txt}"
+                    f"━━━━━━━━━━━━━━━━━━━{_nl}"
+                    f"_{bk['consejo']}_{_nl}"
                     f"_The Gamblers Layer · King Rongo v2_{_nl}"
                     f"_Escaneados: {len(todos)} partidos ⚽{n_fut} 🏀{n_nba} 🎾{n_ten}_"
                 )
@@ -9264,10 +9422,10 @@ else:
 #   9. Telegram completo: pick + parlay + bankroll
 # ════════════════════════════════════════════════════════════════════════════
 
-# KR thresholds defined above
+# KR thresholds — usar los definidos arriba en _KR_DIAMOND_THRESHOLD
 _KR_CONFLICT_PP    = 22     # dispersión (pp) entre modelos → conflicto
-_KR_DIAMOND_PROB   = 0.68
-_KR_GOLD_PROB      = 0.62
+_KR_DIAMOND_PROB   = _KR_DIAMOND_THRESHOLD   # 0.65
+_KR_GOLD_PROB      = _KR_GOLD_THRESHOLD       # 0.58
 _KR_PARLAY_MIN     = 3      # picks mínimos para armar el parlay del rey
 
 
