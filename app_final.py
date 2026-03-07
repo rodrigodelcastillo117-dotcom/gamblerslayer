@@ -2418,54 +2418,6 @@ def fetch_tennis_results(days_back=10):
     results = []
     seen_ids = set()
 
-    # ── DATOS SEMILLA: Resultados reales Indian Wells 6 marzo 2026 ──
-    # ATP Day 3 + WTA Day 3 — verificados en atptour.com / wtatennis.com
-    _SEED_06 = [
-        # ATP — 6 marzo 2026
-        {"p1":"Matteo Berrettini","p2":"Alexander Zverev","score_h":2,"score_a":1,"tour":"ATP"},
-        {"p1":"Jannik Sinner","p2":"Dalibor Svrcina","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Gael Monfils","p2":"Felix Auger-Aliassime","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Zizou Bergs","p2":"Tommy Paul","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Jenson Brooksby","p2":"Frances Tiafoe","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Gabriel Diallo","p2":"Learner Tien","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Joao Fonseca","p2":"Adam Walton","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Marton Fucsovics","p2":"Lorenzo Musetti","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Marcos Giron","p2":"Jakub Mensik","score_h":2,"score_a":1,"tour":"ATP"},
-        {"p1":"Miomir Kecmanovic","p2":"Flavio Cobolli","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Denis Shapovalov","p2":"Tomas Martin Etcheverry","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Ben Shelton","p2":"Reilly Opelka","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Brandon Nakashima","p2":"Camilo Ugo Carabelli","score_h":2,"score_a":0,"tour":"ATP"},
-        {"p1":"Alejandro Davidovich Fokina","p2":"Zachary Svajda","score_h":2,"score_a":0,"tour":"ATP"},
-        # WTA — 6 marzo 2026
-        {"p1":"Aryna Sabalenka","p2":"Himeno Sakatsume","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Coco Gauff","p2":"Kamilla Rakhimova","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Amanda Anisimova","p2":"Anna Blinkova","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Victoria Mboko","p2":"Kimberly Birrell","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Naomi Osaka","p2":"Victoria Jimenez Kasintseva","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Iva Jovic","p2":"Camila Osorio","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Clara Tauson","p2":"Yulia Putintseva","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Ekaterina Alexandrova","p2":"Talia Gibson","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Anna Kalinskaya","p2":"Zeynep Sonmez","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Diana Shnaider","p2":"Sorana Cirstea","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Linda Noskova","p2":"Jessica Bouzas Maneiro","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Jasmine Paolini","p2":"Anastasia Potapova","score_h":2,"score_a":0,"tour":"WTA"},
-        {"p1":"Emma Raducanu","p2":"Anastasia Zakharova","score_h":2,"score_a":0,"tour":"WTA"},
-    ]
-    for _s in _SEED_06:
-        _sid = f"ten_seed_{_s['p1'][:6].lower().replace(' ','')}_{_s['p2'][:6].lower().replace(' ','')}_{_s['tour']}_20260306"
-        if _sid not in seen_ids:
-            seen_ids.add(_sid)
-            results.append({
-                "id": _sid, "deporte": "tenis",
-                "home": _s["p1"], "away": _s["p2"],
-                "p1": _s["p1"], "p2": _s["p2"],
-                "score_h": _s["score_h"], "score_a": _s["score_a"],
-                "state": "post", "liga": f"{_s['tour']} · BNP Paribas Open Indian Wells",
-                "tour": _s["tour"], "torneo": "BNP Paribas Open Indian Wells",
-                "fecha": "2026-03-06", "hora": "12:00",
-                "rank1": 0, "rank2": 0,
-            })
-
     # ── FUENTE 1: Tennis API histórico ──
     try:
         r = requests.get(TENNIS_API, params={
@@ -2656,10 +2608,11 @@ def _fetch_tennis_results_web(desde, hoy):
             f"2. https://www.atptour.com/es/scores/current/indian-wells/404/results\n"
             f"3. Busca en Google: 'ATP Indian Wells 2026 results {now_str} site:atptour.com'\n"
             f"Extrae SOLO partidos FINALIZADOS de SINGLES masculinos de hoy.\n"
-            f"EXCLUIR absolutamente: dobles, mixtos, nombres con '/', 'vs', '&'.\n"
-            f"Si el jugador 1 ganó: sets_p1 > sets_p2. Si perdió: sets_p1 < sets_p2.\n"
+            f"EXCLUIR absolutamente: dobles, mixtos, nombres con \'/\', \'vs\', \'&\'.\n"
+            f"CRITICO: p1=GANADOR siempre (sets_p1>sets_p2). p2=perdedor.\n"
+            f"Ej: Zverev gano 2-1 a Berrettini → p1=Zverev sets_p1=2, p2=Berrettini sets_p2=1\n"
             f"Responde SOLO con JSON array sin texto ni markdown:\n"
-            f'[{{"p1":"Nombre Apellido completo","p2":"Nombre Apellido completo",'
+            f'[{{"p1":"Ganador Apellido","p2":"Perdedor Apellido",'
             f'"sets_p1":2,"sets_p2":1,"torneo":"BNP Paribas Open Indian Wells",'
             f'"tour":"ATP","fecha":"{now_str}"}}]'
         )
@@ -2693,9 +2646,9 @@ def _fetch_tennis_results_web(desde, hoy):
             wta_fallback = (
                 f"Busca en internet los resultados de tenis femenino WTA de hoy {now_str}.\n"
                 f"Indian Wells 2026 o cualquier torneo WTA activo hoy.\n"
-                f"Dame los resultados de singles completados.\n"
+                f"CRITICO: p1=GANADORA (sets_p1>sets_p2). p2=perdedora.\n"
                 f"SOLO JSON array sin texto:\n"
-                f'[{{"p1":"Nombre Apellido","p2":"Nombre Apellido",'
+                f'[{{"p1":"Ganadora Apellido","p2":"Perdedora Apellido",'
                 f'"sets_p1":2,"sets_p2":0,"torneo":"Indian Wells","tour":"WTA","fecha":"{now_str}"}}]'
             )
             try:
