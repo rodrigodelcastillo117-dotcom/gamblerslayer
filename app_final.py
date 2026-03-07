@@ -2423,7 +2423,95 @@ def fetch_tennis_results(days_back=10):
             })
     except: pass
 
+    # ── FUENTE 3: Búsqueda web con Claude (si tenemos pocos resultados) ──
+    if len(results) < 3 and ANTHROPIC_API_KEY:
+        web_results = _fetch_tennis_results_web(desde, hoy)
+        for wr in web_results:
+            eid = f"ten_web_{wr['p1'][:6]}_{wr['p2'][:6]}_{wr['fecha']}"
+            if eid in seen_ids: continue
+            seen_ids.add(eid)
+            wr["id"] = eid
+            results.append(wr)
+
     return results
+
+
+def _fetch_tennis_results_web(desde, hoy):
+    """
+    Usa Claude con web_search para obtener resultados reales de tenis
+    de los últimos días. Retorna lista de partidos finalizados.
+    """
+    if not ANTHROPIC_API_KEY:
+        return []
+    try:
+        prompt = (
+            f"Busca en internet los resultados de los partidos de tenis ATP y WTA "
+            f"del {desde} al {hoy}. "
+            f"Dame SOLO los partidos finalizados con: ganador, perdedor y sets (ej: 6-3 6-4). "
+            f"Responde ÚNICAMENTE con JSON, sin texto extra, sin markdown, este formato exacto:\n"
+            f'[{{"p1":"Nombre Apellido","p2":"Nombre Apellido","sets_p1":2,"sets_p2":0,'
+            f'"torneo":"Nombre Torneo","tour":"ATP","fecha":"YYYY-MM-DD"}}]\n'
+            f"Incluye mínimo 5 partidos reales y máximo 20. Solo ATP y WTA principales."
+        )
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1500,
+                "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return []
+
+        # Extraer texto de la respuesta (puede tener bloques tool_use + text)
+        raw_text = ""
+        for block in resp.json().get("content", []):
+            if block.get("type") == "text":
+                raw_text += block.get("text", "")
+
+        # Parsear JSON — limpiar markdown si viene
+        import re as _re, json as _j
+        clean = _re.sub(r"```[a-z]*", "", raw_text).strip()
+        # Encontrar el array JSON
+        m = _re.search(r'\[.*\]', clean, _re.DOTALL)
+        if not m:
+            return []
+        partidos_raw = _j.loads(m.group())
+
+        results = []
+        for p in partidos_raw:
+            try:
+                p1    = str(p.get("p1","")).strip()
+                p2    = str(p.get("p2","")).strip()
+                sc1   = int(p.get("sets_p1", 0))
+                sc2   = int(p.get("sets_p2", 0))
+                fecha = str(p.get("fecha", hoy))[:10]
+                tour  = str(p.get("tour","ATP")).upper()
+                torneo= str(p.get("torneo",""))
+                if not p1 or not p2 or (sc1 == 0 and sc2 == 0):
+                    continue
+                results.append({
+                    "deporte": "tenis",
+                    "home": p1, "away": p2, "p1": p1, "p2": p2,
+                    "liga": f"{tour} · {torneo}",
+                    "tour": tour, "torneo": torneo,
+                    "fecha": fecha, "hora": "00:00",
+                    "state": "post",
+                    "score_h": sc1, "score_a": sc2,
+                })
+            except:
+                continue
+        return results
+    except:
+        return []
 
 
 def update_results_db(force=False):
@@ -2623,12 +2711,33 @@ def _villar_match_pick_to_result(pk, partido_db):
     import re as _re
 
     if sport in ("tenis","tennis") or "🎾" in pick:
-        # Tenis: sh/sa = sets ganados. pick contiene nombre del favorito
-        p1n = (pk.get("home", pk.get("p1","")) or "").lower()
-        if p1n and any(w in pick for w in p1n.split() if len(w)>2):
-            ok = won_h
-        else:
+        # Tenis: sh=sets ganados p1 (home), sa=sets ganados p2 (away)
+        # El pick contiene el nombre/apellido del favorito
+        p1_full = (pk.get("home", pk.get("p1","")) or partido_db.get("home","")).lower()
+        p2_full = (pk.get("away", pk.get("p2","")) or partido_db.get("away","")).lower()
+
+        def _last(name):
+            """Apellido = última palabra de más de 2 letras"""
+            parts = [w for w in name.split() if len(w) > 2]
+            return parts[-1] if parts else name[:5]
+
+        p1_last = _last(p1_full)
+        p2_last = _last(p2_full)
+
+        # Buscar apellido del favorito en el pick
+        pick_mentions_p1 = p1_last and p1_last in pick
+        pick_mentions_p2 = p2_last and p2_last in pick
+
+        if pick_mentions_p1 and not pick_mentions_p2:
+            ok = won_h  # apostamos a p1, ganó si sh > sa
+        elif pick_mentions_p2 and not pick_mentions_p1:
             ok = won_a
+        elif won_h or won_a:
+            # Fallback: si no hay nombre claro, tomar al ganador de mayor sets
+            # y ver si el pick menciona algo del ganador
+            winner_name = p1_full if won_h else p2_full
+            winner_last = _last(winner_name)
+            ok = winner_last in pick
     elif sport == "nba" or "pts" in pick or "over" in pick.lower() or "under" in pick.lower():
         nums = _re.findall(r'\d+\.?\d*', pick)
         line = float(nums[0]) if nums else 220
@@ -2749,11 +2858,31 @@ def _villar_auto_pick(partido_db):
 def _villar_find_result(pk, all_partidos):
     """
     Busca el partido correspondiente al pick en la DB de resultados.
-    Usa fuzzy match por nombre de equipo + fecha.
+    Usa fuzzy match por nombre de equipo/jugador + fecha.
+    Para tenis también extrae el nombre del string del pick.
     """
     pk_home = pk.get("home","").lower().strip()
     pk_away = pk.get("away","").lower().strip()
     pk_date = pk.get("date", pk.get("fecha",""))[:10]
+    pk_pick = pk.get("pick","").lower()
+
+    # Para tenis: si no hay home/away, extraer nombre del pick ("🎾 Djokovic gana" → "djokovic")
+    if not pk_home and "🎾" in pk.get("pick",""):
+        import re as _re2
+        _names = _re2.sub(r'[🎾🏀⚽✈️🏠]','', pk_pick).replace("gana","").strip()
+        pk_home = _names  # tratar el nombre del favorito como "home" para el match
+
+    def _name_score(a, b):
+        if not a or not b: return 0
+        a_parts = [x for x in a.split() if len(x) > 2]
+        b_parts = [x for x in b.split() if len(x) > 2]
+        best = 0
+        for ap in a_parts:
+            for bp in b_parts:
+                if ap in bp or bp in ap:
+                    # Apellidos largos valen más
+                    best = max(best, 1 + (1 if len(ap) > 4 else 0))
+        return best
 
     best = None; best_score = 0
     for p in all_partidos:
@@ -2762,34 +2891,28 @@ def _villar_find_result(pk, all_partidos):
         p_away = p.get("away","").lower()
         p_date = p.get("fecha","")
 
-        # Date match (allow ±1 day)
+        # Date match (±2 días para tenis porque los resultados web pueden venir con fecha distinta)
         date_ok = False
         if pk_date and p_date:
             try:
                 from datetime import datetime as _dt
                 d1 = _dt.strptime(pk_date, "%Y-%m-%d")
                 d2 = _dt.strptime(p_date,  "%Y-%m-%d")
-                date_ok = abs((d1-d2).days) <= 1
-            except: date_ok = pk_date[:7] == p_date[:7]  # same month fallback
+                date_ok = abs((d1-d2).days) <= 2
+            except: date_ok = pk_date[:7] == p_date[:7]
         else:
-            date_ok = True  # no date = don't filter by date
+            date_ok = True
 
         if not date_ok: continue
 
-        # Name match: check if any word of pk_home appears in p_home (or vice versa)
-        def _name_score(a, b):
-            if not a or not b: return 0
-            a_parts = [x for x in a.split() if len(x) > 2]
-            b_parts = [x for x in b.split() if len(x) > 2]
-            for ap in a_parts:
-                for bp in b_parts:
-                    if ap in bp or bp in ap: return 1
-            return 0
-
-        score = _name_score(pk_home, p_home) + _name_score(pk_away, p_away)
-        # Also try reversed (home/away swap)
+        score  = _name_score(pk_home, p_home) + _name_score(pk_away, p_away)
         score2 = _name_score(pk_home, p_away) + _name_score(pk_away, p_home)
-        match_score = max(score, score2)
+        # Para tenis: si el nombre del pick aparece en cualquier jugador
+        if p.get("deporte") == "tenis":
+            score3 = max(_name_score(pk_home, p_home), _name_score(pk_home, p_away))
+            match_score = max(score, score2, score3)
+        else:
+            match_score = max(score, score2)
 
         if match_score > best_score:
             best_score = match_score
