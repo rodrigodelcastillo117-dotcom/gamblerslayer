@@ -2288,17 +2288,24 @@ def _save_picks_snap(snap):
         with open(PICKS_SNAP_F,"w") as f: json.dump(snap, f, ensure_ascii=False, indent=2)
     except: pass
 
-def _snap_auto_pick(partido_id, pick_data):
-    """Guarda pick automático en snapshot. Siempre sobrescribe — el modelo es determinístico."""
+def _snap_auto_pick(partido_id, pick_data, state="pre"):
+    """Guarda pick automático en snapshot.
+    REGLA: si el partido ya terminó (state=post/in), NO sobrescribir el pick original.
+    El pick se congela en el momento pre-partido y no cambia nunca."""
     if not partido_id or not pick_data: return
     snap = _load_picks_snap()
+    # Si ya existe un pick guardado Y el partido ya empezó/terminó → no tocar
+    if partido_id in snap and state in ("in", "post"):
+        return
     snap[partido_id] = {
-        "pick":     pick_data.get("pick",""),
-        "prob":     pick_data.get("prob",0),
-        "mkt":      pick_data.get("mkt", pick_data.get("src","🤖 Modelo")),
-        "odd":      pick_data.get("odd",0),
-        "src":      pick_data.get("src","🤖 Modelo"),
+        "pick":      pick_data.get("pick",""),
+        "prob":      pick_data.get("prob",0),
+        "mkt":       pick_data.get("mkt", pick_data.get("src","🤖 Modelo")),
+        "odd":       pick_data.get("odd",0),
+        "src":       pick_data.get("src","🤖 Modelo"),
+        "all_picks": pick_data.get("all_picks", []),
         "fecha_gen": datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
+        "frozen":    state in ("in","post"),
     }
     _save_picks_snap(snap)
 
@@ -3598,7 +3605,7 @@ def render_resultados_tab():
                     try:
                         _apk = _villar_auto_pick(_fp)
                         _auto_pk_cache[_mid] = _apk
-                        _snap_auto_pick(_mid, _apk)  # guardar snapshot primera vez
+                        _snap_auto_pick(_mid, _apk, state=_fp.get("state","pre"))
                     except: _auto_pk_cache[_mid] = None
 
             for fecha in sorted(por_fecha.keys(), reverse=True):
@@ -3667,13 +3674,22 @@ def render_resultados_tab():
                             _mid = p.get("id","")
                             auto_pk = None
                             if not manual_pks:
-                                # Recalcular fresh con jerarquía correcta
-                                try:
-                                    auto_pk = _villar_auto_pick(_p_fixed)
-                                    if auto_pk:
-                                        _snap_auto_pick(_mid, auto_pk)  # actualizar snap
-                                except:
-                                    auto_pk = _auto_pk_cache.get(_mid)
+                                _mid = p.get("id","")
+                                _p_state = p.get("state","pre")
+                                # Para partidos terminados: usar pick congelado del snapshot
+                                _frozen_snap = _load_picks_snap().get(_mid)
+                                if _frozen_snap and _p_state == "post":
+                                    auto_pk = _frozen_snap
+                                    auto_pk.setdefault("home", p.get("home",""))
+                                    auto_pk.setdefault("away", p.get("away",""))
+                                    auto_pk.setdefault("sport", _p_state)
+                                else:
+                                    try:
+                                        auto_pk = _villar_auto_pick(_p_fixed)
+                                        if auto_pk:
+                                            _snap_auto_pick(_mid, auto_pk, state=_p_state)
+                                    except:
+                                        auto_pk = _auto_pk_cache.get(_mid)
 
                             pick_rows = []
                             for pk in manual_pks:
@@ -9073,6 +9089,30 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     st.session_state["_king_ts"]       = _ts_now
                     st.session_state["_king_target"]   = _target_date
 
+                    # ── AUTO-GUARDAR pick de KR en historial ──
+                    # Solo si no existe ya un pick de KR para este partido hoy
+                    if el_pick:
+                        _kr_match = el_pick.get("match", {})
+                        _kr_home  = _kr_match.get("home", _kr_match.get("p1", el_pick.get("label","?").split(" vs ")[0]))
+                        _kr_away  = _kr_match.get("away", _kr_match.get("p2", el_pick.get("label","?").split(" vs ")[-1] if " vs " in el_pick.get("label","") else "?"))
+                        _kr_fecha = _kr_match.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d"))
+                        _kr_label = f"👑 {el_pick.get('pick','?')}"
+                        # Verificar si ya existe este pick en historial (mismo partido + mismo día)
+                        init_history()
+                        _existing = [p for p in st.session_state.get("pick_history",[])
+                                     if p.get("pick","").startswith("👑")
+                                     and p.get("home","") == _kr_home
+                                     and p.get("fecha","") == _kr_fecha]
+                        if not _existing:
+                            add_pick(
+                                {"home": _kr_home, "away": _kr_away,
+                                 "league": el_pick.get("liga",""), "fecha": _kr_fecha},
+                                _kr_label,
+                                el_pick.get("prob", 0),
+                                el_pick.get("odd", 0),
+                                sport=el_pick.get("sport","futbol")
+                            )
+
                     # Persistir en disco para sobrevivir entre sesiones
                     _kr_save_cache({
                         "el_pick":        el_pick,
@@ -10421,7 +10461,7 @@ else:
         _snap_auto_pick(_gid, {
             "pick": main_lbl, "prob": main_prob, "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
             "odd": main_odd, "src": f"💎 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}"
-        })
+        }, state=g.get("state","pre"))
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
