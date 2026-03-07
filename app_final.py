@@ -3695,16 +3695,25 @@ def render_resultados_tab():
                             if not manual_pks:
                                 _p_state = p.get("state","pre")
                                 _bridge = st.session_state.get("_diamond_bridge", {})
-                                # Buscar en bridge por ID directo
+                                # Buscar por ID directo
                                 _bp = _bridge.get(_mid)
-                                # Fallback: home_id+away_id+fecha
+                                # Fallback 1: home_id+away_id+fecha
                                 if not _bp:
                                     _alt = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
                                     _bp = _bridge.get(_alt)
+                                # Fallback 2: nombre equipo local + fecha (IDs distintos entre ESPN endpoints)
+                                if not _bp:
+                                    _ph = (p.get("home","") or "").lower().strip()
+                                    _pf = p.get("fecha","")
+                                    for _bv in _bridge.values():
+                                        if (_bv.get("fecha","") == _pf and
+                                            _ph and _bv.get("home","").lower().strip() == _ph):
+                                            _bp = _bv
+                                            break
                                 if _bp:
                                     auto_pk = dict(_bp)
                                 else:
-                                    # Sin bridge: usar cache o recalcular sin score
+                                    # Sin bridge: partido no fue visto en cartelera — recalcular
                                     auto_pk = _auto_pk_cache.get(_mid)
                                     if not auto_pk:
                                         try:
@@ -9654,51 +9663,92 @@ if deporte == "futbol":
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
 
-    # ── PRE-SNAP BACKGROUND: calcular y guardar pick de cada partido ──
-    # Corre diamond_engine para todos los partidos (pre y post) y llena el bridge.
-    # El bridge persiste en archivo — Resultados siempre encuentra el pick correcto.
+    # ── AUTO-BRIDGE: calcular Jugada Diamante real para todos los partidos ──
+    # Usa get_form + diamond_engine igual que el análisis manual.
+    # get_form tiene cache 30min — solo es lento la primera vez.
+    # Solo recalcula partidos que no están en el bridge todavía.
     if all_matches:
-        if "_diamond_bridge" not in st.session_state:
-            # Cargar bridge persistido de sesiones anteriores
-            try:
-                import json as _json
-                with open("/tmp/gamblers_diamond_bridge.json") as _bf:
-                    st.session_state["_diamond_bridge"] = _json.load(_bf)
-            except: st.session_state["_diamond_bridge"] = {}
-        _bridge = st.session_state["_diamond_bridge"]
+        _bridge = st.session_state.setdefault("_diamond_bridge", {})
         _bridge_dirty = False
-        for _pm in all_matches:
+        for _am in all_matches:
             try:
-                _pid  = _pm.get("id","")
-                _pid2 = f"{_pm.get('home_id','')}_{_pm.get('away_id','')}_{_pm.get('fecha','')}"
-                _pst  = _pm.get("state","pre")
-                # Pre-partido: saltar si ya está en bridge
-                if _pst == "pre" and (_pid in _bridge or _pid2 in _bridge):
-                    continue
-                # Calcular con datos limpios (sin score)
-                _pm_clean = {k: v for k, v in _pm.items() if k not in ("score_h","score_a")}
-                _pm_clean["score_h"] = 0
-                _bk_pk = _villar_auto_pick(_pm_clean)
-                if _bk_pk:
-                    _entry = {
-                        "pick": _bk_pk.get("pick",""), "prob": _bk_pk.get("prob",0),
-                        "odd":  _bk_pk.get("odd",0),  "src":  _bk_pk.get("src","🤖"),
-                        "home": _pm.get("home",""),    "away": _pm.get("away",""),
-                        "sport": "futbol",             "fecha": _pm.get("fecha",""),
-                        "mkt":  _bk_pk.get("mkt",""),
-                    }
-                    if _pid:  _bridge[_pid]  = _entry
-                    if _pid2: _bridge[_pid2] = _entry
-                    _bridge_dirty = True
+                _am_id   = _am.get("id","")
+                _am_id2  = f"{_am.get('home_id','')}_{_am.get('away_id','')}_{_am.get('fecha','')}"
+                _am_home = _am.get("home","")
+                _am_fecha= _am.get("fecha","")
+                # Ya está en bridge con datos reales → saltar
+                if any(
+                    _bridge.get(k,{}).get("home","").lower() == _am_home.lower() and
+                    _bridge.get(k,{}).get("fecha","") == _am_fecha
+                    for k in [_am_id, _am_id2] if k
+                ): continue
+                # Calcular con datos reales
+                _am_hf  = get_form(_am.get("home_id",""), _am.get("slug","")) or []
+                _am_af  = get_form(_am.get("away_id",""), _am.get("slug","")) or []
+                _am_hxg = xg_weighted(_am_hf, True,  1/_am.get("odd_h",0) if _am.get("odd_h",0)>1 else 0) if _am_hf else xg_from_record(_am.get("home_rec","5-5-5"), True)
+                _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
+                _am_mc  = ensemble_football(_am_hxg, _am_axg, {}, _am_hf, _am_af,
+                            _am.get("home_id",""), _am.get("away_id",""),
+                            odd_h=_am.get("odd_h",0), odd_a=_am.get("odd_a",0), odd_d=_am.get("odd_d",0))
+                _am_dp  = diamond_engine(_am_mc, {}, _am_hf, _am_af)
+                # Misma jerarquía exacta que la cartelera
+                _am_all = [
+                    (f"🏠 {_am['home'][:16]} gana",   _am_dp["ph"], _am.get("odd_h",0)),
+                    (f"✈️ {_am['away'][:16]} gana",   _am_dp["pa"], _am.get("odd_a",0)),
+                    (f"🔵 {_am['home'][:14]} o Emp",  min(0.95,_am_dp["ph"]+_am_dp["pd"]), 0),
+                    (f"🟣 {_am['away'][:14]} o Emp",  min(0.95,_am_dp["pa"]+_am_dp["pd"]), 0),
+                    ("⚽ Over 2.5",                   _am_mc["o25"], 0),
+                    ("⚡ Ambos Anotan (AA)",           _am_mc["btts"], 0),
+                ]
+                _ph_d=_am_dp["ph"]; _pa_d=_am_dp["pa"]; _pd_d=_am_dp["pd"]
+                _o25_d=_am_mc["o25"]; _aa_d=_am_mc["btts"]
+                _do_h_d=min(0.95,_ph_d+_pd_d); _do_a_d=min(0.95,_pa_d+_pd_d)
+                _xg_tot_d=_am_hxg+_am_axg; _best_ml=max(_ph_d,_pa_d)
+                _odd_h=_am.get("odd_h",0); _odd_a=_am.get("odd_a",0)
+                _has_odds=_odd_h>1 and _odd_a>1
+                _edge_h=(_ph_d-1/_odd_h) if _odd_h>1 else (_ph_d-0.50)
+                _edge_a=(_pa_d-1/_odd_a) if _odd_a>1 else (_pa_d-0.50)
+                _fav_lbl = f"🏠 {_am['home'][:16]} gana" if _ph_d>=_pa_d else f"✈️ {_am['away'][:16]} gana"
+                _fav_p   = max(_ph_d,_pa_d)
+                _fav_odd = _odd_h if _ph_d>=_pa_d else _odd_a
+                _ninguno = _best_ml<0.52; _eq = abs(_ph_d-_pa_d)<0.05
+                if _pa_d>_ph_d and (_pa_d>=0.55 or (_has_odds and _edge_a>=0.03)):
+                    _lbl,_prob,_odd = f"✈️ {_am['away'][:16]} gana",_pa_d,_odd_a
+                elif _ph_d>=0.55 or (_has_odds and _edge_h>=0.03):
+                    _lbl,_prob,_odd = f"🏠 {_am['home'][:16]} gana",_ph_d,_odd_h
+                elif _pa_d>=0.55 or (_has_odds and _edge_a>=0.03):
+                    _lbl,_prob,_odd = f"✈️ {_am['away'][:16]} gana",_pa_d,_odd_a
+                elif _do_h_d>=0.76 and _ph_d>=0.48:
+                    _lbl,_prob,_odd = f"🔵 {_am['home'][:14]} o Emp",_do_h_d,0
+                elif _do_a_d>=0.76 and _pa_d>=0.43:
+                    _lbl,_prob,_odd = f"🟣 {_am['away'][:14]} o Emp",_do_a_d,0
+                elif _xg_tot_d>=2.6 and _o25_d>=0.54:
+                    _lbl,_prob,_odd = "⚽ Over 2.5",_o25_d,0
+                elif _best_ml>=0.46:
+                    _lbl,_prob,_odd = _fav_lbl,_fav_p,_fav_odd
+                elif _o25_d>=0.52:
+                    _lbl,_prob,_odd = "⚽ Over 2.5",_o25_d,0
+                elif _ninguno and _eq and _aa_d>=0.52:
+                    _lbl,_prob,_odd = "⚡ Ambos Anotan (AA)",_aa_d,0
+                else:
+                    _lbl,_prob,_odd = _fav_lbl,_fav_p,_fav_odd
+                _entry = {
+                    "pick":_lbl,"prob":_prob,"odd":_odd,
+                    "home":_am.get("home",""),"away":_am.get("away",""),
+                    "sport":"futbol","fecha":_am_fecha,
+                    "src":f"💎 Diamante · {_prob*100:.0f}%",
+                    "mkt":"1X2" if "gana" in _lbl else ("O/U" if "Over" in _lbl else ("BTTS" if "Ambos" in _lbl else "DO")),
+                }
+                if _am_id:  _bridge[_am_id]  = _entry
+                if _am_id2: _bridge[_am_id2] = _entry
+                _bridge_dirty = True
             except: continue
-        # Persistir a archivo si hubo cambios
         if _bridge_dirty:
             try:
-                import json as _json
-                with open("/tmp/gamblers_diamond_bridge.json","w") as _bf:
-                    _json.dump(_bridge, _bf)
+                import json as _jb3
+                with open("/tmp/gamblers_diamond_bridge.json","w") as _bf3:
+                    _jb3.dump(_bridge, _bf3)
             except: pass
-    if not all_matches:
         st.info("⚽ No hay partidos de fútbol disponibles ahora. Intenta refrescar en unos minutos.")
     else:
         liga_opts = ["Todas"] + sorted(set(m["league"] for m in all_matches))
@@ -10709,17 +10759,23 @@ else:
         if "_diamond_bridge" not in st.session_state:
             st.session_state["_diamond_bridge"] = {}
         _bridge_key = g.get("id","") or f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}"
-        st.session_state["_diamond_bridge"][_bridge_key] = {
+        _bridge_entry = {
             "pick": main_lbl, "prob": main_prob, "odd": main_odd,
             "home": g.get("home",""), "away": g.get("away",""),
             "sport": "futbol", "fecha": g.get("fecha",""),
             "src": f"💎 Diamante · {main_prob*100:.0f}%",
             "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
         }
-        # También guardar por home_id+away_id+fecha como alias
+        st.session_state["_diamond_bridge"][_bridge_key] = _bridge_entry
         _bridge_key2 = f"{g.get('home_id','')}_{g.get('away_id','')}_{g.get('fecha','')}"
         if _bridge_key2 != _bridge_key:
-            st.session_state["_diamond_bridge"][_bridge_key2] = st.session_state["_diamond_bridge"][_bridge_key]
+            st.session_state["_diamond_bridge"][_bridge_key2] = _bridge_entry
+        # Persistir a archivo para que Resultados lo encuentre aunque no se haya pasado por aquí
+        try:
+            import json as _jb2
+            with open("/tmp/gamblers_diamond_bridge.json","w") as _bf2:
+                _jb2.dump(st.session_state["_diamond_bridge"], _bf2)
+        except: pass
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             if st.button(f"💾 Guardar Diamante: {main_lbl[:18]}", use_container_width=True, key="save_main"):
