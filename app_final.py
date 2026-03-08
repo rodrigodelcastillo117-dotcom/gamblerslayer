@@ -7167,13 +7167,17 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
     import json as _ejson
     # ── EINSTEIN prompt by sport ──
     if sport == "futbol":
+        _is_ctx_live = "EN VIVO" in context_str or "🔴" in context_str
         _e_prompt = (
             f"Eres Einstein, analista de fútbol de élite.\n"
-            f"Partido: {away} @ {home}\n"
+            + (f"⚡ PARTIDO EN CURSO — analiza con los datos en vivo abajo.\n" if _is_ctx_live else "")
+            + f"Partido: {away} @ {home}\n"
             f"Jugada Diamante: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
             + f"\n{context_str}\n"
-            f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            + (f"Con los datos en vivo, ¿sigue siendo válido el pick {pick_lbl}? "
+               f"Si el marcador cambió la situación, ajusta tu pick y prob.\n" if _is_ctx_live else "")
+            + f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
             f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
         )
@@ -7238,14 +7242,17 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             try:
                 _papa_prompt = (
                     f"Eres EL PAPA DE EINSTEIN — meta-IA auditora suprema.\n"
-                    f"Audita este análisis de Einstein sobre: {away} vs {home}\n"
-                    f"Einstein dice: {_einstein.get('pick',pick_lbl)} {_einstein.get('prob',pick_prob*100):.0f}% · conf {_einstein.get('conf','?')} · riesgo {_einstein.get('riesgo','?')}\n"
+                    + (f"⚡ PARTIDO EN VIVO — considera los datos en tiempo real.\n" if _is_ctx_live else "")
+                    + f"Audita este análisis de Einstein sobre: {away} vs {home}\n"
+                    f"Einstein dice: {_einstein.get('pick',pick_lbl)} ({_einstein.get('prob',pick_prob*100):.0f}%)\n"
+                    f"Riesgo Einstein: {_einstein.get('riesgo','?')} | Alternativa: {_einstein.get('alternativa','?')}\n"
                     f"Resumen Einstein: {_einstein.get('resumen','N/A')}\n"
-                    f"Contexto: {context_str[:300]}\n"
-                    f"Responde SOLO JSON: {{\"grade\":\"A+/A/A-/B+/B/B-/C/D/F\","
+                    f"Contexto completo: {context_str[:500]}\n"
+                    + (f"PREGUNTA CLAVE: Con el marcador actual, ¿el pick de Einstein sigue siendo óptimo o hay mejor opción?\n" if _is_ctx_live else "")
+                    + f"Responde SOLO JSON: {{\"grade\":\"A+/A/A-/B+/B/B-/C/D/F\","
                     f"\"conf_score\":85,\"verdict\":\"CONFIRMAR/CUESTIONAR/RECHAZAR\","
                     f"\"resumen_auditoria\":\"1-2 lineas max\","
-                    f"\"mejor_alternativa_papa\":\"mercado o la de Einstein es correcta\"}}"
+                    f"\"mejor_alternativa_papa\":\"mercado alternativo o confirmar el de Einstein\"}}"
                 )
                 _rp = requests.post("https://api.anthropic.com/v1/messages",
                     headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
@@ -9975,6 +9982,7 @@ def _kr_ia_narracion(el_pick, bk, todos):
             f"Consejo: {bk['consejo']}\n\n"
             f"PARLAY DEL REY: {parlay_txt}\n\n"
             f"Narra el pick. Sé el rey."
+            + (f"\n\nDATO EN VIVO: {el_pick.get('live_ctx','')}" if el_pick.get('live_ctx') else "")
         )
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -11141,65 +11149,101 @@ st.markdown("""
 
 # ── Sport selector ──
 _sport = st.session_state.get("sport","futbol")
-_fut_bg  = "#16a34a" if _sport=="futbol" else "#14532d"
-_ten_bg  = "#ca8a04" if _sport=="tenis"  else "#713f12"
-_nba_bg  = "#ea580c" if _sport=="nba"    else "#7c2d12"
-# JS injection: apply colors directly to buttons by text after Streamlit renders
+
+# Colors: active = bright, inactive = dark version
+_SPORT_COLORS = {
+    "futbol": {"active": "#16a34a", "inactive": "#14532d", "text": "#000000"},
+    "tenis":  {"active": "#ca8a04", "inactive": "#78350f", "text": "#000000"},
+    "nba":    {"active": "#ea580c", "inactive": "#7c2d12", "text": "#000000"},
+}
+_fc = _SPORT_COLORS["futbol"]["active"] if _sport=="futbol" else _SPORT_COLORS["futbol"]["inactive"]
+_tc = _SPORT_COLORS["tenis"]["active"]  if _sport=="tenis"  else _SPORT_COLORS["tenis"]["inactive"]
+_nc = _SPORT_COLORS["nba"]["active"]    if _sport=="nba"    else _SPORT_COLORS["nba"]["inactive"]
+
+# Inject CSS with unique class per sport to avoid selector conflicts
 st.markdown(f"""
-<script>
-(function applyBtnColors() {{
-  const colors = {{"Fútbol": "{_fut_bg}", "Tenis": "{_ten_bg}", "NBA": "{_nba_bg}"}};
-  function paint() {{
-    document.querySelectorAll('button[data-testid]').forEach(btn => {{
-      const txt = btn.innerText || btn.textContent || "";
-      for (const [kw, bg] of Object.entries(colors)) {{
-        if (txt.includes(kw)) {{
-          btn.style.setProperty('background-color', bg, 'important');
-          btn.style.setProperty('color', '#000', 'important');
-          btn.style.setProperty('font-weight', '900', 'important');
-          btn.style.setProperty('border', 'none', 'important');
-          btn.style.setProperty('font-size', '1rem', 'important');
-          // Also paint child p tag
-          btn.querySelectorAll('p').forEach(p => {{
-            p.style.setProperty('color', '#000', 'important');
-            p.style.setProperty('font-weight', '900', 'important');
-          }});
-        }}
-      }}
-    }});
-  }}
-  paint();
-  // Re-apply after Streamlit re-renders
-  const obs = new MutationObserver(paint);
-  obs.observe(document.body, {{childList: true, subtree: true}});
-}})();
-</script>
 <style>
-/* CSS fallback targeting all buttons matching sport text via known keys */
-div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) div[data-testid="stButton"] button {{
-    background-color:{_fut_bg} !important; color:#000 !important; font-weight:900 !important; border:none !important;
+/* ─── Sport selector buttons ─── */
+div[data-testid="stHorizontalBlock"]:has(button[kind]) {{
+    gap: 6px !important;
 }}
-div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {{
-    background-color:{_ten_bg} !important; color:#000 !important; font-weight:900 !important; border:none !important;
+/* Button sp_fut */
+div[data-testid="stHorizontalBlock"] div:nth-child(1) button[kind="secondary"],
+div[data-testid="stHorizontalBlock"] div:nth-child(1) button[kind="primary"] {{
+    background: {_fc} !important;
+    color: #000 !important;
+    font-weight: 900 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-size: .95rem !important;
+    letter-spacing: .03em !important;
+    transition: opacity .15s !important;
 }}
-div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(3) div[data-testid="stButton"] button {{
-    background-color:{_nba_bg} !important; color:#000 !important; font-weight:900 !important; border:none !important;
+div[data-testid="stHorizontalBlock"] div:nth-child(1) button:hover {{
+    opacity: .88 !important;
+    background: {_fc} !important;
+    color: #000 !important;
 }}
-div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button p {{
-    color:#000 !important; font-weight:900 !important;
+/* Button sp_ten */
+div[data-testid="stHorizontalBlock"] div:nth-child(2) button[kind="secondary"],
+div[data-testid="stHorizontalBlock"] div:nth-child(2) button[kind="primary"] {{
+    background: {_tc} !important;
+    color: #000 !important;
+    font-weight: 900 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-size: .95rem !important;
+    letter-spacing: .03em !important;
+    transition: opacity .15s !important;
+}}
+div[data-testid="stHorizontalBlock"] div:nth-child(2) button:hover {{
+    opacity: .88 !important;
+    background: {_tc} !important;
+    color: #000 !important;
+}}
+/* Button sp_nba */
+div[data-testid="stHorizontalBlock"] div:nth-child(3) button[kind="secondary"],
+div[data-testid="stHorizontalBlock"] div:nth-child(3) button[kind="primary"] {{
+    background: {_nc} !important;
+    color: #000 !important;
+    font-weight: 900 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-size: .95rem !important;
+    letter-spacing: .03em !important;
+    transition: opacity .15s !important;
+}}
+div[data-testid="stHorizontalBlock"] div:nth-child(3) button:hover {{
+    opacity: .88 !important;
+    background: {_nc} !important;
+    color: #000 !important;
+}}
+/* Force black text in <p> inside all 3 sport buttons */
+div[data-testid="stHorizontalBlock"] div:nth-child(1) button p,
+div[data-testid="stHorizontalBlock"] div:nth-child(2) button p,
+div[data-testid="stHorizontalBlock"] div:nth-child(3) button p {{
+    color: #000 !important;
+    font-weight: 900 !important;
 }}
 </style>
 """, unsafe_allow_html=True)
-sp1,sp2,sp3 = st.columns(3)
+
+sp1, sp2, sp3 = st.columns(3)
 with sp1:
     if st.button("⚽ Fútbol", use_container_width=True, key="sp_fut"):
-        st.session_state["sport"]="futbol"; st.session_state["view"]="cartelera"; st.rerun()
+        st.session_state["sport"] = "futbol"
+        st.session_state["view"] = "cartelera"
+        st.rerun()
 with sp2:
     if st.button("🎾 Tenis", use_container_width=True, key="sp_ten"):
-        st.session_state["sport"]="tenis"; st.session_state["view"]="cartelera"; st.rerun()
+        st.session_state["sport"] = "tenis"
+        st.session_state["view"] = "cartelera"
+        st.rerun()
 with sp3:
     if st.button("🏀 NBA", use_container_width=True, key="sp_nba"):
-        st.session_state["sport"]="nba"; st.session_state["view"]="cartelera"; st.rerun()
+        st.session_state["sport"] = "nba"
+        st.session_state["view"] = "cartelera"
+        st.rerun()
 if "sport" not in st.session_state: st.session_state["sport"]="futbol"
 deporte = st.session_state["sport"]
 
@@ -11414,6 +11458,84 @@ def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
         f"</div></div>"
     )
     return html, card_border
+
+
+# ══════════════════════════════════════════════════════════════════════
+# LIVE STATS REFRESH — Fetches ESPN in-play stats every 5 minutes
+# Used by Einstein, Einstein Abuelo (El Papa) and King Rongo
+# when analyzing a live match
+# ══════════════════════════════════════════════════════════════════════
+@st.cache_data(ttl=300, show_spinner=False)  # 5-min cache
+def _fetch_live_stats(match_id: str, slug: str):
+    """
+    Fetches live in-play stats from ESPN for a specific match.
+    Returns dict with: score_h, score_a, minute, red_h, red_a,
+    yel_h, yel_a, shots_h, shots_a, poss_h, poss_a, corners_h, corners_a,
+    plus narrative context string for AI prompts.
+    TTL=300s → auto-refreshes every 5 minutes.
+    """
+    stats = {
+        "score_h": 0, "score_a": 0, "minute": 0,
+        "red_h": 0, "red_a": 0, "yel_h": 0, "yel_a": 0,
+        "shots_h": 0, "shots_a": 0, "poss_h": 50.0, "poss_a": 50.0,
+        "corners_h": 0, "corners_a": 0, "state": "pre",
+        "fetched_at": datetime.now(CDMX).strftime("%H:%M:%S"),
+    }
+    try:
+        data = eg(f"{ESPN}/{slug}/summary", {"event": match_id})
+        # Score + clock
+        hdr = data.get("header", {})
+        comps = hdr.get("competitions", [{}])[0] if hdr.get("competitions") else {}
+        _state = comps.get("status", {}).get("type", {}).get("state", "pre")
+        stats["state"] = _state
+        clock = comps.get("status", {}).get("displayClock", "0'")
+        try:
+            stats["minute"] = int("".join(c for c in clock.replace("+", " ").split()[0].split("'")[0] if c.isdigit()) or 0)
+        except: pass
+        for comp in comps.get("competitors", []):
+            side = "h" if comp.get("homeAway") == "home" else "a"
+            try: stats[f"score_{side}"] = int(comp.get("score", 0) or 0)
+            except: pass
+        # In-play situation (red cards, yellows)
+        situation = data.get("situation", comps.get("situation", {}))
+        def _sit(key, side):
+            sub = situation.get(f"{'home' if side=='h' else 'away'}TeamSituation", situation)
+            return int(sub.get(key, 0) or 0)
+        stats["red_h"] = _sit("redCards", "h"); stats["red_a"] = _sit("redCards", "a")
+        stats["yel_h"] = _sit("yellowCards", "h"); stats["yel_a"] = _sit("yellowCards", "a")
+        # Statistics array (shots, possession, corners)
+        for stat in data.get("statistics", {}).get("splits", {}).get("categories", []):
+            for item in stat.get("stats", []):
+                name = item.get("name", "").lower()
+                cats = item.get("categories", item.get("splits", {}).get("categories", []))
+                def _v(cats, idx, dflt=0):
+                    try: return float(cats[idx].get("stats", [{}])[0].get("value", dflt) or dflt)
+                    except: return dflt
+                if "shots on target" in name or "shotsontarget" in name:
+                    stats["shots_h"] = int(_v(cats, 0)); stats["shots_a"] = int(_v(cats, 1))
+                elif "possession" in name:
+                    stats["poss_h"] = _v(cats, 0, 50); stats["poss_a"] = _v(cats, 1, 50)
+                elif "corner" in name:
+                    stats["corners_h"] = int(_v(cats, 0)); stats["corners_a"] = int(_v(cats, 1))
+    except: pass
+    return stats
+
+def _live_ctx_str(match, live_stats):
+    """Builds a rich context string for AI prompts from live stats."""
+    s = live_stats
+    h = match.get("home", "Local"); a = match.get("away", "Visitante")
+    lines = [
+        f"🔴 EN VIVO — Min {s['minute']}' | {h} {s['score_h']} - {s['score_a']} {a}",
+        f"🎯 Remates a puerta: {h[:10]} {s['shots_h']} | {a[:10]} {s['shots_a']}",
+        f"🔵 Posesión: {h[:10]} {s['poss_h']:.0f}% | {a[:10]} {s['poss_a']:.0f}%",
+        f"🚩 Córners: {s['corners_h']}-{s['corners_a']}",
+    ]
+    if s["red_h"] or s["red_a"]:
+        lines.append(f"🟥 Tarjetas rojas: {h[:10]} {s['red_h']} | {a[:10]} {s['red_a']}")
+    if s["yel_h"] or s["yel_a"]:
+        lines.append(f"🟨 Amarillas: {s['yel_h']}-{s['yel_a']}")
+    lines.append(f"⏰ Stats actualizados: {s['fetched_at']}")
+    return " | ".join(lines)
 
 
 # ══════════════════════════════════════════════════════════
@@ -12386,6 +12508,30 @@ else:
         prog.progress(100,"✅ Listo"); prog.empty()
 
         # ── Banner en vivo + Pick live ──
+        # ── Auto-refresh every 5 min when live ──
+        if _is_live:
+            _refresh_key = f"live_refresh_{g.get('id','')}"
+            _now_ts = datetime.now(CDMX).timestamp()
+            _last_refresh = st.session_state.get(_refresh_key, 0)
+            _secs_since = int(_now_ts - _last_refresh)
+            _secs_left  = max(0, 300 - _secs_since)
+            _refresh_col1, _refresh_col2 = st.columns([3,1])
+            with _refresh_col2:
+                if st.button(f"🔄 Actualizar ahora", key=f"manual_refresh_{g.get('id','')}", use_container_width=True):
+                    _fetch_live_stats.clear()
+                    st.session_state[_refresh_key] = _now_ts
+                    st.rerun()
+            with _refresh_col1:
+                if _secs_since == 0:
+                    st.markdown(f"<div style='font-size:.65rem;color:#555;padding:4px 0'>🕐 Stats en vivo — se actualizan cada 5 min</div>", unsafe_allow_html=True)
+                else:
+                    _mins_ago = max(1, _secs_since // 60)
+                    st.markdown(f"<div style='font-size:.65rem;color:#555;padding:4px 0'>🕐 Stats actualizados hace {_mins_ago} min · próxima actualización en {_secs_left//60}m{_secs_left%60:02d}s</div>", unsafe_allow_html=True)
+            # Auto-rerun after 5 min
+            if _secs_since >= 300:
+                _fetch_live_stats.clear()
+                st.session_state[_refresh_key] = _now_ts
+                st.rerun()
         if _is_live:
             _min_str   = f"Min {_minute}'" if _minute > 0 else "En curso"
             _score_str = f"{_score_h} – {_score_a}"
@@ -12645,7 +12791,28 @@ else:
         _soc_ctx = (f"Liga: {g.get('league','')} | xG: {hxg:.2f}-{axg:.2f} | "
                     f"O2.5: {mc['o25']*100:.0f}% BTTS: {mc['btts']*100:.0f}% | "
                     f"Forma {g['home']}: {_form_h_str} | Forma {g['away']}: {_form_a_str}")
-        if _is_live:
+        if _is_live and g.get("id") and g.get("slug"):
+            # Fetch fresh live stats (cached 5 min) for Einstein + Papa + KR
+            _live_s = _fetch_live_stats(str(g["id"]), g["slug"])
+            _soc_ctx += " | " + _live_ctx_str(g, _live_s)
+            # Update local vars with fresh data
+            _score_h = _live_s.get("score_h", _score_h)
+            _score_a = _live_s.get("score_a", _score_a)
+            _minute  = _live_s.get("minute", _minute)
+            # Rebuild Poisson with fresh stats
+            try:
+                _, _, _iph2, _ipd2, _ipa2 = _inplay_poisson(
+                    hxg, axg, _score_h, _score_a, _minute,
+                    red_h=_live_s.get("red_h",0), red_a=_live_s.get("red_a",0))
+                if _iph2 is not None:
+                    _bh2 = 0.75*_iph2 + 0.25*dp["ph"]
+                    _bd2 = 0.75*_ipd2 + 0.25*dp["pd"]
+                    _ba2 = 0.75*_ipa2 + 0.25*dp["pa"]
+                    _s2  = _bh2+_bd2+_ba2
+                    if _s2 > 0:
+                        dp = {**dp, "ph":_bh2/_s2, "pd":_bd2/_s2, "pa":_ba2/_s2}
+            except: pass
+        elif _is_live:
             _soc_ctx += f" | EN VIVO {_score_h}-{_score_a} min{_minute}'"
         _ei_soc, _papa_soc = _render_einstein_papa('futbol', g['home'], g['away'], main_lbl, main_prob, main_odd, context_str=_soc_ctx)
 
