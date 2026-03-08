@@ -9133,7 +9133,7 @@ def get_tennis_cartelera():
                 try:
                     utc_t = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=pytz.UTC)
                     hora  = utc_t.astimezone(CDMX).strftime("%H:%M")
-                    fecha = utc_t.astimezone(CDMX).strftime("%Y-%m-%d")
+                    # fecha conserva event_date original (no cruzar zona horaria)
                 except: pass
                 if fecha < hoy or fecha > fin: continue
                 tour_type   = ev.get("event_type_type","").upper()
@@ -11111,27 +11111,50 @@ st.markdown("""
 
 # ── Sport selector ──
 _sport = st.session_state.get("sport","futbol")
-# CSS for sport buttons — each key gets its own color
-_fut_bg  = "#00aa44" if _sport=="futbol" else "#003a15"
-_fut_brd = "#00ff88" if _sport=="futbol" else "#006622"
-_ten_bg  = "#ccaa00" if _sport=="tenis"  else "#3a2e00"
-_ten_brd = "#FFD700" if _sport=="tenis"  else "#665500"
-_nba_bg  = "#cc5500" if _sport=="nba"    else "#3a1800"
-_nba_brd = "#ff7722" if _sport=="nba"    else "#662200"
-st.markdown(f"""<style>
-div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) button {{
-    background:{_fut_bg}!important;color:#000!important;font-weight:900!important;
-    border:2px solid {_fut_brd}!important;border-radius:8px!important;font-size:.95rem!important;
+# Solid color buttons per sport — green/yellow/orange with black text
+_fut_bg  = "#16a34a" if _sport=="futbol" else "#14532d"
+_ten_bg  = "#ca8a04" if _sport=="tenis"  else "#713f12"
+_nba_bg  = "#ea580c" if _sport=="nba"    else "#7c2d12"
+st.markdown(f"""
+<style>
+.sport-btn-row button {{ transition: none !important; }}
+.sport-btn-row > div:nth-child(1) button,
+.sport-btn-row > div:nth-child(1) button:hover,
+.sport-btn-row > div:nth-child(1) button:active,
+.sport-btn-row > div:nth-child(1) button:focus {{
+  background:{_fut_bg} !important;
+  color:#000 !important;
+  font-weight:900 !important;
+  border:none !important;
+  border-radius:8px !important;
+  font-size:1rem !important;
 }}
-div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) button {{
-    background:{_ten_bg}!important;color:#000!important;font-weight:900!important;
-    border:2px solid {_ten_brd}!important;border-radius:8px!important;font-size:.95rem!important;
+.sport-btn-row > div:nth-child(2) button,
+.sport-btn-row > div:nth-child(2) button:hover,
+.sport-btn-row > div:nth-child(2) button:active,
+.sport-btn-row > div:nth-child(2) button:focus {{
+  background:{_ten_bg} !important;
+  color:#000 !important;
+  font-weight:900 !important;
+  border:none !important;
+  border-radius:8px !important;
+  font-size:1rem !important;
 }}
-div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(3) button {{
-    background:{_nba_bg}!important;color:#000!important;font-weight:900!important;
-    border:2px solid {_nba_brd}!important;border-radius:8px!important;font-size:.95rem!important;
+.sport-btn-row > div:nth-child(3) button,
+.sport-btn-row > div:nth-child(3) button:hover,
+.sport-btn-row > div:nth-child(3) button:active,
+.sport-btn-row > div:nth-child(3) button:focus {{
+  background:{_nba_bg} !important;
+  color:#000 !important;
+  font-weight:900 !important;
+  border:none !important;
+  border-radius:8px !important;
+  font-size:1rem !important;
 }}
-</style>""", unsafe_allow_html=True)
+.sport-btn-row button p {{ color:#000 !important; font-weight:900 !important; }}
+</style>
+""", unsafe_allow_html=True)
+st.markdown("<div class='sport-btn-row'>", unsafe_allow_html=True)
 sp1,sp2,sp3 = st.columns(3)
 with sp1:
     if st.button("⚽ Fútbol", use_container_width=True, key="sp_fut"):
@@ -11142,7 +11165,7 @@ with sp2:
 with sp3:
     if st.button("🏀 NBA", use_container_width=True, key="sp_nba"):
         st.session_state["sport"]="nba"; st.session_state["view"]="cartelera"; st.rerun()
-
+st.markdown("</div>", unsafe_allow_html=True)
 if "sport" not in st.session_state: st.session_state["sport"]="futbol"
 deporte = st.session_state["sport"]
 
@@ -12328,26 +12351,75 @@ else:
         pls = smart_parlay(mc, dp, g["home"], g["away"])
         prog.progress(100,"✅ Listo"); prog.empty()
 
-        # ── Banner en vivo ──
+        # ── Banner en vivo + Pick live ──
         if _is_live and _inplay_applied:
-            _min_str  = f"Min {_minute}'" if _minute > 0 else "En curso"
+            _min_str   = f"Min {_minute}'" if _minute > 0 else "En curso"
             _score_str = f"{_score_h} – {_score_a}"
             _lead_team = g["away"] if _score_a > _score_h else (g["home"] if _score_h > _score_a else "")
             _lead_txt  = f" · {_lead_team[:14]} ganando" if _lead_team else " · Empate"
+            # Compute live pick from already-blended dp (75% inplay + 25% pre)
+            _lv_ph = dp["ph"]; _lv_pd = dp.get("pd",0); _lv_pa = dp["pa"]
+            _lv_o25 = mc.get("o25",0); _lv_btts = mc.get("btts",0)
+            # Re-score o25 with Poisson conditional (goals remaining)
+            try:
+                import math as _lm
+                _xgr_h = hxg * max(0.05,(90-_minute)/90)
+                _xgr_a = axg * max(0.05,(90-_minute)/90)
+                _goals_so_far = _score_h + _score_a
+                # P(total_final > 2.5) = P(add >= max(0, 3-goals_so_far) more goals)
+                _need = max(0, 3 - _goals_so_far)
+                _lam_total = _xgr_h + _xgr_a
+                if _need == 0:
+                    _lv_o25_live = 1.0
+                else:
+                    _p_less = sum(_lm.exp(-_lam_total)*(_lam_total**k)/_lm.factorial(k) for k in range(_need))
+                    _lv_o25_live = max(0.01, 1 - _p_less)
+            except: _lv_o25_live = _lv_o25
+            # Live pick selection: best probability market
+            _lv_candidates = [
+                (f"🏠 {g['home'][:15]} gana", _lv_ph),
+                ("🤝 Empate", _lv_pd),
+                (f"✈️ {g['away'][:15]} gana", _lv_pa),
+                ("⚽ Over 2.5", _lv_o25_live),
+                ("⚡ Ambos Anotan", _lv_btts),
+            ]
+            _lv_pick_lbl, _lv_prob = max(_lv_candidates, key=lambda x:x[1])
+            if _lv_prob >= 0.68:   _lv_emoji,_lv_col = "💎","#00ccff"
+            elif _lv_prob >= 0.60: _lv_emoji,_lv_col = "🔥","#ff6600"
+            elif _lv_prob >= 0.53: _lv_emoji,_lv_col = "⚡","#FFD700"
+            else:                   _lv_emoji,_lv_col = "","#aaa"
+            # Red cards / stats context (passed from ESPN if available)
+            _lv_red_h = g.get("red_h",0); _lv_red_a = g.get("red_a",0)
+            _lv_sot_h = g.get("shots_h",0); _lv_sot_a = g.get("shots_a",0)
+            _lv_stats_txt = ""
+            if _lv_red_h or _lv_red_a:
+                _lv_stats_txt += f" · 🟥 {g['home'][:8]}:{_lv_red_h} {g['away'][:8]}:{_lv_red_a}"
+            if _lv_sot_h or _lv_sot_a:
+                _lv_stats_txt += f" · 🎯 {_lv_sot_h}-{_lv_sot_a}"
             st.markdown(
                 f"<div style='background:linear-gradient(90deg,#1a0000,#0a0014,#1a0000);"
-                f"border:1.5px solid #ff4444;border-radius:7px;padding:6px 10px;"
-                f"margin:0 0 14px;display:flex;align-items:center;gap:5px'>"
-                f"<div style='font-size:1.1rem'>🔴</div>"
+                f"border:1.5px solid #ff4444;border-radius:10px;padding:10px 14px;"
+                f"margin:0 0 14px'>"
+                f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>"
+                f"<div style='font-size:1.2rem'>🔴</div>"
                 f"<div style='flex:1'>"
-                f"<div style='font-size:.7rem;color:#ff4444;font-weight:900;letter-spacing:.1em'>"
-                f"EN VIVO · {_min_str}{_lead_txt} · POISSON CONDICIONAL ACTIVO</div>"
-                f"<div style='font-size:.95rem;font-weight:900;color:#fff'>"
-                f"{g['home']} <span style='color:#ff4444'>{_score_str}</span> {g['away']}</div>"
+                f"<div style='font-size:.72rem;color:#ff4444;font-weight:900;letter-spacing:.08em'>"
+                f"EN VIVO · {_min_str}{_lead_txt}{_lv_stats_txt}</div>"
+                f"<div style='font-size:1.05rem;font-weight:900;color:#fff;margin-top:2px'>"
+                f"{g['home']} <span style='color:#ff4444;font-size:1.15rem'>{_score_str}</span> {g['away']}"
+                f"</div></div>"
+                f"<div style='text-align:right;min-width:110px'>"
+                f"<div style='font-size:.62rem;color:#555;margin-bottom:3px'>75% live · 25% pre</div>"
+                f"<div style='font-size:.58rem;color:#444'>POISSON CONDICIONAL ACTIVO</div>"
+                f"</div></div>"
+                f"<div style='background:rgba(255,68,68,.08);border:1px solid #ff444433;"
+                f"border-radius:7px;padding:7px 10px;display:flex;align-items:center;gap:8px'>"
+                f"<span style='font-size:1.4rem'>{_lv_emoji}</span>"
+                f"<div style='flex:1'>"
+                f"<div style='font-size:.6rem;color:#ff6666;font-weight:700;letter-spacing:.06em'>PICK EN VIVO</div>"
+                f"<div style='font-size:1.1rem;font-weight:900;color:{_lv_col}'>{_lv_pick_lbl}</div>"
                 f"</div>"
-                f"<div style='text-align:right'>"
-                f"<div style='font-size:.72rem;color:#555'>Modelo ajustado al marcador</div>"
-                f"<div style='font-size:.8rem;color:#00ff88'>75% live · 25% pre-partido</div>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:{_lv_col}'>{_lv_prob*100:.0f}%</div>"
                 f"</div></div>",
                 unsafe_allow_html=True)
 
@@ -12445,7 +12517,7 @@ else:
             f"<div style='font-size:.58rem;color:{_conf_color_d};font-weight:900;letter-spacing:.1em;margin-bottom:4px'>"
             f"✦ JUGADA DIAMANTE — {dp.get('conf','')}</div>"
             f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:8px'>"
-            f"<div style='flex:1;font-size:1.05rem;font-weight:900;color:#fff;line-height:1.2'>{main_lbl}</div>"
+            f"<div style='flex:1;font-size:1.45rem;font-weight:900;color:{_conf_color_d};line-height:1.2;letter-spacing:.01em'>{main_lbl}</div>"
             f"<div style='text-align:right;flex-shrink:0'>"
             f"<div style='font-size:1.3rem;font-weight:900;color:{_conf_color_d}'>{main_prob*100:.1f}%</div>"
             + (f"<div style='font-size:.66rem;color:{_edge_c}'>Edge {_edge_str} @{main_odd:.2f}</div>" if main_odd>1 else "")
