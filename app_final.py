@@ -12390,10 +12390,25 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     """
     import datetime as _dt
     import json as _json
-    # Fallback: recuperar datos de otros tabs si no se pasaron
-    if not matches_fut:  matches_fut  = st.session_state.get("_ajb_cache_fut") or []
-    if not nba_games:    nba_games    = st.session_state.get("_ajb_cache_nba") or []
-    if not ten_matches:  ten_matches  = st.session_state.get("_ajb_cache_ten") or []
+    # Cargar datos frescos si no se pasaron — AJB siempre tiene sus propios datos
+    if not matches_fut:
+        matches_fut = st.session_state.get("_ajb_cache_fut") or []
+        if not matches_fut:
+            try: matches_fut = get_cartelera() or []
+            except: matches_fut = []
+        if matches_fut: st.session_state["_ajb_cache_fut"] = matches_fut
+    if not nba_games:
+        nba_games = st.session_state.get("_ajb_cache_nba") or []
+        if not nba_games:
+            try: nba_games = get_nba_cartelera() or []
+            except: nba_games = []
+        if nba_games: st.session_state["_ajb_cache_nba"] = nba_games
+    if not ten_matches:
+        ten_matches = st.session_state.get("_ajb_cache_ten") or []
+        if not ten_matches:
+            try: ten_matches = get_tennis_cartelera() or []
+            except: ten_matches = []
+        if ten_matches: st.session_state["_ajb_cache_ten"] = ten_matches
 
     state   = _papi_load_state()
     history = _papi_load_history()
@@ -12587,6 +12602,19 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     with col_btn1:
         if st.button("🔍 Buscar Pick del Día", type="primary", use_container_width=True):
             st.session_state["_stay_ajb"] = True
+            # Forzar carga fresca de datos para todos los deportes
+            with st.spinner("📡 Cargando partidos de todos los deportes..."):
+                try:
+                    if not matches_fut:
+                        _fresh_fut = get_cartelera() or []
+                        if _fresh_fut: matches_fut = _fresh_fut; st.session_state["_ajb_cache_fut"] = _fresh_fut
+                    if not nba_games:
+                        _fresh_nba = get_nba_cartelera() or []
+                        if _fresh_nba: nba_games = _fresh_nba; st.session_state["_ajb_cache_nba"] = _fresh_nba
+                    if not ten_matches:
+                        _fresh_ten = get_tennis_cartelera() or []
+                        if _fresh_ten: ten_matches = _fresh_ten; st.session_state["_ajb_cache_ten"] = _fresh_ten
+                except: pass
             with st.spinner("🧠 Panel de consenso analizando..."):
                 saved = _papi_pick_del_dia(matches_fut, nba_games, ten_matches)
                 if saved:
@@ -15667,13 +15695,15 @@ else:
                 (f"✈️ {g['away'][:15]} gana", _lv_pa),
                 ("⚽ Over 2.5", _lv_o25_live),
                 ("⚡ Ambos Anotan", _lv_btts),
+                ("🧱 Under 2.5",   max(0.01, 1 - _lv_o25_live)),
+                ("🧱 Under 1.5",   max(0.01, 1 - mc.get('o15', _lv_o25_live - 0.18))),
             ]
             _lv_pick_lbl, _lv_prob = max(_lv_candidates, key=lambda x:x[1])
             # Solo mostrar pick en vivo si tiene 64%+ de probabilidad
             if _lv_prob < 0.64:
-                _lv_pick_lbl = "— Sin señal ≥70% —"
+                _lv_pick_lbl = "— Sin señal ≥64% —"
                 _lv_emoji, _lv_col = "⏳", "#555"
-            if _lv_prob >= 0.76:   _lv_emoji,_lv_col = "💎","#00ccff"
+            elif _lv_prob >= 0.76:   _lv_emoji,_lv_col = "💎","#00ccff"
             elif _lv_prob >= 0.70: _lv_emoji,_lv_col = "🔥","#ff6600"
             elif _lv_prob >= 0.64: _lv_emoji,_lv_col = "⚡","#FFD700"
             else:                   _lv_emoji,_lv_col = "","#aaa"
