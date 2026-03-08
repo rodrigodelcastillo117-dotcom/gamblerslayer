@@ -107,6 +107,49 @@ def _country_for_liga(liga_str):
 # ══════════════════════════════════════════════════════════
 # CSS
 # ══════════════════════════════════════════════════════════
+    st.markdown("""
+<script>
+(function(){
+  // Tab persistence — save/restore active tab across Streamlit reruns
+  function getTabKey(){ return 'gd_active_tab'; }
+  
+  function clickTab(idx){
+    var tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+    if(tabs.length > idx) tabs[idx].click();
+  }
+  
+  function saveTab(idx){
+    try{ window.parent.sessionStorage.setItem(getTabKey(), idx); }catch(e){}
+  }
+  
+  function restoreTab(){
+    try{
+      var idx = parseInt(window.parent.sessionStorage.getItem(getTabKey()) || '0');
+      if(idx > 0) setTimeout(function(){ clickTab(idx); }, 300);
+    }catch(e){}
+  }
+  
+  function attachListeners(){
+    var tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+    tabs.forEach(function(tab, idx){
+      tab.addEventListener('click', function(){ saveTab(idx); }, {once:false});
+    });
+  }
+  
+  // Run on load
+  setTimeout(function(){
+    restoreTab();
+    attachListeners();
+  }, 400);
+  
+  // Re-attach after Streamlit rerenders (MutationObserver)
+  var observer = new MutationObserver(function(){
+    attachListeners();
+  });
+  observer.observe(window.parent.document.body, {childList:true, subtree:true});
+})();
+</script>
+""", unsafe_allow_html=True)
 st.markdown("""<style>
 /* ═══════════════════════════════════════════
    ESCALA TIPOGRÁFICA 1.5x — Todo menos Diamante
@@ -10633,7 +10676,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
                     _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
                     _elapsed_kr = (_now_kr-_gdt_kr).total_seconds()
-                    if _kr_state == 'in' and _elapsed_kr > 5400: continue  # en vivo >90min, ya terminó casi
+                    if _kr_state == 'in' and _elapsed_kr > 600: continue   # en vivo >10min, ya terminó casi
                     if _kr_state != 'in' and _elapsed_kr > 600: continue   # pre >10min pasados
             except: pass
             # King Rongo analiza todos los partidos del día (pre, in, post)
@@ -10798,7 +10841,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
                     _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
                     _elapsed_kr = (_now_kr-_gdt_kr).total_seconds()
-                    if _kr_state == 'in' and _elapsed_kr > 5400: continue  # en vivo >90min
+
                     if _kr_state != 'in' and _elapsed_kr > 600: continue   # pre >10min pasados
             except: pass
             # King Rongo analiza todos los juegos del día
@@ -10887,7 +10930,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
                     _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
                     _elapsed_kr = (_now_kr-_gdt_kr).total_seconds()
-                    if _kr_state == 'in' and _elapsed_kr > 5400: continue  # en vivo >90min
+
                     if _kr_state != 'in' and _elapsed_kr > 600: continue   # pre >10min pasados
             except: pass
             # King Rongo analiza todos los partidos del día
@@ -14328,12 +14371,6 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
-        if st.session_state.pop("_stay_califica", False):
-            _js_c = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[6].click();},250);</script>"
-            st.markdown(_js_c, unsafe_allow_html=True)
-        if st.session_state.pop("_stay_king", False):
-            _js_k = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[9].click();},250);</script>"
-            st.markdown(_js_k, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
@@ -14717,12 +14754,6 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
-        if st.session_state.pop("_stay_califica", False):
-            _js_c = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[6].click();},250);</script>"
-            st.markdown(_js_c, unsafe_allow_html=True)
-        if st.session_state.pop("_stay_king", False):
-            _js_k = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[9].click();},250);</script>"
-            st.markdown(_js_k, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             # ── TENNIS CARTELERA — 2 columnas, separado por ATP / WTA ──
@@ -14953,12 +14984,6 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
-        if st.session_state.pop("_stay_califica", False):
-            _js_c = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[6].click();},250);</script>"
-            st.markdown(_js_c, unsafe_allow_html=True)
-        if st.session_state.pop("_stay_king", False):
-            _js_k = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[9].click();},250);</script>"
-            st.markdown(_js_k, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             _shdr_c1, _shdr_c2 = st.columns([5,1])
