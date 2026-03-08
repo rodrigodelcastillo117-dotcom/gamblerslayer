@@ -13842,6 +13842,50 @@ elif deporte == "tenis":
             ten_matches = []
             st.warning(f"⚠️ Error cargando Tenis: {_e}")
 
+
+def _quick_pick_diamond(pick_lbl: str, pick_prob: float, is_live: bool,
+                         home: str = "", away: str = "") -> str:
+    """
+    Genera el bloque HTML del Pick Diamante para la cartelera.
+    Pre-partido: pick del modelo (bridge o calculado en tiempo real).
+    En vivo: pick en vivo con Poisson condicional.
+    Se muestra AFUERA y ENCIMA del botón de analizar.
+    """
+    if not pick_lbl or pick_prob < 0.46:
+        return ""  # Sin pick suficiente
+
+    # Colores y tier
+    if pick_prob >= 0.68:
+        emoji, color, tier = "💎", "#00ccff", "DIAMANTE"
+    elif pick_prob >= 0.60:
+        emoji, color, tier = "🔥", "#ff8800", "ORO"
+    elif pick_prob >= 0.53:
+        emoji, color, tier = "⚡", "#FFD700", "SEÑAL"
+    else:
+        emoji, color, tier = "📊", "#888", "DÉBIL"
+
+    prefix = "🔴 EN VIVO · " if is_live else ""
+    border_glow = f"box-shadow:0 0 12px {color}44;" if pick_prob >= 0.68 else ""
+
+    return (
+        f"<div style='background:linear-gradient(135deg,{color}15,{color}06);"
+        f"border:{'2px' if pick_prob>=0.68 else '1px'} solid {color};"
+        f"border-radius:8px;padding:7px 10px;margin:4px 0 5px;{border_glow}"
+        f"display:flex;align-items:center;gap:7px'>"
+        f"<span style='font-size:{'1.4rem' if pick_prob>=0.68 else '1.1rem'};"
+        f"filter:{'drop-shadow(0 0 5px '+color+')' if pick_prob>=0.68 else 'none'}'>"
+        f"{emoji}</span>"
+        f"<div style='flex:1;min-width:0'>"
+        f"<div style='font-size:0.65rem;color:{color};font-weight:900;"
+        f"letter-spacing:.1em;margin-bottom:2px'>{prefix}{tier}</div>"
+        f"<div style='font-size:0.92rem;font-weight:900;color:{'#fff' if pick_prob>=0.60 else '#ccc'};"
+        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{pick_lbl}</div>"
+        f"</div>"
+        f"<span style='font-size:1.1rem;font-weight:900;color:{color};"
+        f"white-space:nowrap'>{pick_prob*100:.0f}%</span>"
+        f"</div>"
+    )
+
 def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
     """Returns (pick_html, card_border) based on pick confidence."""
     if not pick_lbl:
@@ -14048,10 +14092,45 @@ if st.session_state["view"] == "cartelera":
                                 sc   = f"{g['score_h']}-{g['score_a']}" if live else g["hora"]
                                 ou   = f"  O/U {g['ou_line']}" if g["ou_line"]>0 else ""
                                 lbl  = f"{'🔴 ' if live else '🏀 '}{g['away']} @ {g['home']}  ·  {sc}{ou}"
-                                # ── Pick badge NBA ──
+                                # ── Pick badge NBA: pre-partido del modelo / en vivo en tiempo real ──
                                 _nba_br = st.session_state.get("_diamond_bridge",{}).get(g.get("id",""))
                                 _nba_pl = _nba_br.get("pick","") if _nba_br else ""
-                                _nba_pp = _nba_br.get("prob",0) if _nba_br else 0
+                                _nba_pp = _nba_br.get("prob",0)  if _nba_br else 0
+                                # Pre-partido: si no hay bridge, calcular con modelo
+                                if not _nba_pl:
+                                    try:
+                                        _nba_res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                                        if _nba_res["p_over"] >= 0.53:
+                                            _nba_pl = f"Over {_nba_res['line']}"
+                                            _nba_pp = _nba_res["p_over"]
+                                        elif _nba_res["p_under"] >= 0.53:
+                                            _nba_pl = f"Under {_nba_res['line']}"
+                                            _nba_pp = _nba_res["p_under"]
+                                    except: pass
+                                # En vivo: recalcular con ritmo real del partido
+                                if live:
+                                    try:
+                                        import math as _nm
+                                        _sc_h_nba = int(g.get("score_h",0) or 0)
+                                        _sc_a_nba = int(g.get("score_a",0) or 0)
+                                        _qtr_nba  = int(g.get("quarter", g.get("period",2)) or 2)
+                                        _total_nba = _sc_h_nba + _sc_a_nba
+                                        _ou_line   = g.get("ou_line", 220)
+                                        # Cuartos restantes: 4 - quarter (aprox)
+                                        _qtrs_rem  = max(0.5, 4 - _qtr_nba + 0.5)
+                                        # Ritmo: total anotado por tiempo jugado → proyectar al final
+                                        _pace      = _total_nba / max(1, 4 - _qtrs_rem)
+                                        _proj_fin  = _total_nba + _pace * _qtrs_rem
+                                        _diff_proj = _proj_fin - _ou_line
+                                        if _diff_proj > 8:
+                                            _nba_pl = f"🔴 Over {_ou_line} ({_proj_fin:.0f} proy)"
+                                            _nba_pp = min(0.92, 0.60 + _diff_proj * 0.012)
+                                        elif _diff_proj < -8:
+                                            _nba_pl = f"🔴 Under {_ou_line} ({_proj_fin:.0f} proy)"
+                                            _nba_pp = min(0.92, 0.60 + abs(_diff_proj) * 0.012)
+                                        else:
+                                            _nba_pl = ""; _nba_pp = 0
+                                    except: pass
                                 _nba_ph, _nba_cb = _pick_badge(_nba_pl, _nba_pp, live)
                                 if _nba_ph: st.markdown(_nba_ph, unsafe_allow_html=True)
                                 if st.button(lbl, key=f"nba_{g['id']}", use_container_width=True):
@@ -14366,10 +14445,24 @@ if st.session_state["view"] == "cartelera":
                                     fav_p = max(tm["p1"],tm["p2"])
                                     live_badge = " 🔴" if m["state"]=="in" else ""
                                     conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
-                                    # ── Pick badge Tennis ──
-                                    _ten_ph, _ten_cb = _pick_badge(
-                                        f"{m['p1']} gana" if tm["p1"]>=tm["p2"] else f"{m['p2']} gana",
-                                        fav_p, m["state"]=="in")
+                                    # ── Pick badge Tennis: pre-partido modelo / en vivo sets real ──
+                                    _ten_live = m["state"] == "in"
+                                    _ten_pl = f"{m['p1']} gana" if tm["p1"]>=tm["p2"] else f"{m['p2']} gana"
+                                    _ten_pp = fav_p
+                                    if _ten_live:
+                                        # En vivo: ajustar prob según sets ganados
+                                        try:
+                                            _s1 = int(m.get("score_p1", 0) or 0)
+                                            _s2 = int(m.get("score_p2", 0) or 0)
+                                            if _s1 != _s2:
+                                                _leader = m["p1"] if _s1 > _s2 else m["p2"]
+                                                _adv = abs(_s1 - _s2)
+                                                _ten_pl = f"🔴 {_leader} gana"
+                                                # Ventaja de set(s) amplifica prob base
+                                                _ten_pp = min(0.92, _ten_pp + _adv * 0.12)
+                                            # Si va empatado, mantener prob del modelo
+                                        except: pass
+                                    _ten_ph, _ten_cb = _pick_badge(_ten_pl, _ten_pp, _ten_live)
                                     if _ten_ph: st.markdown(_ten_ph, unsafe_allow_html=True)
                                     if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']}{live_badge}", key=f"ten_{m['id']}", use_container_width=True):
                                         sel_m = {**m,
@@ -14658,9 +14751,46 @@ if st.session_state["view"] == "cartelera":
                                                         except:
                                                             _pick_lbl  = _br.get("pick","") if _br else ""
                                                             _pick_prob = _br.get("prob",0)  if _br else 0
-                                                    else:  # not live — use bridge pick
+                                                    else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
+                                                        # Sin bridge: calcular pick con el modelo xG ya disponible
+                                                        if not _pick_lbl:
+                                                            try:
+                                                                _opts_pre = []
+                                                                # ML local/visitante
+                                                                if _ph2 >= 0.53: _opts_pre.append((_m["home"]+" gana", _ph2))
+                                                                if _pa2 >= 0.53: _opts_pre.append((_m["away"]+" gana", _pa2))
+                                                                # Over 2.5 con xG combinado
+                                                                import math as _pm
+                                                                _xg_tot = _hx2 + _ax2
+                                                                _o25_pre = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(3))
+                                                                if _o25_pre >= 0.53: _opts_pre.append(("Over 2.5", _o25_pre))
+                                                                # Tabla posición boost (si tenemos datos)
+                                                                try:
+                                                                    _tbl_pre = _tabla_posicion_delta(_m['home'], _m['away'], _m.get('slug',''))
+                                                                    if _tbl_pre.get('delta_h', 0) > 0.06 and _ph2 < 0.53:
+                                                                        _opts_pre.append((_m["home"]+" gana", _ph2 + _tbl_pre['delta_h']))
+                                                                    elif _tbl_pre.get('delta_a', 0) > 0.06 and _pa2 < 0.53:
+                                                                        _opts_pre.append((_m["away"]+" gana", _pa2 + _tbl_pre['delta_a']))
+                                                                except: pass
+                                                                if _opts_pre:
+                                                                    _pick_lbl, _pick_prob = max(_opts_pre, key=lambda x: x[1])
+                                                                    _pick_prob = min(0.92, _pick_prob)
+                                                            except: pass
+                                                    # ── Si calculamos pick nuevo (sin bridge), guardarlo en bridge ──
+                                                    if _pick_lbl and not (_br.get("pick","") if _br else ""):
+                                                        try:
+                                                            _bk = _m.get("id","") or f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}"
+                                                            if "st" in dir() and _bk:
+                                                                if "_diamond_bridge" not in st.session_state:
+                                                                    st.session_state["_diamond_bridge"] = {}
+                                                                st.session_state["_diamond_bridge"][_bk] = {
+                                                                    "pick":_pick_lbl,"prob":_pick_prob,
+                                                                    "home":_m.get("home",""),"away":_m.get("away",""),
+                                                                    "sport":"futbol","fecha":_m.get("fecha",""),
+                                                                    "src":"⚡ Cartelera","mkt":"auto"}
+                                                        except: pass
                                                     # ── Always compute badge (live or not) ──
                                                     _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
                                                     _score_or_hora = _sc if _live else _m.get("hora","")
@@ -14685,8 +14815,11 @@ if st.session_state["view"] == "cartelera":
                                                         f"<div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>"
                                                         f"<div style='font-size:1.125rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>✈️</div></div>"
-                                                        f"</div>{_live_label}{_pick_html}</div>",
+                                                        f"</div></div>",
                                                         unsafe_allow_html=True)
+                                                    # ── Pick Diamante AFUERA de la card, arriba del botón ──
+                                                    if _pick_html:
+                                                        st.markdown(_pick_html, unsafe_allow_html=True)
                                                     if st.button("📊", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_fi}_{_pi}",
                                                                  use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
                                                         st.session_state["sel"]  = {**_m, "_sport":"futbol"}
