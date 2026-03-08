@@ -9477,7 +9477,7 @@ def _kr_calibrate(prob,sport,brain):
         return round(max(0.10,min(0.92,0.70*prob+0.30*sum(hist)/len(hist))),4)
     except: return prob
 
-@st.cache_data(ttl=1800,show_spinner=False)
+
 
 # ==============================================================================
 # ULTRA INTELLIGENCE ENGINE — 20 Variables Avanzadas
@@ -9748,6 +9748,44 @@ def _ultra_adaptabilidad(home, away, sport):
     return {"adapt_h":0.0,"adapt_a":0.0,"flexibilidad_h":"media","flexibilidad_a":"media","ventaja_coach":"par"}
 
 
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_rival_similar(home: str, away: str, sport: str) -> dict:
+    """
+    8. RENDIMIENTO CONTRA RIVALES SIMILARES.
+    En lugar de ver resultados generales, analiza contra equipos del mismo nivel.
+    Soccer: vs top 5, vs media tabla. NBA: vs .500+ teams. Tenis: vs mismo ranking.
+    TTL=1800s.
+    """
+    _d = {"rival_h": 0.0, "rival_a": 0.0, "nivel": "similar", "descripcion": ""}
+    if not ANTHROPIC_API_KEY: return _d
+    try:
+        sport_ctx = {
+            "futbol": "analiza rendimiento vs top 5 vs media tabla vs relegación",
+            "nba": "analiza Win% vs equipos .500 o mejor vs equipos perdedores",
+            "tenis": "analiza W% vs jugadores de ranking similar (+/- 20 posiciones)"
+        }.get(sport, "analiza rendimiento contra rivales de nivel equivalente")
+        p = (f"Analiza rendimiento contra rivales similares: {home} vs {away} ({sport}).\n"
+             f"{sport_ctx}\n"
+             f"¿Alguno rinde MUY diferente vs rivales de su nivel vs rivales más débiles?\n"
+             f"SOLO JSON sin backticks: "
+             f'{{"rival_h": -0.10_a_+0.10, "rival_a": -0.10_a_+0.10, '
+             f'"nivel": "alto|similar|bajo", "descripcion": "max 12 palabras"}}')
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 160,
+                  "messages": [{"role": "user", "content": p}]}, timeout=8)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            d["rival_h"] = max(-0.12, min(0.12, float(d.get("rival_h", 0))))
+            d["rival_a"] = max(-0.12, min(0.12, float(d.get("rival_a", 0))))
+            return d
+    except: pass
+    return _d
+
 def _ultra_intel_full(home, away, sport, liga, fecha):
     """
     MAESTRO: Corre las 10 Ultra Intelligence en paralelo (ThreadPoolExecutor).
@@ -9761,7 +9799,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha):
         try: results[key] = fn(*args)
         except: results[key] = {}
 
-    with _cf.ThreadPoolExecutor(max_workers=11) as ex:
+    with _cf.ThreadPoolExecutor(max_workers=12) as ex:
         ex.submit(_run, _ultra_fatiga,            "fatiga",    home, away, sport, fecha)
         ex.submit(_run, _ultra_matchup,           "matchup",   home, away, sport)
         ex.submit(_run, _ultra_forma_real,        "forma",     home, away, sport)
@@ -9773,6 +9811,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha):
         ex.submit(_run, _ultra_ritmo_juego,       "ritmo",     home, away, sport)
         ex.submit(_run, _ultra_dependencia_estrella,"dep",     home, away, sport)
         ex.submit(_run, _ultra_adaptabilidad,     "adapt",     home, away, sport)
+        ex.submit(_run, _ultra_rival_similar,     "rival",     home, away, sport)
 
     fat = results.get("fatiga",{});  mch = results.get("matchup",{})
     frm = results.get("forma",{});   fis = results.get("fisica",{})
@@ -9780,6 +9819,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha):
     cst = results.get("consist",{}); pre = results.get("presion",{})
     rit = results.get("ritmo",{});   dep = results.get("dep",{})
     adp = results.get("adapt",{})
+    rvl = results.get("rival",{})
 
     # Delta neto para equipo LOCAL (home)
     delta_h = sum([
@@ -9793,6 +9833,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha):
         float(pre.get("presion_h",0))    * 0.8,   # presion/clutch
         float(rit.get("ritmo_delta",0))  * 0.5,   # ritmo
         float(dep.get("dep_h",0))        * 0.7,   # dependencia estrella
+        float(rvl.get("rival_h",0))      * 0.6,   # rendimiento vs rivales similares
     ])
     # Delta neto para equipo VISITANTE (away)
     delta_a = sum([
@@ -9805,6 +9846,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha):
         float(pre.get("presion_a",0))    * 0.8,
         -float(rit.get("ritmo_delta",0)) * 0.5,
         float(dep.get("dep_a",0))        * 0.7,
+        float(rvl.get("rival_a",0))      * 0.6,   # rendimiento vs rivales similares
     ])
     # Clip
     delta_h = max(-0.18, min(0.18, delta_h))
@@ -10438,6 +10480,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
 
     # ── Rankear ──
     # GOD MODE pipeline
+    pick_history = pick_history or []
     _brain_kr = _kr_brain_load()
     _elo_kr   = _kr_elo_load()
     _ph_t = tuple({"pick":p.get("pick",""),"result":"gano" if p.get("result") in ("ok","✅","gano") else "perdio"} for p in pick_history[-50:])
@@ -11293,6 +11336,862 @@ def _kr_entrenador(home: str, away: str, sport: str, liga: str = "") -> dict:
     except: pass
     return {"coach_h": 0.0, "coach_a": 0.0, "ventaja_tactica": "equilibrado",
             "score": 5, "impacto": "bajo", "razon": "sin datos de entrenador"}
+
+
+
+# SMALL DAYS
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SMALL DAYS \u2014 Agente de inteligencia soft (3 fuentes reales)
+# ──────────────────────────────────────────────────────────────────────────────
+# Fuente 1: ESPN injuries/news API (oficial, ya conectada)
+# Fuente 2: Google News RSS (noticias últimas 24-48h, sin API key)
+# Fuente 3: API-Tennis (para tenis \u2014 lesiones y retiros recientes)
+#
+# Detecta: lesiones last-minute \u00b7 rotaciones \u00b7 drama personal \u00b7 fatiga viaje
+#          suspensiones \u00b7 clima extremo \u00b7 motivación situacional \u00b7 árbitros
+#
+# Devuelve soft_delta silencioso que ajusta picks en -12% a +12%
+# Cache 2h \u2014 usa Claude Haiku para interpretar \u2014 no bloquea UI
+# ══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=7200, show_spinner=False)
+def _sd_espn_injuries(team_id: str, slug: str, sport: str) -> str:
+    """Fuente 1: ESPN injuries + team news endpoint."""
+    try:
+        if sport == "nba":
+            base = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+            url  = f"{base}/teams/{team_id}/injuries"
+        elif sport == "futbol":
+            base = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}"
+            url  = f"{base}/teams/{team_id}/injuries"
+        else:
+            return ""
+        r = requests.get(url, timeout=4)
+        if r.status_code != 200:
+            return ""
+        data = r.json()
+        injuries = data.get("injuries", [])
+        if not injuries:
+            # Try news endpoint as fallback
+            if sport == "nba":
+                news_url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/news?team={team_id}&limit=5"
+            else:
+                news_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/news?team={team_id}&limit=5"
+            rn = requests.get(news_url, timeout=4)
+            if rn.status_code == 200:
+                articles = rn.json().get("articles", [])
+                snippets = [a.get("headline","") + ". " + a.get("description","")[:80]
+                            for a in articles[:4] if a.get("headline")]
+                return " | ".join(snippets)[:600]
+            return ""
+        parts = []
+        for inj in injuries[:6]:
+            athlete = inj.get("athlete", {})
+            name = athlete.get("displayName", "?")
+            status = inj.get("status", "")
+            detail = inj.get("shortComment", inj.get("longComment", ""))[:60]
+            parts.append(f"{name} ({status}): {detail}")
+        return " | ".join(parts)[:600]
+    except:
+        return ""
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _sd_google_news(query: str) -> str:
+    """Fuente 2: Google News RSS \u2014 noticias reales últimas 24-48h."""
+    try:
+        import urllib.parse as _up
+        import xml.etree.ElementTree as _ET
+        _url = (f"https://news.google.com/rss/search?"
+                f"q={_up.quote(query)}&hl=es-419&gl=MX&ceid=MX:es-419")
+        r = requests.get(_url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return ""
+        root = _ET.fromstring(r.content)
+        items = root.findall(".//item")[:5]
+        snippets = []
+        for item in items:
+            title = item.findtext("title", "")
+            desc  = item.findtext("description", "")[:80]
+            pub   = item.findtext("pubDate", "")[:16]
+            if title:
+                snippets.append(f"[{pub}] {title}. {desc}")
+        return " | ".join(snippets)[:700]
+    except:
+        return ""
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _sd_tennis_news(player: str) -> str:
+    """Fuente 3: API-Tennis \u2014 retiros, lesiones, estado jugador."""
+    try:
+        params = {"method": "get_players", "search": player}
+        r = requests.get(TENNIS_API, params={**params, "APIkey": TENNIS_API_KEY}, timeout=5)
+        if r.status_code != 200:
+            return ""
+        data = r.json().get("result", [])
+        if not data:
+            return ""
+        p = data[0]
+        # Build status string from available fields
+        parts = []
+        if p.get("player_status"): parts.append(f"Status: {p['player_status']}")
+        if p.get("player_injury"): parts.append(f"🚑 {p['player_injury']}")
+        if p.get("player_ranking"): parts.append(f"Rank #{p['player_ranking']}")
+        # Also fetch recent results for fatigue signal
+        pid = p.get("player_key","")
+        if pid:
+            r2 = requests.get(TENNIS_API, params={
+                "method":"get_H2H", "APIkey": TENNIS_API_KEY,
+                "player_key_1": pid}, timeout=4)
+            if r2.status_code == 200:
+                recent = r2.json().get("result",{}).get("player_1_vs_player_2",[])[:3]
+                for m in recent[:2]:
+                    parts.append(f"Reciente: {m.get('event_final_result','')} vs {m.get('event_away_team','')[:15]}")
+        return " | ".join(parts)[:400]
+    except:
+        return ""
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _small_days_analyze(home: str, away: str, sport: str,
+                         fecha: str,
+                         home_id: str = "", away_id: str = "",
+                         slug: str = "",
+                         context_hint: str = "") -> dict:
+    """
+    Small Days \u2014 Motor de ponderación de 60+ variables ocultas.
+    Fusiona 3 fuentes reales + Claude Haiku con scoring estructurado.
+
+    Score = \u03a3(variable_detectada \u00d7 peso) por equipo
+    Cuando score_negativo > umbral \u2192 prob real baja significativamente.
+
+    Retorna deltas calibrados que se aplican silenciosamente a todos los picks.
+    Cache 1 hora. Se llama en todos los deportes.
+    """
+    _default = {
+        "soft_delta": 0.0, "home_delta": 0.0, "away_delta": 0.0,
+        "ou_delta": 0.0, "flags": [], "confidence": "baja",
+        "raw_summary": "", "score_h": 0.0, "score_a": 0.0,
+    }
+    try:
+        # ── Fetch paralelo 3 fuentes ──
+        _espn_h = _espn_a = _google_h = _google_a = _ten_h = _ten_a = ""
+
+        if sport in ("futbol", "nba") and home_id:
+            _espn_h = _sd_espn_injuries(home_id, slug, sport)
+        if sport in ("futbol", "nba") and away_id:
+            _espn_a = _sd_espn_injuries(away_id, slug, sport)
+
+        _sport_q = {"futbol":"fútbol","nba":"NBA","tenis":"tenis"}.get(sport, sport)
+        _google_h = _sd_google_news(f"{home} {_sport_q} lesion injury noticias")
+        _google_a = _sd_google_news(f"{away} {_sport_q} lesion injury noticias")
+
+        if sport == "tenis":
+            _ten_h = _sd_tennis_news(home)
+            _ten_a = _sd_tennis_news(away)
+
+        _all_info = []
+        if _espn_h:   _all_info.append(f"ESPN LOCAL ({home}): {_espn_h}")
+        if _espn_a:   _all_info.append(f"ESPN VISITA ({away}): {_espn_a}")
+        if _google_h: _all_info.append(f"NOTICIAS LOCAL ({home}): {_google_h}")
+        if _google_a: _all_info.append(f"NOTICIAS VISITA ({away}): {_google_a}")
+        if _ten_h:    _all_info.append(f"TENNIS-API ({home}): {_ten_h}")
+        if _ten_a:    _all_info.append(f"TENNIS-API ({away}): {_ten_a}")
+
+        if not _all_info:
+            return _default
+
+        _news = "\n".join(_all_info)
+        _sport_es = {"futbol":"fútbol","nba":"baloncesto NBA","tenis":"tenis"}.get(sport, sport)
+
+        # ── Prompt con tabla de ponderación completa ──
+        _prompt = f"""Eres Small Days, motor de inteligencia soft para apuestas deportivas.
+Partido de {_sport_es}: {away} @ {home} \u2014 {fecha}
+Modelo base: {context_hint[:150] if context_hint else "N/A"}
+
+DATOS REALES (ESPN + Google News + API):
+{_news[:2000]}
+
+INSTRUCCI\u00d3N: Evalúa cada variable que encuentres en los datos. Usa esta tabla de pesos:
+
+F\u00cdSICO: fatiga_acumulada=5, microlesion_oculta=5, recuperacion_incompleta=5,
+        dormir_mal=4, jet_lag=4, deshidratacion=4, resaca=4, enfermedad_leve=4,
+        alimentacion_mala=3, medicamentos=3
+
+EMOCIONAL: fallecimiento_cercano=5, ansiedad_presion=4, miedo_titularidad=4,
+           baja_confianza=4, divorcio=4, problemas_disciplinarios=4,
+           pareja=3, pelea_familiar=3, criticas_redes=3, quiere_irse=3
+
+MOTIVACION: problemas_entrenador=5, quiere_mostrarse=4, nervios_partido_grande=4,
+            temporada_perdida=4, contrato_negociacion=3, fiestas_recientes=3,
+            problemas_legales=4, rumores_transferencia=3
+
+EQUIPO: conflictos_vestuario=5, problemas_salariales=5, mala_relacion_entrenador=5,
+        calendario_congestionado=5, cambio_entrenador=4, jugadores_divididos=4,
+        falta_liderazgo=4, viaje_largo=4, estrategia_mal_preparada=4,
+        clima_extremo=4, altitud=4
+
+PARTIDO: evitar_descenso=5, clasificar_torneo=5, clasico=4, partido_irrelevante=4,
+         rival_debil_relajacion=3, rival_fuerte_motivacion=3, partido_revancha=3,
+         estadio_hostil=3
+
+Para LOCAL ({home}), detecta variables negativas y positivas presentes.
+Para VISITA ({away}), igual.
+
+Calcula:
+  score_h = suma(peso \u00d7 -1 por negativa, +0.5 por positiva) para {home}
+  score_a = suma(peso \u00d7 -1 por negativa, +0.5 por positiva) para {away}
+
+Regla de delta:
+  Si score_h <= -8: home_delta = -0.10
+  Si score_h <= -5: home_delta = -0.06
+  Si score_h <= -3: home_delta = -0.03
+  Si score_h >= +3: home_delta = +0.03
+  Si score_h >= +5: home_delta = +0.05
+  (misma regla para away_delta y score_a)
+
+  soft_delta = home_delta - away_delta (pick favorito)
+  ou_delta: si hay fatiga/viaje/clima \u2192 negativo; si hay motivacion alta \u2192 0
+  confidence: "alta" si detectas 3+ variables con peso>=4, "media" si 1-2, "baja" si ninguna
+
+Responde SOLO JSON sin markdown:
+{{
+  "score_h": <float>,
+  "score_a": <float>,
+  "home_delta": <-0.10 a 0.10>,
+  "away_delta": <-0.10 a 0.10>,
+  "soft_delta": <-0.12 a 0.12>,
+  "ou_delta": <-0.08 a 0.08>,
+  "flags": ["variable detectada peso=X equipo Y", ...],
+  "confidence": "alta|media|baja",
+  "raw_summary": "max 15 palabras resumen impacto"
+}}
+Si no detectas variables relevantes, pon 0.0 en todo y confidence=baja."""
+
+        _r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001",
+                  "max_tokens": 500,
+                  "messages": [{"role": "user", "content": _prompt}]},
+            timeout=10
+        )
+        if _r.status_code == 200:
+            import json as _jsd
+            _txt = _r.json()["content"][0]["text"].strip()
+            _txt = _txt.replace("```json","").replace("```","").strip()
+            _data = _jsd.loads(_txt)
+            # Clamp all values
+            _data["soft_delta"]  = max(-0.12, min(0.12, float(_data.get("soft_delta", 0))))
+            _data["home_delta"]  = max(-0.10, min(0.10, float(_data.get("home_delta", 0))))
+            _data["away_delta"]  = max(-0.10, min(0.10, float(_data.get("away_delta", 0))))
+            _data["ou_delta"]    = max(-0.08, min(0.08, float(_data.get("ou_delta",   0))))
+            _data["score_h"]     = float(_data.get("score_h", 0))
+            _data["score_a"]     = float(_data.get("score_a", 0))
+            _data["flags"]       = [str(f)[:70] for f in _data.get("flags", [])[:6]]
+            _data["confidence"]  = _data.get("confidence", "baja")
+            _data["raw_summary"] = str(_data.get("raw_summary", ""))[:120]
+            # Safety: baja confidence + no flags = no adjustment
+            if _data["confidence"] == "baja" and not _data["flags"]:
+                for k in ("soft_delta","home_delta","away_delta","ou_delta"):
+                    _data[k] = 0.0
+            return _data
+    except:
+        pass
+    return _default
+
+
+
+
+def _small_days_apply(pick_prob: float, pick_lbl: str,
+                      ph: float, pd: float, pa: float,
+                      o25: float, btts: float,
+                      sd: dict) -> tuple:
+    """
+    Aplica los deltas de Small Days. Peso según confianza.
+    Retorna (ph_adj, pd_adj, pa_adj, o25_adj, btts_adj).
+    Regla: Small Days complementa, nunca domina (max 70% del delta).
+    """
+    if not sd or (sd.get("confidence","baja") == "baja" and not sd.get("flags")):
+        return ph, pd, pa, o25, btts
+    _w = {"alta": 0.70, "media": 0.45, "baja": 0.20}.get(sd.get("confidence","baja"), 0.20)
+    ph_adj  = max(0.04, min(0.93, ph  + sd.get("home_delta",0) * _w))
+    pa_adj  = max(0.04, min(0.93, pa  + sd.get("away_delta",0) * _w))
+    _tot    = ph_adj + (pd or 0) + pa_adj
+    pd_adj  = ((pd or 0) / _tot) if _tot > 0 else (pd or 0)
+    ph_adj /= _tot if _tot > 0 else 1
+    pa_adj /= _tot if _tot > 0 else 1
+    o25_adj  = max(0.08, min(0.92, o25  + sd.get("ou_delta",0) * _w))
+    btts_adj = max(0.08, min(0.92, btts + sd.get("ou_delta",0) * _w * 0.5))
+    return ph_adj, pd_adj, pa_adj, o25_adj, btts_adj
+
+
+
+# PAPI AJB
+def _papi_bot_consensus(candidato: dict) -> dict:
+    """Panel de análisis para Papi AJB Reto Escalera."""
+    try:
+        pick_lbl  = candidato["pick"]
+        prob      = candidato["prob"]
+        cuota     = candidato["cuota"]
+        partido   = candidato["partido"]
+        sd_conf   = candidato.get("sd_conf", "baja")
+        sd_flags  = candidato.get("sd_flags", [])
+
+        votos_ok    = 0
+        votos_total = 0
+        advertencias = []
+        analisis_parts = []
+
+        edge = prob - (1 / cuota if cuota > 1 else prob)
+
+        votos_total += 1
+        if prob >= 0.55:
+            votos_ok += 1; analisis_parts.append(f"Prob {prob*100:.0f}% alta")
+        elif prob >= 0.46:
+            votos_ok += 1; analisis_parts.append(f"Prob {prob*100:.0f}% ok")
+        else:
+            advertencias.append(f"Prob baja {prob*100:.0f}%")
+
+        votos_total += 1
+        if edge > 0.03:
+            votos_ok += 1; analisis_parts.append(f"Edge +{edge*100:.1f}pp")
+        elif edge > 0:
+            votos_ok += 1; analisis_parts.append(f"Edge positivo")
+        else:
+            advertencias.append(f"Sin edge")
+
+        votos_total += 1
+        if 1.30 <= cuota <= 1.80:
+            votos_ok += 1; analisis_parts.append(f"Cuota {cuota:.2f} ok")
+        elif cuota < 1.30:
+            advertencias.append(f"Cuota {cuota:.2f} baja")
+        else:
+            votos_ok += 1
+
+        votos_total += 1
+        if not sd_flags:
+            votos_ok += 1; analisis_parts.append("SmallDays: sin alertas")
+        else:
+            advertencias.append(f"Flags: {'; '.join(sd_flags[:2])}")
+
+        # Claude Haiku veredicto
+        try:
+            panel_lines = [
+                f"Panel Reto Escalera. Pick: {pick_lbl}",
+                f"Partido: {partido}",
+                f"Prob: {prob*100:.1f}% | Cuota: {cuota:.2f} | Edge: {edge*100:.1f}%",
+                f"Votos OK: {votos_ok}/{votos_total}",
+                f"Analisis: {' | '.join(analisis_parts)}",
+                f"Advertencias: {' | '.join(advertencias) or 'ninguna'}",
+                "Reglas: stake 20%, cuota 1.30-1.80, prob >45%.",
+                'Responde SOLO JSON: {"veredicto":"verde|amarillo|rojo","score_final":0-10,"mensaje":"max 12 palabras"}',
+            ]
+            panel_ctx = "\n".join(panel_lines)
+            _r3 = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": ANTHROPIC_API_KEY,
+                         "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 150,
+                      "messages": [{"role": "user", "content": panel_ctx}]},
+                timeout=7
+            )
+            if _r3.status_code == 200:
+                _txt3 = _r3.json()["content"][0]["text"].strip()
+                _txt3 = _txt3.replace("```json", "").replace("```", "").strip()
+                _vd = json.loads(_txt3)
+                return {
+                    "score": float(_vd.get("score_final", 5)),
+                    "votos_ok": votos_ok, "votos_total": votos_total,
+                    "veredicto": _vd.get("veredicto", "amarillo"),
+                    "analisis": " | ".join(analisis_parts),
+                    "advertencias": advertencias,
+                    "mensaje": _vd.get("mensaje", ""),
+                }
+        except: pass
+
+        score_base = round((votos_ok / votos_total) * 10, 1) if votos_total > 0 else 5.0
+        veredicto = "verde" if score_base >= 6.5 else ("rojo" if score_base < 4.0 else "amarillo")
+        return {
+            "score": score_base, "votos_ok": votos_ok, "votos_total": votos_total,
+            "veredicto": veredicto, "analisis": " | ".join(analisis_parts),
+            "advertencias": advertencias, "mensaje": "",
+        }
+    except Exception as _e:
+        return {"score": 5.0, "votos_ok": 0, "votos_total": 0,
+                "veredicto": "amarillo", "analisis": str(_e), "advertencias": [], "mensaje": ""}
+
+
+PAPI_FILE = "/tmp/papi_ajb_state.json"
+PAPI_HISTORY_F = "/tmp/papi_ajb_history.json"
+
+def _papi_load_state():
+    try:
+        with open(PAPI_FILE) as f: return json.load(f)
+    except: return {"paso":1,"capital":1500.0,"activo":True,"pick_del_dia":None,"fecha_pick":""}
+
+def _papi_save_state(s):
+    try:
+        with open(PAPI_FILE,"w") as f: json.dump(s,f,ensure_ascii=False)
+    except: pass
+
+def _papi_load_history():
+    try:
+        with open(PAPI_HISTORY_F) as f: return json.load(f)
+    except: return []
+
+def _papi_save_history(h):
+    try:
+        with open(PAPI_HISTORY_F,"w") as f: json.dump(h,f,ensure_ascii=False)
+    except: pass
+
+def _papi_telegram(msg):
+    try:
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={"chat_id":CHAT_ID,"text":msg,"parse_mode":"Markdown"},timeout=8)
+    except: pass
+
+def _papi_justificar(pick_lbl,partido,prob,cuota,panel):
+    if not ANTHROPIC_API_KEY: return f"Pick {pick_lbl} prob {prob*100:.0f}% cuota {cuota:.2f}."
+    try:
+        ps = f"Panel {panel.get('veredicto','?').upper()} {panel.get('score',0)}/10" if panel else ""
+        p = (f"Justifica 2 frases Reto Escalera:\n"
+             f"{pick_lbl}|{partido}|{prob*100:.0f}%|cuota {cuota:.2f}\n{ps}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
+                     "content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":120,
+                  "messages":[{"role":"user","content":p}]},timeout=10)
+        if r.status_code==200: return r.json()["content"][0]["text"].strip()
+    except: pass
+    return f"{pick_lbl} prob {prob*100:.0f}% cuota {cuota:.2f}."
+
+def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
+    state = _papi_load_state()
+    if not state.get("activo",True): return None
+    cands = []
+    for m in (matches_fut or [])[:30]:
+        try:
+            hf=get_form(m.get("home_id",""),m.get("slug","")) or []
+            af=get_form(m.get("away_id",""),m.get("slug","")) or []
+            hxg=xg_weighted(hf,True) if hf else 1.2; axg=xg_weighted(af,False) if af else 1.0
+            mc=mc50k(hxg,axg); ph,pa=mc["ph"],mc["pa"]; bp=max(ph,pa)
+            bl=(f"Casa {m.get('home','?')} gana" if ph>=pa else f"Visita {m.get('away','?')} gana")
+            bo=m.get("odd_h",0) if ph>=pa else m.get("odd_a",0)
+            if not (1.30<=bo<=1.80): continue
+            edge=bp-(1/bo if bo>1 else 0.50)
+            if edge<0.02: continue
+            cands.append({"pick":bl,"prob":bp,"cuota":bo,
+                "partido":f"{m.get('home','?')} vs {m.get('away','?')}",
+                "deporte":"Futbol","sport":"futbol","liga":m.get("league",""),
+                "hora":m.get("hora",""),"home":m.get("home",""),"away":m.get("away",""),
+                "fecha":m.get("fecha",""),"edge":edge,"score":bp*10+edge*20})
+        except: continue
+    for g in (nba_games or [])[:15]:
+        try:
+            nr=nba_ou_model(g.get("home_id",""),g.get("away_id",""),g.get("ou_line",220.5))
+            bp=max(nr["p_over"],nr["p_under"])
+            bl=(f"Over {nr['line']}" if nr["p_over"]>=nr["p_under"] else f"Under {nr['line']}")
+            edge=bp-0.525
+            if edge<0.03: continue
+            cands.append({"pick":bl,"prob":bp,"cuota":1.90,
+                "partido":f"{g.get('away','?')} @ {g.get('home','?')}",
+                "deporte":"NBA","sport":"nba","liga":"NBA",
+                "hora":g.get("hora",""),"home":g.get("home",""),"away":g.get("away",""),
+                "fecha":g.get("fecha",""),"edge":edge,"score":bp*10+edge*20})
+        except: continue
+    for t in (ten_matches or [])[:20]:
+        try:
+            tr=tennis_model(t.get("rank1",100),t.get("rank2",150),t.get("odd_1",1.8),t.get("odd_2",2.1))
+            bp=max(tr["p1"],tr["p2"]); fav=t.get("p1","?") if tr["p1"]>=tr["p2"] else t.get("p2","?")
+            bo=t.get("odd_1",1.8) if tr["p1"]>=tr["p2"] else t.get("odd_2",2.1)
+            if not (1.30<=bo<=1.80): continue
+            edge=bp-(1/bo if bo>1 else 0.50)
+            if edge<0.02: continue
+            cands.append({"pick":f"{fav} gana","prob":bp,"cuota":bo,
+                "partido":f"{t.get('p1','?')} vs {t.get('p2','?')}",
+                "deporte":"Tenis","sport":"tenis","liga":t.get("torneo","Tennis"),
+                "hora":t.get("hora",""),"home":t.get("p1",""),"away":t.get("p2",""),
+                "fecha":t.get("fecha",""),"edge":edge,"score":bp*10+edge*20})
+        except: continue
+    if not cands: return None
+    cands.sort(key=lambda c:c["score"],reverse=True); best=cands[0]
+    try:
+        panel=_papi_bot_consensus(best); best["panel"]=panel
+        if panel.get("veredicto")=="rojo": return None
+    except: best["panel"]=None
+    return best
+
+
+def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
+    # PAPI AJB Reto Escalera $1500 a $1MM MXN
+    import datetime as _dt
+    state=_papi_load_state(); history=_papi_load_history()
+    paso=state.get("paso",1); capital=state.get("capital",1500.0); activo=state.get("activo",True)
+    st.markdown("<style>.psv{text-align:center;background:#ffffff08;border-radius:8px;padding:8px;}"
+                ".psv-v{font-size:1.3rem;font-weight:900;}.psv-l{font-size:.68rem;color:#888;}"
+                ".ppick{background:linear-gradient(135deg,#100020,#001208);"
+                "border:2px solid #FFD70066;border-radius:10px;padding:14px;margin:8px 0;}"
+                "</style>",unsafe_allow_html=True)
+    c1,c2,c3=st.columns(3)
+    with c1:
+        st.markdown(f"<div class='psv'><div class='psv-v' style='color:#FFD700'>Paso {paso}"
+                    f"</div><div class='psv-l'>ESCALERA</div></div>",unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"<div class='psv'><div class='psv-v' style='color:#00ff88'>${capital:,.0f}"
+                    f"</div><div class='psv-l'>CAPITAL</div></div>",unsafe_allow_html=True)
+    with c3:
+        pct=round(capital/1_000_000*100,3)
+        st.markdown(f"<div class='psv'><div class='psv-v' style='color:#ff9500'>{pct:.3f}%"
+                    f"</div><div class='psv-l'>HACIA 1MM</div></div>",unsafe_allow_html=True)
+    st.markdown("---")
+    if not activo:
+        st.error("Reto pausado.")
+        if st.button("Reactivar"):
+            state.update({"activo":True,"capital":1500.0,"paso":1})
+            _papi_save_state(state); st.rerun()
+        return
+    today=_dt.datetime.now().strftime("%Y-%m-%d")
+    saved=state.get("pick_del_dia"); saved_f=state.get("fecha_pick","")
+    if st.button("Buscar Pick del Dia",type="primary"):
+        with st.spinner("Analizando con panel..."):
+            saved=_papi_pick_del_dia(matches_fut,nba_games,ten_matches)
+            if saved:
+                panel=saved.get("panel") or {}
+                just=_papi_justificar(saved["pick"],saved["partido"],saved["prob"],saved["cuota"],panel)
+                saved["justificacion"]=just; state["pick_del_dia"]=saved; state["fecha_pick"]=today
+                _papi_save_state(state)
+                stake=round(capital*0.20); gan=round(stake*(saved["cuota"]-1))
+                msg=(f"PAPI AJB RETO ESCALERA\nPaso {paso} Capital ${capital:,.0f}\n"
+                     f"Pick: {saved['pick']}\n{saved['partido']}\n"
+                     f"Prob {saved['prob']*100:.0f}% Cuota {saved['cuota']:.2f}\n"
+                     f"Stake ${stake:,.0f} +${gan:,.0f}\n{just[:150]}")
+                _papi_telegram(msg); st.rerun()
+            else: st.warning("Sin pick con valor hoy.")
+    if saved and saved_f==today:
+        panel=saved.get("panel") or {}; vd=panel.get("veredicto","amarillo")
+        vc={"verde":"#00ff88","amarillo":"#FFD700","rojo":"#ff4444"}.get(vd,"#FFD700")
+        stake=round(capital*0.20); gp=round(stake*(saved["cuota"]-1))
+        st.markdown(
+            f"<div class='ppick' style='border-color:{vc}66'>"
+            f"<div style='font-size:.7rem;color:{vc};margin-bottom:6px'>PICK PASO {paso}</div>"
+            f"<div style='font-size:1.2rem;font-weight:900;color:#F0E6C8'>{saved['pick']}</div>"
+            f"<div style='font-size:.8rem;color:#888;margin:4px 0'>{saved['partido']} | {saved['liga']}</div>"
+            f"<div style='display:flex;gap:12px;font-size:.82rem'>"
+            f"<span style='color:#00ff88'>{saved['prob']*100:.0f}%</span>"
+            f"<span style='color:#FFD700'>x{saved['cuota']:.2f}</span>"
+            f"<span style='color:#ff9500'>+${gp:,.0f}</span>"
+            f"<span style='color:#aaa'>stake ${stake:,.0f}</span></div></div>",
+            unsafe_allow_html=True)
+        if saved.get("justificacion"): st.info(saved["justificacion"])
+        if panel:
+            sc=panel.get("score",0); mg=panel.get("mensaje",""); vs=f"{panel.get('votos_ok',0)}/{panel.get('votos_total',0)}"
+            st.markdown(f"<div style='font-size:.72rem;color:#888;padding:3px 0'>"
+                        f"Panel <span style='color:{vc}'>{vd.upper()}</span> {sc:.0f}/10 {vs}"
+                        f"{f' | {mg}' if mg else ''}</div>",unsafe_allow_html=True)
+        ca,cb=st.columns(2)
+        with ca:
+            if st.button("Gano",type="primary"):
+                nc=capital+round(stake*(saved["cuota"]-1))
+                history.append({**saved,"resultado":"ganado","capital_antes":capital,
+                                "capital_despues":nc,"stake":stake,"paso":paso,"fecha":today})
+                state.update({"capital":nc,"paso":paso+1,"pick_del_dia":None,"fecha_pick":""})
+                _papi_save_state(state); _papi_save_history(history)
+                _papi_telegram(f"GANO paso {paso}! Capital ${nc:,.0f}"); st.rerun()
+        with cb:
+            if st.button("Perdio"):
+                nc=capital-stake
+                history.append({**saved,"resultado":"perdido","capital_antes":capital,
+                                "capital_despues":nc,"stake":stake,"paso":paso,"fecha":today})
+                state.update({"capital":nc,"activo":nc>=500,"pick_del_dia":None,"fecha_pick":""})
+                _papi_save_state(state); _papi_save_history(history)
+                _papi_telegram(f"Perdio paso {paso}. Capital ${nc:,.0f}"); st.rerun()
+    elif saved_f!=today: st.info("Nuevo dia — busca el pick de hoy.")
+    if history:
+        st.markdown("---"); st.markdown("**Historial**")
+        for h in reversed(history[-15:]):
+            rc="#00ff88" if h.get("resultado")=="ganado" else "#ff4444"
+            ri="OK" if h.get("resultado")=="ganado" else "X"
+            diff=h.get("capital_despues",0)-h.get("capital_antes",0)
+            ds=f"+${diff:,.0f}" if diff>=0 else f"-${abs(diff):,.0f}"
+            st.markdown(f"<div style='display:flex;justify-content:space-between;"
+                        f"padding:3px 6px;border-bottom:1px solid #ffffff08;font-size:.72rem'>"
+                        f"<span style='color:{rc}'>{ri} P{h.get('paso','?')} {h.get('pick','?')}</span>"
+                        f"<span style='color:#888'>{h.get('fecha','?')}</span>"
+                        f"<span style='color:{rc}'>{ds}</span></div>",unsafe_allow_html=True)
+
+
+# 5 IAs ADICIONALES
+
+# ══════════════════════════════════════════════════════════════════════
+# LAS 5 INTELIGENCIAS ADICIONALES — Autónomas · Claude IA · TTL 30 min
+# 1. El Actuario    — Valor real de cuota vs probabilidad del modelo
+# 2. El Meteorólogo — Clima + condiciones físicas del estadio
+# 3. El H2H         — Patrones históricos y H2H profundo
+# 4. El Psicólogo   — Estado mental colectivo del equipo
+# 5. El Trader      — Movimiento de líneas y dinero inteligente
+# ══════════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ia_actuario(home: str, away: str, sport: str,
+                 prob_modelo: float, cuota: float) -> dict:
+    """El Actuario — Detecta valor real de cuota. TTL=1800s."""
+    try:
+        prob_mercado = (1 / cuota) if cuota > 1 else prob_modelo
+        edge = prob_modelo - prob_mercado
+        cuota_justa = round(1 / prob_modelo, 3) if prob_modelo > 0 else cuota
+        prompt = (
+            f"Eres El Actuario, especialista en valor de cuota deportiva.\n"
+            f"Partido: {home} vs {away} | Deporte: {sport}\n"
+            f"Prob modelo: {prob_modelo*100:.1f}% | Cuota: {cuota:.2f} "
+            f"(implica {prob_mercado*100:.1f}%) | Edge: {edge*100:.2f}pp\n"
+            f"Cuota justa segun modelo: {cuota_justa:.2f}\n\n"
+            f"Analiza si hay valor real. Considera el vig de la casa (~4.5%).\n"
+            f"SOLO JSON sin backticks: "
+            f'{{"edge_real": {edge:.4f}, "valor": "positivo|neutro|negativo", '
+            f'"cuota_justa": {cuota_justa}, "score": 0-10, '
+            f'"razon": "max 15 palabras", "alerta": "max 10 palabras o null"}}'
+        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=8)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            d.setdefault("edge_real", edge)
+            d.setdefault("cuota_justa", cuota_justa)
+            d.setdefault("valor", "positivo" if edge > 0.03 else ("neutro" if edge > 0 else "negativo"))
+            d.setdefault("score", min(10, max(0, 5 + edge * 40)))
+            return d
+    except: pass
+    val = "positivo" if edge > 0.03 else ("neutro" if edge > 0 else "negativo")
+    return {"edge_real": edge, "cuota_justa": cuota_justa, "valor": val,
+            "score": max(0, min(10, 5 + edge*40)), "razon": f"Edge {edge*100:.1f}pp vs mercado",
+            "alerta": None}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ia_meteorologo(home: str, away: str, sport: str, fecha: str) -> dict:
+    """El Meteorologo — Clima + condiciones fisicas del estadio. TTL=1800s."""
+    try:
+        prompt = (
+            f"Eres El Meteorologo deportivo, experto en como las condiciones fisicas afectan resultados.\n"
+            f"Partido: {home} vs {away} | Deporte: {sport} | Fecha: {fecha}\n\n"
+            f"Basandote en ubicacion tipica de {home}, condiciones historicas de la liga en esta epoca,\n"
+            f"e impacto del clima en Over/Under (lluvia = menos goles, viento = mas errores).\n"
+            f"SOLO JSON sin backticks: "
+            f'{{"condicion": "descripcion breve", "impacto": "alto|medio|bajo|neutro", '
+            f'"mercados_afectados": ["Over/Under"], "score_ajuste": -0.05_a_+0.05, '
+            f'"favorece": "local|visitante|neutro", "razon": "max 15 palabras"}}'
+        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=8)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            d.setdefault("condicion", "sin datos")
+            d.setdefault("impacto", "neutro")
+            d.setdefault("score_ajuste", 0.0)
+            return d
+    except: pass
+    return {"condicion": "no determinado", "impacto": "neutro",
+            "mercados_afectados": [], "score_ajuste": 0.0,
+            "favorece": "neutro", "razon": "sin datos de condiciones"}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ia_h2h(home: str, away: str, sport: str) -> dict:
+    """El H2H Detective — Patrones historicos profundos. TTL=1800s."""
+    try:
+        prompt = (
+            f"Eres El Detective H2H, especialista en patrones historicos deportivos.\n"
+            f"Partido: {home} vs {away} | Deporte: {sport}\n\n"
+            f"Analiza H2H reciente (ultimos 3-5), rendimiento local/visita, patrones especificos,\n"
+            f"asimetria historica, tendencias de goles. Si no tienes datos confiables, indicalo.\n"
+            f"SOLO JSON sin backticks: "
+            f'{{"patron": "descripcion", "ventaja": "local|visitante|equilibrado|desconocido", '
+            f'"confianza_datos": "alta|media|baja", "tendencia_goles": "over|under|neutro", '
+            f'"score": 0-10, "razon": "max 15 palabras", '
+            f'"flag_historico": "dato clave max 12 palabras o null"}}'
+        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=8)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            d.setdefault("ventaja", "equilibrado")
+            d.setdefault("score", 5)
+            d.setdefault("confianza_datos", "media")
+            return d
+    except: pass
+    return {"patron": "sin datos H2H", "ventaja": "equilibrado",
+            "confianza_datos": "baja", "tendencia_goles": "neutro",
+            "score": 5, "razon": "datos historicos no disponibles", "flag_historico": None}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ia_psicologo(home: str, away: str, sport: str,
+                  sd_flags: list = None) -> dict:
+    """El Psicologo — Estado mental colectivo del equipo. TTL=1800s."""
+    try:
+        flags_ctx = (f"\nSenales SmallDays previas: {', '.join(sd_flags)}" if sd_flags else "")
+        prompt = (
+            f"Eres El Psicologo Deportivo, especialista en estado mental colectivo.\n"
+            f"Partido: {home} vs {away} | Deporte: {sport}{flags_ctx}\n\n"
+            f"Analiza estado mental COLECTIVO: motivacion, confianza, presion, efecto rebote,\n"
+            f"trampa de victoria facil, presion por descenso/clasificacion, momentum.\n"
+            f"SOLO JSON sin backticks: "
+            f'{{"estado_local": "motivado|confiado|presionado|en_crisis|neutro", '
+            f'"estado_visita": "motivado|confiado|presionado|en_crisis|neutro", '
+            f'"momentum": "local|visitante|equilibrado", "factor_mental": "alto|medio|bajo", '
+            f'"score_ajuste": -0.08_a_+0.08, "favorece": "local|visitante|neutro", '
+            f'"razon": "max 15 palabras"}}'
+        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=8)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            d.setdefault("estado_local", "neutro")
+            d.setdefault("estado_visita", "neutro")
+            d.setdefault("score_ajuste", 0.0)
+            return d
+    except: pass
+    return {"estado_local": "neutro", "estado_visita": "neutro",
+            "momentum": "equilibrado", "factor_mental": "bajo",
+            "score_ajuste": 0.0, "favorece": "neutro",
+            "razon": "analisis psicologico no disponible"}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ia_trader(home: str, away: str, sport: str,
+               cuota_actual: float, pick_lbl: str) -> dict:
+    """El Trader — Movimiento de lineas y dinero inteligente. TTL=1800s."""
+    try:
+        prompt = (
+            f"Eres El Trader de apuestas deportivas, especialista en movimiento de lineas.\n"
+            f"Partido: {home} vs {away} | Deporte: {sport}\n"
+            f"Pick: {pick_lbl} | Cuota: {cuota_actual:.2f}\n\n"
+            f"Analiza: cuota {cuota_actual:.2f} parece sharp o square, sesgo tipico del mercado,\n"
+            f"si hay senales de steam (dinero inteligente), si el pick es lado publico o sharp.\n"
+            f"SOLO JSON sin backticks: "
+            f'{{"movimiento": "steam|fade|estable|desconocido", "lado": "sharp|publico|mixto", '
+            f'"dinero_inteligente": "favor|contra|neutro", "confianza_mercado": "alta|media|baja", '
+            f'"score": 0-10, "razon": "max 15 palabras", '
+            f'"alerta": "advertencia max 12 palabras o null"}}'
+        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": ANTHROPIC_API_KEY,
+                     "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=8)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            d.setdefault("movimiento", "estable")
+            d.setdefault("score", 5)
+            d.setdefault("dinero_inteligente", "neutro")
+            return d
+    except: pass
+    return {"movimiento": "estable", "lado": "mixto",
+            "dinero_inteligente": "neutro", "confianza_mercado": "media",
+            "score": 5, "razon": "sin datos de mercado", "alerta": None}
+
+
+def _5ais_enrich_context(home: str, away: str, sport: str,
+                          fecha: str, prob: float, cuota: float,
+                          pick_lbl: str, sd_flags: list = None) -> dict:
+    """
+    Corre las 5 IAs en paralelo y devuelve contexto enriquecido.
+    Seguro: cada IA tiene try/except — si una falla, el resto continua.
+    Usado por: Einstein, Papa Einstein, KR, SmallDays, Badrino, Villar, Papi AJB.
+    """
+    import concurrent.futures as _cf
+    results = {}
+    def _run(fn, key, *args):
+        try: results[key] = fn(*args)
+        except: results[key] = {}
+
+    with _cf.ThreadPoolExecutor(max_workers=5) as ex:
+        ex.submit(_run, _ia_actuario,    "actuario",    home, away, sport, prob, cuota)
+        ex.submit(_run, _ia_meteorologo, "meteorologo", home, away, sport, fecha)
+        ex.submit(_run, _ia_h2h,         "h2h",         home, away, sport)
+        ex.submit(_run, _ia_psicologo,   "psico",       home, away, sport, sd_flags or [])
+        ex.submit(_run, _ia_trader,      "trader",      home, away, sport, cuota, pick_lbl)
+
+    act = results.get("actuario",    {})
+    met = results.get("meteorologo", {})
+    h2h = results.get("h2h",         {})
+    psi = results.get("psico",       {})
+    trd = results.get("trader",      {})
+
+    score_extra = 0.0
+    score_extra += float(act.get("score", 5) - 5) * 0.01
+    score_extra += float(met.get("score_ajuste", 0)) * 0.5
+    score_extra += float(psi.get("score_ajuste", 0)) * 0.6
+    score_extra += (float(trd.get("score", 5)) - 5) * 0.008
+    score_extra = max(-0.12, min(0.12, score_extra))
+
+    flags_5ais = []
+    if act.get("valor") == "negativo":
+        flags_5ais.append(f"Actuario: edge negativo ({act.get('edge_real',0)*100:.1f}pp)")
+    elif act.get("valor") == "positivo":
+        flags_5ais.append(f"Actuario: edge +{act.get('edge_real',0)*100:.1f}pp OK")
+    if met.get("impacto") in ("alto", "medio"):
+        flags_5ais.append(f"Clima: {met.get('condicion','?')} | {met.get('razon','')}")
+    if h2h.get("confianza_datos") != "baja" and h2h.get("flag_historico"):
+        flags_5ais.append(f"H2H: {h2h.get('flag_historico','')}")
+    if psi.get("factor_mental") in ("alto", "medio"):
+        flags_5ais.append(f"Psico: {psi.get('favorece','?')} | {psi.get('razon','')}")
+    if trd.get("alerta"):
+        flags_5ais.append(f"Trader: {trd.get('alerta','')}")
+    elif trd.get("dinero_inteligente") == "favor":
+        flags_5ais.append("Trader: dinero inteligente A FAVOR")
+
+    context_block = (
+        f"\n[5 INTELIGENCIAS ADICIONALES]\n"
+        f"Actuario: {act.get('valor','?')} | edge {act.get('edge_real',0)*100:.1f}pp | "
+        f"cuota justa {act.get('cuota_justa',cuota):.2f} | {act.get('razon','')}\n"
+        f"Meteorologo: {met.get('condicion','?')} | impacto {met.get('impacto','neutro')} | "
+        f"favorece {met.get('favorece','neutro')} | {met.get('razon','')}\n"
+        f"H2H: {h2h.get('patron','?')} | ventaja {h2h.get('ventaja','?')} | "
+        f"goles {h2h.get('tendencia_goles','neutro')} | {h2h.get('razon','')}\n"
+        f"Psicologo: local={psi.get('estado_local','?')} visita={psi.get('estado_visita','?')} | "
+        f"momentum {psi.get('momentum','?')} | {psi.get('razon','')}\n"
+        f"Trader: {trd.get('movimiento','?')} | {trd.get('lado','?')} | "
+        f"dinero {trd.get('dinero_inteligente','neutro')} | {trd.get('razon','')}\n"
+        f"[Ajuste neto prob: {score_extra:+.3f}]\n"
+    )
+
+    return {
+        "actuario": act, "meteorologo": met, "h2h": h2h,
+        "psico": psi, "trader": trd,
+        "context_block": context_block,
+        "score_extra": score_extra,
+        "flags_5ais": flags_5ais,
+    }
+
 
 
 def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
@@ -13362,6 +14261,12 @@ else:
 
         # Einstein + Papa side by side (tennis)
         _ten_ctx = f"J1: {g['home']} rank#{_rank1} @{_odd1:.2f} | J2: {g['away']} rank#{_rank2} @{_odd2:.2f} | Superficie: {_ten_surface} | Tour: {_ten_tour} | {_vd_fav} gana {_vd_fav_p*100:.1f}%"
+        # 🛸 Ultra Intel Tennis + 5AIs
+        try:
+            _ui_ten = _ultra_intel_full(p1_name, p2_name, 'tenis', tor, g.get('hora',''))
+            _5ai_ten = _5ais_enrich_context(p1_name, p2_name, 'tenis', g.get('hora',''), p1_win_prob, g.get('odd_1',0.0), f'{p1_name} gana')
+            _ten_ctx += (_ui_ten.get('context_str','') + _5ai_ten.get('context_block',''))
+        except: pass
         _ei_ten, _papa_ten = _render_einstein_papa('tenis', g['home'], g['away'], f'🎾 {_vd_fav} gana', _vd_fav_p, _odd1 if _vd_fav==g['home'] else _odd2, context_str=_ten_ctx)
 
         # Badrino
@@ -13441,6 +14346,14 @@ else:
 
             # Einstein + Papa NBA
             _nba_ctx = f"O/U Line: {_line} | OVER: {_p_over*100:.0f}% | UNDER: {_p_under*100:.0f}% | {g.get('home','')} ML: {_p_home*100:.0f}% | {g.get('away','')} ML: {_p_away*100:.0f}% | Proyección: {_proj:.0f} pts"
+            # 🛸 Ultra Intel NBA + 5AIs
+            try:
+                _t1 = g.get('away', g.get('home_team',''))
+                _t2 = g.get('home', g.get('away_team',''))
+                _ui_nba = _ultra_intel_full(_t1, _t2, 'nba', 'NBA', g.get('hora',''))
+                _5ai_nba = _5ais_enrich_context(_t1, _t2, 'nba', g.get('hora',''), _p_over, g.get('odd_over',0.0) or 0.0, 'Over')
+                _nba_ctx += (_ui_nba.get('context_str','') + _5ai_nba.get('context_block',''))
+            except: pass
             _ei_nba, _papa_nba = _render_einstein_papa('nba', g.get('home',''), g.get('away',''), _nba_pick_lbl, max(_p_over,_p_under), _nba_odd, context_str=_nba_ctx)
 
     else:
@@ -13802,6 +14715,12 @@ else:
             except: pass
         elif _is_live:
             _soc_ctx += f" | EN VIVO {_score_h}-{_score_a} min{_minute}'"
+        # 🛸 Ultra Intel 11 variables + 5AIs silenciosos
+        try:
+            _ui_soc = _ultra_intel_full(g['home'], g['away'], 'futbol', g.get('league',''), g.get('hora',''))
+            _5ai_soc = _5ais_enrich_context(g['home'], g['away'], 'futbol', g.get('hora',''), main_prob, main_odd, main_lbl)
+            _soc_ctx += (_ui_soc['context_str'] + _5ai_soc['context_block'])
+        except: pass
         _ei_soc, _papa_soc = _render_einstein_papa('futbol', g['home'], g['away'], main_lbl, main_prob, main_odd, context_str=_soc_ctx)
 
         # ══════════════════════════════════════════════════════════
