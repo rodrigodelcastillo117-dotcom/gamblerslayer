@@ -12142,8 +12142,7 @@ def _papi_bot_consensus(candidato: dict) -> dict:
                          "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
                 json={"model": "claude-haiku-4-5-20251001", "max_tokens": 150,
-                      "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": panel_ctx}]},
+                      "messages": [{"role": "user", "content": panel_ctx}]},
                 timeout=7
             )
             if _r3.status_code == 200:
@@ -12214,7 +12213,6 @@ def _papi_justificar(pick_lbl,partido,prob,cuota,panel):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
                   "messages":[{"role":"user","content":p}]},timeout=10)
         if r.status_code==200:
             _jblocks = r.json().get("content",[])
@@ -15090,10 +15088,16 @@ if st.session_state["view"] == "cartelera":
                                                     # ── Construir pick row HTML para insertar dentro del card ──
                                                     _pick_row = ""
                                                     if _pick_lbl and _pick_prob >= 0.38:
-                                                        if _pick_prob >= 0.68:    _pe, _pc, _pt = "💎", "#00ccff", "DIAMANTE"
-                                                        elif _pick_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff6600", "FUEGO"
-                                                        elif _pick_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "TRUENO"
-                                                        else:                     _pe, _pc, _pt = "📊", "#888",    "DÉBIL"
+                                                        # Badge tier — usa prob del pick pre-partido si existe
+                                                        _badge_prob = _pick_prob
+                                                        _pre_pick_lbl  = (_br.get("pick","") if _br else "") if _live else ""
+                                                        _pre_pick_prob = (_br.get("prob",0)  if _br else 0)  if _live else 0
+                                                        if _live and _pre_pick_prob >= 0.38: _badge_prob = _pre_pick_prob
+                                                        if _badge_prob >= 0.68:    _pe, _pc, _pt = "💎", "#00ccff", "DIAMANTE"
+                                                        elif _badge_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff6600", "ORO"
+                                                        elif _badge_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "TRUENO"
+                                                        elif _badge_prob >= 0.46:  _pe, _pc, _pt = "📊", "#888",    "DÉBIL"
+                                                        else:                      _pe, _pc, _pt = "🔍", "#555",    "LEVE"
                                                         _lv_tag = ("🔴 EN VIVO" if _live else "PRE-PARTIDO")
                                                         _lbl_clean = _pick_lbl.replace("🔴 ","",1) if _live else _pick_lbl
                                                         _glow = f"box-shadow:0 0 8px {_pc}55;" if _pick_prob >= 0.68 else ""
