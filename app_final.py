@@ -4859,6 +4859,7 @@ def render_einstein_califica(key_sfx="fut"):
     else:
         cam = st.camera_input("", label_visibility="collapsed", key=f"cam_{key_sfx}")
         if cam: uploaded = cam
+        if uploaded: st.session_state["_stay_califica"] = True
 
     # ── Brain KPIs — solo si hay historial ──
     if not uploaded and bstats.get("total", 0) > 0:
@@ -8846,16 +8847,6 @@ def render_pach(sport_label: str, context_data: dict):
     _fk = f"pach_form_{sport_label}"
     _ck = f"pach_clear_{sport_label}"
 
-    with st.form(key=_fk, clear_on_submit=True):
-        col_in, col_btn = st.columns([5, 1])
-        with col_in:
-            pregunta = st.text_input(
-                "Pregúntale a PACH",
-                placeholder="Ej: Alcaraz -1.5 sets vs Ruud · Over 2.5 City vs Arsenal · Triple doble LeBron...",
-                label_visibility="collapsed")
-        with col_btn:
-            enviar = st.form_submit_button("▶", use_container_width=True)
-
     col_hint, col_clear = st.columns([4, 1])
     with col_hint:
         st.caption("💡 Escribe y presiona Enter · PACH busca en internet antes de responder")
@@ -8864,7 +8855,9 @@ def render_pach(sport_label: str, context_data: dict):
             st.session_state[hist_key] = []
             st.rerun()
 
-    if enviar and pregunta.strip():
+    pregunta = st.chat_input("Pregúntale a PACH — Ej: Over 2.5 City vs Arsenal · Alcaraz -1.5 sets...", key=_fk)
+
+    if pregunta and pregunta.strip():
         with st.spinner("🌐 PACH buscando en la web..."):
             respuesta = _pach_call(pregunta.strip(), sport_label, context_data)
         st.session_state[hist_key].append({"q": pregunta.strip(), "a": respuesta})
@@ -10627,6 +10620,20 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
     # ── ⚽ FÚTBOL ─────────────────────────────────────────────────────────
     try:
         for m in (matches_fut or [])[:40]:
+            # KR: solo partidos desde ahora (no pasados)
+            _kr_state = m.get('state','pre')
+            if _kr_state == 'post': continue
+            if _kr_state != 'in':
+                try:
+                    from datetime import datetime as _dt_kr
+                    import pytz as _pz_kr
+                    _now_kr = _dt_kr.now(_pz_kr.timezone('America/Mexico_City'))
+                    _hora_kr = m.get('hora','') or ''
+                    if ':' in _hora_kr:
+                        _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
+                        _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
+                        if (_now_kr-_gdt_kr).total_seconds() > 600: continue  # +10 min pasados
+                except: pass
             # King Rongo analiza todos los partidos del día (pre, in, post)
             try:
                 home_id = m.get("home_id",""); away_id = m.get("away_id",""); slug = m.get("slug","")
@@ -10777,6 +10784,20 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
     # ── 🏀 NBA ────────────────────────────────────────────────────────────
     try:
         for g in (nba_games or [])[:20]:
+            # KR: solo partidos desde ahora (no pasados)
+            _kr_state = g.get('state','pre')
+            if _kr_state == 'post': continue
+            if _kr_state != 'in':
+                try:
+                    from datetime import datetime as _dt_kr
+                    import pytz as _pz_kr
+                    _now_kr = _dt_kr.now(_pz_kr.timezone('America/Mexico_City'))
+                    _hora_kr = g.get('hora','') or ''
+                    if ':' in _hora_kr:
+                        _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
+                        _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
+                        if (_now_kr-_gdt_kr).total_seconds() > 600: continue  # +10 min pasados
+                except: pass
             # King Rongo analiza todos los juegos del día
             try:
                 res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
@@ -10851,6 +10872,20 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
              "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard"}
     try:
         for m in (ten_matches or [])[:45]:
+            # KR: solo partidos desde ahora (no pasados)
+            _kr_state = t.get('state','pre')
+            if _kr_state == 'post': continue
+            if _kr_state != 'in':
+                try:
+                    from datetime import datetime as _dt_kr
+                    import pytz as _pz_kr
+                    _now_kr = _dt_kr.now(_pz_kr.timezone('America/Mexico_City'))
+                    _hora_kr = t.get('hora','') or ''
+                    if ':' in _hora_kr:
+                        _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
+                        _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
+                        if (_now_kr-_gdt_kr).total_seconds() > 600: continue  # +10 min pasados
+                except: pass
             # King Rongo analiza todos los partidos del día
             try:
                 tor = m.get("torneo", m.get("tour",""))
@@ -14288,6 +14323,9 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
+        if st.session_state.pop("_stay_califica", False):
+            _js_c = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[6].click();},250);</script>"
+            st.markdown(_js_c, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
@@ -14671,6 +14709,9 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
+        if st.session_state.pop("_stay_califica", False):
+            _js_c = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[6].click();},250);</script>"
+            st.markdown(_js_c, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             # ── TENNIS CARTELERA — 2 columnas, separado por ATP / WTA ──
@@ -14901,6 +14942,9 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
+        if st.session_state.pop("_stay_califica", False):
+            _js_c = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[6].click();},250);</script>"
+            st.markdown(_js_c, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             _shdr_c1, _shdr_c2 = st.columns([5,1])
