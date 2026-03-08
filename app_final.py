@@ -13879,7 +13879,7 @@ def _quick_pick_diamond(pick_lbl: str, pick_prob: float, is_live: bool,
     elif pick_prob >= 0.53:
         emoji, color, tier = "⚡", "#FFD700", "TRUENO"
     else:
-        emoji, color, tier = "📊", "#888", "SEÑAL"
+        emoji, color, tier = "📊", "#888", "DÉBIL"
 
     prefix = "🔴 EN VIVO · " if is_live else ""
     border_glow = f"box-shadow:0 0 12px {color}44;" if pick_prob >= 0.68 else ""
@@ -13942,7 +13942,7 @@ def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
         emoji, color, tier_lbl = "💎", "#00ccff", "DIAMANTE"
         is_diamond = True
     elif pick_prob >= 0.60:
-        emoji, color, tier_lbl = "🔥", "#ff6600", "FUEGO"
+        emoji, color, tier_lbl = "🔥", "#ff6600", "ORO"
         is_diamond = False
     elif pick_prob >= 0.53:
         emoji, color, tier_lbl = "⚡", "#FFD700", "TRUENO"
@@ -14152,9 +14152,9 @@ if st.session_state["view"] == "cartelera":
                                 _nba_pick_row = ""
                                 if _nba_pl and _nba_pp >= 0.46:
                                     if _nba_pp >= 0.68:    _npe,_npc,_npt = "💎","#00ccff","DIAMANTE"
-                                    elif _nba_pp >= 0.60:  _npe,_npc,_npt = "🔥","#ff8800","FUEGO"
+                                    elif _nba_pp >= 0.60:  _npe,_npc,_npt = "🔥","#ff6600","FUEGO"
                                     elif _nba_pp >= 0.53:  _npe,_npc,_npt = "⚡","#FFD700","TRUENO"
-                                    else:                  _npe,_npc,_npt = "📊","#888","SEÑAL"
+                                    else:                  _npe,_npc,_npt = "📊","#888","DÉBIL"
                                     _npfx = "🔴 " if live else ""
                                     _nglow = f"box-shadow:0 0 8px {_npc}55;" if _nba_pp>=0.68 else ""
                                     _nba_pick_row = (
@@ -14514,9 +14514,9 @@ if st.session_state["view"] == "cartelera":
                                     _ten_pick_row = ""
                                     if _ten_pl and _ten_pp >= 0.46:
                                         if _ten_pp >= 0.68:    _tpe,_tpc,_tpt = "💎","#00ccff","DIAMANTE"
-                                        elif _ten_pp >= 0.60:  _tpe,_tpc,_tpt = "🔥","#ff8800","FUEGO"
+                                        elif _ten_pp >= 0.60:  _tpe,_tpc,_tpt = "🔥","#ff6600","FUEGO"
                                         elif _ten_pp >= 0.53:  _tpe,_tpc,_tpt = "⚡","#FFD700","TRUENO"
-                                        else:                  _tpe,_tpc,_tpt = "📊","#888","SEÑAL"
+                                        else:                  _tpe,_tpc,_tpt = "📊","#888","DÉBIL"
                                         _tpfx = "🔴 " if _ten_live else ""
                                         _tglow = f"box-shadow:0 0 8px {_tpc}55;" if _ten_pp>=0.68 else ""
                                         _ten_pick_row = (
@@ -14725,6 +14725,7 @@ if st.session_state["view"] == "cartelera":
                                                         _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
                                                     except:
                                                         _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
+                                                        _hx2 = 1.2; _ax2 = 1.0  # defaults para Poisson en vivo
                                                     _mx = max(_ph2,_pd2,_pa2)
                                                     _ch = "#00ff88" if _ph2==_mx else "#666"
                                                     _cd = "#FFD700" if _pd2==_mx else "#666"
@@ -14816,20 +14817,26 @@ if st.session_state["view"] == "cartelera":
                                                                 _btts_l = _p_h_s * _p_a_s
                                                                 _lv_opts = []
                                                                 if abs(_sc_h2-_sc_a2) <= 2:
-                                                                    if _bl_h >= 0.70: _lv_opts.append((_h_nm+" Gana", _bl_h))
-                                                                    if _bl_a >= 0.70: _lv_opts.append((_a_nm+" Gana", _bl_a))
-                                                                    if _bl_d >= 0.70 and _min2 < 75: _lv_opts.append(("Empate", _bl_d))
-                                                                if _goals_n < 3 and _o25_l >= 0.70: _lv_opts.append(("Over 2.5", _o25_l))
-                                                                if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.70: _lv_opts.append(("Ambos Anotan", _btts_l))
+                                                                    if _bl_h >= 0.60:   _lv_opts.append((_h_nm+' Gana', _bl_h))
+                                                                    if _bl_a >= 0.60:   _lv_opts.append((_a_nm+' Gana', _bl_a))
+                                                                    if _bl_d >= 0.60 and _min2 < 65: _lv_opts.append(('Empate', _bl_d))
+                                                                if _goals_n < 3 and _o25_l >= 0.60: _lv_opts.append(('Over 2.5', _o25_l))
+                                                                if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.58: _lv_opts.append(('Ambos Anotan', _btts_l))
                                                                 if _goals_n < 2 and _min2 < 70:
-                                                                    _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                                    _o15_l = 1-sum(_xg_rem_15**k*_lmath.exp(-_xg_rem_15)/_lmath.factorial(k) for k in range(max(0,2-_goals_n)))
-                                                                    if _o15_l >= 0.70: _lv_opts.append(("Over 1.5", _o15_l))
+                                                                    _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)*0.55
+                                                                    _o15_l = 1-sum(_xg_rem_15**k*_lmath.exp(-_xg_rem_15)/_lmath.factorial(k) for k in range(2))
+                                                                    if _o15_l >= 0.60: _lv_opts.append(('Over 1.5', _o15_l))
                                                                 if _lv_opts:
                                                                     _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
-                                                                    _pick_lbl = "🔴 " + _pick_lbl
+                                                                    _pick_lbl = '🔴 ' + _pick_lbl
                                                                 else:
-                                                                    _pick_lbl = ""; _pick_prob = 0
+                                                                    _br_pre = (_br.get('pick','') if _br else '') or ''
+                                                                    if _br_pre:
+                                                                        _pick_lbl = '🔴 ' + _br_pre.replace('🔴 ','').strip()
+                                                                        _pick_prob = _br.get('prob',0) if _br else 0
+                                                                    else:
+                                                                        _best_ml = max([(_h_nm+' Gana',_bl_h),(_a_nm+' Gana',_bl_a)], key=lambda x:x[1])
+                                                                        _pick_lbl = '🔴 ' + _best_ml[0]; _pick_prob = _best_ml[1]
                                                         except:
                                                             _pick_lbl  = _br.get("pick","") if _br else ""
                                                             _pick_prob = _br.get("prob",0)  if _br else 0
@@ -14881,10 +14888,11 @@ if st.session_state["view"] == "cartelera":
                                                     _pick_row = ""
                                                     if _pick_lbl and _pick_prob >= 0.46:
                                                         if _pick_prob >= 0.68:    _pe, _pc, _pt = "💎", "#00ccff", "DIAMANTE"
-                                                        elif _pick_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff8800", "FUEGO"
+                                                        elif _pick_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff6600", "FUEGO"
                                                         elif _pick_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "TRUENO"
-                                                        else:                     _pe, _pc, _pt = "📊", "#888",    "SEÑAL"
-                                                        _pfx = "🔴 " if _live else ""
+                                                        else:                     _pe, _pc, _pt = "📊", "#888",    "DÉBIL"
+                                                        _lv_tag = ("🔴 EN VIVO" if _live else "PRE-PARTIDO")
+                                                        _lbl_clean = _pick_lbl.replace("🔴 ","",1) if _live else _pick_lbl
                                                         _glow = f"box-shadow:0 0 8px {_pc}55;" if _pick_prob >= 0.68 else ""
                                                         _pick_row = (
                                                             f"<div style='border-top:1px solid #2a2010;margin-top:6px;padding-top:5px;"
@@ -14892,9 +14900,9 @@ if st.session_state["view"] == "cartelera":
                                                             f"<span style='font-size:1.1rem'>{_pe}</span>"
                                                             f"<div style='flex:1;min-width:0'>"
                                                             f"<div style='font-size:0.6rem;color:{_pc};font-weight:900;"
-                                                            f"letter-spacing:.1em'>{_pfx}{_pt}</div>"
+                                                            f"letter-spacing:.1em'>{_lv_tag} · {_pt}</div>"
                                                             f"<div style='font-size:0.88rem;font-weight:900;color:#fff;"
-                                                            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_pick_lbl}</div>"
+                                                            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_lbl_clean}</div>"
                                                             f"</div>"
                                                             f"<span style='font-size:1.05rem;font-weight:900;color:{_pc}'>{_pick_prob*100:.0f}%</span>"
                                                             f"</div>"
