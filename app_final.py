@@ -4641,8 +4641,8 @@ Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad,
                 "content-type": "application/json"
             },
             json={
-                "model": "claude-opus-4-5",
-                "max_tokens": 4000,
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1500,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -4973,7 +4973,6 @@ def render_einstein_califica(key_sfx="fut"):
                     "  · Analiza CADA selección del parlay por separado y calcula el edge combinado.\n"
                     "Hándicap Asiático (AH) = mercado sin empate, con línea de ventaja.\n"
                     "1X2 = mercado clásico local/empate/visitante.\n\n"
-
                     "══ UEFA / CHAMPIONS LEAGUE / EUROPA LEAGUE — CONTEXTO CRÍTICO ══\n"
                     "Si identificas que es un partido de UEFA (Champions League, Europa League, Conference League):\n"
                     "  · Son partidos de ELIMINATORIA con ida y vuelta. La cuota refleja solo ESTE partido, no la eliminatoria.\n"
