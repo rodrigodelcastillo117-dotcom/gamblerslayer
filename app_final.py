@@ -3171,6 +3171,14 @@ def update_results_db(force=False):
     # Fetch new data
     new_soccer  = fetch_soccer_results(10)
     new_nba     = fetch_nba_results(10)
+    # ── Auto-calibración: resolver resultados pendientes ──
+    try:
+        for _ng in new_nba:
+            if _ng.get("state") == "post" and _ng.get("score_h") is not None:
+                _real_tot = (_ng.get("score_h",0) or 0) + (_ng.get("score_a",0) or 0)
+                if _real_tot > 100:  # score válido de NBA
+                    _nba_calib_update_result(_ng["id"], _real_tot)
+    except: pass
     new_tennis  = fetch_tennis_results(10)
     # Cache tenis en session_state para factores contextuales (fatiga, H2H superficie)
     try: st.session_state["tennis_results_cache"] = new_tennis
@@ -9165,6 +9173,106 @@ def get_nba_recent_form(team_id, n_games=7):
     return results[:n_games]
 
 
+
+# ══════════════════════════════════════════════════════════════
+# NBA SELF-LEARNING CALIBRATION SYSTEM
+# Guarda picks históricos, mide bias real (proj vs real),
+# y ajusta automáticamente nba_ou_model en futuras predicciones.
+# ══════════════════════════════════════════════════════════════
+
+def _nba_calib_load():
+    """Carga el historial de calibración NBA."""
+    import json as _j
+    try:
+        if os.path.exists(NBA_CALIB_FILE):
+            with open(NBA_CALIB_FILE, "r") as _f:
+                return _j.load(_f)
+    except: pass
+    return {"picks": [], "bias": 0.0, "n": 0, "last_update": ""}
+
+def _nba_calib_save(data):
+    """Guarda historial de calibración NBA."""
+    import json as _j
+    try:
+        with open(NBA_CALIB_FILE, "w") as _f:
+            _j.dump(data, _f)
+    except: pass
+
+def _nba_calib_register_pick(game_id, home, away, proj, ou_line, pick_side, fecha):
+    """
+    Registra un pick NBA al momento de hacerlo.
+    pick_side: 'over' | 'under'
+    """
+    data = _nba_calib_load()
+    # Evitar duplicados
+    ids = {p["game_id"] for p in data["picks"]}
+    if game_id in ids:
+        return
+    data["picks"].append({
+        "game_id":  game_id,
+        "home":     home,
+        "away":     away,
+        "proj":     proj,
+        "ou_line":  ou_line,
+        "pick":     pick_side,
+        "fecha":    fecha,
+        "real":     None,   # se llena después con el resultado
+        "error":    None,   # proj - real (positivo = sobreestimé)
+        "result":   None,   # 'W' | 'L'
+    })
+    _nba_calib_save(data)
+
+def _nba_calib_update_result(game_id, real_total):
+    """
+    Registra el resultado real y recalcula bias global.
+    Llamar desde update_results_db cuando llegan scores NBA.
+    """
+    data = _nba_calib_load()
+    updated = False
+    for p in data["picks"]:
+        if p["game_id"] == game_id and p["real"] is None:
+            p["real"]   = real_total
+            p["error"]  = round(p["proj"] - real_total, 1)  # + = sobreestimé
+            if p["pick"] == "over":
+                p["result"] = "W" if real_total > p["ou_line"] else "L"
+            else:
+                p["result"] = "W" if real_total < p["ou_line"] else "L"
+            updated = True
+    if updated:
+        # Recalcular bias global con picks resueltos (últimos 30)
+        resolved = [p for p in data["picks"] if p["error"] is not None][-30:]
+        if resolved:
+            data["bias"]        = round(sum(p["error"] for p in resolved) / len(resolved), 2)
+            data["n"]           = len(resolved)
+            data["last_update"] = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
+            # Breakdown Over vs Under
+            over_errs  = [p["error"] for p in resolved if p["pick"]=="over"]
+            under_errs = [p["error"] for p in resolved if p["pick"]=="under"]
+            data["bias_over"]  = round(sum(over_errs)/len(over_errs), 2) if over_errs else 0.0
+            data["bias_under"] = round(sum(under_errs)/len(under_errs), 2) if under_errs else 0.0
+            data["wr_over"]    = round(sum(1 for p in resolved if p["pick"]=="over"  and p["result"]=="W") / max(1,len(over_errs)) * 100, 1)
+            data["wr_under"]   = round(sum(1 for p in resolved if p["pick"]=="under" and p["result"]=="W") / max(1,len(under_errs)) * 100, 1)
+            data["avg_miss_over"]  = round(sum(abs(p["error"]) for p in resolved if p["pick"]=="over"  and p["result"]=="L") / max(1, sum(1 for p in resolved if p["pick"]=="over"  and p["result"]=="L")), 1)
+            data["avg_miss_under"] = round(sum(abs(p["error"]) for p in resolved if p["pick"]=="under" and p["result"]=="L") / max(1, sum(1 for p in resolved if p["pick"]=="under" and p["result"]=="L")), 1)
+        _nba_calib_save(data)
+    return updated
+
+def _nba_calib_get_adjustment():
+    """
+    Devuelve ajuste de proyección basado en bias histórico.
+    Si el modelo sobreestima sistemáticamente N pts, se corrige en -N.
+    Cappado a ±8 pts para no sobre-corregir.
+    """
+    data = _nba_calib_load()
+    bias = data.get("bias", 0.0)
+    n    = data.get("n", 0)
+    if n < 5:
+        return 0.0  # no suficientes datos para ajustar
+    # Corrección gradual: 50% del bias si n<15, 80% si n>=15
+    factor = 0.5 if n < 15 else 0.80
+    adj = -bias * factor  # bias positivo = sobreestimo → restar
+    return max(-8.0, min(8.0, adj))
+
 def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     """
     NBA O/U + ML — 8 factores:
@@ -9251,6 +9359,12 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
         a_proj = a_proj * ((_ref_mult - 1) * 0.5 + 1)
     except: pass
 
+    # ── Auto-calibración: corregir bias histórico ──
+    _calib_adj = _nba_calib_get_adjustment()
+    if _calib_adj != 0.0:
+        proj    = proj + _calib_adj
+        h_proj  = h_proj + _calib_adj * 0.5
+        a_proj  = a_proj + _calib_adj * 0.5
     line = ou_line if ou_line > 0 else proj
 
     # Monte Carlo 50k
@@ -12058,7 +12172,8 @@ def _papi_bot_consensus(candidato: dict) -> dict:
                 "veredicto": "amarillo", "analisis": str(_e), "advertencias": [], "mensaje": ""}
 
 
-PAPI_FILE = "/tmp/papi_ajb_state.json"
+PAPI_FILE             = "/tmp/papi_ajb_state.json"
+NBA_CALIB_FILE        = "/tmp/nba_calibration.json"
 PAPI_HISTORY_F = "/tmp/papi_ajb_history.json"
 
 def _papi_load_state():
@@ -14070,6 +14185,30 @@ if st.session_state["view"] == "cartelera":
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
+            # ── Panel calibración NBA ──
+            try:
+                _calib = _nba_calib_load()
+                _cn = _calib.get("n", 0)
+                if _cn >= 3:
+                    _cbias = _calib.get("bias", 0)
+                    _cwo   = _calib.get("wr_over", 0)
+                    _cwu   = _calib.get("wr_under", 0)
+                    _cmo   = _calib.get("avg_miss_over", 0)
+                    _cmu   = _calib.get("avg_miss_under", 0)
+                    _cadj  = _nba_calib_get_adjustment()
+                    _cbc   = "#ff4444" if _cbias > 2 else ("#00ff88" if _cbias < -2 else "#FFD700")
+                    st.markdown(
+                        f"<div style='background:#060d14;border:1px solid #00ccff33;"
+                        f"border-radius:8px;padding:8px 12px;margin-bottom:10px'>"
+                        f"<div style='color:#00ccff;font-weight:900;font-size:0.72rem;letter-spacing:.1em;margin-bottom:4px'>"
+                        f"🧠 NBA AUTO-CALIBRACION · {_cn} picks resueltos</div>"
+                        f"<div style='display:flex;gap:14px;flex-wrap:wrap;font-size:0.82rem'>"
+                        f"<span>Sesgo modelo: <b style='color:{_cbc}'>{_cbias:+.1f} pts</b></span>"
+                        f"<span>Ajuste activo: <b style='color:#FFD700'>{_cadj:+.1f} pts</b></span>"
+                        f"<span>🔥 Over {_cwo:.0f}% WR | pierde por <b style='color:#ff6600'>{_cmo:.1f}pts</b></span>"
+                        f"<span>❄️ Under {_cwu:.0f}% WR | pierde por <b style='color:#00ccff'>{_cmu:.1f}pts</b></span>"
+                        f"</div></div>", unsafe_allow_html=True)
+            except: pass
             if not nba_games:
                 st.info("No hay juegos NBA hoy.")
             from collections import defaultdict
@@ -14184,6 +14323,15 @@ if st.session_state["view"] == "cartelera":
                                 if st.button("📊 Analizar", key=f"nba_{g['id']}", use_container_width=True):
                                     with st.spinner("🤖 IA analizando partido..."):
                                         res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                                        # ── Registrar pick para calibración ──
+                                        try:
+                                            _calib_side = "over" if res["p_over"] > res["p_under"] else "under"
+                                            _nba_calib_register_pick(
+                                                g["id"], g["home"], g["away"],
+                                                res["proj"], res["line"],
+                                                _calib_side, g.get("fecha","")
+                                            )
+                                        except: pass
                                         ai_prompt = (
                                             f"Eres analista NBA experto. Analiza:\n"
                                             f"{g['away']} (visitante) @ {g['home']} (local)\n"
@@ -14843,29 +14991,35 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
-                                                        # Sin bridge: calcular pick con el modelo xG ya disponible
+                                                        # Sin bridge: calcular pick con el modelo xG ya disponible — SIEMPRE genera un pick
                                                         if not _pick_lbl:
                                                             try:
-                                                                _opts_pre = []
-                                                                # ML local/visitante
-                                                                if _ph2 >= 0.53: _opts_pre.append((_m["home"]+" gana", _ph2))
-                                                                if _pa2 >= 0.53: _opts_pre.append((_m["away"]+" gana", _pa2))
-                                                                # Over 2.5 con xG combinado
                                                                 import math as _pm
                                                                 _xg_tot = _hx2 + _ax2
                                                                 _o25_pre = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(3))
-                                                                if _o25_pre >= 0.53: _opts_pre.append(("Over 2.5", _o25_pre))
-                                                                # Tabla posición boost (si tenemos datos)
+                                                                _o15_pre = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(2))
+                                                                # Tabla posición delta
+                                                                _tbl_dh = 0.0; _tbl_da = 0.0
                                                                 try:
-                                                                    _tbl_pre = _tabla_posicion_delta(_m['home'], _m['away'], _m.get('slug',''))
-                                                                    if _tbl_pre.get('delta_h', 0) > 0.06 and _ph2 < 0.53:
-                                                                        _opts_pre.append((_m["home"]+" gana", _ph2 + _tbl_pre['delta_h']))
-                                                                    elif _tbl_pre.get('delta_a', 0) > 0.06 and _pa2 < 0.53:
-                                                                        _opts_pre.append((_m["away"]+" gana", _pa2 + _tbl_pre['delta_a']))
+                                                                    _tbl_pre = _tabla_posicion_delta(_m["home"], _m["away"], _m.get("slug",""))
+                                                                    _tbl_dh = _tbl_pre.get("delta_h", 0)
+                                                                    _tbl_da = _tbl_pre.get("delta_a", 0)
                                                                 except: pass
-                                                                if _opts_pre:
-                                                                    _pick_lbl, _pick_prob = max(_opts_pre, key=lambda x: x[1])
-                                                                    _pick_prob = min(0.92, _pick_prob)
+                                                                # Probabilidades ajustadas con tabla
+                                                                _ph2_adj = min(0.92, _ph2 + _tbl_dh)
+                                                                _pa2_adj = min(0.92, _pa2 + _tbl_da)
+                                                                # Construir opciones: siempre al menos el mejor de los 3 lados
+                                                                _opts_pre = [
+                                                                    (_m["home"] + " Gana", _ph2_adj),
+                                                                    (_m["away"] + " Gana", _pa2_adj),
+                                                                ]
+                                                                # Over si xG lo soporta
+                                                                if _o25_pre >= 0.50: _opts_pre.append(("Over 2.5", _o25_pre))
+                                                                elif _o15_pre >= 0.55: _opts_pre.append(("Over 1.5", _o15_pre))
+                                                                # Empate solo si es genuinamente el más probable
+                                                                if _pd2 > _ph2_adj and _pd2 > _pa2_adj: _opts_pre.append(("Empate", _pd2))
+                                                                _pick_lbl, _pick_prob = max(_opts_pre, key=lambda x: x[1])
+                                                                _pick_prob = min(0.92, _pick_prob)
                                                             except: pass
                                                     # ── Si calculamos pick nuevo (sin bridge), guardarlo en bridge ──
                                                     if _pick_lbl and not (_br.get("pick","") if _br else ""):
@@ -14886,7 +15040,7 @@ if st.session_state["view"] == "cartelera":
                                                     _hdr_color = "#ff4444" if _live else "#6b5a3a"
                                                     # ── Construir pick row HTML para insertar dentro del card ──
                                                     _pick_row = ""
-                                                    if _pick_lbl and _pick_prob >= 0.46:
+                                                    if _pick_lbl and _pick_prob >= 0.38:
                                                         if _pick_prob >= 0.68:    _pe, _pc, _pt = "💎", "#00ccff", "DIAMANTE"
                                                         elif _pick_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff6600", "FUEGO"
                                                         elif _pick_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "TRUENO"
