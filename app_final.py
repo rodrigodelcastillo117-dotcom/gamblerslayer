@@ -12221,7 +12221,8 @@ def _papi_justificar(pick_lbl,partido,prob,cuota,panel):
 def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     """
     Pick del día para el Reto Escalera.
-    Selecciona el candidato con mejor edge y prob entre los 3 deportes.
+    Siempre devuelve el mejor candidato disponible entre los 3 deportes.
+    No filtra por edge mínimo — Papi siempre tiene pick.
     """
     state = _papi_load_state()
     if not state.get("activo",True): return None
@@ -12230,106 +12231,112 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
 
     # ── Fútbol ──────────────────────────────────────────────────────────
     for m in (matches_fut or [])[:40]:
+        if m.get("state","pre") != "pre": continue
         try:
-            hf = get_form(m.get("home_id",""), m.get("slug","")) or []
-            af = get_form(m.get("away_id",""), m.get("slug","")) or []
+            hf  = get_form(m.get("home_id",""), m.get("slug","")) or []
+            af  = get_form(m.get("away_id",""), m.get("slug","")) or []
             hxg = xg_weighted(hf, True)  if hf else 1.2
             axg = xg_weighted(af, False) if af else 1.0
-            mc_fut = mc50k(hxg, axg)
-            ph, pd, pa = mc_fut["ph"], mc_fut.get("pd",0), mc_fut["pa"]
-            # Doble oportunidad también
-            do_h = min(0.95, ph + pd); do_a = min(0.95, pa + pd)
-            candidates_fut = [
-                (f"Casa {m.get('home','?')} gana",        ph,   m.get("odd_h", 0)),
-                (f"Visita {m.get('away','?')} gana",      pa,   m.get("odd_a", 0)),
-                (f"Over 2.5 goles",                       mc_fut.get("o25", 0.5), 1.90),
-                (f"{m.get('home','?')} o Empate",         do_h, 1.45),
-                (f"{m.get('away','?')} o Empate",         do_a, 1.45),
-            ]
-            for bl, bp, bo in candidates_fut:
-                if bp < 0.52: continue
-                if bo <= 1.0: bo = max(1.30, round(1/bp * 0.88, 2))  # estimar cuota
-                edge = bp - (1/bo if bo > 1 else 0.50)
-                if edge < 0.005: continue
-                score = bp * 8 + edge * 25 + (0.5 if "gana" in bl else 0)
-                cands.append({"pick": bl, "prob": bp, "cuota": round(bo, 2),
-                    "partido": f"{m.get('home','?')} vs {m.get('away','?')}",
-                    "deporte": "futbol", "sport": "futbol", "liga": m.get("league",""),
-                    "hora": m.get("hora",""), "home": m.get("home",""), "away": m.get("away",""),
-                    "fecha": m.get("fecha",""), "edge": edge, "score": score})
+            mc  = mc50k(hxg, axg)
+            ph, pd, pa = mc["ph"], mc.get("pd",0), mc["pa"]
+            o25 = mc.get("o25", 0)
+            o15 = mc.get("o15", 0)
+            xg_tot = hxg + axg
+            # Tabla posición delta
+            try:
+                tbl = _tabla_posicion_delta(m["home"], m["away"], m.get("slug",""))
+                ph = min(0.92, ph + tbl.get("delta_h",0))
+                pa = min(0.92, pa + tbl.get("delta_a",0))
+            except: pass
+            # Todos los mercados candidatos
+            for bl, bp, bo in [
+                (f"{m.get('home','?')} Gana",            ph,   m.get("odd_h",0)),
+                (f"{m.get('away','?')} Gana",            pa,   m.get("odd_a",0)),
+                (f"Over 2.5",                             o25,  1.90),
+                (f"Over 1.5",                             o15,  1.55),
+                (f"{m.get('home','?')} o Empate",        min(0.95,ph+pd), 1.40),
+                (f"{m.get('away','?')} o Empate",        min(0.95,pa+pd), 1.40),
+            ]:
+                if bp < 0.40: continue   # descarta solo si prob muy baja
+                if bo <= 1.0: bo = max(1.25, round(1/max(bp,0.01)*0.88, 2))
+                edge = bp - (1/bo if bo > 1 else 0.55)
+                score = bp*10 + max(0,edge)*30 + (0.5 if "Gana" in bl else 0)
+                cands.append({"pick":bl,"prob":bp,"cuota":round(bo,2),
+                    "partido":f"{m.get('home','?')} vs {m.get('away','?')}",
+                    "deporte":"futbol","sport":"futbol","liga":m.get("league",""),
+                    "hora":m.get("hora",""),"home":m.get("home",""),"away":m.get("away",""),
+                    "fecha":m.get("fecha",""),"edge":round(edge,4),"score":score})
         except: continue
 
     # ── NBA ──────────────────────────────────────────────────────────────
     for g in (nba_games or [])[:20]:
+        if g.get("state","pre") != "pre": continue
         try:
-            nr = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line", 220.5))
-            bp = max(nr["p_over"], nr["p_under"])
-            bl = (f"Over {nr['line']}" if nr["p_over"] >= nr["p_under"] else f"Under {nr['line']}")
-            bo = 1.91
-            edge = bp - 0.525
-            if edge < 0.005: continue
-            score = bp * 8 + edge * 25
-            cands.append({"pick": bl, "prob": bp, "cuota": bo,
-                "partido": f"{g.get('away','?')} @ {g.get('home','?')}",
-                "deporte": "nba", "sport": "nba", "liga": "NBA",
-                "hora": g.get("hora",""), "home": g.get("home",""), "away": g.get("away",""),
-                "fecha": g.get("fecha",""), "edge": edge, "score": score})
-            # ML también
-            ph_nba = nr.get("p_h_win", 0.55); pa_nba = 1 - ph_nba
-            bp_ml = max(ph_nba, pa_nba)
-            bl_ml = (f"{g.get('home','?')} ML" if ph_nba >= pa_nba else f"{g.get('away','?')} ML")
-            bo_ml = g.get("odd_h", 0) if ph_nba >= pa_nba else g.get("odd_a", 0)
-            if bo_ml > 1.0:
-                edge_ml = bp_ml - (1/bo_ml)
-                if edge_ml > 0.01:
-                    cands.append({"pick": bl_ml, "prob": bp_ml, "cuota": round(bo_ml,2),
-                        "partido": f"{g.get('away','?')} @ {g.get('home','?')}",
-                        "deporte": "nba", "sport": "nba", "liga": "NBA",
-                        "hora": g.get("hora",""), "home": g.get("home",""), "away": g.get("away",""),
-                        "fecha": g.get("fecha",""), "edge": edge_ml, "score": bp_ml*8+edge_ml*25})
+            nr  = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",220.5))
+            # O/U
+            bp  = max(nr["p_over"], nr["p_under"])
+            bl  = (f"Over {nr['line']}" if nr["p_over"]>=nr["p_under"] else f"Under {nr['line']}")
+            bo  = 1.91
+            edge = bp - (1/bo)
+            score = bp*10 + max(0,edge)*30
+            cands.append({"pick":bl,"prob":bp,"cuota":bo,
+                "partido":f"{g.get('away','?')} @ {g.get('home','?')}",
+                "deporte":"nba","sport":"nba","liga":"NBA",
+                "hora":g.get("hora",""),"home":g.get("home",""),"away":g.get("away",""),
+                "fecha":g.get("fecha",""),"edge":round(edge,4),"score":score})
+            # ML
+            ph_n = nr.get("p_h_win",0.55); pa_n = 1-ph_n
+            bp_m = max(ph_n, pa_n)
+            bl_m = (f"{g.get('home','?')} ML" if ph_n>=pa_n else f"{g.get('away','?')} ML")
+            bo_m = g.get("odd_h",0) if ph_n>=pa_n else g.get("odd_a",0)
+            if bo_m <= 1.0: bo_m = max(1.30, round(1/max(bp_m,0.01)*0.88,2))
+            edge_m = bp_m - (1/bo_m)
+            score_m = bp_m*10 + max(0,edge_m)*30
+            cands.append({"pick":bl_m,"prob":bp_m,"cuota":round(bo_m,2),
+                "partido":f"{g.get('away','?')} @ {g.get('home','?')}",
+                "deporte":"nba","sport":"nba","liga":"NBA",
+                "hora":g.get("hora",""),"home":g.get("home",""),"away":g.get("away",""),
+                "fecha":g.get("fecha",""),"edge":round(edge_m,4),"score":score_m})
         except: continue
 
     # ── Tenis ────────────────────────────────────────────────────────────
     for t in (ten_matches or [])[:25]:
+        if t.get("state","pre") != "pre": continue
         try:
-            r1 = t.get("rank1", 80); r2 = t.get("rank2", 120)
-            o1 = t.get("odd_1", 0) or 1.75; o2 = t.get("odd_2", 0) or 2.10
+            r1 = t.get("rank1",80); r2 = t.get("rank2",120)
+            o1 = t.get("odd_1",0) or 1.75; o2 = t.get("odd_2",0) or 2.10
             tr = tennis_model(r1, r2, o1, o2)
             bp = max(tr["p1"], tr["p2"])
-            fav = t.get("p1","?") if tr["p1"] >= tr["p2"] else t.get("p2","?")
-            bo = o1 if tr["p1"] >= tr["p2"] else o2
-            if bo <= 1.0: bo = max(1.40, round(1/bp * 0.88, 2))
-            edge = bp - (1/bo if bo > 1 else 0.50)
-            if edge < 0.005: continue
-            score = bp * 8 + edge * 25
-            cands.append({"pick": f"{fav} gana", "prob": bp, "cuota": round(bo, 2),
-                "partido": f"{t.get('p1','?')} vs {t.get('p2','?')}",
-                "deporte": "tenis", "sport": "tenis", "liga": t.get("torneo","Tennis"),
-                "hora": t.get("hora",""), "home": t.get("p1",""), "away": t.get("p2",""),
-                "fecha": t.get("fecha",""), "edge": edge, "score": score})
+            fav = t.get("p1","?") if tr["p1"]>=tr["p2"] else t.get("p2","?")
+            bo  = (o1 if tr["p1"]>=tr["p2"] else o2)
+            if bo <= 1.0: bo = max(1.35, round(1/max(bp,0.01)*0.88,2))
+            edge  = bp - (1/bo if bo > 1 else 0.55)
+            score = bp*10 + max(0,edge)*30
+            cands.append({"pick":f"{fav} Gana","prob":bp,"cuota":round(bo,2),
+                "partido":f"{t.get('p1','?')} vs {t.get('p2','?')}",
+                "deporte":"tenis","sport":"tenis","liga":t.get("torneo","Tennis"),
+                "hora":t.get("hora",""),"home":t.get("p1",""),"away":t.get("p2",""),
+                "fecha":t.get("fecha",""),"edge":round(edge,4),"score":score})
         except: continue
 
     if not cands:
-        # Fallback: si no hay partidos, crear un pick de placeholder con datos reales
-        return None
+        return None   # genuinamente sin partidos hoy
 
     cands.sort(key=lambda c: c["score"], reverse=True)
     best = cands[0]
 
-    # Panel de consenso (no descartar si es rojo — solo registrar)
+    # Panel de consenso — no descartar si es rojo, pero intentar alternativa
     try:
         panel = _papi_bot_consensus(best)
         best["panel"] = panel
-        # Si el panel dice rojo Y hay otro candidato verde/amarillo, usar ese
         if panel.get("veredicto") == "rojo" and len(cands) > 1:
-            for alt in cands[1:4]:
+            for alt in cands[1:5]:
                 try:
                     alt_panel = _papi_bot_consensus(alt)
                     if alt_panel.get("veredicto") in ("verde","amarillo"):
                         alt["panel"] = alt_panel
                         return alt
                 except: continue
-        # Si todos son rojos, igual devolver el mejor (Papi decide)
     except:
         best["panel"] = None
 
@@ -12343,6 +12350,10 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     """
     import datetime as _dt
     import json as _json
+    # Fallback: recuperar datos de otros tabs si no se pasaron
+    if not matches_fut:  matches_fut  = st.session_state.get("_ajb_cache_fut") or []
+    if not nba_games:    nba_games    = st.session_state.get("_ajb_cache_nba") or []
+    if not ten_matches:  ten_matches  = st.session_state.get("_ajb_cache_ten") or []
 
     state   = _papi_load_state()
     history = _papi_load_history()
@@ -14535,6 +14546,10 @@ if st.session_state["view"] == "cartelera":
         with tab8:
             render_resultados_tab()
         with tab_papi:
+            # Cachear para AJB cross-tab
+            if matches:    st.session_state["_ajb_cache_fut"] = matches
+            if nba_games:  st.session_state["_ajb_cache_nba"] = nba_games
+            if ten_matches:st.session_state["_ajb_cache_ten"] = ten_matches
             render_papi_ajb(matches_fut=matches, nba_games=nba_games, ten_matches=ten_matches)
 
         with tab_king:
@@ -14763,7 +14778,10 @@ if st.session_state["view"] == "cartelera":
         with tab8:
             render_resultados_tab()
         with tab_papi:
-            render_papi_ajb(matches_fut=None, nba_games=None, ten_matches=ten_matches)
+            if ten_matches: st.session_state["_ajb_cache_ten"] = ten_matches
+            _ajb_fut = st.session_state.get("_ajb_cache_fut") or []
+            _ajb_nba = st.session_state.get("_ajb_cache_nba") or []
+            render_papi_ajb(matches_fut=_ajb_fut, nba_games=_ajb_nba, ten_matches=ten_matches)
 
         with tab_king:
             _kr_fut = st.session_state.get("_kr_cache_fut") or []
@@ -15218,7 +15236,10 @@ if st.session_state["view"] == "cartelera":
         with tab8:
             render_resultados_tab()
         with tab_papi:
-            render_papi_ajb(matches_fut=None, nba_games=nba_games, ten_matches=ten_matches)
+            if nba_games:  st.session_state["_ajb_cache_nba"] = nba_games
+            if ten_matches:st.session_state["_ajb_cache_ten"] = ten_matches
+            _ajb_fut = st.session_state.get("_ajb_cache_fut") or []
+            render_papi_ajb(matches_fut=_ajb_fut, nba_games=nba_games, ten_matches=ten_matches)
 
         with tab_king:
             _kr_fut = matches if matches else st.session_state.get("_kr_cache_fut") or []
