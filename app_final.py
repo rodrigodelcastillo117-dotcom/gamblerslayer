@@ -626,7 +626,7 @@ def get_cartelera():
         except: pass
     return matches
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_form(team_id, slug):
     """
     Últimos 15 partidos desde ESPN schedule.
@@ -822,7 +822,7 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
 
     return round(max(0.20, min(4.5, xg_base)), 3)
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def get_h2h(home_id, away_id, slug, home_name, away_name):
     home_id = str(home_id); away_id = str(away_id)
     data    = eg(f"{ESPN}/{slug}/teams/{home_id}/schedule")
@@ -846,7 +846,7 @@ def get_h2h(home_id, away_id, slug, home_name, away_name):
     h2h.sort(key=lambda x: x["date"], reverse=True)
     return h2h[:10]
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def get_standings(slug):
     """Tabla de posiciones desde ESPN."""
     data = eg(f"{ESPN}/{slug}/standings")
@@ -878,7 +878,7 @@ except:
     ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 BOOKMAKERS   = ["bet365","pinnacle","unibet","williamhill"]
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_real_odds(home_name, away_name, league_slug):
     """
     Intenta obtener cuotas reales de The Odds API.
@@ -4024,194 +4024,219 @@ def render_resultados_tab():
                 if _n_validos == 0:
                     continue  # no mostrar día si no hay partidos con score
                 with st.expander(f"{dlbl} · {_n_validos} partidos", expanded=is_today):
-                    por_liga = defaultdict(list)
+                    # ── Agrupar por continente → país → liga (igual que cartelera) ──
+                    from collections import defaultdict as _dd2
+                    _por_cont = _dd2(lambda: _dd2(lambda: _dd2(list)))
                     for p in dia_ps:
-                        por_liga[p.get("liga",p.get("tour","Sin liga"))].append(p)
+                        _p_liga = p.get("liga", p.get("tour", p.get("league","Sin liga")))
+                        _p_slug = p.get("slug","") or ""
+                        if sport_key == "futbol":
+                            try: _pais, _bandera, _cont = _country_for_liga(_p_slug or _p_liga)
+                            except: _pais, _bandera, _cont = "Otro", "🌍", "Otro"
+                        elif sport_key == "nba":
+                            _pais, _bandera, _cont = "EUA", "🇺🇸", "América"
+                        else:  # tenis
+                            _tour = p.get("tour","ATP")
+                            _cont = "ATP" if _tour == "ATP" else "WTA"
+                            _pais, _bandera = _p_liga.split(" · ",1)[-1] if " · " in _p_liga else _p_liga, "🎾"
+                            _bandera = ""
+                        _por_cont[_cont][f"{_bandera} {_pais}".strip()][_p_liga].append(p)
+                    
+                    for _cont_name in sorted(_por_cont.keys()):
+                        _cont_data = _por_cont[_cont_name]
+                        _cont_total = sum(len(ps) for pais_d in _cont_data.values() for ps in pais_d.values())
+                        _cont_live = any(p.get("state")=="in" for pais_d in _cont_data.values() for ps in pais_d.values() for p in ps)
+                        with st.expander(f"🌎 {_cont_name}  ·  {_cont_total}", expanded=_cont_live):
+                            for _pais_name in sorted(_cont_data.keys()):
+                                _pais_data = _cont_data[_pais_name]
+                                _pais_total = sum(len(ps) for ps in _pais_data.values())
+                                with st.expander(f"{_pais_name}  ·  {_pais_total}", expanded=False):
+                                    for liga, lps in sorted(_pais_data.items()):
+                                        _liga_clean = liga.split(" · ",1)[-1] if " · " in liga else liga
+                                        st.markdown(
+                                            f"<div style='font-size:.65rem;font-weight:700;color:#FFD700;"
+                                            f"text-transform:uppercase;letter-spacing:.1em;margin:8px 0 4px;"
+                                            f"border-left:2px solid #c9a84c44;padding-left:6px'>"
+                                            f"{sport_emoji} {_liga_clean}</div>", unsafe_allow_html=True)
+                    
+                                    for p in lps:
+                                        sh=p.get("score_h",-1); sa=p.get("score_a",-1)
+                                        # Fútbol/NBA: saltar si no hay score
+                                        if sport_key != "tenis" and (sh<0 or sa<0): continue
+                                        # Tenis: 0-0 imposible — si ambos 0 o -1, score no disponible
+                                        if sport_key == "tenis":
+                                            if sh < 0: sh = 0
+                                            if sa < 0: sa = 0
+                                            if sh == 0 and sa == 0:
+                                                continue
+                                        # CRÍTICO: crear copia del partido con scores ya validados
+                                        # para que _villar_match_pick_to_result reciba scores reales
+                                        _p_fixed = dict(p)
+                                        _p_fixed["score_h"] = sh
+                                        _p_fixed["score_a"] = sa
+                                        # Nombres: buscar en todos los campos posibles
+                                        home_n = (p.get("home") or p.get("p1") or "?").strip() or "?"
+                                        away_n = (p.get("away") or p.get("p2") or "?").strip() or "?"
 
-                    for liga, lps in sorted(por_liga.items()):
-                        st.markdown(
-                            f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
-                            f"text-transform:uppercase;letter-spacing:.1em;margin:10px 0 5px'>"
-                            f"{sport_emoji} {liga}</div>", unsafe_allow_html=True)
+                                        won_h=sh>sa; won_a=sa>sh; draw=(sh==sa and sport_key=="futbol")
+                                        if sport_key=="futbol":
+                                            hc="#00ff88" if won_h else ("#FFD700" if draw else "#aaa")
+                                            ac="#00ff88" if won_a else ("#FFD700" if draw else "#aaa")
+                                        else:
+                                            hc="#00ff88" if won_h else "#aaa"
+                                            ac="#00ff88" if won_a else "#aaa"
 
-                        for p in lps:
-                            sh=p.get("score_h",-1); sa=p.get("score_a",-1)
-                            # Fútbol/NBA: saltar si no hay score
-                            if sport_key != "tenis" and (sh<0 or sa<0): continue
-                            # Tenis: 0-0 imposible — si ambos 0 o -1, score no disponible
-                            if sport_key == "tenis":
-                                if sh < 0: sh = 0
-                                if sa < 0: sa = 0
-                                if sh == 0 and sa == 0:
-                                    continue
-                            # CRÍTICO: crear copia del partido con scores ya validados
-                            # para que _villar_match_pick_to_result reciba scores reales
-                            _p_fixed = dict(p)
-                            _p_fixed["score_h"] = sh
-                            _p_fixed["score_a"] = sa
-                            # Nombres: buscar en todos los campos posibles
-                            home_n = (p.get("home") or p.get("p1") or "?").strip() or "?"
-                            away_n = (p.get("away") or p.get("p2") or "?").strip() or "?"
+                                        # 1. Pick manual guardado por usuario
+                                        manual_pks = [pk for pk in pick_history
+                                                      if _villar_find_result(pk,[p]) is not None]
+                                        # 2. Pick automático — BRIDGE DIAMANTE es la fuente de verdad
+                                        _mid = p.get("id","")
+                                        auto_pk = None
+                                        if not manual_pks:
+                                            _p_state = p.get("state","pre")
+                                            _bridge = st.session_state.get("_diamond_bridge", {})
+                                            # Buscar por ID directo
+                                            _bp = _bridge.get(_mid)
+                                            # Fallback 1: home_id+away_id+fecha
+                                            if not _bp:
+                                                _alt = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
+                                                _bp = _bridge.get(_alt)
+                                            # Fallback 2: nombre equipo local + fecha (IDs distintos entre ESPN endpoints)
+                                            if not _bp:
+                                                _ph = (p.get("home","") or "").lower().strip()
+                                                _pf = p.get("fecha","")
+                                                for _bv in _bridge.values():
+                                                    if (_bv.get("fecha","") == _pf and
+                                                        _ph and _bv.get("home","").lower().strip() == _ph):
+                                                        _bp = _bv
+                                                        break
+                                            if _bp:
+                                                auto_pk = dict(_bp)
+                                            else:
+                                                # Sin bridge: partido no fue visto en cartelera — recalcular
+                                                auto_pk = _auto_pk_cache.get(_mid)
+                                                if not auto_pk:
+                                                    try:
+                                                        _fp2 = {k:v for k,v in p.items() if k not in ("score_h","score_a")}
+                                                        _fp2["score_h"] = 0
+                                                        auto_pk = _villar_auto_pick(_fp2)
+                                                        if auto_pk: _auto_pk_cache[_mid] = auto_pk
+                                                    except: pass
 
-                            won_h=sh>sa; won_a=sa>sh; draw=(sh==sa and sport_key=="futbol")
-                            if sport_key=="futbol":
-                                hc="#00ff88" if won_h else ("#FFD700" if draw else "#aaa")
-                                ac="#00ff88" if won_a else ("#FFD700" if draw else "#aaa")
-                            else:
-                                hc="#00ff88" if won_h else "#aaa"
-                                ac="#00ff88" if won_a else "#aaa"
+                                        pick_rows = []
+                                        for pk in manual_pks:
+                                            vd,vc,ex = _villar_match_pick_to_result(pk, _p_fixed)
+                                            prob_v = pk.get("prob",0)
+                                            if prob_v<=1: prob_v*=100
+                                            pick_rows.append({
+                                                "label": pk.get("pick","?"),
+                                                "prob": prob_v, "odd": pk.get("odd",0),
+                                                "src": "💾 Tu pick", "verd": vd, "col": vc, "expl": ex,
+                                            })
+                                            _fecha_p = p.get("fecha","")
+                                            if _fecha_p >= _inicio_conteo_tab:
+                                                if "GANÓ" in vd: ok_sp+=1
+                                                elif "FALLÓ" in vd: fail_sp+=1
 
-                            # 1. Pick manual guardado por usuario
-                            manual_pks = [pk for pk in pick_history
-                                          if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — BRIDGE DIAMANTE es la fuente de verdad
-                            _mid = p.get("id","")
-                            auto_pk = None
-                            if not manual_pks:
-                                _p_state = p.get("state","pre")
-                                _bridge = st.session_state.get("_diamond_bridge", {})
-                                # Buscar por ID directo
-                                _bp = _bridge.get(_mid)
-                                # Fallback 1: home_id+away_id+fecha
-                                if not _bp:
-                                    _alt = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
-                                    _bp = _bridge.get(_alt)
-                                # Fallback 2: nombre equipo local + fecha (IDs distintos entre ESPN endpoints)
-                                if not _bp:
-                                    _ph = (p.get("home","") or "").lower().strip()
-                                    _pf = p.get("fecha","")
-                                    for _bv in _bridge.values():
-                                        if (_bv.get("fecha","") == _pf and
-                                            _ph and _bv.get("home","").lower().strip() == _ph):
-                                            _bp = _bv
-                                            break
-                                if _bp:
-                                    auto_pk = dict(_bp)
-                                else:
-                                    # Sin bridge: partido no fue visto en cartelera — recalcular
-                                    auto_pk = _auto_pk_cache.get(_mid)
-                                    if not auto_pk:
-                                        try:
-                                            _fp2 = {k:v for k,v in p.items() if k not in ("score_h","score_a")}
-                                            _fp2["score_h"] = 0
-                                            auto_pk = _villar_auto_pick(_fp2)
-                                            if auto_pk: _auto_pk_cache[_mid] = auto_pk
-                                        except: pass
+                                        if auto_pk:
+                                            # ── Auditar SOLO el pick principal que el modelo eligió ──
+                                            # Usar snap congelado si existe, si no usar auto_pk directo
+                                            _snap_data = _load_picks_snap().get(p.get("id",""), {})
+                                            _main_pick = auto_pk  # ya viene congelado del flujo arriba
 
-                            pick_rows = []
-                            for pk in manual_pks:
-                                vd,vc,ex = _villar_match_pick_to_result(pk, _p_fixed)
-                                prob_v = pk.get("prob",0)
-                                if prob_v<=1: prob_v*=100
-                                pick_rows.append({
-                                    "label": pk.get("pick","?"),
-                                    "prob": prob_v, "odd": pk.get("odd",0),
-                                    "src": "💾 Tu pick", "verd": vd, "col": vc, "expl": ex,
-                                })
-                                _fecha_p = p.get("fecha","")
-                                if _fecha_p >= _inicio_conteo_tab:
-                                    if "GANÓ" in vd: ok_sp+=1
-                                    elif "FALLÓ" in vd: fail_sp+=1
+                                            _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_main_pick, _p_fixed)
+                                            _prob2 = _main_pick.get("prob", 0)
+                                            _mkt2  = _main_pick.get("mkt", "")
+                                            pick_rows.append({
+                                                "label":   _main_pick.get("pick","?"),
+                                                "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
+                                                "odd":     _main_pick.get("odd", 0),
+                                                "src":     _main_pick.get("src", "🤖 Modelo"),
+                                                "verd":    _vd2, "col": _vc2, "expl": _ex2,
+                                                "is_main": True,
+                                            })
+                                            # Contar para el contador global
+                                            if p.get("fecha","") >= _inicio_conteo_tab:
+                                                if   "GANÓ"  in _vd2: ok_sp   += 1
+                                                elif "FALLÓ" in _vd2: fail_sp += 1
 
-                            if auto_pk:
-                                # ── Auditar SOLO el pick principal que el modelo eligió ──
-                                # Usar snap congelado si existe, si no usar auto_pk directo
-                                _snap_data = _load_picks_snap().get(p.get("id",""), {})
-                                _main_pick = auto_pk  # ya viene congelado del flujo arriba
+                                        # Render card
+                                        has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
+                                        has_fail = any("FALLÓ" in r["verd"] for r in pick_rows)
+                                        border_c = "#00ff88" if has_win else ("#ff4444" if has_fail else "#1a1a40")
 
-                                _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_main_pick, _p_fixed)
-                                _prob2 = _main_pick.get("prob", 0)
-                                _mkt2  = _main_pick.get("mkt", "")
-                                pick_rows.append({
-                                    "label":   _main_pick.get("pick","?"),
-                                    "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
-                                    "odd":     _main_pick.get("odd", 0),
-                                    "src":     _main_pick.get("src", "🤖 Modelo"),
-                                    "verd":    _vd2, "col": _vc2, "expl": _ex2,
-                                    "is_main": True,
-                                })
-                                # Contar para el contador global
-                                if p.get("fecha","") >= _inicio_conteo_tab:
-                                    if   "GANÓ"  in _vd2: ok_sp   += 1
-                                    elif "FALLÓ" in _vd2: fail_sp += 1
+                                        pick_html = ""
+                                        for r in pick_rows:
+                                            icon = "✅" if "GANÓ" in r["verd"] else ("❌" if "FALLÓ" in r["verd"] else "⏳")
+                                            bg   = "#00ff8810" if icon=="✅" else ("#ff444410" if icon=="❌" else "#1a1a3a")
+                                            bd   = r["col"] if icon in ("✅","❌") else "#333"
+                                            od   = f" · @{r['odd']:.2f}" if r.get("odd",0)>1 else ""
+                                            pct  = f" · {r['prob']:.0f}%" if r.get("prob",0)>0 else ""
+                                            # Badge principal vs secundario
+                                            _is_main = r.get("is_main", True)
+                                            _main_badge = "<span style='background:#FFD70022;color:#FFD700;font-size:.6rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>★ PICK</span>" if _is_main else ""
+                                            pick_html += (
+                                                f"<div style='margin-top:4px;padding:5px 10px;border-radius:8px;"
+                                                f"background:{bg};border:1px solid {bd};"
+                                                f"display:flex;align-items:center;gap:8px'>"
+                                                f"<div style='font-size:1.05rem'>{icon}</div>"
+                                                f"<div style='flex:1'>"
+                                                f"<div style='font-size:.78rem;font-weight:700;color:{r["col"]}'>{r["label"]}{od}{pct}{_main_badge}</div>"
+                                                f"<div style='font-size:.62rem;color:#555'>{r["src"]} · {r["expl"]}</div>"
+                                                f"</div>"
+                                                f"</div>"
+                                            )
 
-                            # Render card
-                            has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
-                            has_fail = any("FALLÓ" in r["verd"] for r in pick_rows)
-                            border_c = "#00ff88" if has_win else ("#ff4444" if has_fail else "#1a1a40")
-
-                            pick_html = ""
-                            for r in pick_rows:
-                                icon = "✅" if "GANÓ" in r["verd"] else ("❌" if "FALLÓ" in r["verd"] else "⏳")
-                                bg   = "#00ff8810" if icon=="✅" else ("#ff444410" if icon=="❌" else "#1a1a3a")
-                                bd   = r["col"] if icon in ("✅","❌") else "#333"
-                                od   = f" · @{r['odd']:.2f}" if r.get("odd",0)>1 else ""
-                                pct  = f" · {r['prob']:.0f}%" if r.get("prob",0)>0 else ""
-                                # Badge principal vs secundario
-                                _is_main = r.get("is_main", True)
-                                _main_badge = "<span style='background:#FFD70022;color:#FFD700;font-size:.6rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>★ PICK</span>" if _is_main else ""
-                                pick_html += (
-                                    f"<div style='margin-top:4px;padding:5px 10px;border-radius:8px;"
-                                    f"background:{bg};border:1px solid {bd};"
-                                    f"display:flex;align-items:center;gap:8px'>"
-                                    f"<div style='font-size:1.05rem'>{icon}</div>"
-                                    f"<div style='flex:1'>"
-                                    f"<div style='font-size:.78rem;font-weight:700;color:{r["col"]}'>{r["label"]}{od}{pct}{_main_badge}</div>"
-                                    f"<div style='font-size:.62rem;color:#555'>{r["src"]} · {r["expl"]}</div>"
-                                    f"</div>"
-                                    f"</div>"
-                                )
-
-                            # Score: tenis = solo ganador con ✅
-                            if sport_key == "tenis":
-                                _p1 = (p.get("p1") or p.get("home") or "").strip() or home_n
-                                _p2 = (p.get("p2") or p.get("away") or "").strip() or away_n
-                                _sh = sh; _sa = sa
-                                if _sh > _sa:
-                                    winner_n, loser_n = _p1, _p2
-                                elif _sa > _sh:
-                                    winner_n, loser_n = _p2, _p1
-                                else:
-                                    _gano = next((r["expl"].replace("Ganó: ","") for r in pick_rows if "Ganó:" in r.get("expl","")), None)
-                                    if _gano:
-                                        winner_n = _gano
-                                        loser_n  = _p2 if _gano == _p1 else _p1
-                                    else:
-                                        winner_n, loser_n = _p1, _p2
-                                _wko  = p.get("is_walkover") or p.get("walkover_note","")
-                                _note = " <span style='color:#ff9500;font-size:.65rem'>(RET.)</span>" if _wko else ""
-                                _bc = "#00ff88" if any("GANÓ" in r.get("verd","") for r in pick_rows) else ("#ff4444" if any("FALLÓ" in r.get("verd","") for r in pick_rows) else "#1a1a40")
-                                st.markdown(
-                                    f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
-                                    f"margin:4px 0;border:1px solid {_bc}'>"
-                                    f"{pick_html}"
-                                    f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;"
-                                    f"padding-top:6px;border-top:1px solid #1a1a30'>"
-                                    f"<span style='font-size:.75rem;color:#555'>Ganó:</span>"
-                                    f"<span style='color:#00ff88;font-weight:900;font-size:.88rem'>{winner_n}</span>"
-                                    f"<span style='color:#5a4a2e;font-size:.75rem'>vs</span>"
-                                    f"<span style='color:#6b5a3a;font-size:.82rem'>{loser_n}</span>"
-                                    f"{_note}"
-                                    f"</div>"
-                                    f"</div>", unsafe_allow_html=True)
-                            else:
-                                st.markdown(
-                                    f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
-                                    f"margin:4px 0;border:1px solid {border_c}'>"
-                                    f"{pick_html}"
-                                    f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
-                                    f"gap:4px;align-items:center;margin-top:6px;padding-top:6px;"
-                                    f"border-top:1px solid #1a1a30'>"
-                                    f"<div style='text-align:right'><span style='color:{hc};"
-                                    f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
-                                    f"<div style='text-align:center;background:#0d0900;border-radius:8px;padding:4px 6px'>"
-                                    f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
-                                    f"<span style='color:#333'> – </span>"
-                                    f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
-                                    f"<div style='text-align:left'><span style='color:{ac};"
-                                    f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
-                                    f"</div>"
-                                    f"</div>", unsafe_allow_html=True)
+                                        # Score: tenis = solo ganador con ✅
+                                        if sport_key == "tenis":
+                                            _p1 = (p.get("p1") or p.get("home") or "").strip() or home_n
+                                            _p2 = (p.get("p2") or p.get("away") or "").strip() or away_n
+                                            _sh = sh; _sa = sa
+                                            if _sh > _sa:
+                                                winner_n, loser_n = _p1, _p2
+                                            elif _sa > _sh:
+                                                winner_n, loser_n = _p2, _p1
+                                            else:
+                                                _gano = next((r["expl"].replace("Ganó: ","") for r in pick_rows if "Ganó:" in r.get("expl","")), None)
+                                                if _gano:
+                                                    winner_n = _gano
+                                                    loser_n  = _p2 if _gano == _p1 else _p1
+                                                else:
+                                                    winner_n, loser_n = _p1, _p2
+                                            _wko  = p.get("is_walkover") or p.get("walkover_note","")
+                                            _note = " <span style='color:#ff9500;font-size:.65rem'>(RET.)</span>" if _wko else ""
+                                            _bc = "#00ff88" if any("GANÓ" in r.get("verd","") for r in pick_rows) else ("#ff4444" if any("FALLÓ" in r.get("verd","") for r in pick_rows) else "#1a1a40")
+                                            st.markdown(
+                                                f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
+                                                f"margin:4px 0;border:1px solid {_bc}'>"
+                                                f"{pick_html}"
+                                                f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;"
+                                                f"padding-top:6px;border-top:1px solid #1a1a30'>"
+                                                f"<span style='font-size:.75rem;color:#555'>Ganó:</span>"
+                                                f"<span style='color:#00ff88;font-weight:900;font-size:.88rem'>{winner_n}</span>"
+                                                f"<span style='color:#5a4a2e;font-size:.75rem'>vs</span>"
+                                                f"<span style='color:#6b5a3a;font-size:.82rem'>{loser_n}</span>"
+                                                f"{_note}"
+                                                f"</div>"
+                                                f"</div>", unsafe_allow_html=True)
+                                        else:
+                                            st.markdown(
+                                                f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
+                                                f"margin:4px 0;border:1px solid {border_c}'>"
+                                                f"{pick_html}"
+                                                f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
+                                                f"gap:4px;align-items:center;margin-top:6px;padding-top:6px;"
+                                                f"border-top:1px solid #1a1a30'>"
+                                                f"<div style='text-align:right'><span style='color:{hc};"
+                                                f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
+                                                f"<div style='text-align:center;background:#0d0900;border-radius:8px;padding:4px 6px'>"
+                                                f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
+                                                f"<span style='color:#333'> – </span>"
+                                                f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
+                                                f"<div style='text-align:left'><span style='color:{ac};"
+                                                f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
+                                                f"</div>"
+                                                f"</div>", unsafe_allow_html=True)
 
             total_sp = ok_sp+fail_sp
             pct_sp = round(ok_sp/total_sp*100) if total_sp>0 else 0
@@ -8847,7 +8872,7 @@ def get_nba_cartelera():
     games = _sort_cartelera(games, _now2.strftime("%Y-%m-%d"), int(_now2.strftime("%H")))
     return games
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def get_nba_team_stats(team_id):
     """
     Extrae stats avanzadas de ESPN NBA:
@@ -8876,7 +8901,7 @@ def get_nba_team_stats(team_id):
     return stats
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_nba_recent_form(team_id, n_games=7):
     """
     Últimos N partidos NBA — detecta racha, back-to-back fatigue,
@@ -9048,7 +9073,7 @@ _ATP_RANK_CACHE: dict = {}
 _ATP_RANK_DATE: str   = ""
 
 @st.cache_data(ttl=86400, show_spinner=False)
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def _fetch_atp_rankings_raw(tour="ATP"):
     """
     Descarga el ranking ATP/WTA actual desde la tennis API.
@@ -11310,6 +11335,22 @@ if deporte == "futbol":
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
 
+    # ── Pre-calcular xG UNA sola vez para todos los partidos (cache 30min) ──
+    import time as _xgtt
+    _xg_k = "xg_pre_fut"; _xg_ts_k = "xg_pre_fut_ts"
+    if _xg_k not in st.session_state or (_xgtt.time()-st.session_state.get(_xg_ts_k,0)) > 1800:
+        _xgd = {}
+        for _pm in (all_matches or [])[:40]:
+            try:
+                _xgd[_pm["id"]] = (
+                    xg_weighted(get_form(_pm["home_id"],_pm["slug"]),True, slug=_pm["slug"]),
+                    xg_weighted(get_form(_pm["away_id"],_pm["slug"]),False,slug=_pm["slug"]),
+                )
+            except: pass
+        st.session_state[_xg_k]    = _xgd
+        st.session_state[_xg_ts_k] = _xgtt.time()
+    _xg_pre = st.session_state.get(_xg_k, {})
+
     # ── AUTO-BRIDGE: calcular Jugada Diamante real para todos los partidos ──
     # Usa get_form + diamond_engine igual que el análisis manual.
     # get_form tiene cache 30min — solo es lento la primera vez.
@@ -12111,7 +12152,7 @@ if st.session_state["view"] == "cartelera":
                                                         _af2 = get_form(_m["away_id"], _m["slug"])
                                                         _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug",""))
                                                         _ax2 = xg_weighted(_af2,False,slug=_m.get("slug",""))
-                                                        _mc2 = mc50k(_hx2, _ax2)
+                                                        _mc2 = mc50k(_hx2, _ax2, N=5_000)
                                                         _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
                                                     except:
                                                         _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
@@ -12259,8 +12300,13 @@ if st.session_state["view"] == "cartelera":
                                                         st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
-            with st.spinner("Calculando TRILAY..."):
-                trilay_picks = compute_trilay(matches)
+            import time as _ttt
+            _trl_k = "trilay_fut"; _trl_ts = "trilay_fut_ts"
+            if _trl_k not in st.session_state or (_ttt.time()-st.session_state.get(_trl_ts,0))>600:
+                with st.spinner("Calculando TRILAY..."):
+                    st.session_state[_trl_k]  = compute_trilay(matches)
+                    st.session_state[_trl_ts] = _ttt.time()
+            trilay_picks = st.session_state.get(_trl_k, [])
             if not trilay_picks:
                 st.info("No hay suficientes partidos con edge para armar TRILAY hoy.")
             else:
