@@ -2871,7 +2871,7 @@ def fetch_soccer_results(days_back=10):
                             "odd_h": _odd_h, "odd_d": _odd_d, "odd_a": _odd_a,
                             "score_h":parse_score(hc.get("score",0)) if state=="post" else -1,
                             "score_a":parse_score(ac.get("score",0)) if state=="post" else -1,
-                            "fecha":fecha, "state":state, "hora":utc.astimezone(CDMX).strftime("%H:%M"), "hora":utc.astimezone(CDMX).strftime("%H:%M"),
+                            "fecha":fecha, "state":state, "hora":utc.astimezone(CDMX).strftime("%H:%M"),
                         })
                     except: continue
             except: continue
