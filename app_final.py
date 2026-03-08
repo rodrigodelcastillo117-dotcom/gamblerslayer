@@ -709,23 +709,11 @@ def get_cartelera():
 def get_form(team_id, slug):
     """
     Últimos 15 partidos desde ESPN schedule.
-    Para equipos UEFA combina forma CL/EL + liga doméstica (más fiable).
     Incluye shooting stats si disponibles (para xG real).
     """
     team_id = str(team_id)
-    _UEFA_SLUGS = {"uefa.champions","uefa.europa","uefa.europa.conf","uefa.cl","uefa.el","uefa.ecl"}
-    _extra_events = []
-    if slug in _UEFA_SLUGS:
-        try:
-            # Buscar forma doméstica del equipo en su liga
-            for _tn, _ts in _TEAM_DIVISION.items():
-                _dd = eg(f"{ESPN}/{_ts}/teams/{team_id}/schedule")
-                if _dd.get("events"):
-                    _extra_events = _dd.get("events", [])
-                    break
-        except: pass
     data    = eg(f"{ESPN}/{slug}/teams/{team_id}/schedule")
-    events  = data.get("events", []) + _extra_events
+    events  = data.get("events", [])
     matches = []
     for ev in events:
         try:
