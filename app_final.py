@@ -869,6 +869,90 @@ def get_standings(slug):
     except: pass
     return rows
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _tabla_posicion_delta(home: str, away: str, slug: str) -> dict:
+    """
+    POSICIÓN EN TABLA como variable de picks.
+    Si Betis (6°) vs Getafe (18°) → diferencia impacta probabilidad.
+    Retorna: {delta_h, delta_a, pos_h, pos_a, pts_h, pts_a, desc}
+    """
+    _default = {"delta_h": 0.0, "delta_a": 0.0, "pos_h": 0, "pos_a": 0,
+                "pts_h": 0, "pts_a": 0, "desc": ""}
+    if not slug:
+        return _default
+    try:
+        rows = get_standings(slug)
+        if not rows:
+            return _default
+
+        def _find(name):
+            n = name.lower().strip()
+            best, best_score = None, 0
+            for r in rows:
+                tn = r.get("team","").lower()
+                # exact
+                if n == tn: return r
+                # partial match
+                words = n.split()
+                score = sum(1 for w in words if w in tn or w[:5] in tn)
+                if score > best_score:
+                    best_score = score
+                    best = r
+            return best if best_score > 0 else None
+
+        rh = _find(home)
+        ra = _find(away)
+        if not rh or not ra:
+            return _default
+
+        try:
+            pos_h = int(rh.get("pos", 0) or 0)
+            pos_a = int(ra.get("pos", 0) or 0)
+            pts_h = int(rh.get("pts", 0) or 0)
+            pts_a = int(ra.get("pts", 0) or 0)
+        except:
+            return _default
+
+        if pos_h == 0 or pos_a == 0:
+            return _default
+
+        # Número de equipos en liga (para normalizar)
+        n_equipos = len(rows) or 20
+
+        # Delta basado en posición (menor pos = mejor = ventaja)
+        # Normalizado: posición 1 = 1.0, posición 20 = 0.0
+        rank_h = 1 - (pos_h - 1) / (n_equipos - 1)
+        rank_a = 1 - (pos_a - 1) / (n_equipos - 1)
+        diff   = rank_h - rank_a  # positivo = local mejor
+
+        # Convertir a delta de probabilidad (max ±0.12)
+        delta_h = diff * 0.12
+        delta_a = -delta_h
+
+        # Si la diferencia es grande (>5 puestos), amplificar
+        pos_gap = abs(pos_h - pos_a)
+        if pos_gap >= 10:
+            delta_h *= 1.5
+            delta_a *= 1.5
+        elif pos_gap >= 6:
+            delta_h *= 1.25
+            delta_a *= 1.25
+
+        delta_h = max(-0.14, min(0.14, delta_h))
+        delta_a = max(-0.14, min(0.14, delta_a))
+
+        desc = (f"Pos {pos_h}°({pts_h}pts) vs {pos_a}°({pts_a}pts)"
+                f" | Gap {pos_gap} | "
+                f"{'Local favorito tabla' if diff>0.1 else 'Visitante favorito tabla' if diff<-0.1 else 'Nivel similar'}")
+
+        return {"delta_h": delta_h, "delta_a": delta_a,
+                "pos_h": pos_h, "pos_a": pos_a,
+                "pts_h": pts_h, "pts_a": pts_a,
+                "desc": desc, "pos_gap": pos_gap}
+    except:
+        return _default
+
 # ══════════════════════════════════════════════════════════
 # ODDS API — The Odds API (gratis 500 req/mes)
 # ══════════════════════════════════════════════════════════
@@ -9994,9 +10078,29 @@ def _kr_god_score(c,brain,elo_r,ph_tuple):
         if brain.get("hot",0) >= 3: s += 0.4
         if brain.get("cold",0) >= 3: s -= 0.6
 
-        # ── Capa Táctica: Ultra Intelligence (11 variables paralelas) ──
+        # ── Capa Táctica: Ultra Intelligence — 11 vars explícitas ──
         _ultra_sc = float(c.get("ultra_score", 5.0))
-        s += (_ultra_sc - 5.0) * 0.15
+        s += (_ultra_sc - 5.0) * 0.10  # score global
+
+        # Aplicar delta individual de Ultra Intel al score
+        try:
+            _ui_flags = c.get("ultra_flags", [])
+            _ui_ctx   = c.get("ultra_ctx", "")
+            # Si Ultra detectó alta fatiga o motivación, aplicar bonus/penalti directo
+            if "⚡ FATIGA" in str(_ui_flags):   s -= 0.5
+            if "💪 MOTIV"  in str(_ui_flags):   s += 0.4
+            if "🎯 RIVAL"  in str(_ui_flags):   s += 0.3  # rival similar favorable
+            if "📉 CONSIST" in str(_ui_flags):  s -= 0.4  # inconsistente
+        except: pass
+
+        # Tabla de posiciones como componente explícito del GOD Score
+        try:
+            _pos_gap = c.get("pos_gap", 0)
+            _tbl_dlt = c.get("tabla_delta", 0.0)
+            if _pos_gap >= 10:   s += _tbl_dlt * 3.5  # gap grande
+            elif _pos_gap >= 6:  s += _tbl_dlt * 2.0
+            elif _pos_gap >= 3:  s += _tbl_dlt * 1.0
+        except: pass
 
         # ── Capa Psicológica + Táctica avanzada: transición + entrenador ──
         try:
@@ -10331,6 +10435,34 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     c["score"] = _kr_score(prob, edge, spread, kelly, contra) + _kr_clv * 0.5
                 except:
                     c["score"] = _kr_score(prob, edge, spread, kelly, contra)
+                # 📊 POSICIÓN EN TABLA → impacta probabilidad
+                try:
+                    _slug_kr = m.get("slug", "")
+                    if _slug_kr:
+                        _tbl = _tabla_posicion_delta(_home, _away, _slug_kr)
+                        if _tbl.get("pos_gap", 0) >= 3:
+                            c["prob"] = max(0.10, min(0.92, c["prob"] + _tbl["delta_h"] * 0.60))
+                            c["tabla_desc"] = _tbl["desc"]
+                            c["tabla_delta"] = _tbl["delta_h"]
+                            c["pos_h"] = _tbl["pos_h"]
+                            c["pos_a"] = _tbl["pos_a"]
+                            # Boost score si la tabla confirma el pick
+                            if _tbl["delta_h"] > 0.05 and lbl == "local":
+                                c["score"] = min(10.0, c["score"] + 0.8)
+                            elif _tbl["delta_a"] > 0.05 and lbl == "visitante":
+                                c["score"] = min(10.0, c["score"] + 0.8)
+                except: pass
+                # 🌙 SmallDays — análisis 5 fuentes, ajuste silencioso
+                try:
+                    _sd_fut = _small_days_analyze(
+                        _home, _away, "futbol",
+                        m.get("fecha", ""), m.get("home_id",""),
+                        m.get("away_id",""), m.get("slug",""))
+                    _sd_delta = float(_sd_fut.get("delta_h", 0.0))
+                    if abs(_sd_delta) > 0.005:
+                        c["prob"] = max(0.10, min(0.92, c["prob"] + _sd_delta * 0.4))
+                        c["sd_flags"] = _sd_fut.get("flags", [])
+                except: pass
                 candidates.append(c)
             except Exception as _e_fut:
                 continue  # partido fallido, continuar con el siguiente
@@ -10393,6 +10525,15 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                               "ML Away": round(p_a*100,1)},
                 }
                 c["score"] = _kr_score(prob, edge, spread, kelly, contra)
+                # 🌙 SmallDays NBA
+                try:
+                    _sd_nba = _small_days_analyze(
+                        g.get('away',''), g.get('home',''), 'nba',
+                        g.get('fecha',''), g.get('away_id',''), g.get('home_id',''), '')
+                    _sd_d = float(_sd_nba.get('delta_h', 0.0))
+                    if abs(_sd_d) > 0.005:
+                        c['prob'] = max(0.10, min(0.92, c['prob'] + _sd_d * 0.35))
+                except: pass
                 candidates.append(c)
             except: continue
     except: pass
@@ -11829,101 +11970,357 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
 
 
 def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
-    # PAPI AJB Reto Escalera $1500 a $1MM MXN
+    """
+    💰 PAPI AJB — Reto Escalera $1,500 → $1,000,000 MXN
+    Pestaña propia con gráfica lineal del crecimiento del capital.
+    """
     import datetime as _dt
-    state=_papi_load_state(); history=_papi_load_history()
-    paso=state.get("paso",1); capital=state.get("capital",1500.0); activo=state.get("activo",True)
-    st.markdown("<style>.psv{text-align:center;background:#ffffff08;border-radius:8px;padding:8px;}"
-                ".psv-v{font-size:1.3rem;font-weight:900;}.psv-l{font-size:.68rem;color:#888;}"
-                ".ppick{background:linear-gradient(135deg,#100020,#001208);"
-                "border:2px solid #FFD70066;border-radius:10px;padding:14px;margin:8px 0;}"
-                "</style>",unsafe_allow_html=True)
-    c1,c2,c3=st.columns(3)
-    with c1:
-        st.markdown(f"<div class='psv'><div class='psv-v' style='color:#FFD700'>Paso {paso}"
-                    f"</div><div class='psv-l'>ESCALERA</div></div>",unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"<div class='psv'><div class='psv-v' style='color:#00ff88'>${capital:,.0f}"
-                    f"</div><div class='psv-l'>CAPITAL</div></div>",unsafe_allow_html=True)
-    with c3:
-        pct=round(capital/1_000_000*100,3)
-        st.markdown(f"<div class='psv'><div class='psv-v' style='color:#ff9500'>{pct:.3f}%"
-                    f"</div><div class='psv-l'>HACIA 1MM</div></div>",unsafe_allow_html=True)
+    import json as _json
+
+    state   = _papi_load_state()
+    history = _papi_load_history()
+    paso    = state.get("paso", 1)
+    capital = state.get("capital", 1500.0)
+    activo  = state.get("activo", True)
+
+    # ── CSS ──────────────────────────────────────────────────────────────
+    st.markdown("""
+    <style>
+    .paji-wrap{background:linear-gradient(160deg,#0e0020,#001208,#0e0020);
+      border-radius:14px;padding:0;overflow:hidden;margin-bottom:14px;}
+    .paji-top{height:3px;background:linear-gradient(90deg,transparent,#FFD700,#00ff88,#FFD700,transparent);}
+    .paji-inner{padding:18px 20px 16px;}
+    .paji-title{font-family:Oswald,sans-serif;font-size:.9rem;letter-spacing:.2em;
+      background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+      font-weight:900;margin-bottom:12px;text-align:center;}
+    .paji-kpi{background:#ffffff08;border-radius:10px;padding:12px 8px;text-align:center;}
+    .paji-kpi-v{font-size:1.4rem;font-weight:900;}
+    .paji-kpi-l{font-size:.63rem;color:#777;letter-spacing:.08em;margin-top:2px;}
+    .paji-pick{background:linear-gradient(135deg,#100020,#001208);
+      border:2px solid #FFD70066;border-radius:12px;padding:18px;margin:10px 0;}
+    .paji-pick-titulo{font-size:.68rem;letter-spacing:.14em;margin-bottom:8px;font-weight:700;}
+    .paji-pick-main{font-size:1.6rem;font-weight:900;color:#F0E6C8;line-height:1.2;margin-bottom:8px;}
+    .paji-badge{display:inline-block;padding:3px 10px;border-radius:6px;
+      font-size:.72rem;font-weight:700;margin-right:6px;}
+    .paji-hist-row{display:flex;justify-content:space-between;align-items:center;
+      padding:5px 8px;border-bottom:1px solid #ffffff08;font-size:.73rem;}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── HEADER ────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class='paji-wrap'>
+      <div class='paji-top'></div>
+      <div class='paji-inner'>
+        <div class='paji-title'>💰 PAPI AJB — RETO ESCALERA</div>
+        <div style='text-align:center;font-size:.68rem;color:#666;margin-bottom:2px'>
+        $1,500 → $1,000,000 MXN · 1 Pick al día · Sin excusas
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── KPIs ──────────────────────────────────────────────────────────────
+    pct_meta  = round(capital / 1_000_000 * 100, 4)
+    mult_needed = round(1_000_000 / capital, 1) if capital > 0 else 0
+    pasos_ganados = sum(1 for h in history if h.get("resultado") == "ganado")
+    pasos_perdidos = sum(1 for h in history if h.get("resultado") == "perdido")
+    win_rate = round(pasos_ganados / len(history) * 100) if history else 0
+
+    k1,k2,k3,k4,k5 = st.columns(5)
+    kpi_data = [
+        (k1, f"Paso {paso}", "ESCALERA", "#FFD700"),
+        (k2, f"${capital:,.0f}", "CAPITAL MXN", "#00ff88"),
+        (k3, f"{pct_meta:.3f}%", "HACIA $1MM", "#ff9500"),
+        (k4, f"{win_rate}%", f"WR {pasos_ganados}G/{pasos_perdidos}P", "#00ccff"),
+        (k5, f"x{mult_needed}", "MULTIPLICAR", "#c9a84c"),
+    ]
+    for col, val, lbl, color in kpi_data:
+        with col:
+            st.markdown(f"""
+            <div class='paji-kpi'>
+              <div class='paji-kpi-v' style='color:{color}'>{val}</div>
+              <div class='paji-kpi-l'>{lbl}</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    # ── BARRA PROGRESO ─────────────────────────────────────────────────────
+    bar_w = min(pct_meta / 100 * 100, 100) if pct_meta < 100 else 100
+    st.markdown(f"""
+    <div style='background:#0a0018;border-radius:8px;padding:10px 14px;margin-bottom:12px;
+    border:1px solid #FFD70022'>
+      <div style='display:flex;justify-content:space-between;font-size:.65rem;color:#666;margin-bottom:5px'>
+        <span>💵 $1,500</span><span style='color:#FFD700'>Progreso al millón</span><span>🏆 $1,000,000</span>
+      </div>
+      <div style='background:#080015;border-radius:99px;height:10px;overflow:hidden;border:1px solid #FFD70033'>
+        <div style='height:100%;width:{bar_w:.4f}%;background:linear-gradient(90deg,#FFD700,#00ff88,#FFD700);
+        border-radius:99px;transition:width .5s'></div>
+      </div>
+      <div style='text-align:center;font-size:.62rem;color:#888;margin-top:4px'>{pct_meta:.4f}% completado</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── GRÁFICA LINEAL DEL CAPITAL ─────────────────────────────────────────
+    if history:
+        st.markdown("#### 📈 Crecimiento del Capital")
+        # Build data series: inicio + cada paso
+        fechas_graf  = ["Inicio"] + [h.get("fecha", f"P{h.get('paso','?')}") for h in history]
+        capital_graf = [1500.0]
+        for h in history:
+            capital_graf.append(h.get("capital_despues", capital_graf[-1]))
+
+        # Color points: green=ganado, red=perdido
+        colors = ["#FFD700"] + [
+            "#00ff88" if h.get("resultado") == "ganado" else "#ff4444"
+            for h in history
+        ]
+
+        # Build SVG-like chart using HTML/CSS (no plotly dependency needed)
+        if len(capital_graf) >= 2:
+            min_c = min(capital_graf)
+            max_c = max(capital_graf)
+            rng   = max_c - min_c if max_c != min_c else 1
+            W, H  = 600, 220
+            pad   = 40
+
+            n = len(capital_graf)
+            xs = [pad + (i / (n-1)) * (W - 2*pad) for i in range(n)]
+            ys = [pad + (1 - (v - min_c) / rng) * (H - 2*pad) for v in capital_graf]
+
+            # polyline points
+            pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys))
+            # fill polygon
+            fill_pts = f"{xs[0]:.1f},{H-pad} " + pts + f" {xs[-1]:.1f},{H-pad}"
+
+            # Y axis labels
+            y_labels = []
+            for tick in [min_c, (min_c+max_c)/2, max_c]:
+                ty = pad + (1 - (tick - min_c) / rng) * (H - 2*pad)
+                lbl = f"${tick:,.0f}"
+                y_labels.append(f"<text x='2' y='{ty:.0f}' font-size='9' fill='#666' dominant-baseline='middle'>{lbl}</text>")
+
+            # Circles for each point
+            circles = ""
+            for i, (x, y, c, cap) in enumerate(zip(xs, ys, colors, capital_graf)):
+                circles += f"<circle cx='{x:.1f}' cy='{y:.1f}' r='5' fill='{c}' stroke='#000' stroke-width='1.5'/>"
+
+            # X labels (show every N-th)
+            step = max(1, n // 8)
+            x_labels = ""
+            for i in range(0, n, step):
+                lbl = fechas_graf[i][:5] if len(fechas_graf[i]) > 5 else fechas_graf[i]
+                x_labels += f"<text x='{xs[i]:.1f}' y='{H-8}' font-size='8' fill='#555' text-anchor='middle'>{lbl}</text>"
+
+            svg = f"""
+            <svg width='100%' viewBox='0 0 {W} {H}' xmlns='http://www.w3.org/2000/svg'
+              style='background:#08001a;border-radius:10px;border:1px solid #FFD70022;margin-bottom:10px'>
+              <defs>
+                <linearGradient id='gfill' x1='0' y1='0' x2='0' y2='1'>
+                  <stop offset='0%' stop-color='#FFD700' stop-opacity='0.25'/>
+                  <stop offset='100%' stop-color='#FFD700' stop-opacity='0.01'/>
+                </linearGradient>
+              </defs>
+              <!-- Grid lines -->
+              <line x1='{pad}' y1='{pad}' x2='{pad}' y2='{H-pad}' stroke='#ffffff0a' stroke-width='1'/>
+              <line x1='{pad}' y1='{H-pad}' x2='{W-pad}' y2='{H-pad}' stroke='#ffffff0a' stroke-width='1'/>
+              <line x1='{pad}' y1='{(H)//2}' x2='{W-pad}' y2='{(H)//2}' stroke='#ffffff06' stroke-width='1' stroke-dasharray='4,4'/>
+              <!-- Fill area -->
+              <polygon points='{fill_pts}' fill='url(#gfill)'/>
+              <!-- Line -->
+              <polyline points='{pts}' fill='none' stroke='#FFD700' stroke-width='2.5'
+                stroke-linejoin='round' stroke-linecap='round'/>
+              <!-- Points -->
+              {circles}
+              <!-- Labels -->
+              {''.join(y_labels)}
+              {x_labels}
+              <!-- Title -->
+              <text x='{W//2}' y='14' font-size='10' fill='#FFD700' text-anchor='middle'
+                font-family='Oswald,sans-serif' letter-spacing='2'>EVOLUCIÓN DEL CAPITAL</text>
+            </svg>"""
+            st.markdown(svg, unsafe_allow_html=True)
+
+            # Last value callout
+            last_color = "#00ff88" if capital_graf[-1] >= capital_graf[-2] else "#ff4444"
+            diff_last = capital_graf[-1] - capital_graf[-2]
+            st.markdown(
+                f"<div style='text-align:center;font-size:.72rem;color:{last_color};margin-bottom:8px'>"
+                f"Último resultado: {'▲' if diff_last>=0 else '▼'} ${abs(diff_last):,.0f}"
+                f" → Capital actual: <b>${capital_graf[-1]:,.0f}</b></div>",
+                unsafe_allow_html=True)
+
+    # ── PICK DEL DÍA ──────────────────────────────────────────────────────
     st.markdown("---")
     if not activo:
-        st.error("Reto pausado.")
-        if st.button("Reactivar"):
-            state.update({"activo":True,"capital":1500.0,"paso":1})
+        st.error("⚠️ Reto pausado — capital insuficiente.")
+        if st.button("🔄 Reactivar Reto", type="primary"):
+            state.update({"activo": True, "capital": 1500.0, "paso": 1})
             _papi_save_state(state); st.rerun()
         return
-    today=_dt.datetime.now().strftime("%Y-%m-%d")
-    saved=state.get("pick_del_dia"); saved_f=state.get("fecha_pick","")
-    if st.button("Buscar Pick del Dia",type="primary"):
-        with st.spinner("Analizando con panel..."):
-            saved=_papi_pick_del_dia(matches_fut,nba_games,ten_matches)
-            if saved:
-                panel=saved.get("panel") or {}
-                just=_papi_justificar(saved["pick"],saved["partido"],saved["prob"],saved["cuota"],panel)
-                saved["justificacion"]=just; state["pick_del_dia"]=saved; state["fecha_pick"]=today
-                _papi_save_state(state)
-                stake=round(capital*0.20); gan=round(stake*(saved["cuota"]-1))
-                msg=(f"PAPI AJB RETO ESCALERA\nPaso {paso} Capital ${capital:,.0f}\n"
-                     f"Pick: {saved['pick']}\n{saved['partido']}\n"
-                     f"Prob {saved['prob']*100:.0f}% Cuota {saved['cuota']:.2f}\n"
-                     f"Stake ${stake:,.0f} +${gan:,.0f}\n{just[:150]}")
-                _papi_telegram(msg); st.rerun()
-            else: st.warning("Sin pick con valor hoy.")
-    if saved and saved_f==today:
-        panel=saved.get("panel") or {}; vd=panel.get("veredicto","amarillo")
-        vc={"verde":"#00ff88","amarillo":"#FFD700","rojo":"#ff4444"}.get(vd,"#FFD700")
-        stake=round(capital*0.20); gp=round(stake*(saved["cuota"]-1))
-        st.markdown(
-            f"<div class='ppick' style='border-color:{vc}66'>"
-            f"<div style='font-size:.7rem;color:{vc};margin-bottom:6px'>PICK PASO {paso}</div>"
-            f"<div style='font-size:1.2rem;font-weight:900;color:#F0E6C8'>{saved['pick']}</div>"
-            f"<div style='font-size:.8rem;color:#888;margin:4px 0'>{saved['partido']} | {saved['liga']}</div>"
-            f"<div style='display:flex;gap:12px;font-size:.82rem'>"
-            f"<span style='color:#00ff88'>{saved['prob']*100:.0f}%</span>"
-            f"<span style='color:#FFD700'>x{saved['cuota']:.2f}</span>"
-            f"<span style='color:#ff9500'>+${gp:,.0f}</span>"
-            f"<span style='color:#aaa'>stake ${stake:,.0f}</span></div></div>",
-            unsafe_allow_html=True)
-        if saved.get("justificacion"): st.info(saved["justificacion"])
+
+    today     = _dt.datetime.now().strftime("%Y-%m-%d")
+    saved     = state.get("pick_del_dia")
+    saved_f   = state.get("fecha_pick", "")
+
+    col_btn1, col_btn2 = st.columns([3,1])
+    with col_btn1:
+        if st.button("🔍 Buscar Pick del Día", type="primary", use_container_width=True):
+            with st.spinner("🧠 Panel de consenso analizando..."):
+                saved = _papi_pick_del_dia(matches_fut, nba_games, ten_matches)
+                if saved:
+                    panel = saved.get("panel") or {}
+                    just  = _papi_justificar(
+                        saved["pick"], saved["partido"], saved["prob"],
+                        saved["cuota"], panel)
+                    saved["justificacion"] = just
+                    state["pick_del_dia"]  = saved
+                    state["fecha_pick"]    = today
+                    _papi_save_state(state)
+                    stake = round(capital * 0.20)
+                    gan   = round(stake * (saved["cuota"] - 1))
+                    msg = (
+                        f"💰 PAPI AJB — Paso {paso}\n"
+                        f"Capital ${capital:,.0f}\n"
+                        f"Pick: {saved['pick']}\n"
+                        f"Partido: {saved['partido']}\n"
+                        f"Prob: {saved['prob']*100:.0f}% | Cuota: {saved['cuota']:.2f}\n"
+                        f"Stake: ${stake:,.0f} | Ganancia: +${gan:,.0f}\n"
+                        f"{just[:200]}"
+                    )
+                    _papi_telegram(msg)
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Sin pick con valor hoy. Proteger bankroll.")
+    with col_btn2:
+        if st.button("🔄 Reset Reto", use_container_width=True):
+            if st.session_state.get("_papi_confirm_reset"):
+                state = {"paso":1,"capital":1500.0,"activo":True,"pick_del_dia":None,"fecha_pick":""}
+                _papi_save_state(state); _papi_save_history([]); st.rerun()
+            else:
+                st.session_state["_papi_confirm_reset"] = True
+                st.warning("Presiona de nuevo para confirmar reset")
+
+    # ── MOSTRAR PICK ACTIVO ────────────────────────────────────────────────
+    if saved and saved_f == today:
+        panel = saved.get("panel") or {}
+        vd    = panel.get("veredicto", "amarillo")
+        vc    = {"verde": "#00ff88", "amarillo": "#FFD700", "rojo": "#ff4444"}.get(vd, "#FFD700")
+        stake = round(capital * 0.20)
+        gp    = round(stake * (saved["cuota"] - 1))
+
+        prob_pct = int(saved["prob"] * 100)
+        deporte_emoji = {"futbol":"⚽","nba":"🏀","tenis":"🎾"}.get(saved.get("deporte",""), "🎯")
+
+        st.markdown(f"""
+        <div class='paji-pick' style='border-color:{vc}99'>
+          <div class='paji-pick-titulo' style='color:{vc}'>
+            {deporte_emoji} PICK PASO {paso} — {saved.get("liga","").upper()}</div>
+          <div style='font-size:.85rem;color:#aaa;margin-bottom:8px'>{saved.get("partido","")}</div>
+          <div class='paji-pick-main'>{saved["pick"]}</div>
+          <div style='margin:8px 0;display:flex;flex-wrap:wrap;gap:8px'>
+            <span class='paji-badge' style='background:{vc}22;color:{vc};border:1px solid {vc}55'>
+              {prob_pct}% prob</span>
+            <span class='paji-badge' style='background:#FFD70022;color:#FFD700;border:1px solid #FFD70055'>
+              x{saved["cuota"]:.2f}</span>
+            <span class='paji-badge' style='background:#00ff8822;color:#00ff88;border:1px solid #00ff8855'>
+              +${gp:,.0f}</span>
+            <span class='paji-badge' style='background:#ff950022;color:#ff9500;border:1px solid #ff950055'>
+              stake ${stake:,.0f}</span>
+          </div>
+        """, unsafe_allow_html=True)
+
+        # Panel de consenso
         if panel:
-            sc=panel.get("score",0); mg=panel.get("mensaje",""); vs=f"{panel.get('votos_ok',0)}/{panel.get('votos_total',0)}"
-            st.markdown(f"<div style='font-size:.72rem;color:#888;padding:3px 0'>"
-                        f"Panel <span style='color:{vc}'>{vd.upper()}</span> {sc:.0f}/10 {vs}"
-                        f"{f' | {mg}' if mg else ''}</div>",unsafe_allow_html=True)
-        ca,cb=st.columns(2)
-        with ca:
-            if st.button("Gano",type="primary"):
-                nc=capital+round(stake*(saved["cuota"]-1))
-                history.append({**saved,"resultado":"ganado","capital_antes":capital,
-                                "capital_despues":nc,"stake":stake,"paso":paso,"fecha":today})
+            sc  = panel.get("score", 0)
+            msg = panel.get("mensaje", "")
+            vs  = f"{panel.get('votos_ok',0)}/{panel.get('votos_total',0)}"
+            st.markdown(
+                f"<div style='font-size:.7rem;color:#777;margin:4px 0'>"
+                f"Panel: <span style='color:{vc}'>{vd.upper()}</span> · "
+                f"Score {sc:.0f}/10 · {vs} votos{' · ' + msg if msg else ''}</div>",
+                unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if saved.get("justificacion"):
+            with st.expander("📋 Justificación completa"):
+                st.markdown(saved["justificacion"])
+
+        # Botones resultado
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("✅ GANÓ", type="primary", use_container_width=True, key="paji_gano"):
+                nc = capital + gp
+                history.append({**saved, "resultado":"ganado",
+                                 "capital_antes":capital,"capital_despues":nc,
+                                 "stake":stake,"paso":paso,"fecha":today})
                 state.update({"capital":nc,"paso":paso+1,"pick_del_dia":None,"fecha_pick":""})
                 _papi_save_state(state); _papi_save_history(history)
-                _papi_telegram(f"GANO paso {paso}! Capital ${nc:,.0f}"); st.rerun()
-        with cb:
-            if st.button("Perdio"):
-                nc=capital-stake
-                history.append({**saved,"resultado":"perdido","capital_antes":capital,
-                                "capital_despues":nc,"stake":stake,"paso":paso,"fecha":today})
+                _papi_telegram(f"✅ PAPI AJB GANÓ Paso {paso}! Capital ${nc:,.0f} (+${gp:,.0f})")
+                st.balloons(); st.rerun()
+        with b2:
+            if st.button("❌ PERDIÓ", use_container_width=True, key="paji_perdio"):
+                nc = max(0, capital - stake)
+                history.append({**saved, "resultado":"perdido",
+                                 "capital_antes":capital,"capital_despues":nc,
+                                 "stake":stake,"paso":paso,"fecha":today})
                 state.update({"capital":nc,"activo":nc>=500,"pick_del_dia":None,"fecha_pick":""})
                 _papi_save_state(state); _papi_save_history(history)
-                _papi_telegram(f"Perdio paso {paso}. Capital ${nc:,.0f}"); st.rerun()
-    elif saved_f!=today: st.info("Nuevo dia — busca el pick de hoy.")
+                _papi_telegram(f"❌ PAPI AJB Perdió Paso {paso}. Capital ${nc:,.0f} (-${stake:,.0f})")
+                st.rerun()
+
+    elif saved_f != today:
+        st.info("📅 Nuevo día — busca el pick de hoy.")
+
+    # ── HISTORIAL ──────────────────────────────────────────────────────────
     if history:
-        st.markdown("---"); st.markdown("**Historial**")
-        for h in reversed(history[-15:]):
-            rc="#00ff88" if h.get("resultado")=="ganado" else "#ff4444"
-            ri="OK" if h.get("resultado")=="ganado" else "X"
-            diff=h.get("capital_despues",0)-h.get("capital_antes",0)
-            ds=f"+${diff:,.0f}" if diff>=0 else f"-${abs(diff):,.0f}"
-            st.markdown(f"<div style='display:flex;justify-content:space-between;"
-                        f"padding:3px 6px;border-bottom:1px solid #ffffff08;font-size:.72rem'>"
-                        f"<span style='color:{rc}'>{ri} P{h.get('paso','?')} {h.get('pick','?')}</span>"
-                        f"<span style='color:#888'>{h.get('fecha','?')}</span>"
-                        f"<span style='color:{rc}'>{ds}</span></div>",unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("#### 📋 Historial de Pasos")
+        for h in reversed(history[-20:]):
+            rc  = "#00ff88" if h.get("resultado") == "ganado" else "#ff4444"
+            ri  = "✅" if h.get("resultado") == "ganado" else "❌"
+            diff= h.get("capital_despues",0) - h.get("capital_antes",0)
+            ds  = f"+${diff:,.0f}" if diff >= 0 else f"-${abs(diff):,.0f}"
+            st.markdown(
+                f"<div class='paji-hist-row'>"
+                f"<span style='color:{rc}'>{ri} Paso {h.get('paso','?')}</span>"
+                f"<span style='color:#aaa;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"
+                f"{h.get('pick','?')}</span>"
+                f"<span style='color:#666'>{h.get('fecha','?')}</span>"
+                f"<span style='color:{rc};font-weight:700'>{ds}</span>"
+                f"<span style='color:#888'>${h.get('capital_despues',0):,.0f}</span>"
+                f"</div>", unsafe_allow_html=True)
+
+    # ── ESTADÍSTICAS ESCALERA ─────────────────────────────────────────────
+    if len(history) >= 3:
+        st.markdown("---")
+        st.markdown("#### 📊 Estadísticas del Reto")
+        s1,s2,s3,s4 = st.columns(4)
+        roi = capital - 1500.0
+        roi_pct = round(roi / 1500 * 100, 1)
+        racha = 0
+        for h in reversed(history):
+            if h.get("resultado") == "ganado":
+                racha += 1
+            else:
+                break
+        max_capital = max(h.get("capital_despues",0) for h in history)
+
+        stats_data = [
+            (s1, f"${roi:+,.0f}", "ROI TOTAL", "#00ff88" if roi>=0 else "#ff4444"),
+            (s2, f"{roi_pct:+.1f}%", "RETORNO", "#00ff88" if roi>=0 else "#ff4444"),
+            (s3, f"+{racha}", "RACHA ACTUAL", "#FFD700"),
+            (s4, f"${max_capital:,.0f}", "CAPITAL MÁXIMO", "#ff9500"),
+        ]
+        for col, val, lbl, color in stats_data:
+            with col:
+                st.markdown(f"""
+                <div class='paji-kpi'>
+                  <div class='paji-kpi-v' style='color:{color}'>{val}</div>
+                  <div class='paji-kpi-l'>{lbl}</div>
+                </div>""", unsafe_allow_html=True)
 
 
 # 5 IAs ADICIONALES
@@ -13225,24 +13622,49 @@ def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
         )
         return _html, "#00ff8866"
     if pick_prob >= 0.68:
-        emoji, color = "💎", "#00ccff"
+        emoji, color, tier_lbl = "💎", "#00ccff", "DIAMANTE"
+        is_diamond = True
     elif pick_prob >= 0.60:
-        emoji, color = "🔥", "#ff6600"
+        emoji, color, tier_lbl = "🔥", "#ff6600", "ORO"
+        is_diamond = False
     elif pick_prob >= 0.53:
-        emoji, color = "⚡", "#FFD700"
+        emoji, color, tier_lbl = "⚡", "#FFD700", "SEÑAL"
+        is_diamond = False
     else:
-        return "", "#ff444466" if is_live else default_border
-    card_border = "#ff444466" if is_live else f"{color}88"
-    html = (
-        f"<div style='margin-top:6px;background:{color}15;"
-        f"border:2px solid {color}99;border-radius:6px;padding:5px 8px'>"
-        f"<div style='display:flex;align-items:center;gap:5px'>"
-        f"<span style='font-size:1.3rem;line-height:1'>{emoji}</span>"
-        f"<span style='font-size:.96rem;font-weight:900;color:{color};"
-        f"letter-spacing:.02em;line-height:1.2;word-break:break-word'>{pick_lbl}</span>"
-        f"<span style='font-size:.86rem;font-weight:900;color:{color};margin-left:auto;white-space:nowrap'>{pick_prob*100:.0f}%</span>"
-        f"</div></div>"
-    )
+        return "", "#ff444066" if is_live else default_border
+    card_border = "#ff444066" if is_live else f"{color}bb"
+
+    if is_diamond:
+        # 💎 DIAMANTE — 4x más grande, super llamativo, color completo
+        html = (
+            f"<div style='margin-top:8px;background:linear-gradient(135deg,{color}22,{color}0a);"
+            f"border:3px solid {color};border-radius:10px;padding:12px 14px;"
+            f"box-shadow:0 0 18px {color}55;'>"
+            f"<div style='font-size:.65rem;font-weight:900;color:{color};letter-spacing:.18em;"
+            f"margin-bottom:6px'>💎 {tier_lbl} — {pick_prob*100:.0f}%</div>"
+            f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'>"
+            f"<span style='font-size:3.2rem;line-height:1;filter:drop-shadow(0 0 8px {color})'>{emoji}</span>"
+            f"<span style='font-size:1.55rem;font-weight:900;color:{color};"
+            f"letter-spacing:.01em;line-height:1.25;word-break:break-word;flex:1'>{pick_lbl}</span>"
+            f"</div>"
+            f"<div style='margin-top:8px;font-size:1.15rem;font-weight:900;color:{color};text-align:right'>"
+            f"{pick_prob*100:.0f}% ✓</div>"
+            f"</div>"
+        )
+    else:
+        html = (
+            f"<div style='margin-top:6px;background:{color}15;"
+            f"border:2px solid {color}99;border-radius:8px;padding:7px 10px'>"
+            f"<div style='font-size:.6rem;color:{color};letter-spacing:.12em;margin-bottom:3px'>"
+            f"{emoji} {tier_lbl}</div>"
+            f"<div style='display:flex;align-items:center;gap:6px'>"
+            f"<span style='font-size:1.6rem;line-height:1'>{emoji}</span>"
+            f"<span style='font-size:1.05rem;font-weight:900;color:{color};"
+            f"letter-spacing:.01em;line-height:1.2;word-break:break-word'>{pick_lbl}</span>"
+            f"<span style='font-size:.9rem;font-weight:900;color:{color};"
+            f"margin-left:auto;white-space:nowrap'>{pick_prob*100:.0f}%</span>"
+            f"</div></div>"
+        )
     return html, card_border
 
 
@@ -13331,7 +13753,7 @@ if st.session_state["view"] == "cartelera":
 
     # ─── NBA ─────────────────────────────────────────────
     if deporte == "nba":
-        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","👑 King Rongo"])
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
             if not nba_games:
@@ -13584,6 +14006,9 @@ if st.session_state["view"] == "cartelera":
             render_einstein_califica("nba")
         with tab8:
             render_resultados_tab()
+        with tab_papi:
+            render_papi_ajb(matches_fut=matches, nba_games=nba_games, ten_matches=ten_matches)
+
         with tab_king:
             # KR siempre necesita los 3 deportes — cargar lo que falte
             _kr_fut = matches if matches else st.session_state.get("_kr_cache_fut") or []
@@ -13605,7 +14030,7 @@ if st.session_state["view"] == "cartelera":
 
     # ─── TENIS ───────────────────────────────────────────
     elif deporte == "tenis":
-        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","👑 King Rongo"])
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             # ── TENNIS CARTELERA — 2 columnas, separado por ATP / WTA ──
             pre_m  = [m for m in ten_matches if m["state"] == "pre"]
@@ -13761,6 +14186,9 @@ if st.session_state["view"] == "cartelera":
             render_einstein_califica("tenis")
         with tab8:
             render_resultados_tab()
+        with tab_papi:
+            render_papi_ajb(matches_fut=None, nba_games=None, ten_matches=ten_matches)
+
         with tab_king:
             _kr_fut = st.session_state.get("_kr_cache_fut") or []
             _kr_nba = st.session_state.get("_kr_cache_nba") or []
@@ -13778,7 +14206,7 @@ if st.session_state["view"] == "cartelera":
 
     # ─── FÚTBOL ──────────────────────────────────────────
     elif deporte == "futbol":
-        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","👑 King Rongo"])
+        tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             _shdr_c1, _shdr_c2 = st.columns([5,1])
             with _shdr_c1:
@@ -14137,6 +14565,9 @@ if st.session_state["view"] == "cartelera":
             render_einstein_califica("futbol")
         with tab8:
             render_resultados_tab()
+        with tab_papi:
+            render_papi_ajb(matches_fut=None, nba_games=nba_games, ten_matches=ten_matches)
+
         with tab_king:
             _kr_fut = matches if matches else st.session_state.get("_kr_cache_fut") or []
             _kr_nba = st.session_state.get("_kr_cache_nba") or []
@@ -14720,6 +15151,13 @@ else:
             _ui_soc = _ultra_intel_full(g['home'], g['away'], 'futbol', g.get('league',''), g.get('hora',''))
             _5ai_soc = _5ais_enrich_context(g['home'], g['away'], 'futbol', g.get('hora',''), main_prob, main_odd, main_lbl)
             _soc_ctx += (_ui_soc['context_str'] + _5ai_soc['context_block'])
+        except: pass
+        # 📊 Posición en tabla — ajuste silencioso de probabilidad
+        try:
+            _tbl_soc = _tabla_posicion_delta(g['home'], g['away'], g.get('slug',''))
+            if _tbl_soc.get('pos_gap', 0) >= 3:
+                main_prob = max(0.10, min(0.92, main_prob + _tbl_soc['delta_h'] * 0.50))
+                _soc_ctx += f" | Tabla: {_tbl_soc['desc']}"
         except: pass
         _ei_soc, _papa_soc = _render_einstein_papa('futbol', g['home'], g['away'], main_lbl, main_prob, main_odd, context_str=_soc_ctx)
 
