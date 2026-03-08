@@ -12094,62 +12094,66 @@ if st.session_state["view"] == "cartelera":
                                                     _home_short = _m["home"]
                                                     _away_short = _m["away"]
                                                     _br_key = _m.get("id","")
-                                                    _br_key = _m.get("id","")
                                                     _br_val = st.session_state.get("_diamond_bridge",{})
                                                     _br = _br_val.get(_br_key)
                                                     # ── Para partidos EN VIVO: calcular pick en tiempo real ──
                                                     if _live:
                                                         try:
                                                             import math as _lmath
-                                                            _sc_h = int(_m.get("score_h",0) or 0)
-                                                            _sc_a = int(_m.get("score_a",0) or 0)
-                                                            _min  = int(_m.get("minute",45) or 45)
-                                                            _, _, _iph_l, _ipd_l, _ipa_l = _inplay_poisson(_hx2, _ax2, _sc_h, _sc_a, _min)
+                                                            _sc_h2 = int(_m.get("score_h",0) or 0)
+                                                            _sc_a2 = int(_m.get("score_a",0) or 0)
+                                                            _min2  = int(_m.get("minute",45) or 45)
+                                                            _, _, _iph_l, _ipd_l, _ipa_l = _inplay_poisson(_hx2, _ax2, _sc_h2, _sc_a2, _min2)
                                                             _bl_h = (0.75*(_iph_l or _ph2)+0.25*_ph2)
                                                             _bl_d = (0.75*(_ipd_l or _pd2)+0.25*_pd2)
                                                             _bl_a = (0.75*(_ipa_l or _pa2)+0.25*_pa2)
                                                             _s_bl = _bl_h+_bl_d+_bl_a
                                                             if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
-                                                            _xg_rem = (_hx2+_ax2)*max(0.05,(90-_min)/90)
-                                                            _goals_now = _sc_h+_sc_a
-                                                            _o25_l = 1-sum(_xg_rem**k*_lmath.exp(-_xg_rem)/_lmath.factorial(k) for k in range(max(0,3-_goals_now)))
-                                                            _p_h_s = 1-_lmath.exp(-_hx2*max(0.05,(90-_min)/90)) if _sc_h==0 else 1.0
-                                                            _p_a_s = 1-_lmath.exp(-_ax2*max(0.05,(90-_min)/90)) if _sc_a==0 else 1.0
+                                                            _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
+                                                            _goals_n = _sc_h2+_sc_a2
+                                                            _o25_l = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
+                                                            _p_h_s = 1-_lmath.exp(-_hx2*max(0.05,(90-_min2)/90)) if _sc_h2==0 else 1.0
+                                                            _p_a_s = 1-_lmath.exp(-_ax2*max(0.05,(90-_min2)/90)) if _sc_a2==0 else 1.0
                                                             _btts_l = _p_h_s * _p_a_s
                                                             _h_nm = _m["home"][:11]; _a_nm = _m["away"][:11]
                                                             _lv_opts = [(_h_nm+" Gana",_bl_h),(_a_nm+" Gana",_bl_a),("Over 2.5",_o25_l),("Ambos Anotan",_btts_l)]
                                                             _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
-                                                            _pick_lbl = "🔴 EN VIVO · " + _pick_lbl
+                                                            _pick_lbl = "🔴 " + _pick_lbl
                                                         except:
                                                             _pick_lbl  = _br.get("pick","") if _br else ""
                                                             _pick_prob = _br.get("prob",0)  if _br else 0
                                                     else:
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
-                                                    st.markdown(f"""<div style='background:#0d0900;border:1px solid {_card_border};
-border-radius:8px;padding:7px 8px;margin-bottom:2px'>
-  <div style='font-size:.58rem;color:{"#ff4444" if _live else "#6b5a3a"};font-weight:700;letter-spacing:.1em'>{_sc or _m.get("hora","")}</div>
-  <div style='font-size:.65rem;color:#ccc;font-weight:700;line-height:1.3;margin:2px 0;word-break:break-word'>{_home_short}</div>
-  <div style='font-size:.55rem;color:#6b5a3a;margin:1px 0'>vs</div>
-  <div style='font-size:.65rem;color:#ccc;font-weight:700;line-height:1.3;word-break:break-word'>{_away_short}</div>
-  <div style='display:flex;gap:3px;margin-top:5px'>
-    <div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>
-      <div style='font-size:.75rem;font-weight:{_bh};color:{_ch}'>{_ph2*100:.0f}%</div>
-      <div style='font-size:.5rem;color:#6b5a3a'>🏠</div>
-    </div>
-    <div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>
-      <div style='font-size:.75rem;font-weight:{_bd};color:{_cd}'>{_pd2*100:.0f}%</div>
-      <div style='font-size:.5rem;color:#6b5a3a'>🤝</div>
-    </div>
-    <div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>
-      <div style='font-size:.75rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>
-      <div style='font-size:.5rem;color:#6b5a3a'>✈️</div>
-    </div>
-  </div>"
-  + ("<div style='font-size:.52rem;color:#ff4444;font-weight:800;letter-spacing:.12em;"
-     "text-transform:uppercase;margin:4px 0 0;padding:2px 5px;"
-     "border-left:2px solid #ff444466'>📡 PICK RECOMENDADO EN VIVO</div>" if _live else "")
-  + f"{_pick_html}</div>""", unsafe_allow_html=True)
+                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
+                                                    _live_label = ("<div style='font-size:.5rem;color:#ff4444;font-weight:800;"
+                                                                   "letter-spacing:.12em;text-transform:uppercase;"
+                                                                   "margin:4px 0 0;padding:2px 5px;border-left:2px solid #ff444466'>" 
+                                                                   "📡 PICK RECOMENDADO EN VIVO</div>") if _live else ""
+                                                    _score_or_hora = _sc if _live else _m.get("hora","")
+                                                    _hdr_color = "#ff4444" if _live else "#6b5a3a"
+                                                    st.markdown(
+                                                        f"<div style='background:#0d0900;border:1px solid {_card_border};"
+                                                        f"border-radius:8px;padding:7px 8px;margin-bottom:2px'>"
+                                                        f"<div style='font-size:.58rem;color:{_hdr_color};font-weight:700;"
+                                                        f"letter-spacing:.1em'>{_score_or_hora}</div>"
+                                                        f"<div style='font-size:.65rem;color:#ccc;font-weight:700;"
+                                                        f"line-height:1.3;margin:2px 0;word-break:break-word'>{_home_short}</div>"
+                                                        f"<div style='font-size:.55rem;color:#6b5a3a;margin:1px 0'>vs</div>"
+                                                        f"<div style='font-size:.65rem;color:#ccc;font-weight:700;"
+                                                        f"line-height:1.3;word-break:break-word'>{_away_short}</div>"
+                                                        f"<div style='display:flex;gap:3px;margin-top:5px'>"
+                                                        f"<div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>"
+                                                        f"<div style='font-size:.75rem;font-weight:{_bh};color:{_ch}'>{_ph2*100:.0f}%</div>"
+                                                        f"<div style='font-size:.5rem;color:#6b5a3a'>🏠</div></div>"
+                                                        f"<div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>"
+                                                        f"<div style='font-size:.75rem;font-weight:{_bd};color:{_cd}'>{_pd2*100:.0f}%</div>"
+                                                        f"<div style='font-size:.5rem;color:#6b5a3a'>🤝</div></div>"
+                                                        f"<div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>"
+                                                        f"<div style='font-size:.75rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>"
+                                                        f"<div style='font-size:.5rem;color:#6b5a3a'>✈️</div></div>"
+                                                        f"</div>{_live_label}{_pick_html}</div>",
+                                                        unsafe_allow_html=True)
                                                     if st.button("📊", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_fi}_{_pi}",
                                                                  use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
                                                         st.session_state["sel"]  = {**_m, "_sport":"futbol"}
