@@ -12128,6 +12128,10 @@ if st.session_state["view"] == "cartelera":
                                                     _br_key = _m.get("id","")
                                                     _br_val = st.session_state.get("_diamond_bridge",{})
                                                     _br = _br_val.get(_br_key)
+                                                    # ── Defaults seguros para pick (evita NameError) ──
+                                                    _pick_lbl  = _br.get("pick","") if _br else ""
+                                                    _pick_prob = _br.get("prob",0)  if _br else 0
+                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
                                                     # ── Para partidos EN VIVO: calcular pick en tiempo real ──
                                                     # ── Para partidos EN VIVO: detectar si pick se cumplió, o calcular nuevo ──
                                                     if _live:
@@ -12218,6 +12222,11 @@ if st.session_state["view"] == "cartelera":
                                                         except:
                                                             _pick_lbl  = _br.get("pick","") if _br else ""
                                                             _pick_prob = _br.get("prob",0)  if _br else 0
+                                                    else:  # not live — use bridge pick
+                                                        _pick_lbl  = _br.get("pick","") if _br else ""
+                                                        _pick_prob = _br.get("prob",0)  if _br else 0
+                                                    # ── Always compute badge (live or not) ──
+                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
                                                     _score_or_hora = _sc if _live else _m.get("hora","")
                                                     _hdr_color = "#ff4444" if _live else "#6b5a3a"
                                                     st.markdown(
