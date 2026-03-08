@@ -12260,7 +12260,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
                 (f"{m.get('home','?')} o Empate",        min(0.95,ph+pd), 1.40),
                 (f"{m.get('away','?')} o Empate",        min(0.95,pa+pd), 1.40),
             ]:
-                if bp < 0.40: continue   # descarta solo si prob muy baja
+                if bp < 0.35: continue   # descarta solo si prob muy baja
                 if bo <= 1.0: bo = max(1.25, round(1/max(bp,0.01)*0.88, 2))
                 edge = bp - (1/bo if bo > 1 else 0.55)
                 score = bp*10 + max(0,edge)*30 + (0.5 if "Gana" in bl else 0)
@@ -12568,6 +12568,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     col_btn1, col_btn2 = st.columns([3,1])
     with col_btn1:
         if st.button("🔍 Buscar Pick del Día", type="primary", use_container_width=True):
+            st.session_state["_stay_ajb"] = True
             with st.spinner("🧠 Panel de consenso analizando..."):
                 saved = _papi_pick_del_dia(matches_fut, nba_games, ten_matches)
                 if saved:
@@ -14222,6 +14223,9 @@ if st.session_state["view"] == "cartelera":
 
     # ─── NBA ─────────────────────────────────────────────
     if deporte == "nba":
+        if st.session_state.pop("_stay_ajb", False):
+            _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
+            st.markdown(_js, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
@@ -14602,6 +14606,9 @@ if st.session_state["view"] == "cartelera":
 
     # ─── TENIS ───────────────────────────────────────────
     elif deporte == "tenis":
+        if st.session_state.pop("_stay_ajb", False):
+            _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
+            st.markdown(_js, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             # ── TENNIS CARTELERA — 2 columnas, separado por ATP / WTA ──
@@ -14829,6 +14836,9 @@ if st.session_state["view"] == "cartelera":
 
     # ─── FÚTBOL ──────────────────────────────────────────
     elif deporte == "futbol":
+        if st.session_state.pop("_stay_ajb", False):
+            _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
+            st.markdown(_js, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             _shdr_c1, _shdr_c2 = st.columns([5,1])
@@ -15012,15 +15022,17 @@ if st.session_state["view"] == "cartelera":
                                                                 _btts_l = _p_h_s * _p_a_s
                                                                 _lv_opts = []
                                                                 if abs(_sc_h2-_sc_a2) <= 2:
-                                                                    if _bl_h >= 0.60:   _lv_opts.append((_h_nm+' Gana', _bl_h))
-                                                                    if _bl_a >= 0.60:   _lv_opts.append((_a_nm+' Gana', _bl_a))
-                                                                    if _bl_d >= 0.60 and _min2 < 65: _lv_opts.append(('Empate', _bl_d))
-                                                                if _goals_n < 3 and _o25_l >= 0.60: _lv_opts.append(('Over 2.5', _o25_l))
-                                                                if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.58: _lv_opts.append(('Ambos Anotan', _btts_l))
+                                                                    if _bl_h >= 0.64:   _lv_opts.append((_h_nm+' Gana', _bl_h))
+                                                                    if _bl_a >= 0.64:   _lv_opts.append((_a_nm+' Gana', _bl_a))
+                                                                    if _bl_d >= 0.64 and _min2 < 65: _lv_opts.append(('Empate', _bl_d))
+                                                                if _goals_n < 3 and _o25_l >= 0.64: _lv_opts.append(('Over 2.5', _o25_l))
+                                                                _u25_l = 1 - _o25_l
+                                                                if _goals_n >= 2 and _u25_l >= 0.64: _lv_opts.append(('Under 2.5', _u25_l))
+                                                                if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.64: _lv_opts.append(('Ambos Anotan', _btts_l))
                                                                 if _goals_n < 2 and _min2 < 70:
                                                                     _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)*0.55
                                                                     _o15_l = 1-sum(_xg_rem_15**k*_lmath.exp(-_xg_rem_15)/_lmath.factorial(k) for k in range(2))
-                                                                    if _o15_l >= 0.60: _lv_opts.append(('Over 1.5', _o15_l))
+                                                                    if _o15_l >= 0.64: _lv_opts.append(('Over 1.5', _o15_l))
                                                                 if _lv_opts:
                                                                     _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
                                                                     _pick_lbl = '🔴 ' + _pick_lbl
