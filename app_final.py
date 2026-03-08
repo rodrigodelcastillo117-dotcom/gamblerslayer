@@ -14873,8 +14873,8 @@ if st.session_state["view"] == "cartelera":
                                                                     "sport":"futbol","fecha":_m.get("fecha",""),
                                                                     "src":"⚡ Cartelera","mkt":"auto"}
                                                         except: pass
-                                                    # ── Always compute badge (live or not) ──
-                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
+                                                    # ── Preparar card: border rojo en vivo, dorado pre-partido ──
+                                                    _card_border = "#ff444466" if _live else ("#c9a84c55" if _pick_prob >= 0.68 else "#c9a84c1a")
                                                     _score_or_hora = _sc if _live else _m.get("hora","")
                                                     _hdr_color = "#ff4444" if _live else "#6b5a3a"
                                                     # ── Construir pick row HTML para insertar dentro del card ──
