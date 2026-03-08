@@ -15192,7 +15192,7 @@ if st.session_state["view"] == "cartelera":
                                                                     if _bl_d >= 0.64 and _min2 < 65: _lv_opts.append(('Empate', _bl_d))
                                                                 if _goals_n < 3 and _o25_l >= 0.64: _lv_opts.append(('Over 2.5', _o25_l))
                                                                 _u25_l = 1 - _o25_l
-                                                                if _goals_n <= 1 and _u25_l >= 0.64: _lv_opts.append(('Under 2.5', _u25_l))
+                                                                if _goals_n <= 1 and _u25_l >= 0.78: _lv_opts.append(('Under 2.5', _u25_l))
                                                                 if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.64: _lv_opts.append(('Ambos Anotan', _btts_l))
                                                                 if _goals_n < 2 and _min2 < 70:
                                                                     _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)*0.55
@@ -15797,7 +15797,7 @@ else:
                 (f"✈️ {g['away'][:15]} gana", _lv_pa),
                 ("⚽ Over 2.5", _lv_o25_live),
                 ("⚡ Ambos Anotan", _lv_btts),
-                ("🧱 Under 2.5",   max(0.01, 1 - _lv_o25_live)),
+                ("🧱 Under 2.5",   (1 - _lv_o25_live) if (_goals_so_far <= 1 and (1-_lv_o25_live) >= 0.78) else 0.0),
                 ("🧱 Under 1.5",   max(0.01, 1 - mc.get('o15', _lv_o25_live - 0.18))),
             ]
             _lv_pick_lbl, _lv_prob = max(_lv_candidates, key=lambda x:x[1])
