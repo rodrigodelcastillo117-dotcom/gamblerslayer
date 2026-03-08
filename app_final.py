@@ -4649,10 +4649,12 @@ Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad,
             timeout=60
         )
         if r.status_code != 200: return {}
-        raw = r.json()["content"][0]["text"].strip()
-        raw = raw.replace("```json","").replace("```","").strip()
+        _raw_p = r.json()["content"][0]["text"].strip()
+        _raw_p = _raw_p.replace("```json","").replace("```","").strip()
+        _j0 = _raw_p.find("{"); _j1 = _raw_p.rfind("}") + 1
+        if _j0 >= 0 and _j1 > _j0: _raw_p = _raw_p[_j0:_j1]
         import json as _j
-        return _j.loads(raw)
+        return _j.loads(_raw_p)
     except Exception as _e:
         return {}
 
@@ -5045,8 +5047,11 @@ def render_einstein_califica(key_sfx="fut"):
                           ]}]},
                     timeout=45
                 )
-                raw  = resp.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
-                data = _jce.loads(raw)
+                _raw_e = resp.json()["content"][0]["text"].strip()
+                _raw_e = _raw_e.replace("```json","").replace("```","").strip()
+                _j0 = _raw_e.find("{"); _j1 = _raw_e.rfind("}") + 1
+                if _j0 >= 0 and _j1 > _j0: _raw_e = _raw_e[_j0:_j1]
+                data = _jce.loads(_raw_e)
 
                 letra   = str(data.get("calificacion_letra","?"))
                 pts     = int(data.get("puntuacion", 0))
