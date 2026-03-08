@@ -2852,6 +2852,13 @@ def fetch_soccer_results(days_back=10):
                         ac = next(c for c in comps if c["homeAway"]=="away")
                         utc  = datetime.strptime(ev["date"],"%Y-%m-%dT%H:%MZ").replace(tzinfo=pytz.UTC)
                         fecha = utc.astimezone(CDMX).strftime("%Y-%m-%d")
+                        _odds_ev = comp.get("odds", [])
+                        _odd_h = _odd_d = _odd_a = 0.0
+                        if _odds_ev:
+                            _o = _odds_ev[0]
+                            _odd_h = am2dec(_o.get("homeTeamOdds",{}).get("moneyLine",0))
+                            _odd_a = am2dec(_o.get("awayTeamOdds",{}).get("moneyLine",0))
+                            _odd_d = am2dec(_o.get("drawOdds",{}).get("moneyLine",0))
                         partidos.append({
                             "id":ev.get("id",""), "deporte":"futbol",
                             "liga":LIGAS[slug], "slug":slug,
@@ -2859,12 +2866,54 @@ def fetch_soccer_results(days_back=10):
                             "away":ac["team"]["displayName"],
                             "home_id":str(hc["team"]["id"]),
                             "away_id":str(ac["team"]["id"]),
+                            "home_rec": get_record(hc),
+                            "away_rec": get_record(ac),
+                            "odd_h": _odd_h, "odd_d": _odd_d, "odd_a": _odd_a,
                             "score_h":parse_score(hc.get("score",0)) if state=="post" else -1,
                             "score_a":parse_score(ac.get("score",0)) if state=="post" else -1,
                             "fecha":fecha, "state":state,
                         })
                     except: continue
             except: continue
+    # ── Enrich UEFA partidos sin odds desde The Odds API (1 call por competición) ──
+    _UEFA_MAP = {
+        "uefa.champions":    "soccer_uefa_champs_league",
+        "uefa.europa":       "soccer_uefa_europa_league",
+        "uefa.europa.conf":  "soccer_uefa_europa_conference_league",
+    }
+    _bulk = {}
+    _ok = ODDS_API_KEY
+    if _ok:
+        for _m in partidos:
+            if _m.get("slug") in _UEFA_MAP and not _m.get("odd_h"):
+                _sl = _m["slug"]
+                if _sl not in _bulk:
+                    try:
+                        _r = requests.get(
+                            f"https://api.the-odds-api.com/v4/sports/{_UEFA_MAP[_sl]}/odds",
+                            params={"apiKey": _ok, "regions": "eu", "markets": "h2h",
+                                    "oddsFormat": "decimal", "bookmakers": ",".join(BOOKMAKERS)},
+                            timeout=8)
+                        _bulk[_sl] = _r.json() if _r.status_code == 200 else []
+                    except: _bulk[_sl] = []
+                for _g in _bulk.get(_sl, []):
+                    _gh = (_g.get("home_team") or "").lower()
+                    _ga = (_g.get("away_team") or "").lower()
+                    _mh = _m["home"].lower(); _ma = _m["away"].lower()
+                    if _mh[:5] in _gh or _ma[:5] in _ga or _gh[:5] in _mh or _ga[:5] in _ma:
+                        _ph, _pd, _pa = [], [], []
+                        for _bk in _g.get("bookmakers", []):
+                            for _mkt in _bk.get("markets", []):
+                                if _mkt["key"] == "h2h":
+                                    _outs = {o["name"].lower(): o["price"] for o in _mkt["outcomes"]}
+                                    if _outs.get(_gh, 0) > 1: _ph.append(_outs[_gh])
+                                    if _outs.get("draw", 0) > 1: _pd.append(_outs["draw"])
+                                    if _outs.get(_ga, 0) > 1: _pa.append(_outs[_ga])
+                        if _ph and _pa:
+                            _m["odd_h"] = round(sum(_ph)/len(_ph), 2)
+                            _m["odd_d"] = round(sum(_pd)/len(_pd), 2) if _pd else 3.4
+                            _m["odd_a"] = round(sum(_pa)/len(_pa), 2)
+                        break
     return partidos
 
 def fetch_nba_results(days_back=10):
