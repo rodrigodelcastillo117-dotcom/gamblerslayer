@@ -12132,6 +12132,7 @@ if st.session_state["view"] == "cartelera":
                                                     _pick_lbl  = _br.get("pick","") if _br else ""
                                                     _pick_prob = _br.get("prob",0)  if _br else 0
                                                     _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
+                                                    _live_label = ""
                                                     # ── Para partidos EN VIVO: calcular pick en tiempo real ──
                                                     # ── Para partidos EN VIVO: detectar si pick se cumplió, o calcular nuevo ──
                                                     if _live:
