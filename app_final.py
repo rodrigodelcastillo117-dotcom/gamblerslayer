@@ -1994,17 +1994,17 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
     else: grd = "linear-gradient(90deg,#ff9500,#ff4444)"
     
     st.markdown(
-        f"<div style='background:#0d0900;border:1px solid {vc}33;border-radius:6px;padding:6px 9px;margin:3px 0'>",
-        f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:3px'>",
-        f"<span style='font-size:.55rem;color:#6b5a3a;font-weight:700'>🤖 IA VEREDICTO</span>",
-        f"<span style='flex:1'></span>",
-        f"<span style='font-size:.78rem;font-weight:900;color:{vc}'>{ai_verdict}</span>",
-        f"<span style='font-size:1rem;font-weight:900;color:{vc};margin-left:5px'>{ai_score}</span>",
-        f"</div>",
-        f"<div style='background:#1a1a40;border-radius:3px;height:3px;overflow:hidden;margin-bottom:3px'>",
-        f"<div style='width:{min(ai_score,100)}%;height:3px;background:{grd}'></div></div>",
-        f"<div style='font-size:.65rem;color:#8a7a5a;margin-bottom:2px'>⚠️ <b style='color:#ff9500'>Riesgo:</b> {ai_risk}</div>",
-        f"<div style='font-size:.68rem;color:#888'>💡 {ai_rec}</div>",
+        f"<div style='background:#0d0900;border:1px solid {vc}33;border-radius:6px;padding:6px 9px;margin:3px 0'>"
+        f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:3px'>"
+        f"<span style='font-size:.55rem;color:#6b5a3a;font-weight:700'>🤖 IA VEREDICTO</span>"
+        f"<span style='flex:1'></span>"
+        f"<span style='font-size:.78rem;font-weight:900;color:{vc}'>{ai_verdict}</span>"
+        f"<span style='font-size:1rem;font-weight:900;color:{vc};margin-left:5px'>{ai_score}</span>"
+        f"</div>"
+        f"<div style='background:#1a1a40;border-radius:3px;height:3px;overflow:hidden;margin-bottom:3px'>"
+        f"<div style='width:{min(ai_score,100)}%;height:3px;background:{grd}'></div></div>"
+        f"<div style='font-size:.65rem;color:#8a7a5a;margin-bottom:2px'>⚠️ <b style='color:#ff9500'>Riesgo:</b> {ai_risk}</div>"
+        f"<div style='font-size:.68rem;color:#888'>💡 {ai_rec}</div>"
         f"</div>", unsafe_allow_html=True)
     
     # ── INTEGRIDAD DE LIGA ──
@@ -2994,6 +2994,16 @@ def _fetch_tennis_results_web(desde, hoy):
         pass
 
     return results
+
+def _auto_complete_by_hora(matches_list, sport="futbol"):
+    """
+    DESHABILITADA — marcaba partidos como 'post' por tiempo aunque estuvieran
+    en prórroga, tiempo extra o suspendidos. El state=post ahora viene
+    exclusivamente de la API (ESPN / Tennis API). No hacer nada aquí.
+    """
+    return matches_list  # sin tocar
+
+
 
 def update_results_db(force=False):
     """Main update function — fetches results and merges into DB."""
@@ -11115,10 +11125,10 @@ matches     = []
 nba_games   = []
 ten_matches = []
 
-# ── AUTO-SYNC resultados en background — cada 30 min silenciosamente ──
+# ── AUTO-SYNC resultados — cada 10 min + detección por hora ──
 _auto_sync_key = "last_auto_sync"
 _now_ts2 = datetime.now(CDMX).timestamp()
-if _now_ts2 - st.session_state.get(_auto_sync_key, 0) > 1800:  # cada 30 min
+if _now_ts2 - st.session_state.get(_auto_sync_key, 0) > 600:  # cada 10 min
     try:
         update_results_db(force=False)
         st.session_state["results_db"] = _load_results_db()
@@ -11373,12 +11383,12 @@ if st.session_state["view"] == "cartelera":
                                         f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:5px'>"
                                         f"<div class='mbox' style='flex:1'>"
                                         f"<div class='mval' style='color:#00ff88'>{ai_ml_h:.0f}%</div>"
-                                        f"<div class='mlbl'>🏠 {g['home'][:12]}</div>"
+                                        f"<div class='mlbl' style='white-space:normal;word-break:break-word'>🏠 {g['home']}</div>"
                                         f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
                                         f"<div style='height:5px;width:{ai_ml_h:.0f}%;background:#00ff88;border-radius:3px'></div></div></div>"
                                         f"<div class='mbox' style='flex:1'>"
                                         f"<div class='mval' style='color:#aa00ff'>{ai_ml_a:.0f}%</div>"
-                                        f"<div class='mlbl'>✈️ {g['away'][:12]}</div>"
+                                        f"<div class='mlbl' style='white-space:normal;word-break:break-word'>✈️ {g['away']}</div>"
                                         f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
                                         f"<div style='height:5px;width:{ai_ml_a:.0f}%;background:#aa00ff;border-radius:3px'></div></div></div>"
                                         f"</div>"
@@ -11707,7 +11717,15 @@ if st.session_state["view"] == "cartelera":
     elif deporte == "futbol":
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","👑 King Rongo"])
         with tab1:
-            st.markdown("<div class='shdr'>⚽ Cartelera — Partidos del Día</div>", unsafe_allow_html=True)
+            _shdr_c1, _shdr_c2 = st.columns([5,1])
+            with _shdr_c1:
+                st.markdown("<div class='shdr'>⚽ Cartelera — Partidos del Día</div>", unsafe_allow_html=True)
+            with _shdr_c2:
+                if st.button("🔄", key="sync_fut_now", help="Sincronizar resultados ahora", use_container_width=True):
+                    get_cartelera.clear()
+                    try: update_results_db(force=True); st.session_state["results_db"] = _load_results_db()
+                    except: pass
+                    st.rerun()
             if not matches:
                 st.info("No hay partidos de fútbol disponibles.")
             else:
@@ -11796,23 +11814,50 @@ if st.session_state["view"] == "cartelera":
                                                     _bd = "900" if _pd2==_mx else "400"
                                                     _ba = "900" if _pa2==_mx else "400"
                                                     _border = "#ff444466" if _live else "#c9a84c1a"
-                                                    _home_short = _m["home"][:11]
-                                                    _away_short = _m["away"][:11]
+                                                    _home_short = _m["home"]
+                                                    _away_short = _m["away"]
                                                     _br_key = _m.get("id","")
                                                     _br = st.session_state.get("_diamond_bridge",{}).get(_br_key) or st.session_state.get("_diamond_bridge",{}).get(f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}")
-                                                    _pick_lbl = _br.get("pick","") if _br else ""
-                                                    _pick_prob = _br.get("prob",0) if _br else 0
+                                                    _pick_lbl  = _br.get("pick","")  if _br else ""
+                                                    _pick_prob = _br.get("prob",0)   if _br else 0
+                                                    # Conf level → emoji + color (borde y texto iguales)
+                                                    if _pick_prob >= 0.68:
+                                                        _pick_emoji = "💎"; _pick_color = "#00ccff"  # azul diamante
+                                                        _pick_conf  = "DIAMANTE"
+                                                    elif _pick_prob >= 0.60:
+                                                        _pick_emoji = "🔥"; _pick_color = "#ff6600"  # naranja fuego
+                                                        _pick_conf  = "FUEGO"
+                                                    elif _pick_prob >= 0.53:
+                                                        _pick_emoji = "⚡"; _pick_color = "#FFD700"  # dorado
+                                                        _pick_conf  = "MEDIA"
+                                                    else:
+                                                        _pick_emoji = ""; _pick_color = ""
+                                                        _pick_conf  = ""
+                                                    # Card border: pick color si hay pick, rojo si live, default si no
+                                                    if _live:
+                                                        _card_border = "#ff444466"
+                                                    elif _pick_color:
+                                                        _card_border = f"{_pick_color}66"
+                                                    else:
+                                                        _card_border = "#c9a84c1a"
                                                     _pick_html = (
-                                                        f"<div style='font-size:.6rem;color:#FFD700;font-weight:700;"
-                                                        f"margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
-                                                        f"💎 {_pick_lbl[:22]}</div>"
-                                                    ) if _pick_lbl else ""
-                                                    st.markdown(f"""<div style='background:#0d0900;border:1px solid {_border};
+                                                        f"<div style='margin-top:6px;background:{_pick_color}15;"
+                                                        f"border:2px solid {_pick_color}99;border-radius:6px;"
+                                                        f"padding:5px 8px'>"
+                                                        f"<div style='display:flex;align-items:center;gap:5px'>"
+                                                        f"<span style='font-size:1.1rem;line-height:1'>{_pick_emoji}</span>"
+                                                        f"<span style='font-size:.78rem;font-weight:900;color:{_pick_color};"
+                                                        f"letter-spacing:.02em;line-height:1.2;word-break:break-word'>{_pick_lbl}</span>"
+                                                        f"<span style='font-size:.72rem;font-weight:900;color:{_pick_color};margin-left:auto;white-space:nowrap'>"
+                                                        f"{_pick_prob*100:.0f}%</span>"
+                                                        f"</div></div>"
+                                                    ) if _pick_lbl and _pick_color else ""
+                                                    st.markdown(f"""<div style='background:#0d0900;border:1px solid {_card_border};
 border-radius:8px;padding:7px 8px;margin-bottom:2px'>
   <div style='font-size:.58rem;color:{"#ff4444" if _live else "#6b5a3a"};font-weight:700;letter-spacing:.1em'>{_sc or _m.get("hora","")}</div>
-  <div style='font-size:.72rem;color:#ccc;font-weight:700;line-height:1.2;margin:2px 0'>{_home_short}</div>
-  <div style='font-size:.58rem;color:#6b5a3a;margin:1px 0'>vs</div>
-  <div style='font-size:.72rem;color:#ccc;font-weight:700;line-height:1.2'>{_away_short}</div>
+  <div style='font-size:.65rem;color:#ccc;font-weight:700;line-height:1.3;margin:2px 0;word-break:break-word'>{_home_short}</div>
+  <div style='font-size:.55rem;color:#6b5a3a;margin:1px 0'>vs</div>
+  <div style='font-size:.65rem;color:#ccc;font-weight:700;line-height:1.3;word-break:break-word'>{_away_short}</div>
   <div style='display:flex;gap:3px;margin-top:5px'>
     <div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>
       <div style='font-size:.75rem;font-weight:{_bh};color:{_ch}'>{_ph2*100:.0f}%</div>
