@@ -52,33 +52,36 @@ LIGAS = {
 
 # Mapa slug → (país, bandera, orden) para agrupar cartelera
 _COUNTRY_MAP = {
-    # Europa top
-    "eng.1":("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿",1), "eng.2":("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿",1), "eng.fa":("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿",1),
-    "esp.1":("España","🇪🇸",2),        "esp.2":("España","🇪🇸",2),
-    "ger.1":("Alemania","🇩🇪",3),       "ger.2":("Alemania","🇩🇪",3),
-    "ita.1":("Italia","🇮🇹",4),
-    "fra.1":("Francia","🇫🇷",5),
-    "ned.1":("Holanda","🇳🇱",6),
-    "por.1":("Portugal","🇵🇹",7),
-    "sco.1":("Escocia","🏴󠁧󠁢󠁳󠁣󠁴󠁿",8),
-    "bel.1":("Bélgica","🇧🇪",9),
-    "tur.1":("Turquía","🇹🇷",10),
-    "gre.1":("Grecia","🇬🇷",11),
-    "den.1":("Dinamarca","🇩🇰",12),
-    "nor.1":("Noruega","🇳🇴",13),
-    # América
-    "mex.1":("México","🇲🇽",20),        "mex.2":("México","🇲🇽",20),
-    "usa.1":("Estados Unidos","🇺🇸",21),
-    "bra.1":("Brasil","🇧🇷",22),
-    "arg.1":("Argentina","🇦🇷",23),
-    "col.1":("Colombia","🇨🇴",24),
-    "chi.1":("Chile","🇨🇱",25),
-    # Internacional
-    "uefa.champions":("UEFA","🏆",30),
-    "uefa.europa":("UEFA","🏆",30),
-    "uefa.europa.conf":("UEFA","🏆",30),
-    # Resto
-    "sau.1":("Arabia Saudí","🇸🇦",40),
+    # slug → (pais, bandera, continente)
+    # Continentes: "🌍 Europa", "🌎 América", "🌏 Asia / Medio Oriente", "🏆 Internacional"
+    "eng.1":  ("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🌍 Europa"),
+    "eng.2":  ("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🌍 Europa"),
+    "eng.fa": ("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🌍 Europa"),
+    "esp.1":  ("España","🇪🇸","🌍 Europa"),
+    "esp.2":  ("España","🇪🇸","🌍 Europa"),
+    "ger.1":  ("Alemania","🇩🇪","🌍 Europa"),
+    "ger.2":  ("Alemania","🇩🇪","🌍 Europa"),
+    "ita.1":  ("Italia","🇮🇹","🌍 Europa"),
+    "fra.1":  ("Francia","🇫🇷","🌍 Europa"),
+    "ned.1":  ("Holanda","🇳🇱","🌍 Europa"),
+    "por.1":  ("Portugal","🇵🇹","🌍 Europa"),
+    "sco.1":  ("Escocia","🏴󠁧󠁢󠁳󠁣󠁴󠁿","🌍 Europa"),
+    "bel.1":  ("Bélgica","🇧🇪","🌍 Europa"),
+    "tur.1":  ("Turquía","🇹🇷","🌍 Europa"),
+    "gre.1":  ("Grecia","🇬🇷","🌍 Europa"),
+    "den.1":  ("Dinamarca","🇩🇰","🌍 Europa"),
+    "nor.1":  ("Noruega","🇳🇴","🌍 Europa"),
+    "mex.1":  ("México","🇲🇽","🌎 América"),
+    "mex.2":  ("México","🇲🇽","🌎 América"),
+    "usa.1":  ("Estados Unidos","🇺🇸","🌎 América"),
+    "bra.1":  ("Brasil","🇧🇷","🌎 América"),
+    "arg.1":  ("Argentina","🇦🇷","🌎 América"),
+    "col.1":  ("Colombia","🇨🇴","🌎 América"),
+    "chi.1":  ("Chile","🇨🇱","🌎 América"),
+    "sau.1":  ("Arabia Saudí","🇸🇦","🌏 Asia / Medio Oriente"),
+    "uefa.champions": ("UEFA Champions","🏆","🏆 Internacional"),
+    "uefa.europa":    ("UEFA Europa","🏆","🏆 Internacional"),
+    "uefa.europa.conf":("UEFA Conference","🏆","🏆 Internacional"),
 }
 
 def _slug_from_liga_name(liga_name):
@@ -89,20 +92,16 @@ def _slug_from_liga_name(liga_name):
     return ""
 
 def _country_for_liga(liga_str):
-    """Devuelve (pais, bandera, orden) dado un string de liga (slug o nombre)."""
-    # Try direct slug match
+    """Devuelve (pais, bandera, continente) dado un string de liga (slug o nombre)."""
     if liga_str in _COUNTRY_MAP:
         return _COUNTRY_MAP[liga_str]
-    # Try slug from name
     slug = _slug_from_liga_name(liga_str)
     if slug in _COUNTRY_MAP:
         return _COUNTRY_MAP[slug]
-    # Fallback: scan for prefix
-    for slug, val in _COUNTRY_MAP.items():
-        prefix = slug.split(".")[0]
-        if liga_str.lower().startswith(prefix):
+    for s, val in _COUNTRY_MAP.items():
+        if liga_str.lower().startswith(s.split(".")[0]):
             return val
-    return ("Otras Ligas", "🌍", 99)
+    return ("Otras Ligas", "🌍", "🌍 Otras")
 
 
 # ══════════════════════════════════════════════════════════
@@ -11714,12 +11713,19 @@ if st.session_state["view"] == "cartelera":
             else:
                 from collections import defaultdict
 
-                # Agrupar: fecha → (orden,pais,bandera) → liga → partidos
-                fut_por_fecha = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+                # Agrupar: fecha → continente → (pais,bandera) → liga_display → partidos
+                # Todo A→Z dentro de cada nivel
+                from collections import defaultdict as _dd
+                fut_por_fecha = _dd(lambda: _dd(lambda: _dd(lambda: _dd(list))))
+                _FLAGS_STRIP = ["🇪🇸","🇩🇪","🇮🇹","🇫🇷","🇳🇱","🇵🇹","🇲🇽","🇺🇸","🇧🇷","🇦🇷","🇨🇴","🇨🇱","🇸🇦","🇹🇷","🇬🇷","🇩🇰","🇳🇴","🇧🇪","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🏴󠁧󠁢󠁳󠁣󠁴󠁿","🏆"]
                 for _m in matches:
                     _slug = _m.get("slug", _m.get("league",""))
-                    _pais, _bandera, _orden = _country_for_liga(_slug or _m.get("league",""))
-                    fut_por_fecha[_m["fecha"]][(_orden, _pais, _bandera)][_m.get("league","")].append(_m)
+                    _pais, _bandera, _cont = _country_for_liga(_slug or _m.get("league",""))
+                    _liga_disp = LIGAS.get(_slug, _m.get("league", _slug or ""))
+                    _liga_clean2 = _liga_disp
+                    for _fl in _FLAGS_STRIP:
+                        _liga_clean2 = _liga_clean2.replace(_fl,"").strip()
+                    fut_por_fecha[_m["fecha"]][_cont][(_pais, _bandera)][_liga_clean2].append(_m)
 
                 def _fecha_lbl_fut(f):
                     try:
@@ -11734,39 +11740,43 @@ if st.session_state["view"] == "cartelera":
                     _total_fecha = sum(sum(len(ms) for ms in ld.values()) for ld in _paises_dict.values())
                     _is_hoy = _fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
                     with st.expander(f"{_fecha_lbl_fut(_fecha)}  ·  {_total_fecha} partidos", expanded=_is_hoy and _fi==0):
-                        for (_orden, _pais, _bandera) in sorted(_paises_dict.keys()):
-                            _ligas_del_pais = _paises_dict[(_orden, _pais, _bandera)]
-                            _total_pais = sum(len(ms) for ms in _ligas_del_pais.values())
-                            _live_pais = any(m["state"]=="in" for ld in _ligas_del_pais.values() for m in ld)
-                            _live_dot = "🔴 " if _live_pais else ""
-                            with st.expander(f"{_live_dot}{_bandera} {_pais}  ·  {_total_pais} partidos", expanded=False):
-                                for _liga, _lms in sorted(_ligas_del_pais.items()):
+                        # Continente → País → Liga (todo A→Z)
+                        _continentes_dict = _paises_dict
+                        for _cont in sorted(_continentes_dict.keys()):
+                            _paises_en_cont = _continentes_dict[_cont]
+                            _total_cont = sum(sum(len(ms) for ms in pd.values()) for pd in _paises_en_cont.values())
+                            _live_cont = any(m["state"]=="in" for pd in _paises_en_cont.values() for ld in pd.values() for m in ld)
+                            _live_dot_c = "🔴 " if _live_cont else ""
+                            with st.expander(f"{_live_dot_c}{_cont}  ·  {_total_cont} partidos", expanded=_live_cont):
+                              for (_pais, _bandera) in sorted(_paises_en_cont.keys(), key=lambda x: x[0].lower()):
+                                _ligas_del_pais = _paises_en_cont[(_pais, _bandera)]
+                                _total_pais = sum(len(ms) for ms in _ligas_del_pais.values())
+                                _live_pais = any(m["state"]=="in" for ld in _ligas_del_pais.values() for m in ld)
+                                _live_dot = "🔴 " if _live_pais else ""
+                                with st.expander(f"{_live_dot}{_bandera} {_pais}  ·  {_total_pais} partidos", expanded=False):
+                                  for _liga_clean, _lms in sorted(_ligas_del_pais.items(), key=lambda x: x[0].lower()):
                                     _n_live = sum(1 for m in _lms if m["state"]=="in")
                                     _n_pre  = sum(1 for m in _lms if m["state"]=="pre")
                                     _n_post = sum(1 for m in _lms if m["state"]=="post")
                                     _live_badge = "🔴 " if _n_live>0 else ""
-                                    _liga_display = LIGAS.get(_liga, _liga)
-                                    _liga_clean = _liga_display
-                                    for _flag in ["🇪🇸","🇩🇪","🇮🇹","🇫🇷","🇳🇱","🇵🇹","🇲🇽","🇺🇸","🇧🇷","🇦🇷","🇨🇴","🇨🇱","🇸🇦","🇹🇷","🇬🇷","🇩🇰","🇳🇴","🇧🇪","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🏴󠁧󠁢󠁳󠁣󠁴󠁿","🏆"]:
-                                        _liga_clean = _liga_clean.replace(_flag,"").strip()
                                     _count_str = f"({_n_pre+_n_live}" + (" 🔴" if _n_live else "") + (f" · {_n_post} FT" if _n_post else "") + ")"
                                     with st.expander(f"{_live_badge}{_liga_clean}  {_count_str}", expanded=_n_live>0):
-                                        _post_ms = [m for m in _lms if m["state"]=="post"]
-                                        _pre_ms  = [m for m in _lms if m["state"]!="post"]
-                                        for _m in _post_ms:
-                                            _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
-                                            _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
-                                            _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
-                                            if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}",
-                                                         key=f"fut_post_{_m.get('id',_m['home'][:4]+_m['away'][:4]+_sf)}", use_container_width=True):
-                                                st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                                st.session_state["view"] = "analisis"
-                                                st.rerun()
-                                        for _pi in range(0, len(_pre_ms), 2):
-                                            _pair = _pre_ms[_pi:_pi+2]
-                                            _cols = st.columns(len(_pair))
-                                            for _col, _m in zip(_cols, _pair):
-                                                with _col:
+                                      _post_ms = [m for m in _lms if m["state"]=="post"]
+                                      _pre_ms  = [m for m in _lms if m["state"]!="post"]
+                                      for _m in _post_ms:
+                                          _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
+                                          _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
+                                          _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
+                                          if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}",
+                                                       key=f"fut_post_{_m.get('id',_m['home'][:4]+_m['away'][:4]+_sf)}", use_container_width=True):
+                                              st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                              st.session_state["view"] = "analisis"
+                                              st.rerun()
+                                      for _pi in range(0, len(_pre_ms), 2):
+                                          _pair = _pre_ms[_pi:_pi+2]
+                                          _cols = st.columns(len(_pair))
+                                          for _col, _m in zip(_cols, _pair):
+                                              with _col:
                                                     _live = _m["state"] == "in"
                                                     _sc   = f"🔴 {_m['score_h']}-{_m['score_a']}" if _live and _m.get("score_h") is not None else ""
                                                     try:
