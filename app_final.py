@@ -2216,16 +2216,17 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
         conf_c   = "#00ff88" if conf=="alta" else ("#FFD700" if conf=="media" else "#aaa")
         
         st.markdown(
-            f"<div style='background:#0d0900;border:1px solid #aa00ff22;border-radius:6px;padding:5px 9px;margin:3px 0'>",
-            f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px'>",
-            f"<span style='font-size:0.825rem;color:#aa00ff;font-weight:900'>🦅 SHARP EST. IA</span>",
-            f"<span style='font-size:1.08rem;font-weight:900;color:#aaa'>👥 {est_pub:.0f}%</span>",
-            f"<span style='font-size:1.08rem;font-weight:900;color:#aa00ff'>🦅 {est_shrp:.0f}%</span>",
-            f"<span style='font-size:1.05rem;font-weight:900;color:{conf_c}'>📊 {conf.upper()}</span>",
-            + (f"<span style='font-size:0.975rem;color:#00ccff'>📈 {line_dir}</span>" if line_dir else ""),
-            f"</div>",
-            + (f"<div style='font-size:0.975rem;color:#5a4a2e;line-height:1.4'>💭 {reason}</div>" if reason else ""),
-            + f"</div>", unsafe_allow_html=True)
+            f"<div style='background:#0d0900;border:1px solid #aa00ff22;border-radius:6px;padding:5px 9px;margin:3px 0'>"
+            f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px'>"
+            f"<span style='font-size:0.825rem;color:#aa00ff;font-weight:900'>🦅 SHARP EST. IA</span>"
+            f"<span style='font-size:1.08rem;font-weight:900;color:#aaa'>👥 {est_pub:.0f}%</span>"
+            f"<span style='font-size:1.08rem;font-weight:900;color:#aa00ff'>🦅 {est_shrp:.0f}%</span>"
+            f"<span style='font-size:1.05rem;font-weight:900;color:{conf_c}'>📊 {conf.upper()}</span>"
+            + (f"<span style='font-size:0.975rem;color:#00ccff'>📈 {str(line_dir)}</span>" if line_dir else "")
+            + f"</div>"
+            + (f"<div style='font-size:0.975rem;color:#5a4a2e;line-height:1.4'>💭 {str(reason)}</div>" if reason else "")
+            + f"</div>",
+            unsafe_allow_html=True)
     
     # ── MARKET INTELLIGENCE ──
     mkt = inv.get("market_intelligence", {})
@@ -15134,7 +15135,7 @@ if st.session_state["view"] == "cartelera":
                                                                     if _bl_d >= 0.64 and _min2 < 65: _lv_opts.append(('Empate', _bl_d))
                                                                 if _goals_n < 3 and _o25_l >= 0.64: _lv_opts.append(('Over 2.5', _o25_l))
                                                                 _u25_l = 1 - _o25_l
-                                                                if _goals_n >= 2 and _u25_l >= 0.64: _lv_opts.append(('Under 2.5', _u25_l))
+                                                                if _goals_n <= 1 and _u25_l >= 0.64: _lv_opts.append(('Under 2.5', _u25_l))
                                                                 if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.64: _lv_opts.append(('Ambos Anotan', _btts_l))
                                                                 if _goals_n < 2 and _min2 < 70:
                                                                     _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)*0.55
