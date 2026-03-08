@@ -64,40 +64,37 @@ p,span,div,label,li,td,th,small,strong,em,b,h1,h2,h3,h4,
   border:none!important;border-radius:12px!important;font-weight:700!important;
   padding:11px 24px!important;box-shadow:0 4px 20px #7c00ff44!important}
 .stButton>button:hover{opacity:.85!important;transform:translateY(-2px)!important}
-.stTabs [data-baseweb="tab"]{color:#666!important;font-weight:700!important;font-size:.9rem!important;padding:10px 14px!important}
+.stTabs [data-baseweb="tab"]{color:#666!important;font-weight:700!important;font-size:.9rem!important;padding:5px 8px!important}
 .stTabs [aria-selected="true"]{color:#FFD700!important;border-bottom:3px solid #FFD700!important}
 .streamlit-expanderHeader{background:#0d0d2e!important;border:1px solid #252555!important;
   border-radius:12px!important;padding:14px 20px!important;font-weight:700!important;color:#EEEEFF!important}
 .streamlit-expanderContent{background:#0a0a26!important;border:1px solid #252555!important;
   border-top:none!important;border-radius:0 0 12px 12px!important}
-.acard{background:#0d0d2e;border:1px solid #252555;border-radius:16px;padding:20px 24px;margin:10px 0}
-.shdr{font-size:.8rem;font-weight:700;color:#FFD700!important;text-transform:uppercase;
-  letter-spacing:.14em;margin:20px 0 10px;display:flex;align-items:center;gap:8px}
+.acard{background:#0a0a1e;border:1px solid #151540;border-radius:7px;padding:7px 9px;margin:3px 0}
+.shdr{font-size:.6rem;font-weight:700;color:#555!important;text-transform:uppercase;letter-spacing:.1em;margin:8px 0 4px;padding-left:2px}
 .shdr::after{content:'';flex:1;height:1px;background:#252555}
-.mbox{background:#0d0d2e;border:1px solid #252555;border-radius:12px;padding:16px 12px;text-align:center}
-.mval{font-size:1.8rem;font-weight:900;line-height:1.1}
-.mlbl{font-size:.72rem;color:#666!important;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}
+.mbox{background:#07071a;border-radius:5px;padding:5px 4px;text-align:center}
+.mval{font-size:.82rem;font-weight:900;margin-bottom:1px}
+.mlbl{font-size:.55rem;color:#555}
 .bw{background:#00ff8825;border:1px solid #00ff88;border-radius:6px;padding:3px 10px;font-size:.85rem;font-weight:700;color:#00ff88!important;margin:2px;display:inline-block}
 .bd{background:#FFD70025;border:1px solid #FFD700;border-radius:6px;padding:3px 10px;font-size:.85rem;font-weight:700;color:#FFD700!important;margin:2px;display:inline-block}
 .bl{background:#ff444425;border:1px solid #ff4444;border-radius:6px;padding:3px 10px;font-size:.85rem;font-weight:700;color:#ff4444!important;margin:2px;display:inline-block}
-.diamond-hero{background:linear-gradient(135deg,#120030,#001a40,#1a1000);border:2px solid #FFD700;
-  border-radius:22px;padding:30px 36px;margin:10px 0;position:relative;overflow:hidden}
+.diamond-hero{background:linear-gradient(135deg,#120030,#001a40,#1a1000);border:1px solid #FFD70055;border-radius:9px;padding:9px 11px;margin:5px 0;position:relative;overflow:hidden}
 .diamond-hero::before{content:'💎';position:absolute;right:24px;top:16px;font-size:5rem;opacity:.1}
-.parlay-hero{background:linear-gradient(135deg,#001a2e,#001a10);border:2px solid #00ccff;border-radius:22px;padding:28px 32px;margin:10px 0}
+.parlay-hero{background:linear-gradient(135deg,#001428,#001a0f);border:1px solid #00ccff22;border-radius:7px;padding:7px 9px;margin:4px 0}
 .trilay-card{background:linear-gradient(135deg,#1a0030,#000e2e);border:2px solid #aa00ff;border-radius:18px;padding:20px 24px;margin:10px 0}
 .pato-card{background:linear-gradient(135deg,#001a0e,#0a1a00);border:2px solid #39d353;border-radius:18px;padding:18px 22px;margin:8px 0;transition:.2s}
 .pato-card:hover{border-color:#7fff00;transform:translateY(-2px)}
 .pato-hero{background:linear-gradient(135deg,#001008,#050f00);border:2px solid #39d353;border-radius:22px;padding:26px 32px;margin-bottom:20px}
-.mrow{background:#0d0d2e;border:1px solid #252555;border-radius:12px;padding:14px 18px;margin:5px 0}
+.mrow{background:#0d0d2e;border:1px solid #252555;border-radius:7px;padding:7px 10px 18px;margin:5px 0}
 .mrow:hover{background:#12123a;border-color:#7c00ff55}
 .bot-card{background:linear-gradient(135deg,#001a2e,#0d0030);border:2px solid #229ED9;border-radius:18px;padding:20px 24px;margin:10px 0}
-.pbar{height:8px;border-radius:4px;background:#1a1a40;overflow:hidden;margin-top:4px}
-.hist-w{background:#00ff8815;border:1px solid #00ff8844;border-radius:10px;padding:10px 14px;margin:4px 0}
-.hist-l{background:#ff444415;border:1px solid #ff444444;border-radius:10px;padding:10px 14px;margin:4px 0}
-.hist-p{background:#FFD70015;border:1px solid #FFD70044;border-radius:10px;padding:10px 14px;margin:4px 0}
-.conf-pill{border-radius:20px;padding:4px 12px;font-size:.78rem;font-weight:700;display:inline-block;margin:2px}
-.stand-row{display:grid;grid-template-columns:28px 1fr 36px 36px 36px 36px 50px;gap:6px;
-  align-items:center;padding:8px 4px;border-bottom:1px solid #151530;font-size:.85rem}
+.pbar{height:4px;border-radius:4px;background:#1a1a40;overflow:hidden;margin-top:4px}
+.hist-w{background:#00ff8815;border:1px solid #00ff8844;border-radius:10px;padding:5px 8px;margin:4px 0}
+.hist-l{background:#ff444415;border:1px solid #ff444444;border-radius:10px;padding:5px 8px;margin:4px 0}
+.hist-p{background:#FFD70015;border:1px solid #FFD70044;border-radius:10px;padding:5px 8px;margin:4px 0}
+.conf-pill{border-radius:8px;padding:4px 12px;font-size:.78rem;font-weight:700;display:inline-block;margin:2px}
+.stand-row{display:grid;grid-template-columns:22px 1fr 26px 30px 26px 26px 30px;gap:2px;padding:3px 6px;font-size:.62rem;align-items:center}
 /* ── INLINE CODE tags — dark always ── */
 code{background:#1a1a40!important;color:#00ccff!important;border-radius:5px!important;
   padding:2px 7px!important;font-size:.85em!important;border:1px solid #252555!important}
@@ -144,7 +141,7 @@ div[data-baseweb="select"] input{color:#EEEEFF!important}
 [data-testid="stExpander"] summary:hover,
 [data-testid="stExpander"] summary:hover *{color:#FFD700!important}
 [data-testid="stExpander"] > details > summary{
-  background:#0d0d2e!important;border-radius:12px!important;padding:12px 16px!important;color:#EEEEFF!important}
+  background:#0d0d2e!important;border-radius:12px!important;padding:6px 8px!important;color:#EEEEFF!important}
 /* Force all text inside expander header white */
 details > summary > div,
 details > summary > div *,
@@ -189,7 +186,7 @@ details > summary p{color:#EEEEFF!important}
   /* Standings */
   .stand-row{grid-template-columns:18px 1fr 26px 26px 26px 26px 38px!important;font-size:.7rem!important;padding:6px 2px!important}
   /* Expanders */
-  .streamlit-expanderHeader{padding:10px 14px!important;font-size:.85rem!important}
+  .streamlit-expanderHeader{padding:5px 8px!important;font-size:.85rem!important}
   /* Text overflow */
   .mrow div[style*="font-weight:700"]{font-size:.88rem!important;
     white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:58vw!important}
@@ -1566,12 +1563,8 @@ def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
     
     # Disclaimer
     st.markdown(
-        "<div style='background:#1a0a00;border:1px solid #ff440033;border-radius:10px;"
-        "padding:10px 16px;margin:4px 0 10px;font-size:.72rem;color:#ff9500'>"
-        "⚖️ <b>AVISO:</b> Este análisis detecta anomalías estadísticas en mercados de apuestas. "
-        "No acusa a ningún equipo, jugador o árbitro específico. Las señales son indicadores de "
-        "comportamiento inusual del mercado, no prueba de manipulación. Basado en metodología "
-        "académica pública (Forrest, Hill, Sportradar FDS)."
+        "<div style='font-size:.58rem;color:#555;padding:3px 0 5px;border-bottom:1px solid #111;margin-bottom:5px'>"
+        "⚖️ Detecta anomalías estadísticas en mercados — no acusa a equipos ni jugadores."
         "</div>", unsafe_allow_html=True)
     
     league_slug = game.get("slug","")
@@ -1603,28 +1596,18 @@ def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
     else: grd = "linear-gradient(90deg,#ff9500,#ff4444)"
     
     st.markdown(
-        f"<div style='background:#0d0d2e;border:2px solid {vc}44;border-radius:16px;padding:20px 22px;margin:8px 0'>"
-        f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px'>"
-        f"<div>"
-        f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.12em;margin-bottom:4px'>ÍNDICE DE ANOMALÍA DE MERCADO</div>"
-        f"<div style='font-size:1rem;font-weight:900;color:{vc}'>{analysis['verdict']}</div>"
+        f"<div style='background:#080816;border:1px solid {vc}33;border-radius:8px;padding:8px 10px;margin:4px 0'>"
+        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:5px'>"
+        f"<div style='flex:1'>"
+        f"<div style='font-size:.58rem;color:#444;font-weight:700;letter-spacing:.08em'>ANOMALÍA DE MERCADO</div>"
+        f"<div style='font-size:.82rem;font-weight:900;color:{vc}'>{analysis['verdict']}</div>"
         f"</div>"
-        f"<div style='text-align:center'>"
-        f"<div style='font-size:2.4rem;font-weight:900;color:{vc};line-height:1'>{sc:.0f}</div>"
-        f"<div style='font-size:.65rem;color:#555'>/100</div>"
+        f"<div style='font-size:1.3rem;font-weight:900;color:{vc}'>{sc:.0f}<span style='font-size:.6rem;color:#444'>/100</span></div>"
         f"</div>"
+        f"<div style='background:#1a1a40;border-radius:4px;height:5px;overflow:hidden;margin-bottom:4px'>"
+        f"<div style='width:{bar_pct}%;height:100%;background:{grd};border-radius:4px'></div>"
         f"</div>"
-        # Progress bar
-        f"<div style='background:#1a1a40;border-radius:6px;height:12px;overflow:hidden;margin:10px 0'>"
-        f"<div style='width:{bar_pct}%;height:100%;background:{grd};border-radius:6px;transition:.4s'></div>"
-        f"</div>"
-        f"<div style='display:flex;justify-content:space-between;font-size:.65rem;color:#444;margin-bottom:12px'>"
-        f"<span>0 — Limpio</span><span>25 — Bajo</span><span>50 — Medio</span><span>75 — Alto</span><span>100 — Crítico</span>"
-        f"</div>"
-        # Advice
-        f"<div style='background:#12122a;border-radius:8px;padding:10px 14px;font-size:.8rem;color:#aaa'>"
-        f"💡 <b style='color:#EEEEFF'>Recomendación:</b> {analysis['advice']}"
-        f"</div>"
+        f"<div style='font-size:.62rem;color:#555'>{analysis['advice'][:80]}{'…' if len(analysis['advice'])>80 else ''}</div>"
         f"</div>", unsafe_allow_html=True)
     
     # ── Señales ──
@@ -1640,13 +1623,13 @@ def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
             with st.expander(f"{cat} — {len(sigs)} señal{'es' if len(sigs)>1 else ''}", expanded=sc>=40):
                 for sig in sigs:
                     st.markdown(
-                        f"<div style='background:#07071a;border-left:3px solid {sig['color']};"
-                        f"border-radius:0 8px 8px 0;padding:10px 14px;margin:4px 0;"
-                        f"display:flex;gap:10px;align-items:flex-start'>"
-                        f"<div style='font-size:1.1rem;min-width:24px'>{sig['icon']}</div>"
-                        f"<div><div style='font-weight:700;font-size:.83rem;color:{sig['color']}'>{sig['label']}</div>"
-                        f"<div style='font-size:.75rem;color:#888;margin-top:3px;line-height:1.5'>{sig['desc']}</div>"
-                        f"</div></div>", unsafe_allow_html=True)
+                        f"<div style='background:#07071a;border-left:2px solid {sig['color']};"
+                        f"border-radius:0 4px 4px 0;padding:3px 8px;margin:2px 0;"
+                        f"display:flex;gap:6px;align-items:center'>"
+                        f"<span>{sig['icon']}</span>"
+                        f"<span style='font-weight:700;font-size:.7rem;color:{sig['color']}'>{sig['label']}</span>"
+                        f"<span style='font-size:.62rem;color:#666'>{sig['desc'][:55]}{'…' if len(sig['desc'])>55 else ''}</span>"
+                        f"</div>", unsafe_allow_html=True)
     else:
         st.markdown(
             "<div style='color:#555;font-size:.83rem;padding:10px;text-align:center'>"
@@ -1796,7 +1779,7 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
     if not inv:
         st.markdown(
             "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
-            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "padding:7px 9px;color:#555;font-size:.85rem'>"
             "⚠️ IA no disponible. Verifica ANTHROPIC_API_KEY en Streamlit secrets."
             "</div>", unsafe_allow_html=True)
         return
@@ -1820,20 +1803,20 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
     else: grd = "linear-gradient(90deg,#ff9500,#ff4444)"
     
     st.markdown(
-        f"<div style='background:#0d0d2e;border:2px solid {vc}55;border-radius:16px;"
+        f"<div style='background:#0d0d2e;border:2px solid {vc}55;border-radius:7px;"
         f"padding:18px 22px;margin:8px 0'>"
         f"<div style='font-size:.65rem;color:#555;font-weight:700;letter-spacing:.14em;margin-bottom:6px'>"
         f"🤖 INTELIGENCIA ARTIFICIAL — VEREDICTO</div>"
-        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:5px'>"
         f"<div style='font-size:1.1rem;font-weight:900;color:{vc}'>{ai_verdict}</div>"
         f"<div style='font-size:2rem;font-weight:900;color:{vc}'>{ai_score}</div>"
         f"</div>"
-        f"<div style='background:#1a1a40;border-radius:6px;height:8px;overflow:hidden;margin-bottom:12px'>"
-        f"<div style='width:{min(ai_score,100)}%;height:8px;background:{grd};border-radius:6px'></div>"
+        f"<div style='background:#1a1a40;border-radius:6px;height:4px;overflow:hidden;margin-bottom:5px'>"
+        f"<div style='width:{min(ai_score,100)}%;height:4px;background:{grd};border-radius:6px'></div>"
         f"</div>"
         f"<div style='font-size:.78rem;color:#aaa;margin-bottom:6px'>"
         f"⚠️ <b style='color:#ff9500'>Riesgo principal:</b> {ai_risk}</div>"
-        f"<div style='background:#12122a;border-radius:8px;padding:10px 14px;font-size:.8rem;color:#aaa'>"
+        f"<div style='background:#12122a;border-radius:8px;padding:5px 8px;font-size:.8rem;color:#aaa'>"
         f"💡 {ai_rec}</div>"
         f"</div>", unsafe_allow_html=True)
     
@@ -1870,7 +1853,7 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
                     if val and val.lower() not in ["n/a","ninguno","sin datos","none",""]:
                         st.markdown(
                             f"<div style='background:#07071a;border-left:3px solid #ff950055;"
-                            f"border-radius:0 8px 8px 0;padding:10px 14px;margin:4px 0;"
+                            f"border-radius:0 8px 8px 0;padding:5px 8px;margin:4px 0;"
                             f"font-size:.8rem;color:#aaa'>"
                             f"<b style='color:#ff9500'>{icon} {label}:</b> {val}</div>",
                             unsafe_allow_html=True)
@@ -1906,11 +1889,11 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
         conf_c   = "#00ff88" if conf=="alta" else ("#FFD700" if conf=="media" else "#aaa")
         
         st.markdown(
-            f"<div style='background:#0d0d2e;border:1px solid #aa00ff44;border-radius:14px;"
-            f"padding:16px 20px;margin:8px 0'>"
-            f"<div style='font-size:.7rem;color:#aa00ff;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>"
+            f"<div style='background:#0d0d2e;border:1px solid #aa00ff44;border-radius:7px;"
+            f"padding:8px 10px;margin:4px 0'>"
+            f"<div style='font-size:.7rem;color:#aa00ff;font-weight:700;letter-spacing:.1em;margin-bottom:5px'>"
             f"🦅 SHARP MONEY ESTIMADO POR IA</div>"
-            f"<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px'>"
+            f"<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:5px'>"
             # Público estimado
             f"<div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
             f"<div style='font-size:.65rem;color:#555;margin-bottom:4px'>👥 PÚBLICO LOCAL</div>"
@@ -1965,7 +1948,7 @@ def render_sharp_money(home, away, dp, mc, real_odds, game):
     if not real_odds:
         st.markdown(
             "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
-            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "padding:7px 9px;color:#555;font-size:.85rem'>"
             "🔌 Conecta <b style='color:#EEEEFF'>The Odds API</b> para activar el Sharp Money detector. "
             "Detectará: Steam moves · Reverse line movement · CLV · Divergencia sharp vs público."
             "</div>", unsafe_allow_html=True)
@@ -1989,30 +1972,29 @@ def render_sharp_money(home, away, dp, mc, real_odds, game):
     bar_dir = "left" if sc < 0 else "right"
     
     st.markdown(
-        f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:16px;padding:20px 22px;margin:8px 0'>"
-        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:14px'>"
-        f"<div style='font-size:1rem;font-weight:900;color:{bar_color}'>{analysis['verdict']}</div>"
-        f"<div style='font-size:1.6rem;font-weight:900;color:{bar_color}'>{'+' if sc>0 else ''}{sc}</div>"
+        f"<div style='background:#080816;border:1px solid #252555;border-radius:8px;padding:8px 10px;margin:4px 0'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>"
+        f"<div style='font-size:.82rem;font-weight:900;color:{bar_color}'>{analysis['verdict']}</div>"
+        f"<div style='font-size:1.1rem;font-weight:900;color:{bar_color}'>{'+' if sc>0 else ''}{sc}</div>"
         f"</div>"
-        f"<div style='background:#1a1a40;border-radius:6px;height:10px;overflow:hidden;margin-bottom:14px;position:relative'>"
+        f"<div style='background:#1a1a40;border-radius:4px;height:5px;overflow:hidden;margin-bottom:5px;position:relative'>"
         f"<div style='position:absolute;left:50%;top:0;bottom:0;width:1px;background:#252555'></div>"
         f"<div style='position:absolute;{'right:50%' if sc<0 else 'left:50%'};top:0;bottom:0;"
         f"width:{bar_w/2}%;background:{bar_color};opacity:.8'></div>"
         f"</div>"
-        f"<div style='display:flex;justify-content:space-between;font-size:.68rem;color:#555'>"
-        f"<span>🚫 Trampa pública</span><span>⚖️ Neutral</span><span>🦅 Sharp money</span></div>"
+        f"<div style='display:flex;justify-content:space-between;font-size:.58rem;color:#444'>"
+        f"<span>🚫 Trampa</span><span>⚖️ Neutral</span><span>🦅 Sharp</span></div>"
         f"</div>", unsafe_allow_html=True)
 
     # ── Señales detectadas ──
     if analysis["signals"]:
         for sig in analysis["signals"]:
             st.markdown(
-                f"<div style='background:#07071a;border:1px solid {sig['color']}33;"
-                f"border-left:3px solid {sig['color']};border-radius:10px;"
-                f"padding:10px 16px;margin:5px 0;display:flex;gap:12px;align-items:flex-start'>"
-                f"<div style='font-size:1.2rem'>{sig['icon']}</div>"
-                f"<div><div style='font-weight:700;font-size:.85rem;color:{sig['color']}'>{sig['label']}</div>"
-                f"<div style='font-size:.78rem;color:#aaa;margin-top:2px'>{sig['desc']}</div></div>"
+                f"<div style='background:#07071a;border-left:2px solid {sig['color']};border-radius:0 5px 5px 0;"
+                f"padding:4px 8px;margin:3px 0;display:flex;gap:6px;align-items:center'>"
+                f"<span style='font-size:.9rem'>{sig['icon']}</span>"
+                f"<div><span style='font-weight:700;font-size:.72rem;color:{sig['color']}'>{sig['label']}</span>"
+                f"<span style='font-size:.65rem;color:#777;margin-left:4px'>{sig['desc'][:60]}{'…' if len(sig['desc'])>60 else ''}</span></div>"
                 f"</div>", unsafe_allow_html=True)
     else:
         st.markdown(
@@ -2026,16 +2008,13 @@ def render_sharp_money(home, away, dp, mc, real_odds, game):
         if h_pct or a_pct:
             hc = "#00ff88" if h_pct > 55 else ("#ff4444" if h_pct < 35 else "#FFD700")
             st.markdown(
-                f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:10px;"
-                f"padding:12px 16px;margin:6px 0'>"
-                f"<div style='font-size:.7rem;color:#555;font-weight:700;margin-bottom:8px'>👥 % APUESTAS PÚBLICAS (SportsBookReview)</div>"
-                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px'>"
-                f"<div style='text-align:center'><div style='font-size:1.4rem;font-weight:900;color:{hc}'>{h_pct:.0f}%</div>"
-                f"<div style='font-size:.72rem;color:#aaa'>{home[:14]}</div></div>"
-                f"<div style='text-align:center'><div style='font-size:1.4rem;font-weight:900;color:#aaa'>{a_pct:.0f}%</div>"
-                f"<div style='font-size:.72rem;color:#aaa'>{away[:14]}</div></div></div>"
-                f"<div style='margin-top:8px;font-size:.7rem;color:#555'>"
-                f"{'⚠️ Público muy cargado en local — fade the public' if h_pct>70 else ('⚠️ Público muy cargado en visitante — fade the public' if h_pct<30 else '⚖️ Apuestas divididas')}</div>"
+                f"<div style='background:#080816;border:1px solid #252535;border-radius:6px;"
+                f"padding:6px 8px;margin:4px 0;display:flex;align-items:center;gap:10px'>"
+                f"<div style='font-size:.58rem;color:#444;font-weight:700;min-width:60px'>👥 PÚBLICO</div>"
+                f"<div style='flex:1;display:flex;gap:8px;align-items:center'>"
+                f"<span style='font-size:.88rem;font-weight:900;color:{hc}'>{home[:10]}: {h_pct:.0f}%</span>"
+                f"<span style='font-size:.88rem;font-weight:900;color:#aaa'>{away[:10]}: {a_pct:.0f}%</span></div>"
+                f"<div style='font-size:.62rem;color:#555'>{'⚠️ Fade' if h_pct>70 or h_pct<30 else '⚖️'}</div>"
                 f"</div>", unsafe_allow_html=True)
 
 
@@ -2046,21 +2025,12 @@ def render_odds_comparison(home, away, dp, mc, real_odds):
     if not real_odds:
         # Sin Odds API — mostrar mensaje con links visibles y dark input
         st.markdown(
-            "<div style='background:#0d0d2e;border:1px solid #7c00ff44;border-radius:14px;"
-            "padding:16px 20px'>"
-            "<div style='font-size:.78rem;color:#7c00ff;font-weight:700;letter-spacing:.1em;"
-            "margin-bottom:10px'>💰 CONECTA ODDS EN TIEMPO REAL</div>"
-            "<div style='font-size:.88rem;color:#aaa;line-height:1.6'>"
-            "Conecta <b style='color:#EEEEFF'>The Odds API</b> para comparar vs "
-            "<b style='color:#FFD700'>Bet365</b>, <b style='color:#FFD700'>Pinnacle</b> y más.<br>"
-            "<span style='color:#555'>Plan gratis: 500 requests/mes — más que suficiente.</span>"
-            "</div>"
-            "<div style='margin-top:12px;display:flex;gap:10px;flex-wrap:wrap'>"
+            "<div style='background:#080816;border:1px solid #7c00ff22;border-radius:6px;"
+            "padding:7px 10px;display:flex;align-items:center;gap:8px'>"
+            "<span style='font-size:.68rem;color:#555'>💰 Sin odds en tiempo real —</span>"
             "<a href='https://the-odds-api.com' target='_blank' "
-            "style='background:linear-gradient(135deg,#7c00ff,#00ccff);color:#fff!important;"
-            "padding:8px 18px;border-radius:10px;font-weight:700;font-size:.85rem;"
-            "text-decoration:none'>🔗 Registrarse gratis</a>"
-            "</div></div>"
+            "style='font-size:.68rem;color:#7c00ff;font-weight:700;text-decoration:none'>Conectar The Odds API →</a>"
+            "</div>"
             , unsafe_allow_html=True)
         # Input para pegar key — dark styled
         _new_key = st.text_input(
@@ -2080,9 +2050,9 @@ def render_odds_comparison(home, away, dp, mc, real_odds):
     probs = {"Local gana": dp["ph"], "Empate": dp["pd"], "Visita gana": dp["pa"]}
     bk_names = {"bet365":"Bet365","pinnacle":"Pinnacle","unibet":"Unibet","williamhill":"William Hill"}
     
-    header = (f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;overflow:hidden'>"
-              f"<div style='display:grid;grid-template-columns:120px repeat({len(real_odds)+2},1fr);"
-              f"gap:0;padding:10px 14px;background:#12123a;font-size:.75rem;font-weight:700;color:#555'>"
+    header = (f"<div style='background:#080816;border:1px solid #1a1a3a;border-radius:8px;overflow:hidden'>"
+              f"<div style='display:grid;grid-template-columns:90px repeat({len(real_odds)+2},1fr);"
+              f"gap:0;padding:5px 8px;background:#0d0d22;font-size:.6rem;font-weight:700;color:#444'>"
               f"<span>Resultado</span><span>Modelo</span>")
     for bk in real_odds: header += f"<span>{bk_names.get(bk,bk[:8])}</span>"
     header += "<span>Mejor Edge</span></div>"
@@ -2091,10 +2061,10 @@ def render_odds_comparison(home, away, dp, mc, real_odds):
     for label, prob in probs.items():
         key = "h" if "Local" in label else ("d" if "Empate" in label else "a")
         best_edge = 0; best_bk = ""
-        row = (f"<div style='display:grid;grid-template-columns:120px repeat({len(real_odds)+2},1fr);"
-               f"gap:0;padding:10px 14px;border-top:1px solid #151530;align-items:center'>")
-        row += f"<span style='font-weight:700;font-size:.85rem'>{label}</span>"
-        row += f"<span style='color:#7c00ff;font-weight:700'>{prob*100:.1f}%</span>"
+        row = (f"<div style='display:grid;grid-template-columns:90px repeat({len(real_odds)+2},1fr);"
+               f"gap:0;padding:4px 8px;border-top:1px solid #111;align-items:center'>")
+        row += f"<span style='font-weight:700;font-size:.68rem'>{label}</span>"
+        row += f"<span style='color:#7c00ff;font-weight:700;font-size:.72rem'>{prob*100:.1f}%</span>"
         for bk, odds in real_odds.items():
             odd = odds.get(key, 0)
             if odd > 1:
@@ -2250,7 +2220,7 @@ def render_history():
     pct    = round(wins/total*100) if total>0 else 0
     # Stats header
     st.markdown(
-        f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px'>"
+        f"<div style='display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px'>"
         f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{wins}</div><div class='mlbl'>Ganados ✅</div></div>"
         f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{losses}</div><div class='mlbl'>Perdidos ❌</div></div>"
         f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{pend}</div><div class='mlbl'>Pendientes ⏳</div></div>"
@@ -3576,8 +3546,8 @@ def render_resultados_tab():
 
     st.markdown("""
     <div style='background:linear-gradient(135deg,#0a001a,#001a0a);
-    border:2px solid #00ff8855;border-radius:16px;padding:14px 18px;
-    margin-bottom:12px;display:flex;align-items:center;gap:12px'>
+    border:2px solid #00ff8855;border-radius:7px;padding:7px 9px;
+    margin-bottom:5px;display:flex;align-items:center;gap:5px'>
     <div style='font-size:2.2rem'>🤖</div>
     <div>
       <div style='font-size:1.1rem;font-weight:900;color:#00ff88;letter-spacing:.06em'>VILLAR</div>
@@ -3646,15 +3616,15 @@ def render_resultados_tab():
     def _sp_pct(ok, fail): return f"{round(ok/(ok+fail)*100)}%" if ok+fail>0 else "–"
     st.markdown(
         f"<div style='background:linear-gradient(135deg,#07071a,#0a0a2e);"
-        f"border-radius:14px;padding:16px 18px;margin-bottom:14px;"
+        f"border-radius:8px;padding:8px 10px;margin-bottom:5px;"
         f"border:2px solid {_bar_c_hdr}88'>"
         # Header
         f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
-        f"letter-spacing:.12em;margin-bottom:12px'>🤖 VILLAR — MODELO AUDITADO · TODOS LOS DEPORTES</div>"
+        f"letter-spacing:.12em;margin-bottom:5px'>🤖 VILLAR — MODELO AUDITADO · TODOS LOS DEPORTES</div>"
         # Big numbers
-        f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px'>"
+        f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:5px'>"
         f"<div style='text-align:center;background:#00ff8810;border-radius:10px;padding:10px 4px'>"
-        f"<div style='font-size:2rem;font-weight:900;color:#00ff88'>{_total_ok}</div>"
+        f"<div style='font-size:1.05rem;font-weight:900;color:#00ff88'>{_total_ok}</div>"
         f"<div style='font-size:.7rem;color:#555'>✅ Acertados</div></div>"
         f"<div style='text-align:center;background:#ff444410;border-radius:10px;padding:10px 4px'>"
         f"<div style='font-size:2rem;font-weight:900;color:#ff4444'>{_total_fail}</div>"
@@ -3664,7 +3634,7 @@ def render_resultados_tab():
         f"<div style='font-size:.7rem;color:#555'>Acierto global</div></div>"
         f"</div>"
         # Barra global
-        f"<div style='background:#0d0d2e;border-radius:6px;height:8px;overflow:hidden;margin-bottom:12px'>"
+        f"<div style='background:#0d0d2e;border-radius:6px;height:4px;overflow:hidden;margin-bottom:5px'>"
         f"<div style='width:{_pct_all}%;height:100%;background:{_bar_c_hdr};border-radius:6px'></div></div>"
         # Desglose por deporte
         f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:6px'>"
@@ -4214,7 +4184,7 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
     if not audit:
         st.markdown(
             "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:12px;"
-            "padding:14px 18px;color:#555;font-size:.85rem'>"
+            "padding:7px 9px;color:#555;font-size:.85rem'>"
             "⚠️ El Papa no pudo auditar. Verifica conexión API."
             "</div>", unsafe_allow_html=True)
         return
@@ -4252,13 +4222,13 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
     
     # ── SELLO PRINCIPAL ──
     st.markdown(
-        f"<div style='background:{sg};border:2px solid {sc};border-radius:20px;"
+        f"<div style='background:{sg};border:2px solid {sc};border-radius:8px;"
         f"padding:22px 24px;margin:12px 0;position:relative;overflow:hidden'>"
         # Watermark
         f"<div style='position:absolute;right:-10px;top:-10px;font-size:6rem;"
         f"opacity:.04;color:{sc};font-weight:900;line-height:1'>{si}</div>"
         # Header
-        f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px'>"
         f"<div>"
         f"<div style='font-size:.65rem;color:#555;font-weight:700;letter-spacing:.2em;margin-bottom:4px'>"
         f"✝ EL PAPA DE EINSTEIN — AUDITORÍA SUPREMA</div>"
@@ -4271,12 +4241,12 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
         f"</div>"
         f"</div>"
         # Confianza bar
-        f"<div style='background:#1a1a40;border-radius:4px;height:6px;overflow:hidden;margin-bottom:14px'>"
+        f"<div style='background:#1a1a40;border-radius:4px;height:6px;overflow:hidden;margin-bottom:5px'>"
         f"<div style='width:{confianza}%;height:6px;"
         f"background:{'#00ff88' if confianza>=75 else ('#FFD700' if confianza>=50 else '#ff4444')}"
         f";border-radius:4px'></div></div>"
         # Resumen
-        f"<div style='font-size:.85rem;color:#ccc;line-height:1.7;margin-bottom:12px'>"
+        f"<div style='font-size:.85rem;color:#ccc;line-height:1.7;margin-bottom:5px'>"
         f"📋 {resumen}</div>"
         # Advertencia
         + (f"<div style='background:#2a0000;border:1px solid #ff444455;border-radius:8px;"
@@ -4301,25 +4271,25 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
     gcp = grade_colors.get(calif_papa,"#aaa")
     
     calific_html = (
-        "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;"
-        "padding:16px 20px;margin:8px 0'>"
-        "<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>"
+        "<div style='background:#0d0d2e;border:1px solid #252555;border-radius:7px;"
+        "padding:8px 10px;margin:4px 0'>"
+        "<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em;margin-bottom:5px'>"
         "📊 CALIFICACIÓN: EINSTEIN vs PAPA</div>"
         f"<div style='display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center'>"
-        f"<div style='background:#07071a;border-radius:12px;padding:14px;text-align:center'>"
+        f"<div style='background:#07071a;border-radius:7px;padding:7px 10px;text-align:center'>"
         f"<div style='font-size:.65rem;color:#555;margin-bottom:6px'>🧠 EINSTEIN</div>"
         f"<div style='font-size:3rem;font-weight:900;color:{gce};line-height:1'>{letra_e}</div>"
         f"<div style='font-size:.75rem;color:#555;margin-top:4px'>{pts_e}/100</div>"
         f"</div>"
         f"<div style='font-size:1.5rem;text-align:center;color:{change_color}'>"
         f"{'→' if not changed else ('↑' if pts_papa>pts_e else '↓')}</div>"
-        f"<div style='background:#07071a;border:2px solid {gcp}44;border-radius:12px;padding:14px;text-align:center'>"
+        f"<div style='background:#07071a;border:2px solid {gcp}44;border-radius:7px;padding:7px 10px;text-align:center'>"
         f"<div style='font-size:.65rem;color:#555;margin-bottom:6px'>✝ EL PAPA</div>"
         f"<div style='font-size:3rem;font-weight:900;color:{gcp};line-height:1'>{calif_papa}</div>"
         f"<div style='font-size:.75rem;color:#555;margin-top:4px'>{pts_papa}/100</div>"
         f"</div>"
         f"</div>"
-        + (f"<div style='margin-top:12px;padding:10px 14px;background:#12122a;border-radius:8px;"
+        + (f"<div style='margin-top:12px;padding:5px 8px;background:#12122a;border-radius:8px;"
            f"font-size:.8rem;color:#aaa;line-height:1.6'>"
            f"<b style='color:{change_color}'>{'🔄 CAMBIO JUSTIFICADO' if changed else '✅ CALIFICACIÓN CONFIRMADA'}:</b> "
            f"{justif}</div>" if justif else "")
@@ -4383,7 +4353,7 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
         if errs_lec and errs_lec.lower() not in ["ninguno","none",""]:
             st.markdown(
                 f"<div style='background:#1a0000;border:1px solid #ff444455;border-radius:10px;"
-                f"padding:12px 16px;margin:6px 0;font-size:.82rem;color:#ff4444'>"
+                f"padding:6px 8px;margin:6px 0;font-size:.82rem;color:#ff4444'>"
                 f"🔍 <b>ERROR DE LECTURA:</b> {errs_lec}</div>", unsafe_allow_html=True)
 
     # ── PROBABILIDAD REAL ──
@@ -4399,7 +4369,7 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
             diff = pb_papa - pb_ein
             diff_c = "#00ff88" if abs(diff) < 2 else ("#ff9500" if abs(diff) < 5 else "#ff4444")
             st.markdown(
-                f"<div style='display:flex;gap:12px;margin-bottom:10px'>"
+                f"<div style='display:flex;gap:5px;margin-bottom:10px'>"
                 f"<div style='flex:1;background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
                 f"<div style='font-size:.65rem;color:#555'>🧠 Einstein dice</div>"
                 f"<div style='font-size:1.4rem;font-weight:900;color:#aaa'>{pb_ein:.1f}%</div></div>"
@@ -4426,7 +4396,7 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
         sp_c = {"favorable":"#00ff88","neutral":"#FFD700","contrario":"#ff4444","desconocido":"#555"}.get(sp,"#aaa")
         st.markdown(
             f"<div style='background:#0d0d2e;border:1px solid {sp_c}44;border-left:3px solid {sp_c};"
-            f"border-radius:0 10px 10px 0;padding:10px 16px;margin:6px 0;font-size:.82rem'>"
+            f"border-radius:0 10px 10px 0;padding:5px 8px;margin:6px 0;font-size:.82rem'>"
             f"🦅 <b style='color:{sp_c}'>Sharp Signal corregido: {sp.upper()}</b><br>"
             f"<span style='color:#888'>{sp_r}</span></div>", unsafe_allow_html=True)
 
@@ -4435,7 +4405,7 @@ def render_papa_einstein(einstein_data, audit, score_einstein):
     if mejor_alt and "einstein es correcta" not in mejor_alt.lower():
         st.markdown(
             f"<div style='background:linear-gradient(135deg,#001a10,#002a12);"
-            f"border:2px solid #00ff8855;border-radius:14px;padding:14px 18px;margin:8px 0'>"
+            f"border:2px solid #00ff8855;border-radius:7px;padding:7px 9px;margin:8px 0'>"
             f"<div style='font-size:.7rem;color:#00ff88;font-weight:700;letter-spacing:.1em;margin-bottom:6px'>"
             f"✝ ALTERNATIVA DEL PAPA — MEJOR QUE EINSTEIN</div>"
             f"<div style='font-size:.95rem;font-weight:700;color:#fff'>{mejor_alt}</div>"
@@ -4488,9 +4458,9 @@ def render_einstein_califica(key_sfx="fut"):
 
         # Compact image preview
         st.markdown(
-            f"<div style='text-align:center;margin-bottom:14px'>"
+            f"<div style='text-align:center;margin-bottom:5px'>"
             f"<img src='data:{media_type};base64,{b64}' "
-            f"style='max-height:260px;max-width:100%;border-radius:14px;border:1.5px solid #252555'/>"
+            f"style='max-height:260px;max-width:100%;border-radius:7px;border:1.5px solid #252555'/>"
             f"</div>", unsafe_allow_html=True)
 
         with st.spinner("🧠 EINSTEIN analizando — variables visibles + ocultas + 50,000 simulaciones..."):
@@ -4624,7 +4594,7 @@ def render_einstein_califica(key_sfx="fut"):
                 if es_pa:
                     st.markdown(
                         "<div style='background:#001a40;border:2px solid #00ccff66;"
-                        "border-radius:12px;padding:10px 16px;margin:8px 0;"
+                        "border-radius:12px;padding:5px 8px;margin:8px 0;"
                         "font-size:.85rem;color:#00ccff'>"
                         "💰 <b>PAGO ANTICIPADO (PA)</b> — "
                         "⚽ Fútbol: gana por +2 goles en cualquier momento del partido · "
@@ -4637,25 +4607,25 @@ def render_einstein_califica(key_sfx="fut"):
                         for s in sels_parlay[:6] if s)
                     st.markdown(
                         f"<div style='background:#0a0018;border:2px solid #aa00ff66;"
-                        "border-radius:12px;padding:10px 16px;margin:8px 0'>"
+                        "border-radius:12px;padding:5px 8px;margin:8px 0'>"
                         "<div style='font-size:.75rem;color:#aa00ff;font-weight:700;margin-bottom:6px'>"
                         f"🎰 PARLAY / COMBINADA — {len(sels_parlay)} selecciones</div>"
                         f"{sel_html}</div>",
                         unsafe_allow_html=True)
                 # Partido terminado
                 if "finalizado" in estado.lower() or "inválida" in vered.lower() or "invalida" in vered.lower():
-                    st.markdown("<div style='background:#2a0000;border:2px solid #ff4444;border-radius:14px;padding:14px;margin-bottom:12px;text-align:center;font-weight:700;color:#ff4444;font-size:1rem'>⛔ PARTIDO YA FINALIZADO — Pick inválido para apostar</div>", unsafe_allow_html=True)
+                    st.markdown("<div style='background:#2a0000;border:2px solid #ff4444;border-radius:7px;padding:14px;margin-bottom:5px;text-align:center;font-weight:700;color:#ff4444;font-size:1rem'>⛔ PARTIDO YA FINALIZADO — Pick inválido para apostar</div>", unsafe_allow_html=True)
 
                 # ── MAIN GRADE ──
                 apostar_html = (
                     f"<div style='margin-top:10px;display:inline-block;background:{'#003300' if apostar else '#300000'};"
-                    f"border:1.5px solid {'#00ff88' if apostar else '#ff4444'};border-radius:20px;"
+                    f"border:1.5px solid {'#00ff88' if apostar else '#ff4444'};border-radius:8px;"
                     f"padding:5px 20px;font-size:.9rem;font-weight:700;color:{'#00ff88' if apostar else '#ff4444'}'>"
                     f"{'✅ APOSTAR' if apostar else '🚫 NO APOSTAR'}</div>"
                 )
                 st.markdown(
                     f"<div style='background:linear-gradient(135deg,#080820,#100820);border:2.5px solid {color};"
-                    f"border-radius:22px;padding:26px;text-align:center;margin-bottom:14px'>"
+                    f"border-radius:22px;padding:26px;text-align:center;margin-bottom:5px'>"
                     f"<div style='font-size:.65rem;color:#444;letter-spacing:.18em;margin-bottom:8px'>🧠 EINSTEIN BETS · ANÁLISIS PROFUNDO · 50K SIMULACIONES</div>"
                     f"<div style='font-size:5rem;font-weight:900;color:{color};line-height:1'>{letra}</div>"
                     f"<div style='font-size:1.15rem;font-weight:700;color:{color};margin-top:4px'>{pts}/100</div>"
@@ -4672,7 +4642,7 @@ def render_einstein_califica(key_sfx="fut"):
                     f"<div class='mbox'><div class='mval' style='color:{evcol};font-size:1.05rem'>{'+' if ev>0 else ''}{ev:.3f}</div><div class='mlbl'>EV/unidad</div></div>"
                     f"</div>", unsafe_allow_html=True)
                 st.markdown(
-                    f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:14px'>"
+                    f"<div style='display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:5px'>"
                     f"<div class='mbox'><div class='mval' style='color:#FFD700;font-size:1.05rem'>{kelly:.1f}%</div><div class='mlbl'>Kelly %</div></div>"
                     f"<div class='mbox'><div class='mval' style='color:{scol};font-size:.8rem;margin-top:6px'>{sharp.upper()}</div><div class='mlbl'>Sharp signal</div></div>"
                     f"<div class='mbox'><div style='font-size:.75rem;color:#aaa;padding:4px'>{ic95 or 'N/D'}</div><div class='mlbl'>IC 95%</div></div>"
@@ -4703,7 +4673,7 @@ def render_einstein_califica(key_sfx="fut"):
                 if data.get("alternativa_mercado"):
                     st.markdown(
                         f"<div style='background:linear-gradient(135deg,#001a10,#0a1a00);"
-                        f"border:2px solid #00ff88;border-radius:14px;padding:16px;margin-top:10px'>"
+                        f"border:2px solid #00ff88;border-radius:7px;padding:16px;margin-top:10px'>"
                         f"<div style='font-size:.7rem;font-weight:700;color:#00ff88;letter-spacing:.12em;margin-bottom:8px'>✨ ALTERNATIVA INTELIGENTE</div>"
                         f"<div style='font-size:1rem;font-weight:700;color:#fff'>🎯 {data.get('alternativa_mercado','')}</div>"
                         f"<div style='font-size:.82rem;color:#aaa;margin-top:5px'>{data.get('alternativa_razon','')}</div>"
@@ -4758,7 +4728,7 @@ def render_einstein_califica(key_sfx="fut"):
                         c="#00ff88" if p>=55 else ("#FFD700" if p>=45 else "#ff4444")
                         edge_html+=f"<div style='display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #1a1a40'><span style='color:#aaa;font-size:.8rem'>{lbl}</span><span style='color:{c};font-weight:700;font-size:.82rem'>{p}% acierto ({n})</span></div>"
                 if edge_html:
-                    st.markdown(f"<div class='acard' style='margin-bottom:10px;padding:12px 16px'><div style='font-size:.7rem;color:#FFD700;font-weight:700;margin-bottom:6px'>📈 RENDIMIENTO POR RANGO DE EDGE</div>{edge_html}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='acard' style='margin-bottom:10px;padding:6px 8px'><div style='font-size:.7rem;color:#FFD700;font-weight:700;margin-bottom:6px'>📈 RENDIMIENTO POR RANGO DE EDGE</div>{edge_html}</div>", unsafe_allow_html=True)
             for x in reversed(bpicks[-15:]):
                 ic="✅" if x.get("correcto") else ("❌" if x.get("resultado")=="❌" else "⏳")
                 ec_="#00ff88" if float(x.get("edge_pct",0))>0 else "#ff4444"
@@ -5930,7 +5900,7 @@ def render_prematch_bot(sport, home, away, league_slug, league_name,
 
     st.markdown(
         f"<div style='background:linear-gradient(135deg,#05051f,#0a0a30);"
-        f"border:2px solid #aa00ff44;border-radius:16px;padding:14px 18px;margin:8px 0'>"
+        f"border:2px solid #aa00ff44;border-radius:7px;padding:7px 9px;margin:8px 0'>"
         f"<div style='display:flex;justify-content:space-between;align-items:center'>"
         f"<div>"
         f"<div style='font-size:.65rem;color:#aa00ff;font-weight:700;letter-spacing:.2em'>🤖 BADRINO</div>"
@@ -5983,7 +5953,7 @@ def render_prematch_bot(sport, home, away, league_slug, league_name,
 
         st.markdown(
             f"<div style='background:#0d0d2e;border:2px solid {nivel_c}44;"
-            f"border-radius:16px;padding:16px 20px;margin:8px 0'>"
+            f"border-radius:7px;padding:8px 10px;margin:4px 0'>"
             f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px'>"
             f"<div><div style='font-size:.65rem;color:#555;font-weight:700;letter-spacing:.12em;margin-bottom:3px'>"
             f"🤖 BADRINO — REPORTE PRE-PARTIDO</div>"
@@ -6026,7 +5996,7 @@ def render_prematch_bot(sport, home, away, league_slug, league_name,
             else:
                 mins_left = mins_k if mins_k < 999 else "?"
                 st.markdown(
-                    f"<div style='background:#07071a;border-radius:10px;padding:10px 14px;"
+                    f"<div style='background:#07071a;border-radius:10px;padding:5px 8px;"
                     f"color:#555;font-size:.8rem;text-align:center'>"
                     f"⏳ Alineaciones no publicadas aún — salen ~60-90 min antes del partido"
                     f"{'  (' + str(mins_left) + ' min restantes)' if mins_left != '?' else ''}"
@@ -6095,7 +6065,7 @@ def render_prematch_bot(sport, home, away, league_slug, league_name,
         if (clima and "sin impacto" not in clima.lower()) or ou_imp:
             st.markdown(
                 f"<div style='background:#07071a;border:1px solid #252555;border-radius:10px;"
-                f"padding:10px 14px;margin:6px 0;font-size:.79rem;color:#aaa'>"
+                f"padding:5px 8px;margin:6px 0;font-size:.79rem;color:#aaa'>"
                 + (f"🌦️ <b style='color:#00ccff'>Clima:</b> {clima}<br>" if clima and "sin impacto" not in clima.lower() else "")
                 + (f"📊 <b style='color:#FFD700'>Over/Under:</b> {ou_imp}" if ou_imp else "")
                 + "</div>", unsafe_allow_html=True)
@@ -6134,10 +6104,10 @@ def render_prematch_bot(sport, home, away, league_slug, league_name,
                 arr = "▲" if delta>0 else "▼"
                 return (
                     f"<div style='background:#07071a;border-radius:10px;padding:10px;text-align:center'>"
-                    f"<div style='font-size:.65rem;color:#555;margin-bottom:3px'>{label}</div>"
-                    f"<div style='font-size:.75rem;color:#555'>{fmt.format(orig*scale)}</div>"
-                    f"<div style='font-size:.95rem;font-weight:900;color:{dc}'>{arr} {fmt.format(new_v*scale)}</div>"
-                    f"<div style='font-size:.65rem;color:{dc}'>{('+' if delta>0 else '')}{fmt.format(delta*scale)}</div></div>")
+                    f"<div style='font-size:.55rem;color:#555;margin-bottom:1px'>{label}</div>"
+                    f"<div style='font-size:.62rem;color:#444'>{fmt.format(orig*scale)}</div>"
+                    f"<div style='font-size:.8rem;font-weight:900;color:{dc}'>{arr} {fmt.format(new_v*scale)}</div>"
+                    f"<div style='font-size:.58rem;color:{dc}'>{('+' if delta>0 else '')}{fmt.format(delta*scale)}</div></div>")
 
             if sport=="soccer":
                 boxes += adj_box(f"🏠 {home[:11]}", model_ph, adj_ph)
@@ -6154,14 +6124,12 @@ def render_prematch_bot(sport, home, away, league_slug, league_name,
 
             if boxes:
                 st.markdown(
-                    "<div style='background:linear-gradient(135deg,#050518,#0a0a28);"
-                    "border:2px solid #aa00ff44;border-radius:14px;padding:14px 18px;margin:10px 0'>"
-                    "<div style='font-size:.68rem;color:#aa00ff;font-weight:700;letter-spacing:.12em;margin-bottom:10px'>"
-                    "⚡ BADRINO — AJUSTE AUTOMÁTICO AL MODELO</div>"
-                    f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px'>"
+                    "<div style='background:#060612;border:1px solid #aa00ff33;border-radius:7px;padding:7px 10px;margin:5px 0'>"
+                    "<div style='font-size:.58rem;color:#aa00ff;font-weight:700;letter-spacing:.08em;margin-bottom:5px'>"
+                    "⚡ BADRINO — AJUSTE AL MODELO</div>"
+                    f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:4px'>"
                     f"{boxes}</div>"
-                    + (f"<div style='margin-top:10px;background:#12122a;border-radius:8px;padding:8px 14px;"
-                       f"font-size:.82rem;color:#00ff88'>💡 <b>Badrino recomienda:</b> {rec}</div>" if rec else "")
+                    + (f"<div style='margin-top:5px;font-size:.7rem;color:#00ff88'>💡 {rec}</div>" if rec else "")
                     + "</div>", unsafe_allow_html=True)
 
         # Aplicar ajustes al modelo y devolver
@@ -6935,6 +6903,125 @@ def _tennis_serve_dominance(rank1, rank2, p1_name, p2_name, odd_1=0, odd_2=0, su
     return round(max(0.05, min(0.95, p1m)), 4)
 
 
+def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
+                           context_str="", indent="        "):
+    """
+    Renders Einstein + El Papa de Einstein side by side (2 columns).
+    call_site must be inside a streamlit context.
+    Returns (einstein_data, papa_data) dicts.
+    """
+    import json as _ejson
+    # ── EINSTEIN prompt by sport ──
+    if sport == "futbol":
+        _e_prompt = (
+            f"Eres Einstein, analista de fútbol de élite.\n"
+            f"Partido: {away} @ {home}\n"
+            f"Jugada Diamante: {pick_lbl} ({pick_prob*100:.1f}%)"
+            + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
+            + f"\n{context_str}\n"
+            f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
+            f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
+        )
+    elif sport == "nba":
+        _e_prompt = (
+            f"Eres Einstein NBA, analista de baloncesto de élite.\n"
+            f"Partido: {away} @ {home}\n"
+            f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
+            + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
+            + f"\n{context_str}\n"
+            f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
+            f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
+        )
+    else:  # tenis
+        _e_prompt = (
+            f"Eres Einstein Tenis, analista de tenis de élite.\n"
+            f"Partido: {away} vs {home}\n"
+            f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
+            + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
+            + f"\n{context_str}\n"
+            f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
+            f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
+        )
+
+    _einstein = {"pick": pick_lbl, "prob": pick_prob*100, "conf": "Media",
+                 "riesgo": "MEDIO", "alternativa": "", "resumen": ""}
+    _papa     = {"grade": "B", "conf_score": 50, "verdict": "Sin auditoría",
+                 "resumen_auditoria": "", "mejor_alternativa_papa": ""}
+
+    col_e, col_p = st.columns(2)
+
+    with col_e:
+        with st.spinner("🧠 Einstein..."):
+            try:
+                _r = requests.post("https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                             "content-type": "application/json"},
+                    json={"model": "claude-sonnet-4-20250514", "max_tokens": 350,
+                          "messages": [{"role": "user", "content": _e_prompt}]},
+                    timeout=12)
+                _raw = _r.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
+                _d = _ejson.loads(_raw)
+                _einstein.update(_d)
+            except: pass
+        _ec = "#FFD700" if "alta" in str(_einstein.get("conf","")).lower() else ("#00ff88" if "med" in str(_einstein.get("conf","")).lower() else "#aaa")
+        _rc = "#00ff88" if _einstein.get("riesgo","")=="BAJO" else ("#FFD700" if _einstein.get("riesgo","")=="MEDIO" else "#ff4444")
+        st.markdown(
+            f"<div style='background:#080812;border:1px solid {_ec}33;border-radius:7px;padding:7px 9px;height:100%'>"
+            f"<div style='font-size:.55rem;color:#444;font-weight:900;letter-spacing:.08em;margin-bottom:3px'>🧠 EINSTEIN</div>"
+            f"<div style='font-size:.78rem;font-weight:900;color:{_ec};line-height:1.2;margin-bottom:2px'>{_einstein.get('pick',pick_lbl)[:22]}</div>"
+            f"<div style='font-size:.9rem;font-weight:900;color:{_ec}'>{float(_einstein.get('prob',pick_prob*100)):.0f}%"
+            f" <span style='font-size:.58rem;color:{_rc}'>⚠️{_einstein.get('riesgo','?')}</span></div>"
+            + (f"<div style='font-size:.62rem;color:#888;margin-top:3px;line-height:1.35'>{_einstein.get('resumen','')[:90]}{'…' if len(_einstein.get('resumen',''))>90 else ''}</div>" if _einstein.get('resumen') else "")
+            + (f"<div style='font-size:.58rem;color:#555;margin-top:2px;border-top:1px solid #111;padding-top:2px'>Alt: {_einstein.get('alternativa','')[:40]}</div>" if _einstein.get('alternativa') else "")
+            + "</div>",
+            unsafe_allow_html=True)
+
+    with col_p:
+        with st.spinner("✝ Papa auditando..."):
+            try:
+                _papa_prompt = (
+                    f"Eres EL PAPA DE EINSTEIN — meta-IA auditora suprema.\n"
+                    f"Audita este análisis de Einstein sobre: {away} vs {home}\n"
+                    f"Einstein dice: {_einstein.get('pick',pick_lbl)} {_einstein.get('prob',pick_prob*100):.0f}% · conf {_einstein.get('conf','?')} · riesgo {_einstein.get('riesgo','?')}\n"
+                    f"Resumen Einstein: {_einstein.get('resumen','N/A')}\n"
+                    f"Contexto: {context_str[:300]}\n"
+                    f"Responde SOLO JSON: {{\"grade\":\"A+/A/A-/B+/B/B-/C/D/F\","
+                    f"\"conf_score\":85,\"verdict\":\"CONFIRMAR/CUESTIONAR/RECHAZAR\","
+                    f"\"resumen_auditoria\":\"1-2 lineas max\","
+                    f"\"mejor_alternativa_papa\":\"mercado o la de Einstein es correcta\"}}"
+                )
+                _rp = requests.post("https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
+                             "content-type": "application/json"},
+                    json={"model": "claude-sonnet-4-20250514", "max_tokens": 300,
+                          "messages": [{"role": "user", "content": _papa_prompt}]},
+                    timeout=12)
+                _rawp = _rp.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
+                _dp = _ejson.loads(_rawp)
+                _papa.update(_dp)
+            except: pass
+        _grade = _papa.get("grade","B")
+        _gc = "#00ff88" if _grade[0]=="A" else ("#FFD700" if _grade[0]=="B" else ("#ff9500" if _grade[0]=="C" else "#ff4444"))
+        _vc = {"CONFIRMAR":"#00ff88","CUESTIONAR":"#FFD700","RECHAZAR":"#ff4444"}.get(_papa.get("verdict",""),"#aaa")
+        st.markdown(
+            f"<div style='background:#0a0805;border:1px solid {_gc}33;border-radius:7px;padding:7px 9px;height:100%'>"
+            f"<div style='font-size:.55rem;color:#444;font-weight:900;letter-spacing:.08em;margin-bottom:3px'>✝ PAPA DE EINSTEIN</div>"
+            f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:2px'>"
+            f"<div style='font-size:1.4rem;font-weight:900;color:{_gc};line-height:1'>{_grade}</div>"
+            f"<div><div style='font-size:.7rem;font-weight:900;color:{_vc}'>{_papa.get('verdict','?')}</div>"
+            f"<div style='font-size:.55rem;color:#555'>Confianza: {_papa.get('conf_score',0)}%</div></div>"
+            f"</div>"
+            + (f"<div style='font-size:.62rem;color:#888;line-height:1.35'>{_papa.get('resumen_auditoria','')[:90]}{'…' if len(_papa.get('resumen_auditoria',''))>90 else ''}</div>" if _papa.get('resumen_auditoria') else "")
+            + (f"<div style='font-size:.58rem;color:#555;margin-top:2px;border-top:1px solid #111;padding-top:2px'>Papa: {_papa.get('mejor_alternativa_papa','')[:40]}</div>" if _papa.get('mejor_alternativa_papa') else "")
+            + "</div>",
+            unsafe_allow_html=True)
+
+    return _einstein, _papa
+
+
 def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
                                odd_1, odd_2, surface, torneo,
                                expert_p1=None):
@@ -7136,9 +7223,9 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     bar_color = nivel
 
     _html_out = f"""
-<div style='background:{bg};border:2px solid {brd};border-radius:16px;padding:20px;margin:16px 0'>
+<div style='background:{bg};border:2px solid {brd};border-radius:7px;padding:20px;margin:5px 0'>
   <!-- Semáforo -->
-  <div style='display:flex;align-items:center;gap:14px;margin-bottom:4px'>
+  <div style='display:flex;align-items:center;gap:6px;margin-bottom:4px'>
     <div style='font-size:3rem;line-height:1'>{emoji}</div>
     <div>
       <div style='font-size:.7rem;font-weight:700;color:{nivel};letter-spacing:.14em;text-transform:uppercase'>
@@ -7147,7 +7234,7 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     </div>
   </div>
   <!-- Pick y desc -->
-  <div style='background:#07071a88;border-radius:10px;padding:10px 14px;margin:10px 0'>
+  <div style='background:#07071a88;border-radius:10px;padding:5px 8px;margin:10px 0'>
     <div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em'>PICK</div>
     <div style='font-size:1.1rem;font-weight:800;color:#fff'>🎾 {fav_show} gana</div>
     <div style='font-size:.82rem;color:#aaa;margin-top:2px'>{desc}</div>
@@ -7430,79 +7517,48 @@ def veredicto_academico(mc, dp, odd_h, odd_a, odd_d, home, away, best_market=Non
 
     prom_modelos = sum(modelos) / len(modelos)
 
-    html = f"""
-<div style='background:{color_bg};border:2px solid {color_brd};border-radius:16px;padding:20px 18px;margin:20px 0'>
+    # Build compact model rows
+    _model_rows_compact = []
+    for _mr in [
+        ("D-Coles", mc.get("dc_ph",0)),
+        ("BV-Poisson", mc.get("bvp_ph",0)),
+        ("Elo", mc.get("elo_ph",0)),
+        ("H2H", mc.get("h2h_ph",0)),
+    ]:
+        if _mr[1] > 0:
+            _model_rows_compact.append((_mr[0], f"{_mr[1]*100:.0f}%"))
 
-  <!-- SEMÁFORO GRANDE -->
-  <div style='display:flex;align-items:center;gap:14px;margin-bottom:16px'>
-    <div style='font-size:3rem;line-height:1'>{emoji_big}</div>
-    <div style='flex:1'>
-      <div style='font-size:.68rem;color:#444;letter-spacing:.14em;font-weight:700;margin-bottom:2px'>
-        VEREDICTO ACADÉMICO — ENSEMBLE DE 4 MODELOS
-      </div>
-      <div style='font-size:2rem;font-weight:900;color:{color_txt};line-height:1.1'>{nivel}</div>
-      <div style='font-size:.75rem;color:#666;margin-top:2px'>{mkt_lbl}</div>
-    </div>
-    <div style='text-align:right;flex-shrink:0'>
-      <div style='font-size:.62rem;color:#444;margin-bottom:2px'>SCORE ESTADÍSTICO</div>
-      <div style='font-size:1.4rem;font-weight:900;color:{color_txt}'>{score_pct}<span style='font-size:.85rem;color:#444'>/{MAX_SCORE}</span></div>
-    </div>
-  </div>
-
-  <!-- BARRA PROGRESO -->
-  <div style='background:#0d0d2e;border-radius:8px;height:8px;margin-bottom:14px;overflow:hidden'>
-    <div style='width:{bar_pct}%;height:100%;background:{bar_color};border-radius:8px;
-                transition:width .5s ease'></div>
-  </div>
-
-  <!-- DESCRIPCIÓN -->
-  <div style='font-size:.82rem;color:#aaa;background:#07071a;border-radius:8px;padding:10px 14px;
-              border-left:4px solid {color_brd};margin-bottom:16px;line-height:1.65'>
-    {desc}
-  </div>
-
-  <!-- TABLA MODELOS -->
-  <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em;margin-bottom:6px'>
-    📐 ANÁLISIS POR MODELO — PROB. FAVORITO: {prom_modelos*100:.1f}% PROMEDIO
-  </div>
-  <div style='background:#07071a;border-radius:10px;overflow:hidden;margin-bottom:14px'>
-    <table style='width:100%;border-collapse:collapse'>
-      <thead>
-        <tr style='border-bottom:1px solid #151530'>
-          <th style='padding:6px 10px;text-align:left;color:#333;font-size:.65rem;font-weight:700'>Modelo</th>
-          <th style='padding:6px 10px;text-align:center;color:#333;font-size:.65rem;font-weight:700'>Prob.</th>
-          <th style='padding:6px 10px;color:#333;font-size:.65rem;font-weight:700'>Intensidad</th>
-          <th style='padding:6px 10px;text-align:left;color:#333;font-size:.65rem;font-weight:700'>Fuente</th>
-        </tr>
-      </thead>
-      <tbody>{model_rows}</tbody>
-    </table>
-  </div>
-
-  <!-- FACTORES -->
-  <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em;margin-bottom:8px'>
-    🔍 FACTORES QUE DETERMINARON EL VEREDICTO
-  </div>
-  <div style='background:#07071a;border-radius:8px;padding:10px 14px;margin-bottom:14px'>
-    {factores_html}
-  </div>
-
-  <!-- KELLY / BANKROLL -->
-  <div style='display:flex;justify-content:space-between;align-items:center;
-              padding-top:12px;border-top:1px solid #151530'>
-    <div>
-      <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em'>💰 GESTIÓN DE BANKROLL</div>
-      <div style='font-size:.82rem;font-weight:700;color:{kelly_col};margin-top:2px'>{kelly_rec}</div>
-    </div>
-    <div style='text-align:right'>
-      <div style='font-size:.65rem;color:#444;font-weight:700;letter-spacing:.1em'>EV vs CUOTA</div>
-      <div style='font-size:.88rem;font-weight:700;color:{"#00ff88" if ev>0 else "#ff4444"};margin-top:2px'>
-        {"+" if ev>0 else ""}{ev*100:.1f}% {"✅" if ev>0 else "🚫"}
-      </div>
-    </div>
-  </div>
-</div>"""
+    html = (
+        f"<div style='background:{color_bg};border:1px solid {color_brd}55;"
+        f"border-radius:8px;padding:8px 10px;margin:6px 0'>"
+        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:5px'>"
+        f"<div style='font-size:1.5rem;line-height:1'>{emoji_big}</div>"
+        f"<div style='flex:1;min-width:0'>"
+        f"<div style='font-size:.58rem;color:#444;letter-spacing:.1em;font-weight:700'>VEREDICTO · {score_pct}/{MAX_SCORE}</div>"
+        f"<div style='font-size:.9rem;font-weight:900;color:{color_txt};line-height:1.2'>{nivel}</div>"
+        f"<div style='font-size:.62rem;color:#555'>{mkt_lbl}</div>"
+        f"</div>"
+        f"<div style='text-align:right;flex-shrink:0'>"
+        f"<div style='background:#0d0d2e;border-radius:5px;height:4px;width:60px;overflow:hidden;margin-bottom:3px'>"
+        f"<div style='width:{bar_pct}%;height:100%;background:{bar_color};border-radius:5px'></div></div>"
+        f"<div style='font-size:.62rem;color:{("#00ff88" if ev>0 else "#ff4444")};font-weight:700'>"
+        f"EV {("+" if ev>0 else "")}{ev*100:.1f}%</div>"
+        f"</div></div>"
+        f"<div style='font-size:.68rem;color:#888;line-height:1.4;margin-bottom:5px;"
+        f"border-left:2px solid {color_brd}44;padding-left:6px'>{desc[:120]}{'…' if len(desc)>120 else ''}</div>"
+        f"<div style='display:flex;gap:4px;flex-wrap:wrap'>"
+        + "".join([
+            f"<div style='background:#0d0d22;border-radius:4px;padding:2px 6px;font-size:.6rem;color:#555'>"
+            f"<span style='color:{color_txt};font-weight:700'>{row[0]}</span> {row[1]}</div>"
+            for row in _model_rows_compact
+        ])
+        + f"</div>"
+        f"<div style='font-size:.6rem;color:{kelly_col};margin-top:4px;font-weight:700'>"
+        f"💰 {kelly_rec}</div>"
+        f"</div>"
+    )
     return html
+
 
 
 def diamond_engine(mc, h2h_s, hform, aform, match=None):
@@ -7930,11 +7986,11 @@ def render_action_network_nba(home, away, ou_line=0):
     # ── ML ──
     if ml_h_b or ml_h_m:
         st.markdown(
-            f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;"
-            f"padding:14px 18px;margin:6px 0'>"
+            f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:7px;"
+            f"padding:7px 9px;margin:6px 0'>"
             f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em;margin-bottom:10px'>"
             f"🏆 MONEY LINE — {src_label}</div>"
-            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px'>"
+            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:5px'>"
             # Local
             f"<div style='background:#07071a;border-radius:10px;padding:10px'>"
             f"<div style='font-size:.72rem;color:#aaa;margin-bottom:6px'>🏠 {home[:14]}</div>"
@@ -7971,11 +8027,11 @@ def render_action_network_nba(home, away, ou_line=0):
         ov_color  = side_color(ov_b)
         un_color  = side_color(un_b)
         st.markdown(
-            f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:14px;"
-            f"padding:14px 18px;margin:6px 0'>"
+            f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:7px;"
+            f"padding:7px 9px;margin:6px 0'>"
             f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em;margin-bottom:10px'>"
             f"📊 OVER / UNDER {ou_line if ou_line else ''}</div>"
-            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px'>"
+            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:5px'>"
             f"<div style='background:#07071a;border-radius:10px;padding:10px'>"
             f"<div style='font-size:.8rem;color:#ff4444;font-weight:700;margin-bottom:6px'>🔥 OVER</div>"
             f"<div style='display:flex;justify-content:space-between;margin-bottom:4px'>"
@@ -8016,7 +8072,7 @@ def render_action_network_nba(home, away, ou_line=0):
         mc2 = "#00ff88" if move > 0 else "#ff4444"
         st.markdown(
             f"<div style='background:#0d0d2e;border:1px solid #252555;border-radius:10px;"
-            f"padding:10px 16px;margin:6px 0;display:flex;justify-content:space-between;align-items:center'>"
+            f"padding:5px 8px;margin:6px 0;display:flex;justify-content:space-between;align-items:center'>"
             f"<div><div style='font-size:.7rem;color:#555;font-weight:700'>📈 MOVIMIENTO DE LÍNEA TOTAL</div>"
             f"<div style='font-size:.78rem;color:#aaa;margin-top:2px'>Apertura → Actual</div></div>"
             f"<div style='text-align:right'>"
@@ -8028,13 +8084,13 @@ def render_action_network_nba(home, away, ou_line=0):
     if data.get("steam_move"):
         st.markdown(
             "<div style='background:#2a0050;border:1px solid #aa00ff55;border-radius:10px;"
-            "padding:10px 16px;margin:6px 0;font-size:.83rem;color:#aa00ff'>"
+            "padding:5px 8px;margin:6px 0;font-size:.83rem;color:#aa00ff'>"
             "💨 <b>STEAM MOVE detectado por Action Network</b> — dinero coordinado entrando.</div>",
             unsafe_allow_html=True)
     if data.get("reverse_move"):
         st.markdown(
             "<div style='background:#002a00;border:1px solid #00ff8855;border-radius:10px;"
-            "padding:10px 16px;margin:6px 0;font-size:.83rem;color:#00ff88'>"
+            "padding:5px 8px;margin:6px 0;font-size:.83rem;color:#00ff88'>"
             "🔄 <b>REVERSE LINE MOVEMENT</b> — dinero contrario a la opinión pública. Señal sharp.</div>",
             unsafe_allow_html=True)
     
@@ -8045,7 +8101,7 @@ def render_action_network_nba(home, away, ou_line=0):
         if inj_html:
             st.markdown(
                 f"<div style='background:#1a0a00;border:1px solid #ff440033;border-radius:10px;"
-                f"padding:10px 16px;margin:6px 0;font-size:.78rem;color:#ff9500'>"
+                f"padding:5px 8px;margin:6px 0;font-size:.78rem;color:#ff9500'>"
                 f"🏥 <b>Lesiones:</b> {inj_html}</div>", unsafe_allow_html=True)
 
 def escanear_nba_y_enviar(games):
@@ -8203,20 +8259,20 @@ def render_pach(sport_label: str, context_data: dict):
 
     st.markdown(f"""
     <div style='background:linear-gradient(135deg,#0a0020,#001a10);
-    border:2px solid #bb00ff88;border-radius:16px;padding:16px 18px;margin-bottom:10px'>
-      <div style='display:flex;align-items:center;gap:12px;margin-bottom:12px'>
+    border:2px solid #bb00ff88;border-radius:7px;padding:7px 9px;margin-bottom:10px'>
+      <div style='display:flex;align-items:center;gap:5px;margin-bottom:5px'>
         <div style='font-size:2.4rem'>🤖</div>
         <div style='flex:1'>
           <div style='font-size:1.2rem;font-weight:900;color:#cc44ff;letter-spacing:.08em'>PACH</div>
           <div style='font-size:.72rem;color:#888'>Analista AI · Powered by Claude · Busca en internet en tiempo real</div>
         </div>
-        <div style='font-size:.65rem;padding:4px 10px;border-radius:20px;
+        <div style='font-size:.65rem;padding:4px 10px;border-radius:8px;
         background:{"#00ff8820" if api_ok else "#ff000020"};
         color:{"#00ff88" if api_ok else "#ff4444"};
         border:1px solid {"#00ff8855" if api_ok else "#ff444455"};white-space:nowrap'>
         {"● ONLINE" if api_ok else "● SIN API KEY"}</div>
       </div>
-      <div style='background:#ffffff08;border-radius:10px;padding:10px 14px;
+      <div style='background:#ffffff08;border-radius:10px;padding:5px 8px;
       border-left:3px solid #cc44ff;margin-bottom:10px'>
         <div style='color:#cc44ff;font-size:.72rem;font-weight:700;margin-bottom:4px'>💬 PACH DICE:</div>
         <div style='color:#ddd;font-size:.88rem;font-style:italic'>
@@ -8315,14 +8371,14 @@ def render_bot_tab(sport_label, scan_fn, scan_args, preview_fn=None):
     render_pach(sport_label, _pach_ctx)
 
     # ══ SEPARADOR ══
-    st.markdown("<div style='margin:20px 0 8px 0'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin:6px 0 8px 0'></div>", unsafe_allow_html=True)
     st.markdown("<div class='shdr'>🤖 BOT TELEGRAM</div>", unsafe_allow_html=True)
 
     bot_ok = bool(BOT_TOKEN and CHAT_ID and BOT_TOKEN != "Pega_Aqui_Tu_Token_De_BotFather")
     icon = {"⚽ Fútbol":"⚽","🏀 NBA":"🏀","🎾 Tenis":"🎾"}.get(sport_label,"🤖")
     st.markdown(
         f"<div class='bot-card'>"
-        f"<div style='font-size:.8rem;color:#229ED9;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>📡 BOT TELEGRAM — {sport_label.upper()}</div>"
+        f"<div style='font-size:.8rem;color:#229ED9;font-weight:700;letter-spacing:.1em;margin-bottom:5px'>📡 BOT TELEGRAM — {sport_label.upper()}</div>"
         f"<div style='font-size:1.1rem;font-weight:700;margin-bottom:6px'>The Gamblers Layer Bot</div>"
         f"<div style='color:#555;font-size:.85rem'>Estado: {'✅ Configurado' if bot_ok else '⚠️ Sin configurar — agrega BOT_TOKEN y CHAT_ID en Streamlit secrets'}</div>"
         f"</div>", unsafe_allow_html=True)
@@ -9681,7 +9737,7 @@ def _kr_ia_narracion(el_pick, bk, todos):
 
 def _kr_render_header():
     st.markdown("""
-    <div style='position:relative;overflow:hidden;border-radius:20px;margin-bottom:6px'>
+    <div style='position:relative;overflow:hidden;border-radius:8px;margin-bottom:6px'>
       <!-- Fondo degradado animado -->
       <div style='background:linear-gradient(160deg,#180030 0%,#001a00 40%,#1a0020 80%,#000818 100%);
       padding:0;'>
@@ -9713,13 +9769,13 @@ def _kr_render_header():
           text-transform:uppercase;margin-bottom:2px'>
           El Cerebro Supremo · Árbitro de Modelos</div>
 
-          <div style='display:flex;justify-content:center;gap:16px;margin-top:10px;flex-wrap:wrap'>
+          <div style='display:flex;justify-content:center;gap:6px;margin-top:10px;flex-wrap:wrap'>
             <span style='font-size:.65rem;background:#FFD70015;border:1px solid #FFD70033;
-            border-radius:20px;padding:3px 12px;color:#FFD70088'>⚽ xG + Ensemble 4M</span>
+            border-radius:8px;padding:3px 12px;color:#FFD70088'>⚽ xG + Ensemble 4M</span>
             <span style='font-size:.65rem;background:#ff950015;border:1px solid #ff950033;
-            border-radius:20px;padding:3px 12px;color:#ff950088'>🏀 Net Rating + O/U</span>
+            border-radius:8px;padding:3px 12px;color:#ff950088'>🏀 Net Rating + O/U</span>
             <span style='font-size:.65rem;background:#00ccff15;border:1px solid #00ccff33;
-            border-radius:20px;padding:3px 12px;color:#00ccff88'>🎾 Weibull + Elo</span>
+            border-radius:8px;padding:3px 12px;color:#00ccff88'>🎾 Weibull + Elo</span>
           </div>
         </div>
 
@@ -9744,7 +9800,7 @@ def _kr_render_bankroll(bk):
 
     st.markdown(
         f"<div style='background:linear-gradient(135deg,#0a0020,#001008);"
-        f"border:1px solid {rc}33;border-radius:14px;padding:14px 16px;margin-bottom:10px'>"
+        f"border:1px solid {rc}33;border-radius:7px;padding:14px 16px;margin-bottom:10px'>"
 
         # Título + racha grande
         f"<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:10px'>"
@@ -9753,7 +9809,7 @@ def _kr_render_bankroll(bk):
         f"<div style='font-size:.78rem;color:{rc};margin-top:3px'>{bk['consejo']}</div>"
         f"</div>"
         f"<div style='text-align:right'>"
-        f"<div style='font-size:2.2rem;font-weight:900;color:{rc};line-height:1'>{sign}{racha}</div>"
+        f"<div style='font-size:1.1rem;font-weight:900;color:{rc};line-height:1'>{sign}{racha}</div>"
         f"<div style='font-size:.6rem;color:#444'>racha actual</div>"
         f"</div></div>"
 
@@ -9798,14 +9854,14 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
 @keyframes rp-glow{{0%,100%{{box-shadow:0 0 24px #FFD70033}}50%{{box-shadow:0 0 48px #FFD70066}}}}
 @keyframes rp-bar{{0%{{background-position:-200px 0}}100%{{background-position:200px 0}}}}
 .rp-bar-shine{{
-  height:8px;border-radius:6px;
+  height:4px;border-radius:6px;
   background:linear-gradient(90deg,{cc}44,{cc},#FFD700,{cc});
   background-size:200px 100%;animation:rp-bar 1.8s linear infinite;
   width:{meter_w}%;
 }}
 </style>
 <div style='background:linear-gradient(145deg,#0d0028,#001208,#180800);
-  border:2px solid #FFD700;border-radius:20px;padding:20px 16px 16px;
+  border:2px solid #FFD700;border-radius:8px;padding:20px 16px 16px;
   animation:rp-glow 3s ease-in-out infinite;margin:8px 0;position:relative'>
 
   <div style='position:absolute;top:0;left:50%;transform:translateX(-50%);
@@ -9825,7 +9881,7 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
   </div>
 
   <div style='text-align:center;background:#07071a;border:1px solid #FFD70033;
-    border-radius:14px;padding:16px 10px;margin-bottom:14px'>
+    border-radius:7px;padding:16px 10px;margin-bottom:5px'>
     <div style='font-size:1.9rem;font-weight:900;color:#FFD700;
       text-shadow:0 0 28px #FFD70099'>
       {el_pick.get("pick","")}
@@ -9833,12 +9889,12 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
     <div style='font-size:.68rem;color:#555;margin-top:4px'>{odd_txt}</div>
   </div>
 
-  <div style='margin-bottom:12px'>
+  <div style='margin-bottom:5px'>
     <div style='display:flex;justify-content:space-between;margin-bottom:4px'>
       <span style='font-size:.6rem;color:#333'>Probabilidad</span>
       <span style='font-size:.72rem;font-weight:900;color:#FFD700'>{prob*100:.1f}%</span>
     </div>
-    <div style='background:#0a0a1e;border-radius:6px;height:8px;overflow:hidden'>
+    <div style='background:#0a0a1e;border-radius:6px;height:4px;overflow:hidden'>
       <div class='rp-bar-shine'></div>
     </div>
   </div>
@@ -9870,7 +9926,7 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
     if narracion and isinstance(narracion, str) and len(narracion) > 10:
         st.markdown(
             f"<div style='background:#07071a;border-left:3px solid #FFD700;"
-            f"border-radius:0 10px 10px 0;padding:10px 14px;margin:10px 0;"
+            f"border-radius:0 10px 10px 0;padding:5px 8px;margin:10px 0;"
             f"font-size:.82rem;color:#aaa;line-height:1.7;font-style:italic'>"
             f"💬 {narracion}</div>",
             unsafe_allow_html=True)
@@ -9887,7 +9943,7 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
         )
         st.markdown(
             f"<div style='background:#07071a;border-left:3px solid #555;"
-            f"border-radius:0 10px 10px 0;padding:10px 14px;margin:10px 0;"
+            f"border-radius:0 10px 10px 0;padding:5px 8px;margin:10px 0;"
             f"font-size:.78rem;color:#666;line-height:1.6'>"
             f"🧠 {_veredicto}</div>",
             unsafe_allow_html=True)
@@ -9925,15 +9981,15 @@ def _kr_render_parlay(parlay):
 
     st.markdown(
         f"<div style='background:linear-gradient(135deg,#0a001a,#001008);"
-        f"border:1px solid #FFD70055;border-radius:16px;padding:14px 16px;margin:12px 0'>"
-        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:12px'>"
+        f"border:1px solid #FFD70055;border-radius:7px;padding:14px 16px;margin:12px 0'>"
+        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:5px'>"
         f"<div style='font-size:1.8rem'>🃏</div>"
         f"<div>"
         f"<div style='font-size:.7rem;font-weight:700;color:#FFD700;letter-spacing:.12em'>PARLAY DEL REY</div>"
         f"<div style='font-size:.72rem;color:#555'>{len(parlay)} picks · {len(set(p['deporte'] for p in parlay))} deportes</div>"
         f"</div>"
         f"<div style='margin-left:auto;text-align:right'>"
-        f"<div style='font-size:1.2rem;font-weight:900;color:#FFD700'>{prob_c*100:.1f}%</div>"
+        f"<div style='font-size:.9rem;font-weight:900;color:#FFD700'>{prob_c*100:.1f}%</div>"
         f"<div style='font-size:.62rem;color:#555'>Prob combinada</div>"
         f"</div></div>"
         f"{legs_html}"
@@ -9948,7 +10004,7 @@ def _kr_render_table(todos, el_pick):
     """Ranking completo de todos los picks del día."""
     st.markdown(
         "<div style='font-size:.68rem;font-weight:700;color:#FFD700;letter-spacing:.1em;"
-        "text-transform:uppercase;margin:16px 0 8px'>📊 Ranking completo — todos los picks del día</div>",
+        "text-transform:uppercase;margin:5px 0 8px'>📊 Ranking completo — todos los picks del día</div>",
         unsafe_allow_html=True
     )
     for i,c in enumerate(todos[:16]):
@@ -10213,7 +10269,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     # ══════════════════════════════════════════════════════
     st.markdown("""
     <div style='position:relative;background:linear-gradient(160deg,#150030,#001500,#150030);
-    border:none;border-radius:20px;padding:0;margin-bottom:4px;overflow:hidden'>
+    border:none;border-radius:8px;padding:0;margin-bottom:4px;overflow:hidden'>
 
     <!-- Top glow bar -->
     <div style='height:3px;background:linear-gradient(90deg,transparent,#FFD700,#ff9500,#FFD700,transparent)'></div>
@@ -10228,7 +10284,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     <div style='padding:20px 22px 18px;text-align:center;position:relative'>
       <div style='font-size:3rem;margin-bottom:6px;line-height:1;
       filter:drop-shadow(0 0 12px #FFD70088)'>👑</div>
-      <div style='font-size:1.8rem;font-weight:900;letter-spacing:.2em;
+      <div style='font-size:1rem;font-weight:900;letter-spacing:.2em;
       background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700,#ffcc00);
       -webkit-background-clip:text;-webkit-text-fill-color:transparent;
       text-shadow:none;margin-bottom:6px'>KING RONGO</div>
@@ -10279,24 +10335,24 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     if _kr_total_all > 0 or _kr_pend > 0:
         st.markdown(
             f"<div style='background:linear-gradient(135deg,#100020,#0a1500);"
-            f"border:2px solid #FFD70066;border-radius:14px;padding:14px 18px;margin-bottom:14px'>"
+            f"border:2px solid #FFD70066;border-radius:7px;padding:7px 9px;margin-bottom:5px'>"
             f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
             f"letter-spacing:.12em;margin-bottom:10px'>👑 KING RONGO — AUDITORÍA DE SUS PICKS</div>"
             f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
             f"<div style='text-align:center;background:#00ff8810;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.8rem;font-weight:900;color:#00ff88'>{_kr_total_ok}</div>"
+            f"<div style='font-size:1rem;font-weight:900;color:#00ff88'>{_kr_total_ok}</div>"
             f"<div style='font-size:.68rem;color:#555'>✅ Ganados</div></div>"
             f"<div style='text-align:center;background:#ff444410;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.8rem;font-weight:900;color:#ff4444'>{_kr_total_fail}</div>"
+            f"<div style='font-size:1rem;font-weight:900;color:#ff4444'>{_kr_total_fail}</div>"
             f"<div style='font-size:.68rem;color:#555'>❌ Fallados</div></div>"
             f"<div style='text-align:center;background:{_kr_bc2}18;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.8rem;font-weight:900;color:{_kr_bc2}'>{_kr_total_pct}%</div>"
+            f"<div style='font-size:1rem;font-weight:900;color:{_kr_bc2}'>{_kr_total_pct}%</div>"
             f"<div style='font-size:.68rem;color:#555'>Acierto</div></div>"
             f"<div style='text-align:center;background:#FFD70010;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.8rem;font-weight:900;color:#FFD700'>{_kr_pend}</div>"
+            f"<div style='font-size:1rem;font-weight:900;color:#FFD700'>{_kr_pend}</div>"
             f"<div style='font-size:.68rem;color:#555'>⏳ Pendientes</div></div>"
             f"</div>"
-            f"<div style='background:#0d0d2e;border-radius:6px;height:8px;overflow:hidden'>"
+            f"<div style='background:#0d0d2e;border-radius:6px;height:4px;overflow:hidden'>"
             f"<div style='width:{_kr_total_pct}%;height:100%;"
             f"background:linear-gradient(90deg,#FFD700,#ff9500);border-radius:6px'></div></div>"
             f"<div style='font-size:.65rem;color:#444;margin-top:6px;text-align:right'>"
@@ -10305,7 +10361,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     else:
         st.markdown(
             f"<div style='background:#0a0a20;border:1px solid #FFD70033;border-radius:12px;"
-            f"padding:12px 16px;margin-bottom:14px;text-align:center'>"
+            f"padding:6px 8px;margin-bottom:5px;text-align:center'>"
             f"<div style='font-size:.7rem;color:#FFD700;font-weight:700;margin-bottom:4px'>"
             f"👑 AUDITORÍA KING RONGO</div>"
             f"<div style='color:#555;font-size:.8rem'>Guarda picks de KR para ver tu historial de aciertos</div>"
@@ -10327,7 +10383,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     _hora_actual = datetime.now(CDMX).strftime("%H:%M")
     st.markdown(
         f"<div style='background:#0a0020;border:1px solid #FFD70033;border-radius:12px;"
-        f"padding:10px 16px;margin-bottom:8px;display:flex;justify-content:space-between;"
+        f"padding:5px 8px;margin-bottom:8px;display:flex;justify-content:space-between;"
         f"align-items:center;flex-wrap:wrap;gap:6px'>"
         f"<span style='color:#FFD700;font-size:.82rem;font-weight:700'>"
         f"🎯 Escaneando partidos de <b>{_target_label.upper()}</b> ({_target_date})</span>"
@@ -10388,7 +10444,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
 @keyframes kr-shimmer{0%{background-position:-300px 0}100%{background-position:300px 0}}
 @keyframes kr-glow{0%,100%{opacity:.5}50%{opacity:1}}
 .kr-wrap{background:linear-gradient(160deg,#0e0028,#001608,#0e0028);
-  border:1px solid #FFD70055;border-radius:20px;padding:30px 24px 26px;
+  border:1px solid #FFD70055;border-radius:8px;padding:30px 24px 26px;
   text-align:center;position:relative;overflow:hidden;margin:8px 0;}
 .kr-wrap::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
   background:linear-gradient(90deg,transparent,#FFD700,#ff9500,transparent);
@@ -10397,11 +10453,11 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
   background:linear-gradient(90deg,transparent,#7c00ff,transparent);
   animation:kr-glow 1.8s ease-in-out infinite reverse;}
 .kr-crown{font-size:4rem;display:inline-block;
-  animation:kr-spin 1.4s cubic-bezier(.4,0,.2,1) infinite;line-height:1;margin-bottom:14px;}
+  animation:kr-spin 1.4s cubic-bezier(.4,0,.2,1) infinite;line-height:1;margin-bottom:5px;}
 .kr-title{font-size:1rem;font-weight:900;letter-spacing:.2em;
   background:linear-gradient(135deg,#FFD700,#ff9500,#FFD700);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px;}
-.kr-bar-wrap{background:#080820;border-radius:99px;height:8px;
+.kr-bar-wrap{background:#080820;border-radius:99px;height:4px;
   overflow:hidden;margin:14px auto 0;border:1px solid #1a1a3a;}
 .kr-bar{height:100%;border-radius:99px;width:100%;
   background:linear-gradient(90deg,#7c00ff,#FFD700,#ff9500,#FFD700);
@@ -10592,7 +10648,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         n_blk  = len(contradicciones)
 
         st.markdown(
-            f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:12px'>"
+            f"<div style='display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:5px'>"
             f"<div class='mbox'><div class='mval' style='color:#aa00ff'>{n_fut}</div><div class='mlbl'>⚽</div></div>"
             f"<div class='mbox'><div class='mval' style='color:#ff9500'>{n_nba}</div><div class='mlbl'>🏀</div></div>"
             f"<div class='mbox'><div class='mval' style='color:#00ccff'>{n_ten}</div><div class='mlbl'>🎾</div></div>"
@@ -10631,7 +10687,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                         _t3_edge_c  = "#00ff88" if _t3_edge >= 0 else "#ff4444"
                         st.markdown(
                             f"<div style='background:linear-gradient(145deg,#0a0020,#07071a);"
-                            f"border:1px solid {_t3_cc}66;border-radius:14px;padding:12px;"
+                            f"border:1px solid {_t3_cc}66;border-radius:7px;padding:12px;"
                             f"text-align:center;height:100%'>"
                             f"<div style='font-size:1.4rem'>{_t3_medal}</div>"
                             f"<div style='font-size:.68rem;color:#888;margin:2px 0'>{_t3_sport}</div>"
@@ -10762,7 +10818,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
             # No pick encontrado
             st.markdown(
                 "<div style='text-align:center;padding:30px;background:#07071a;"
-                "border-radius:14px;border:1px solid #1a1a30;margin:12px 0'>"
+                "border-radius:7px;border:1px solid #1a1a30;margin:12px 0'>"
                 "<div style='font-size:2rem'>🤔</div>"
                 "<div style='font-size:1rem;font-weight:700;color:#555;margin:8px 0'>"
                 "King Rongo no encontró picks con edge positivo hoy.</div>"
@@ -10777,8 +10833,8 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         st.markdown(
             "<div style='text-align:center;padding:36px 20px;"
             "background:linear-gradient(160deg,#0a0020,#07071a);"
-            "border-radius:16px;border:1px solid #1a1a30;margin:12px 0'>"
-            "<div style='font-size:3rem;margin-bottom:12px;"
+            "border-radius:7px;border:1px solid #1a1a30;margin:12px 0'>"
+            "<div style='font-size:3rem;margin-bottom:5px;"
             "filter:drop-shadow(0 0 10px #FFD70044)'>👑</div>"
             "<div style='font-size:1rem;font-weight:700;color:#555;margin-bottom:8px'>"
             "King Rongo está listo para escanear</div>"
@@ -10857,9 +10913,9 @@ if _king_pick:
     _ts   = st.session_state.get("_king_ts","")
     st.markdown(
         f"<div style='background:linear-gradient(90deg,#100018,#00100a,#100018);"
-        f"border-radius:12px;padding:10px 14px;margin:4px 0 10px;"
+        f"border-radius:12px;padding:5px 8px;margin:4px 0 10px;"
         f"border:1px solid {_kc}44;"
-        f"display:flex;align-items:center;gap:12px;position:relative;overflow:hidden'>"
+        f"display:flex;align-items:center;gap:5px;position:relative;overflow:hidden'>"
         f"<div style='position:absolute;top:0;left:0;right:0;height:2px;"
         f"background:linear-gradient(90deg,transparent,{_kc},transparent)'></div>"
         f"<div style='font-size:1.5rem;filter:drop-shadow(0 0 6px {_kc}88)'>👑</div>"
@@ -11121,10 +11177,10 @@ if st.session_state["view"] == "cartelera":
                                     conf_color2 = "#FFD700" if "DIAMANTE" in ai_conf else ("#00ff88" if "ALTA" in ai_conf else "#aaa")
                                     st.markdown(
                                         f"<div class='acard' style='border-color:{conf_color2}'>"
-                                        f"<div style='font-size:1.1rem;font-weight:900;color:{conf_color2};margin-bottom:14px'>"
+                                        f"<div style='font-size:1.1rem;font-weight:900;color:{conf_color2};margin-bottom:5px'>"
                                         f"📊 {ai_rec_ou} · ML: {ai_rec_ml}  <span style='font-size:.75rem;font-weight:400;color:#555'>{ai_conf}</span></div>"
                                         f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Over / Under {res['line']}</div>"
-                                        f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'>"
+                                        f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:5px'>"
                                         f"<div class='mbox' style='flex:1'>"
                                         f"<div class='mval' style='color:#ff4444'>{ai_over:.0f}%</div>"
                                         f"<div class='mlbl'>🔥 Over {res['line']}</div>"
@@ -11138,7 +11194,7 @@ if st.session_state["view"] == "cartelera":
                                         f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{res['proj']}</div><div class='mlbl'>Proy pts</div></div>"
                                         f"</div>"
                                         f"<div style='font-size:.78rem;color:#555;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Money Line</div>"
-                                        f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px'>"
+                                        f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:5px'>"
                                         f"<div class='mbox' style='flex:1'>"
                                         f"<div class='mval' style='color:#00ff88'>{ai_ml_h:.0f}%</div>"
                                         f"<div class='mlbl'>🏠 {g['home'][:12]}</div>"
@@ -11150,7 +11206,7 @@ if st.session_state["view"] == "cartelera":
                                         f"<div style='height:5px;background:#1a1a40;border-radius:3px;margin-top:6px'>"
                                         f"<div style='height:5px;width:{ai_ml_a:.0f}%;background:#aa00ff;border-radius:3px'></div></div></div>"
                                         f"</div>"
-                                        + (f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
+                                        + (f"<div style='background:#0a0a26;border-radius:10px;padding:6px 8px;"
                                            f"border-left:3px solid {conf_color2};font-size:.88rem;line-height:1.7'>"
                                            f"🤖 <b>Análisis IA:</b><br>{ai_txt.replace(chr(10),'<br>')}</div>" if ai_txt else "")
                                         + f"</div>", unsafe_allow_html=True)
@@ -11203,7 +11259,7 @@ if st.session_state["view"] == "cartelera":
                 _comb = 1.0
                 for _t in _trilay3: _comb *= _t.get("best_p", _t.get("prob", 0.5))
                 _cuota = round(1/_comb, 2) if _comb>0 else 0
-                st.markdown(f"<div class='trilay-card'><div style='font-size:.8rem;font-weight:700;color:#aa00ff;letter-spacing:.1em;margin-bottom:12px'>✦ TRILAY NBA DEL DÍA</div><div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px'><div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{_comb*100:.1f}%</div><div class='mlbl'>Prob. combinada</div></div><div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{_cuota}x</div><div class='mlbl'>Cuota estimada</div></div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='trilay-card'><div style='font-size:.8rem;font-weight:700;color:#aa00ff;letter-spacing:.1em;margin-bottom:5px'>✦ TRILAY NBA DEL DÍA</div><div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:5px'><div class='mbox' style='flex:1'><div class='mval' style='color:#aa00ff'>{_comb*100:.1f}%</div><div class='mlbl'>Prob. combinada</div></div><div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{_cuota}x</div><div class='mlbl'>Cuota estimada</div></div></div>", unsafe_allow_html=True)
                 for _i,_t in enumerate(_trilay3):
                     _p3 = _t.get("best_p", _t.get("prob",0.5))
                     _tm3 = f"{_t.get('home',_t.get('teams','?'))} vs {_t.get('away','')}"
@@ -11316,7 +11372,7 @@ if st.session_state["view"] == "cartelera":
                 st.info("No hay partidos ATP/WTA disponibles para estas fechas.")
             else:
                 st.markdown(
-                    f"<div style='display:flex;gap:10px;margin-bottom:12px'>"
+                    f"<div style='display:flex;gap:10px;margin-bottom:5px'>"
                     f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{total_pre}</div><div class='mlbl'>Hoy / Próximos</div></div>"
                     f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff9500'>{len(live_m)}</div><div class='mlbl'>🔴 En Vivo</div></div>"
                     f"<div class='mbox' style='flex:1'><div class='mval' style='color:#555'>{len(post_m)}</div><div class='mlbl'>Terminados</div></div>"
@@ -11511,56 +11567,68 @@ if st.session_state["view"] == "cartelera":
                                         st.session_state["sel"]  = {**_m, "_sport":"futbol"}
                                         st.session_state["view"] = "analisis"
                                         st.rerun()
-                                # Pre/live — tarjetas con prob local/empate/visitante
-                                for _m in _pre_ms:
-                                    _live = _m["state"] == "in"
-                                    _sc   = f"🔴 {_m['score_h']}-{_m['score_a']}" if _live else f"🕐 {_m.get('hora','')}"
-                                    try:
-                                        _hf2 = get_form(_m["home_id"], _m["slug"]) or []
-                                        _af2 = get_form(_m["away_id"], _m["slug"]) or []
-                                        _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug","")) if _hf2 else _cup_enriched_xg(_m, True,  _hf2, _af2)
-                                        _ax2 = xg_weighted(_af2,False,slug=_m.get("slug","")) if _af2 else _cup_enriched_xg(_m, False, _hf2, _af2)
-                                        _mc2 = mc50k(_hx2, _ax2)
-                                        _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
-                                    except:
-                                        _ph2 = _m.get("odd_h",0); _pa2 = _m.get("odd_a",0); _pd2 = _m.get("odd_d",0)
-                                        if _ph2 > 1 and _pa2 > 1:
-                                            _tot = 1/_ph2 + (1/_pd2 if _pd2>1 else 0.25) + 1/_pa2
-                                            _ph2 = (1/_ph2)/_tot; _pd2 = 0.25; _pa2 = (1/_pa2)/_tot
-                                        else:
-                                            _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
-                                    _mx = max(_ph2,_pd2,_pa2)
-                                    _ch = "#00ff88" if _ph2==_mx else "#555"
-                                    _cd = "#FFD700" if _pd2==_mx else "#555"
-                                    _ca = "#00ff88" if _pa2==_mx else "#555"
-                                    _wh = "800" if _ph2==_mx else "400"
-                                    _wd = "800" if _pd2==_mx else "400"
-                                    _wa = "800" if _pa2==_mx else "400"
-                                    st.markdown(f"""<div style='background:#0a0a18;border:1px solid #1a1a30;border-radius:10px;padding:8px 10px;margin:3px 0'>
-  <div style='font-size:.65rem;color:#444;margin-bottom:5px'>{_sc}</div>
-  <div style='display:flex;align-items:center;gap:4px'>
-    <div style='flex:2;font-size:.75rem;color:#bbb;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{_m["home"]}</div>
-    <div style='display:flex;gap:3px;flex-shrink:0'>
-      <div style='background:#0f0f20;border:1px solid {_ch}44;border-radius:6px;padding:4px 6px;text-align:center;min-width:42px'>
-        <div style='font-size:.78rem;font-weight:{_wh};color:{_ch}'>{_ph2*100:.0f}%</div>
-        <div style='font-size:.55rem;color:#333'>🏠</div>
-      </div>
-      <div style='background:#0f0f20;border:1px solid {_cd}44;border-radius:6px;padding:4px 6px;text-align:center;min-width:42px'>
-        <div style='font-size:.78rem;font-weight:{_wd};color:{_cd}'>{_pd2*100:.0f}%</div>
-        <div style='font-size:.55rem;color:#333'>🤝</div>
-      </div>
-      <div style='background:#0f0f20;border:1px solid {_ca}44;border-radius:6px;padding:4px 6px;text-align:center;min-width:42px'>
-        <div style='font-size:.78rem;font-weight:{_wa};color:{_ca}'>{_pa2*100:.0f}%</div>
-        <div style='font-size:.55rem;color:#333'>✈️</div>
-      </div>
+                                # Pre/live — 2 tarjetas por fila, diseño compacto
+                                for _pi in range(0, len(_pre_ms), 2):
+                                    _pair = _pre_ms[_pi:_pi+2]
+                                    _cols = st.columns(len(_pair))
+                                    for _col, _m in zip(_cols, _pair):
+                                        with _col:
+                                            _live = _m["state"] == "in"
+                                            _sc   = f"🔴 {_m['score_h']}-{_m['score_a']}" if _live else _m["hora"]
+                                            try:
+                                                _hf2 = get_form(_m["home_id"], _m["slug"]) or []
+                                                _af2 = get_form(_m["away_id"], _m["slug"]) or []
+                                                _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug","")) if _hf2 else 1.2
+                                                _ax2 = xg_weighted(_af2,False,slug=_m.get("slug","")) if _af2 else 1.1
+                                                _mc2 = mc50k(_hx2, _ax2)
+                                                _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
+                                            except:
+                                                _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
+                                            _mx = max(_ph2,_pd2,_pa2)
+                                            _ch = "#00ff88" if _ph2==_mx else "#666"
+                                            _cd = "#FFD700" if _pd2==_mx else "#666"
+                                            _ca = "#00ff88" if _pa2==_mx else "#666"
+                                            _bh = "900" if _ph2==_mx else "400"
+                                            _bd = "900" if _pd2==_mx else "400"
+                                            _ba = "900" if _pa2==_mx else "400"
+                                            _border = "#ff444466" if _live else "#1a1a3a"
+                                            _home_short = _m["home"][:11]
+                                            _away_short = _m["away"][:11]
+                                            # Diamond bridge pick si existe
+                                            _br_key = _m.get("id","")
+                                            _br = st.session_state.get("_diamond_bridge",{}).get(_br_key,{})
+                                            _pick_lbl = _br.get("pick","") if _br else ""
+                                            _pick_prob = _br.get("prob",0) if _br else 0
+                                            _pick_html = (
+                                                f"<div style='font-size:.6rem;color:#FFD700;font-weight:700;"
+                                                f"margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+                                                f"💎 {_pick_lbl[:22]}</div>"
+                                            ) if _pick_lbl else ""
+                                            st.markdown(f"""<div style='background:#080816;border:1px solid {_border};
+border-radius:8px;padding:7px 8px;margin-bottom:2px'>
+  <div style='font-size:.58rem;color:{"#ff4444" if _live else "#444"};font-weight:700;letter-spacing:.05em'>{_sc}</div>
+  <div style='font-size:.72rem;color:#ccc;font-weight:700;line-height:1.2;margin:2px 0'>{_home_short}</div>
+  <div style='font-size:.58rem;color:#555;margin:1px 0'>vs</div>
+  <div style='font-size:.72rem;color:#ccc;font-weight:700;line-height:1.2'>{_away_short}</div>
+  <div style='display:flex;gap:3px;margin-top:5px'>
+    <div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:3px 2px;border:1px solid {_ch}33'>
+      <div style='font-size:.75rem;font-weight:{_bh};color:{_ch}'>{_ph2*100:.0f}%</div>
+      <div style='font-size:.5rem;color:#444'>🏠</div>
     </div>
-    <div style='flex:2;font-size:.75rem;color:#bbb;font-weight:600;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{_m["away"]}</div>
-  </div>
-</div>""", unsafe_allow_html=True)
-                                    if st.button("📊 Analizar", key=f"fut_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
-                                        st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                        st.session_state["view"] = "analisis"
-                                        st.rerun()
+    <div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:3px 2px;border:1px solid {_cd}33'>
+      <div style='font-size:.75rem;font-weight:{_bd};color:{_cd}'>{_pd2*100:.0f}%</div>
+      <div style='font-size:.5rem;color:#444'>🤝</div>
+    </div>
+    <div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:3px 2px;border:1px solid {_ca}33'>
+      <div style='font-size:.75rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>
+      <div style='font-size:.5rem;color:#444'>✈️</div>
+    </div>
+  </div>{_pick_html}</div>""", unsafe_allow_html=True)
+                                            if st.button("📊", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_m.get('hora','')}",
+                                                         use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
+                                                st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                                st.session_state["view"] = "analisis"
+                                                st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
             with st.spinner("Calculando TRILAY..."):
@@ -11786,7 +11854,7 @@ else:
             f"<div class='diamond-hero'>"
             f"<div style='font-size:.75rem;font-weight:700;color:#FFD700;letter-spacing:.12em;margin-bottom:8px'>"
             f"✦ JUGADA DIAMANTE TENIS — {_ten_conf}</div>"
-            f"<div style='font-size:2.2rem;font-weight:900;margin-bottom:6px'>🎾 {_vd_fav} gana</div>"
+            f"<div style='font-size:1.1rem;font-weight:900;margin-bottom:6px'>🎾 {_vd_fav} gana</div>"
             f"<div style='font-size:1.3rem;font-weight:700;color:#FFD700;margin-bottom:10px'>"
             f"{_vd_fav_p*100:.1f}% de probabilidad</div>"
             f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
@@ -11809,13 +11877,9 @@ else:
                      _odd1 if _vd_fav==g["home"] else _odd2, sport="tenis")
             st.success("✅ Pick guardado")
 
-        # Einstein resumen
-        if _ei and _ei.get("resumen"):
-            st.markdown(
-                f"<div style='background:#0a0a26;border-radius:10px;padding:12px 14px;"
-                f"border-left:3px solid #FFD700;font-size:.88rem;line-height:1.7;margin-top:12px'>"
-                f"🧠 <b>Einstein:</b><br>{_ei['resumen'].replace(chr(10),'<br>')}</div>",
-                unsafe_allow_html=True)
+        # Einstein + Papa side by side (tennis)
+        _ten_ctx = f"J1: {g['home']} rank#{_rank1} @{_odd1:.2f} | J2: {g['away']} rank#{_rank2} @{_odd2:.2f} | Superficie: {_ten_surface} | Tour: {_ten_tour} | {_vd_fav} gana {_vd_fav_p*100:.1f}%"
+        _ei_ten, _papa_ten = _render_einstein_papa('tenis', g['home'], g['away'], f'🎾 {_vd_fav} gana', _vd_fav_p, _odd1 if _vd_fav==g['home'] else _odd2, context_str=_ten_ctx)
 
         # Badrino
         st.markdown("<div class='shdr'>🤖 Badrino — Análisis Completo</div>", unsafe_allow_html=True)
@@ -11860,18 +11924,18 @@ else:
             st.markdown(
                 f"<div class='diamond-hero'>"
                 f"<div style='font-size:.75rem;font-weight:700;color:#ff9500;letter-spacing:.14em;margin-bottom:8px'>🏀 ANÁLISIS O/U + ML</div>"
-                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px'>"
-                f"<div style='background:#0a0a1e;border-radius:12px;padding:14px;border:1px solid {_ou_col}44'>"
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px'>"
+                f"<div style='background:#0a0a1e;border-radius:7px;padding:7px 10px;border:1px solid {_ou_col}44'>"
                 f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em'>OVER / UNDER</div>"
                 f"<div style='font-size:.75rem;color:#777;margin:4px 0'>Línea: {_line} pts · Proy: {_proj:.0f} pts</div>"
-                f"<div style='font-size:1.5rem;font-weight:900;color:{_ou_col}'>{_ou_rec}</div>"
+                f"<div style='font-size:1.05rem;font-weight:900;color:{_ou_col}'>{_ou_rec}</div>"
                 f"<div style='display:flex;gap:8px;margin-top:6px'>"
                 f"<span style='font-size:.78rem;color:#00ff88'>Over {_p_over*100:.1f}%</span>"
                 f"<span style='font-size:.78rem;color:#00ccff'>Under {_p_under*100:.1f}%</span></div></div>"
-                f"<div style='background:#0a0a1e;border-radius:12px;padding:14px;border:1px solid #FFD70044'>"
+                f"<div style='background:#0a0a1e;border-radius:7px;padding:7px 10px;border:1px solid #FFD70044'>"
                 f"<div style='font-size:.7rem;color:#555;font-weight:700;letter-spacing:.1em'>MONEY LINE</div>"
                 f"<div style='font-size:.75rem;color:#777;margin:4px 0'>Favorito</div>"
-                f"<div style='font-size:1.2rem;font-weight:900;color:#FFD700'>{_ml_fav[:16]}</div>"
+                f"<div style='font-size:.9rem;font-weight:900;color:#FFD700'>{_ml_fav[:16]}</div>"
                 f"<div style='font-size:.85rem;color:#FFD700;margin-top:6px'>{_ml_p*100:.1f}% prob</div>"
                 f"<div style='font-size:.72rem;color:#555'>🏠 {g.get('home','')[:14]}: {_p_home*100:.1f}%  ✈️ {g.get('away','')[:14]}: {_p_away*100:.1f}%</div>"
                 f"</div></div>"
@@ -11891,6 +11955,10 @@ else:
                     "fecha":g.get("fecha",datetime.now(CDMX).strftime("%Y-%m-%d"))
                 })
                 st.success("✅ Pick guardado")
+
+            # Einstein + Papa NBA
+            _nba_ctx = f"O/U Line: {_line} | OVER: {_p_over*100:.0f}% | UNDER: {_p_under*100:.0f}% | {g.get('home','')} ML: {_p_home*100:.0f}% | {g.get('away','')} ML: {_p_away*100:.0f}% | Proyección: {_proj:.0f} pts"
+            _ei_nba, _papa_nba = _render_einstein_papa('nba', g.get('home',''), g.get('away',''), _nba_pick_lbl, max(_p_over,_p_under), _nba_odd, context_str=_nba_ctx)
 
     else:
         # ── SOCCER ANALYSIS ──
@@ -11952,8 +12020,8 @@ else:
             _lead_txt  = f" · {_lead_team[:14]} ganando" if _lead_team else " · Empate"
             st.markdown(
                 f"<div style='background:linear-gradient(90deg,#1a0000,#0a0014,#1a0000);"
-                f"border:1.5px solid #ff4444;border-radius:10px;padding:10px 16px;"
-                f"margin:0 0 14px;display:flex;align-items:center;gap:12px'>"
+                f"border:1.5px solid #ff4444;border-radius:7px;padding:6px 10px;"
+                f"margin:0 0 14px;display:flex;align-items:center;gap:5px'>"
                 f"<div style='font-size:1.1rem'>🔴</div>"
                 f"<div style='flex:1'>"
                 f"<div style='font-size:.7rem;color:#ff4444;font-weight:900;letter-spacing:.1em'>"
@@ -11971,7 +12039,7 @@ else:
         src_h = f"✅ ESPN ({len(hform)}P)" if hform else f"📊 Récord {g['home_rec']}"
         src_a = f"✅ ESPN ({len(aform)}P)" if aform else f"📊 Récord {g['away_rec']}"
         st.markdown(
-            f"<div style='font-size:.8rem;background:#0a0a1e;border-radius:8px;padding:8px 14px;"
+            f"<div style='font-size:.8rem;background:#0a0a1e;border-radius:5px;padding:5px 8px;"
             f"border:1px solid #1a1a40;margin:4px 0 14px;display:flex;gap:20px;flex-wrap:wrap'>"
             f"<span style='color:#444;font-weight:700'>Fuente:</span>"
             f"<span style='color:#00ff88'>{g['home'][:14]}: {src_h}</span>"
@@ -12048,25 +12116,36 @@ else:
             for i,(l,v,_) in enumerate(top3)
         )
 
+        # Compact diamond hero
+        _conf_color_d = "#FFD700" if "DIAMANTE" in dp.get("conf","") else ("#00ff88" if "ALTA" in dp.get("conf","") else "#aaa")
+        _edge_d = (main_prob - 1/main_odd) if main_odd > 1 else 0
+        _edge_str = f"+{_edge_d*100:.1f}%" if _edge_d > 0.001 else ("—" if main_odd <= 1 else f"{_edge_d*100:.1f}%")
+        _edge_c = "#00ff88" if _edge_d > 0.03 else ("#FFD700" if _edge_d > 0 else "#555")
+        _dh2, _dd2, _da2 = dp["ph"], dp.get("pd", max(0,1-dp["ph"]-dp["pa"])), dp["pa"]
+        _mx3 = max(_dh2,_dd2,_da2)
         st.markdown(
-            f"<div class='diamond-hero'>"
-            f"<div style='font-size:.78rem;font-weight:700;color:#FFD700;letter-spacing:.14em;margin-bottom:10px'>"
-            f"✦ JUGADA DIAMANTE — {dp['conf']} · Mayor probabilidad del partido</div>"
-            f"<div style='font-size:2.4rem;font-weight:900;line-height:1.1;margin-bottom:8px'>{main_lbl}</div>"
-            f"<div style='font-size:1.3rem;font-weight:700;color:#FFD700;margin-bottom:6px'>"
-            f"{main_prob*100:.1f}% de probabilidad"
-            + (f" · @{main_odd:.2f}" if main_odd>1 else "") + "</div>"
-            f"<div style='font-size:.75rem;color:#888;margin-bottom:16px'>"
-            f"Evaluados: Over 2.5 · Over 3.5 · Ambos Anotan · Mitad · 1X2</div>"
-            f"<div style='display:flex;gap:10px;flex-wrap:wrap'>{mkt_badges}</div>"
-            f"<div style='margin-top:12px;padding-top:10px;border-top:1px solid #252550'>"
-            f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px'>"
-            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ccff'>{mc.get('dc_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Dixon-Coles</div></div>"
-            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#aa00ff'>{mc.get('bvp_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Poisson BV</div></div>"
-            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#00ff88'>{mc.get('elo_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>Elo Dinámico</div></div>"
-            f"<div style='text-align:center'><div style='font-size:.9rem;font-weight:700;color:#FFD700'>{mc.get('h2h_ph',0):.1f}%</div><div style='font-size:.6rem;color:#555'>H2H</div></div>"
-            f"</div><div style='font-size:.72rem;color:#555'>Consenso: <b>{mc.get('consensus','')}</b> · xG {hxg:.2f}/{axg:.2f} · Ensemble 4 modelos</div>"
-            f"</div></div>",
+            f"<div style='background:linear-gradient(135deg,#08080f,#0d0820);border:1px solid {_conf_color_d}44;"
+            f"border-radius:10px;padding:10px 12px;margin-bottom:8px'>"
+            f"<div style='font-size:.58rem;color:{_conf_color_d};font-weight:900;letter-spacing:.1em;margin-bottom:4px'>"
+            f"✦ JUGADA DIAMANTE — {dp.get('conf','')}</div>"
+            f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:8px'>"
+            f"<div style='flex:1;font-size:1.05rem;font-weight:900;color:#fff;line-height:1.2'>{main_lbl}</div>"
+            f"<div style='text-align:right;flex-shrink:0'>"
+            f"<div style='font-size:1.3rem;font-weight:900;color:{_conf_color_d}'>{main_prob*100:.1f}%</div>"
+            + (f"<div style='font-size:.66rem;color:{_edge_c}'>Edge {_edge_str} @{main_odd:.2f}</div>" if main_odd>1 else "")
+            + f"</div></div>"
+            f"<div style='display:flex;gap:3px'>"
+            + (lambda dh,dd,da,mx: "".join([
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:3px 2px;"
+                f"border:1px solid {('#FFD70033' if v==mx else '#ffffff08')}'>"
+                f"<div style='font-size:.75rem;font-weight:{('900' if v==mx else '400')};"
+                f"color:{('#FFD700' if v==mx else '#666')}'>{v*100:.0f}%</div>"
+                f"<div style='font-size:.5rem;color:#333'>{lbl}</div></div>"
+                for lbl, v in [("🏠", dh), ("🤝", dd), ("✈️", da)]
+            ]))(_dh2, _dd2, _da2, _mx3)
+            + f"</div>"
+            f"<div style='font-size:.58rem;color:#333;margin-top:4px'>xG: {hxg:.2f}–{axg:.2f} · {mc.get('consensus','')}</div>"
+            f"</div>",
             unsafe_allow_html=True)
 
         # ── BRIDGE DIAMANTE → RESULTADOS ──
@@ -12108,18 +12187,36 @@ else:
                 add_pick(g, "⚡ Ambos Anotan", mc["btts"], 0)
                 st.success("✅ Pick guardado")
 
-        # ── SMART PARLAY ──
+        # ── SMART PARLAY compact ──
         if pls:
-            best=pls[0]; legs=[x for x in [best.get("l1"),best.get("l2")] if x]
+            _best = pls[0]; _legs = [x for x in [_best.get("l1"),_best.get("l2")] if x]
             st.markdown(
-                f"<div class='parlay-hero'>"
-                f"<div style='font-size:.8rem;color:#00ccff;font-weight:700;letter-spacing:.1em;margin-bottom:12px'>✦ SMART PLAY — PARLAY RECOMENDADO</div>"
-                +"".join(f"<div style='font-size:1.1rem;font-weight:700;margin:4px 0'>✓ {l}</div>" for l in legs)
-                +f"<div style='display:flex;gap:12px;margin-top:16px;flex-wrap:wrap'>"
-                +"".join(f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{p*100:.1f}%</div><div class='mlbl'>{l}</div></div>" for l,p in [(best.get("l1",""),best.get("p1",0)),(best.get("l2",""),best.get("p2",0))])
-                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['cp']*100:.1f}%</div><div class='mlbl'>Combinada</div></div>"
-                +f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{best['odds']}x</div><div class='mlbl'>Cuota</div></div>"
-                +f"</div></div>",unsafe_allow_html=True)
+                f"<div style='background:#060612;border:1px solid #00ccff22;border-radius:7px;padding:7px 10px;margin:4px 0'>"
+                f"<div style='font-size:.58rem;color:#00ccff;font-weight:900;letter-spacing:.08em;margin-bottom:3px'>⚡ SMART PARLAY</div>"
+                f"<div style='font-size:.7rem;color:#bbb'>" + " + ".join(f"<span style='color:#ccc'>{_l}</span>" for _l in _legs) + "</div>"
+                f"<div style='display:flex;gap:4px;margin-top:4px'>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:4px;padding:2px'>"
+                f"<div style='font-size:.75rem;font-weight:900;color:#00ccff'>{_best.get('prob',0)*100:.1f}%</div>"
+                f"<div style='font-size:.5rem;color:#444'>Prob</div></div>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:4px;padding:2px'>"
+                f"<div style='font-size:.75rem;font-weight:900;color:#FFD700'>@{_best.get('odds',0):.2f}</div>"
+                f"<div style='font-size:.5rem;color:#444'>Cuota</div></div>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:4px;padding:2px'>"
+                f"<div style='font-size:.75rem;font-weight:900;color:#00ff88'>{_best.get('ev',0)*100:.1f}%</div>"
+                f"<div style='font-size:.5rem;color:#444'>EV</div></div>"
+                f"</div></div>",
+                unsafe_allow_html=True)
+        # ══════════════════════════════════════════════════════════
+        # ANÁLISIS IA — Einstein analiza el partido
+        # Einstein + Papa side by side (soccer)
+        _form_h_str = " ".join([r.get("result","?") for r in hform[:5]]) if hform else "N/D"
+        _form_a_str = " ".join([r.get("result","?") for r in aform[:5]]) if aform else "N/D"
+        _soc_ctx = (f"Liga: {g.get('league','')} | xG: {hxg:.2f}-{axg:.2f} | "
+                    f"O2.5: {mc['o25']*100:.0f}% BTTS: {mc['btts']*100:.0f}% | "
+                    f"Forma {g['home']}: {_form_h_str} | Forma {g['away']}: {_form_a_str}")
+        if _is_live and _inplay_applied:
+            _soc_ctx += f" | EN VIVO {_score_h}-{_score_a} min{_minute}'"
+        _ei_soc, _papa_soc = _render_einstein_papa('futbol', g['home'], g['away'], main_lbl, main_prob, main_odd, context_str=_soc_ctx)
 
         # ══════════════════════════════════════════════════════════
         # VEREDICTO ACADÉMICO — Semáforo 🟢🟡🔴
@@ -12138,139 +12235,112 @@ else:
             best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
         st.markdown(v_html, unsafe_allow_html=True)
 
-        # ── TABLA DE POSICIONES ──
-        st.markdown("<div class='shdr'>📊 Tabla de Posiciones</div>", unsafe_allow_html=True)
-        with st.spinner("Cargando tabla..."):
-            standings = get_standings(g["slug"])
-        if standings:
-            # Highlight home and away team
+        # ── DATOS COMPACTOS: Mercados + Stats + Forma ──
+        # Fila 1: ML + Totales en 2 cols
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            _odd_h_lbl = f" @{g['odd_h']:.2f}" if g.get("odd_h",0)>1 else ""
+            _odd_a_lbl = f" @{g['odd_a']:.2f}" if g.get("odd_a",0)>1 else ""
+            _odd_d_lbl = f" @{g['odd_d']:.2f}" if g.get("odd_d",0)>1 else ""
+            _ch2 = "#00ff88" if dp["ph"]>=0.45 else "#555"
+            _ca2 = "#aa00ff" if dp["pa"]>=0.45 else "#555"
             st.markdown(
-                f"<div class='acard' style='padding:12px 16px'>"
-                f"<div class='stand-row' style='color:#555;font-size:.72rem;font-weight:700;border-bottom:2px solid #252555'>"
-                f"<span>#</span><span>Equipo</span><span>PJ</span><span>Pts</span>"
-                f"<span>GF</span><span>GC</span><span>Dif</span></div>",
-                unsafe_allow_html=True)
-            for row in standings[:20]:
-                is_h = g["home_id"] == row["tid"]
-                is_a = g["away_id"] == row["tid"]
-                bg   = "background:#7c00ff22;border-left:3px solid #7c00ff;" if is_h else \
-                       ("background:#ff444422;border-left:3px solid #ff4444;" if is_a else "")
-                name_color = "#7c00ff" if is_h else ("#ff4444" if is_a else "#EEEEFF")
-                st.markdown(
-                    f"<div class='stand-row' style='{bg}'>"
-                    f"<span style='color:#555'>{row['pos']}</span>"
-                    f"<span style='color:{name_color};font-weight:{'700' if is_h or is_a else '400'}'>{row['team'][:16]}</span>"
-                    f"<span style='color:#555'>{row['pj']}</span>"
-                    f"<span style='color:#FFD700;font-weight:700'>{row['pts']}</span>"
-                    f"<span style='color:#00ff88'>{row['gf']}</span>"
-                    f"<span style='color:#ff4444'>{row['gc']}</span>"
-                    f"<span style='color:#aaa'>{row['dif']}</span>"
-                    f"</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div style='color:#555;font-size:.85rem'>Tabla no disponible para esta liga.</div>", unsafe_allow_html=True)
+                f"<div style='background:#080816;border:1px solid #1a1a3a;border-radius:8px;padding:8px 10px;margin-bottom:6px'>"
+                f"<div style='font-size:.6rem;color:#444;font-weight:700;letter-spacing:.08em;margin-bottom:6px'>1X2</div>"
+                f"<div style='display:flex;gap:4px'>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:4px 2px'>"
+                f"<div style='font-size:.82rem;font-weight:900;color:{_ch2}'>{dp['ph']*100:.0f}%</div>"
+                f"<div style='font-size:.55rem;color:#555'>🏠{_odd_h_lbl}</div></div>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:4px 2px'>"
+                f"<div style='font-size:.82rem;font-weight:900;color:#FFD700'>{dp['pd']*100:.0f}%</div>"
+                f"<div style='font-size:.55rem;color:#555'>🤝{_odd_d_lbl}</div></div>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:4px 2px'>"
+                f"<div style='font-size:.82rem;font-weight:900;color:{_ca2}'>{dp['pa']*100:.0f}%</div>"
+                f"<div style='font-size:.55rem;color:#555'>✈️{_odd_a_lbl}</div></div>"
+                f"</div></div>", unsafe_allow_html=True)
+        with _c2:
+            _co25 = "#00ff88" if mc["o25"]>=0.55 else ("#FFD700" if mc["o25"]>=0.45 else "#555")
+            _cbt  = "#00ff88" if mc["btts"]>=0.55 else ("#FFD700" if mc["btts"]>=0.45 else "#555")
+            st.markdown(
+                f"<div style='background:#080816;border:1px solid #1a1a3a;border-radius:8px;padding:8px 10px;margin-bottom:6px'>"
+                f"<div style='font-size:.6rem;color:#444;font-weight:700;letter-spacing:.08em;margin-bottom:6px'>TOTALES</div>"
+                f"<div style='display:flex;gap:4px'>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:4px 2px'>"
+                f"<div style='font-size:.82rem;font-weight:900;color:{_co25}'>{mc['o25']*100:.0f}%</div>"
+                f"<div style='font-size:.55rem;color:#555'>O2.5</div></div>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:4px 2px'>"
+                f"<div style='font-size:.82rem;font-weight:900;color:{_cbt}'>{mc['btts']*100:.0f}%</div>"
+                f"<div style='font-size:.55rem;color:#555'>AA</div></div>"
+                f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:4px 2px'>"
+                f"<div style='font-size:.82rem;font-weight:900;color:#aaa'>{mc['o15']*100:.0f}%</div>"
+                f"<div style='font-size:.55rem;color:#555'>O1.5</div></div>"
+                f"</div></div>", unsafe_allow_html=True)
 
-        # ── MERCADOS ──
-        st.markdown("<div class='shdr'>📊 Todos los Mercados</div>",unsafe_allow_html=True)
-        # Fila 1: ML (1X2) — los más importantes
-        _odd_h_lbl = f" @{g['odd_h']:.2f}" if g.get("odd_h",0)>1 else ""
-        _odd_a_lbl = f" @{g['odd_a']:.2f}" if g.get("odd_a",0)>1 else ""
-        _odd_d_lbl = f" @{g['odd_d']:.2f}" if g.get("odd_d",0)>1 else ""
-        cols_ml = st.columns(3)
-        for col, (label, val, odd_lbl, color_hi) in zip(cols_ml, [
-            (f"🏠 {g['home'][:12]} ML", dp["ph"], _odd_h_lbl, "#00ff88"),
-            ("🤝 Empate ML",             dp["pd"], _odd_d_lbl, "#FFD700"),
-            (f"✈️ {g['away'][:12]} ML",  dp["pa"], _odd_a_lbl, "#aa00ff"),
-        ]):
-            with col:
-                color = color_hi if val>=0.45 else "#555"
-                st.markdown(f"<div class='mbox'><div class='mval' style='color:{color}'>{val*100:.0f}%</div><div class='mlbl'>{label}{odd_lbl}</div></div>",unsafe_allow_html=True)
-        # Fila 2: Totales
-        cols2 = st.columns(6)
-        for col,(label,val) in zip(cols2,[("Over 1.5",mc["o15"]),("Over 2.5",mc["o25"]),
-            ("Over 3.5",mc["o35"]),("Ambos Anotan",mc["btts"]),("CS Local",mc["cs_h"]),("CS Visit.",mc["cs_a"])]):
-            with col:
-                color="#00ff88" if val>=0.58 else ("#FFD700" if val>=0.45 else "#666")
-                st.markdown(f"<div class='mbox'><div class='mval' style='color:{color}'>{val*100:.0f}%</div><div class='mlbl'>{label}</div></div>",unsafe_allow_html=True)
-
-        # ── STATS ──
-        st.markdown("<div class='shdr'>📈 Estadísticas Comparativas</div>",unsafe_allow_html=True)
+        # Fila 2: Stats + Forma en 2 cols
+        _s1, _s2 = st.columns(2)
         h_gf=avg([r["gf"] for r in hform]) if hform else 0
         a_gf=avg([r["gf"] for r in aform]) if aform else 0
         h_gc=avg([r["gc"] for r in hform]) if hform else 0
         a_gc=avg([r["gc"] for r in aform]) if aform else 0
         h_o25=len([r for r in hform if r["gf"]+r["gc"]>2])/max(len(hform),1)*100
         a_o25=len([r for r in aform if r["gf"]+r["gc"]>2])/max(len(aform),1)*100
-        h_bt=len([r for r in hform if r["gf"]>0 and r["gc"]>0])/max(len(hform),1)*100
-        a_bt=len([r for r in aform if r["gf"]>0 and r["gc"]>0])/max(len(aform),1)*100
-        rows=(f"<div style='display:grid;grid-template-columns:1fr 200px 1fr;gap:4px;"
-              f"padding:8px 0;border-bottom:1px solid #151530;font-size:.82rem;font-weight:700;color:#555'>"
-              f"<div style='text-align:right'>{g['home'][:14]}</div>"
-              f"<div style='text-align:center'>Estadística</div>"
-              f"<div>{g['away'][:14]}</div></div>")
-        rows+=cmprow("Goles anotados/partido",h_gf,a_gf)
-        rows+=cmprow("Goles recibidos/partido",h_gc,a_gc)
-        rows+=cmprow("xG estimado",hxg,axg,"{:.1f}")
-        rows+=cmprow("% Over 2.5 (últimos 10)",h_o25,a_o25,"{:.0f}","%")
-        rows+=cmprow("% Ambos Anotan (últimos 10)",h_bt,a_bt,"{:.0f}","%")
-        st.markdown(f"<div class='acard'>{rows}</div>",unsafe_allow_html=True)
+        with _s1:
+            # Only show stats that have real data
+            _has_form = bool(hform) and bool(aform)
+            _stat_rows = []
+            if _has_form:
+                if h_gf > 0 or a_gf > 0:
+                    _stat_rows.append(("GF/p", f"{h_gf:.1f}", f"{a_gf:.1f}", "#00ff88"))
+                if h_gc > 0 or a_gc > 0:
+                    _stat_rows.append(("GC/p", f"{h_gc:.1f}", f"{a_gc:.1f}", "#ff4444"))
+                if h_o25 > 0 or a_o25 > 0:
+                    _stat_rows.append(("O2.5%", f"{h_o25:.0f}%", f"{a_o25:.0f}%", "#aaa"))
+            _stat_rows.append(("xG", f"{hxg:.2f}", f"{axg:.2f}", "#00ccff"))
+            _rows_html = "".join([
+                f"<div style='display:flex;justify-content:space-between;font-size:.72rem;"
+                f"padding:2px 0;border-bottom:1px solid #111'>"
+                f"<span style='color:{c}'>{h}</span><span style='color:#444'>{lbl}</span>"
+                f"<span style='color:{c}'>{a}</span></div>"
+                for lbl, h, a, c in _stat_rows
+            ])
+            st.markdown(
+                f"<div style='background:#080816;border:1px solid #1a1a3a;border-radius:8px;padding:8px 10px'>"
+                f"<div style='font-size:.6rem;color:#444;font-weight:700;letter-spacing:.08em;margin-bottom:5px'>STATS</div>"
+                f"<div style='display:flex;justify-content:space-between;font-size:.62rem;color:#555;margin-bottom:3px'>"
+                f"<span style='color:#7c00ff;font-weight:700'>{g['home'][:10]}</span>"
+                f"<span></span><span style='color:#ff4444;font-weight:700'>{g['away'][:10]}</span></div>"
+                + _rows_html +
+                f"</div>", unsafe_allow_html=True)
+        with _s2:
+            _fh = " ".join([
+                f"<span style='color:{'#00ff88' if r['result']=='W' else ('#FFD700' if r['result']=='D' else '#ff4444')};font-size:.75rem;font-weight:900'>{r['result']}</span>"
+                for r in hform[:6]
+            ]) if hform else "<span style='color:#444;font-size:.72rem'>Sin datos</span>"
+            _fa = " ".join([
+                f"<span style='color:{'#00ff88' if r['result']=='W' else ('#FFD700' if r['result']=='D' else '#ff4444')};font-size:.75rem;font-weight:900'>{r['result']}</span>"
+                for r in aform[:6]
+            ]) if aform else "<span style='color:#444;font-size:.72rem'>Sin datos</span>"
+            st.markdown(
+                f"<div style='background:#080816;border:1px solid #1a1a3a;border-radius:8px;padding:8px 10px'>"
+                f"<div style='font-size:.6rem;color:#444;font-weight:700;letter-spacing:.08em;margin-bottom:5px'>FORMA RECIENTE</div>"
+                f"<div style='margin-bottom:5px'><div style='font-size:.6rem;color:#7c00ff;font-weight:700;margin-bottom:2px'>{g['home'][:14]}</div>{_fh}</div>"
+                f"<div><div style='font-size:.6rem;color:#ff4444;font-weight:700;margin-bottom:2px'>{g['away'][:14]}</div>{_fa}</div>"
+                f"<div style='display:flex;justify-content:space-between;margin-top:5px;font-size:.62rem;color:#444'>"
+                f"<span>{g['home_rec']}</span><span>Récord</span><span>{g['away_rec']}</span></div>"
+                f"</div>", unsafe_allow_html=True)
 
-        # ── FORMA ──
-        st.markdown("<div class='shdr'>📈 Forma reciente</div>",unsafe_allow_html=True)
-        fc1,fc2=st.columns(2)
-        for col,tname,form,color,rec in [(fc1,g["home"],hform,"#7c00ff",g["home_rec"]),(fc2,g["away"],aform,"#ff4444",g["away_rec"])]:
-            with col:
-                w=sum(1 for r in form if r["result"]=="W")
-                d=sum(1 for r in form if r["result"]=="D")
-                l=sum(1 for r in form if r["result"]=="L")
-                gf=sum(r["gf"] for r in form); gc=sum(r["gc"] for r in form)
-                if form:
-                    st.markdown(
-                        f"<div class='acard'>"
-                        f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
-                        f"<div style='margin-bottom:12px'>{badges(form)}</div>"
-                        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{w}</div><div class='mlbl'>V</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{d}</div><div class='mlbl'>E</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{l}</div><div class='mlbl'>D</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{gf}</div><div class='mlbl'>GF</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff9500'>{gc}</div><div class='mlbl'>GC</div></div>"
-                        f"</div>"
-                        f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec} · Último: hace {days_since(form)}d</div>"
-                        f"</div>",unsafe_allow_html=True)
-                    render_form_chart(form, tname, color)
-                else:
-                    try:
-                        rw,rd,rl = map(int, rec.split("-"))
-                        rn = rw+rd+rl
-                        rwp = round(rw/rn*100) if rn>0 else 0
-                    except: rw=rd=rl=rn=rwp=0
-                    st.markdown(
-                        f"<div class='acard'>"
-                        f"<div style='font-weight:700;font-size:1.05rem;color:{color};margin-bottom:10px'>{tname}</div>"
-                        f"<div style='margin-bottom:12px'><span style='color:#555;font-size:.85rem'>Sin historial detallado en ESPN</span></div>"
-                        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px'>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ff88'>{rw}</div><div class='mlbl'>V</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#FFD700'>{rd}</div><div class='mlbl'>E</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#ff4444'>{rl}</div><div class='mlbl'>D</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#00ccff'>{rn}</div><div class='mlbl'>PJ</div></div>"
-                        f"<div class='mbox' style='flex:1'><div class='mval' style='color:#7c00ff'>{rwp}%</div><div class='mlbl'>% V</div></div>"
-                        f"</div>"
-                        f"<div style='font-size:.82rem;color:#555'>Récord temporada: {rec}</div>"
-                        f"</div>",unsafe_allow_html=True)
-                with st.expander(f"📋 {tname[:20]} — partidos detallados"):
-                    if not form:
-                        st.markdown("<div style='color:#555;padding:10px'>Sin historial ESPN para esta liga.</div>",unsafe_allow_html=True)
-                    for r in form:
-                        rc="#00ff88" if r["result"]=="W" else ("#FFD700" if r["result"]=="D" else "#ff4444")
-                        loc="🏠" if r["is_home"] else "✈️"
-                        st.markdown(
-                            f"<div style='display:flex;justify-content:space-between;font-size:.88rem;"
-                            f"padding:6px 4px;border-bottom:1px solid #151530'>"
-                            f"<span style='color:#555;width:90px'>{r['date']}</span>"
-                            f"<span>{loc} {r['opponent'][:18]}</span>"
-                            f"<span style='color:{rc};font-weight:700'>{r['gf']}-{r['gc']} ({r['result']})</span></div>",
-                            unsafe_allow_html=True)
+        # Tabla de posiciones — colapsada
+        with st.expander("📊 Tabla de posiciones", expanded=False):
+            with st.spinner("Cargando..."): standings = get_standings(g["slug"])
+            if standings:
+                hdr = "<div style='display:grid;grid-template-columns:24px 1fr 28px 32px 28px 28px;gap:2px;font-size:.6rem;color:#444;font-weight:700;padding:4px 6px;border-bottom:1px solid #222'><span>#</span><span>Equipo</span><span>PJ</span><span>Pts</span><span>GF</span><span>GC</span></div>"
+                rows_h = ""
+                for row in standings[:20]:
+                    is_h = g["home_id"]==row["tid"]; is_a = g["away_id"]==row["tid"]
+                    bg = "background:#7c00ff18;" if is_h else ("background:#ff444418;" if is_a else "")
+                    nc = "#7c00ff" if is_h else ("#ff4444" if is_a else "#aaa")
+                    rows_h += f"<div style='display:grid;grid-template-columns:24px 1fr 28px 32px 28px 28px;gap:2px;font-size:.65rem;padding:3px 6px;{bg}'><span style='color:#555'>{row['pos']}</span><span style='color:{nc};font-weight:{'700' if is_h or is_a else '400'}'>{row['name'][:16] if 'name' in row else row.get('team','?')[:16]}</span><span style='color:#555'>{row['pj']}</span><span style='color:#FFD700;font-weight:700'>{row['pts']}</span><span style='color:#00ff88'>{row['gf']}</span><span style='color:#ff4444'>{row['gc']}</span></div>"
+                st.markdown(f"<div style='background:#080816;border-radius:8px;overflow:hidden'>{hdr}{rows_h}</div>", unsafe_allow_html=True)
 
         # ── ODDS COMPARISON ──
         with st.spinner("Buscando cuotas..."):
