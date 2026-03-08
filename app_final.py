@@ -709,11 +709,23 @@ def get_cartelera():
 def get_form(team_id, slug):
     """
     Últimos 15 partidos desde ESPN schedule.
+    Para equipos UEFA combina forma CL/EL + liga doméstica (más fiable).
     Incluye shooting stats si disponibles (para xG real).
     """
     team_id = str(team_id)
+    _UEFA_SLUGS = {"uefa.champions","uefa.europa","uefa.europa.conf","uefa.cl","uefa.el","uefa.ecl"}
+    _extra_events = []
+    if slug in _UEFA_SLUGS:
+        try:
+            # Buscar forma doméstica del equipo en su liga
+            for _tn, _ts in _TEAM_DIVISION.items():
+                _dd = eg(f"{ESPN}/{_ts}/teams/{team_id}/schedule")
+                if _dd.get("events"):
+                    _extra_events = _dd.get("events", [])
+                    break
+        except: pass
     data    = eg(f"{ESPN}/{slug}/teams/{team_id}/schedule")
-    events  = data.get("events", [])
+    events  = data.get("events", []) + _extra_events
     matches = []
     for ev in events:
         try:
@@ -835,9 +847,10 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
         "chn.1": 1.07,   # Chinese Super League
         "aus.1": 1.06,   # A-League Australia
         # ── UEFA COMPETICIONES ──
-        "uefa.cl":  1.05,  # Champions League — casi neutral
-        "uefa.el":  1.05,  # Europa League
-        "uefa.ecl": 1.06,  # Conference League
+        "uefa.champions": 1.05,  # Champions League — casi neutral
+        "uefa.europa":    1.05,  # Europa League
+        "uefa.europa.conf": 1.06, # Conference League
+        "uefa.cl":  1.05,  "uefa.el":  1.05,  "uefa.ecl": 1.06,  # aliases
         # ── COPAS NACIONALES (single leg, más neutral) ──
         "eng.fa":    1.06,  # FA Cup
         "eng.lc":    1.06,  # League Cup
@@ -4554,6 +4567,14 @@ PROCESO DE AUDITORÍA OBLIGATORIO:
    - ¿El veredicto es consistente con la puntuación?
    - ¿Einstein fue demasiado generoso o demasiado conservador?
 
+
+SI ES PARTIDO UEFA (Champions, Europa, Conference League):
+   - ¿Einstein consideró que es eliminatoria ida/vuelta? La cuota solo refleja este partido.
+   - ¿Usó el coeficiente UEFA histórico del equipo para calibrar prob_real?
+   - ¿Consideró rotación de plantilla si el equipo ya clasificó en fase de grupos?
+   - ¿El empate tiene valor diferente por partido de vuelta? (puede ser estratégico)
+   - ¿La prob_real está calibrada para partidos de élite con defensas europeas de alto nivel?
+
 5. VERIFICA EL ESTADO DEL PARTIDO:
    - ¿El partido ya terminó y Einstein no lo detectó? (Error crítico = F automático)
    - ¿La cuota parece de partido en vivo vs pre-partido?
@@ -4965,6 +4986,15 @@ def render_einstein_califica(key_sfx="fut"):
                     "Hándicap Asiático (AH) = mercado sin empate, con línea de ventaja.\n"
                     "1X2 = mercado clásico local/empate/visitante.\n\n"
 
+                    "══ UEFA / CHAMPIONS LEAGUE / EUROPA LEAGUE — CONTEXTO CRÍTICO ══\n"
+                    "Si identificas que es un partido de UEFA (Champions League, Europa League, Conference League):\n"
+                    "  · Son partidos de ELIMINATORIA con ida y vuelta. La cuota refleja solo ESTE partido, no la eliminatoria.\n"
+                    "  · El empate (X) tiene valor REAL — muchos equipos juegan a no perder para el partido de vuelta.\n"
+                    "  · Equipos top (Real Madrid, Bayern, City) tienen prob_real más alta por calidad histórica en UCL.\n"
+                    "  · Considera: viajes intercontinentales, rotación de plantilla, presión de clasificación.\n"
+                    "  · En fase de grupos: equipos ya clasificados pueden rotar — afecta enormemente las probabilidades.\n"
+                    "  · El mercado de Over/Under en UEFA es más difícil — defensas de élite vs ataques de élite.\n"
+                    "  · Calibra prob_real usando UEFA coefficient del equipo + forma doméstica reciente + historial UCL.\n\n"
                     "══ ESTADO DEL PARTIDO — REGLA CRÍTICA ══\n"
                     "SOLO marca estado_partido='finalizado' si ves un marcador FINAL explícito (FT, Final, Terminado, 90') en la imagen. "
                     "Si ves una hora futura (ej: '13:30', '20:00', 'Mañana') = 'pendiente'. "
@@ -5322,9 +5352,12 @@ _DIVISION_SLUGS = {
     "ned.cup":   ("KNVB Cup",        None, None),
     "sco.cup":   ("Scottish Cup",    None, None),
     # Competiciones europeas → mismo mecanismo
-    "uefa.cl":   ("Champions League",None, None),
-    "uefa.el":   ("Europa League",   None, None),
-    "uefa.ecl":  ("Conference Lg",   None, None),
+    "uefa.champions": ("Champions League", None, None),
+    "uefa.europa":    ("Europa League",    None, None),
+    "uefa.europa.conf": ("Conference Lg",  None, None),
+    "uefa.cl":   ("Champions League", None, None),
+    "uefa.el":   ("Europa League",    None, None),
+    "uefa.ecl":  ("Conference Lg",    None, None),
 }
 
 # Equipos conocidos → su liga real (para copa y competiciones europeas)
@@ -5600,10 +5633,31 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         "ned.cup",
         # Escocia
         "sco.cup",
-        # UEFA
-        "uefa.cl", "uefa.el", "uefa.ecl",
+        # UEFA — slugs reales del sistema
+        "uefa.champions", "uefa.europa", "uefa.europa.conf",
+        "uefa.cl", "uefa.el", "uefa.ecl",  # aliases
     }
     is_cup = slug in _cup_slugs
+
+    # UEFA: no hay ventaja de local real — usar odds directamente
+    _uefa_slugs = {"uefa.champions","uefa.europa","uefa.europa.conf","uefa.cl","uefa.el","uefa.ecl"}
+    if slug in _uefa_slugs:
+        odd_h = float(m.get("odd_h",0) or 0)
+        odd_a = float(m.get("odd_a",0) or 0)
+        odd_d = float(m.get("odd_d",0) or 0)
+        if odd_h > 1 and odd_a > 1 and odd_d > 1:
+            _tot = 1/odd_h + 1/odd_d + 1/odd_a
+            _ph  = (1/odd_h) / _tot
+            _pa  = (1/odd_a) / _tot
+            # Sin bonus de local — UEFA es campo neutral
+            _xg = max(0.30, 0.50 + (_ph if is_home else _pa) * 2.5)
+            # Si hay forma real, mezclar 60% modelo / 40% odds
+            _form = hf if is_home else af
+            if _form:
+                _xg_form = xg_weighted(_form, is_home, odds_prior=0)
+                return round(0.60 * _xg_form + 0.40 * _xg, 3)
+            return round(_xg, 3)
+        return 1.3 if is_home else 1.1
 
     # Si no es copa o hay forma directa disponible — usar pipeline normal
     if not is_cup:
