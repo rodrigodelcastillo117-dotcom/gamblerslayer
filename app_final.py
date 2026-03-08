@@ -14345,20 +14345,36 @@ def _fetch_live_stats(match_id: str, slug: str):
             return int(sub.get(key, 0) or 0)
         stats["red_h"] = _sit("redCards", "h"); stats["red_a"] = _sit("redCards", "a")
         stats["yel_h"] = _sit("yellowCards", "h"); stats["yel_a"] = _sit("yellowCards", "a")
-        # Statistics array (shots, possession, corners)
-        for stat in data.get("statistics", {}).get("splits", {}).get("categories", []):
-            for item in stat.get("stats", []):
-                name = item.get("name", "").lower()
-                cats = item.get("categories", item.get("splits", {}).get("categories", []))
-                def _v(cats, idx, dflt=0):
-                    try: return float(cats[idx].get("stats", [{}])[0].get("value", dflt) or dflt)
-                    except: return dflt
-                if "shots on target" in name or "shotsontarget" in name:
-                    stats["shots_h"] = int(_v(cats, 0)); stats["shots_a"] = int(_v(cats, 1))
-                elif "possession" in name:
-                    stats["poss_h"] = _v(cats, 0, 50); stats["poss_a"] = _v(cats, 1, 50)
-                elif "corner" in name:
-                    stats["corners_h"] = int(_v(cats, 0)); stats["corners_a"] = int(_v(cats, 1))
+        # Statistics — ESPN: try flat list then boxscore fallback
+        def _sv2(c, idx, d=0):
+            try: return float(c[idx].get("stats",[{}])[0].get("value",d) or d)
+            except: return d
+        _stat_src = data.get("statistics", [])
+        if isinstance(_stat_src, dict):
+            _stat_src = _stat_src.get("splits",{}).get("categories",[])
+        for _st in (_stat_src or []):
+            _n = _st.get("name","").lower()
+            _c = _st.get("splits",{}).get("categories",[]) or _st.get("categories",[])
+            if ("shot" in _n and "target" in _n) or "shotsontarget" in _n:
+                stats["shots_h"]=int(_sv2(_c,0)); stats["shots_a"]=int(_sv2(_c,1))
+            elif "possession" in _n:
+                stats["poss_h"]=_sv2(_c,0,50); stats["poss_a"]=_sv2(_c,1,50)
+            elif "corner" in _n:
+                stats["corners_h"]=int(_sv2(_c,0)); stats["corners_a"]=int(_sv2(_c,1))
+        # Fallback: boxscore teams
+        for _tb in data.get("boxscore",{}).get("teams",[]):
+            _sd = "h" if _tb.get("homeAway","")=="home" else "a"
+            for _st2 in _tb.get("statistics",[]):
+                _n2 = _st2.get("name","").lower()
+                _val = str(_st2.get("displayValue",_st2.get("value","0")))
+                try:
+                    if ("shot" in _n2 and "target" in _n2) or "shotsontarget" in _n2:
+                        if not stats[f"shots_{_sd}"]: stats[f"shots_{_sd}"]=int(float(_val.split("/")[0]) or 0)
+                    elif "possession" in _n2:
+                        if stats[f"poss_{_sd}"]==50.0: stats[f"poss_{_sd}"]=float(_val.replace("%","") or 50)
+                    elif "corner" in _n2:
+                        if not stats[f"corners_{_sd}"]: stats[f"corners_{_sd}"]=int(float(_val) or 0)
+                except: pass
     except: pass
     return stats
 
