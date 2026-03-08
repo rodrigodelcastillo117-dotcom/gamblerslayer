@@ -3014,7 +3014,7 @@ def _fetch_tennis_results_web(desde, hoy):
                 },
                 json={
                     "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 2000,
+                    "max_tokens": 4000,
                     "tools": [{"type": "web_search_20250305", "name": "web_search"}],
                     "messages": [{"role": "user", "content": user_msg}],
                 },
@@ -3075,22 +3075,22 @@ def _fetch_tennis_results_web(desde, hoy):
                 continue
         return out
 
-    # ── LLAMADA 1: ATP últimos 3 días ──
+    # ── LLAMADA 1: ATP últimos 7 días ──
     try:
         atp_prompt = (
-            f"Busca los resultados de SINGLES ATP de los ultimos 3 dias ({desde} al {now_str}) en Indian Wells 2026.\n"
-            f"Intenta estas URLs:\n"
+            f"Busca los resultados de SINGLES ATP de los ultimos 7 dias ({desde} al {now_str}).\n"
+            f"Torneo actual: BNP Paribas Open Indian Wells 2026 (Masters 1000).\n"
+            f"Fuentes a consultar en orden:\n"
             f"1. https://www.atptour.com/en/scores/current/indian-wells/404/results\n"
-            f"2. Busca en Google: 'ATP Indian Wells 2026 results this week'\n"
-            f"Extrae TODOS los partidos FINALIZADOS de SINGLES masculinos de los ultimos 3 dias.\n"
-            f"EXCLUIR: dobles, mixtos, nombres con '/', '&'.\n"
-            f"CRITICO: p1=GANADOR (sets_p1>sets_p2). p2=perdedor.\n"
-            f"Ej: Zverev gano 2-0 a Berrettini → p1='Alexander Zverev' sets_p1=2, p2='Matteo Berrettini' sets_p2=0\n"
-            f"Incluir campo 'fecha' con el dia real del partido (YYYY-MM-DD).\n"
-            f"Responde SOLO con JSON array:\n"
-            f'[{{"p1":"Ganador Apellido","p2":"Perdedor Apellido",'
-            f'"sets_p1":2,"sets_p2":1,"torneo":"BNP Paribas Open Indian Wells",'
-            f'"tour":"ATP","fecha":"2026-03-07"}}]'
+            f"2. https://www.flashscore.com/tennis/ busca Indian Wells ATP 2026\n"
+            f"3. Google: site:atptour.com Indian Wells 2026 results\n"
+            f"Extrae TODOS los partidos FINALIZADOS de SINGLES masculinos.\n"
+            f"EXCLUIR: dobles, mixtos, nombres con '/', '&', 'vs'.\n"
+            f"CRITICO: p1=GANADOR siempre (sets_p1 > sets_p2).\n"
+            f"Incluir campo 'fecha' con el dia exacto del partido (YYYY-MM-DD).\n"
+            f"Responde SOLO con JSON array (sin explicacion, sin markdown):\n"
+            f'[{{"p1":"Zverev","p2":"Berrettini","sets_p1":2,"sets_p2":0,'
+            f'"torneo":"BNP Paribas Open Indian Wells","tour":"ATP","fecha":"2026-03-07"}}]'
         )
         atp_text = _call_claude(atp_prompt)
         atp_matches = _parse_json_matches(atp_text, "ATP", "BNP Paribas Open Indian Wells")
@@ -3098,38 +3098,55 @@ def _fetch_tennis_results_web(desde, hoy):
     except:
         pass
 
-    # ── LLAMADA 2: WTA últimos 3 días ──
+    # ── LLAMADA 2: WTA — ronda por ronda, últimos 7 días ──
     try:
         wta_prompt = (
-            f"Busca los resultados de SINGLES WTA de los ultimos 3 dias ({desde} al {now_str}) en Indian Wells 2026.\n"
-            f"Intenta estas URLs:\n"
+            f"Necesito TODOS los resultados WTA Indian Wells 2026 de los ultimos 7 dias ({desde} al {now_str}).\n"
+            f"El torneo tiene cientos de partidos — necesito TODO, no solo los de hoy.\n"
+            f"Busca en estas fuentes:\n"
             f"1. https://www.wtatennis.com/tournament/1121/indian-wells/2026/scores\n"
-            f"2. Busca en Google: 'WTA Indian Wells 2026 results this week'\n"
-            f"Extrae TODOS los partidos FINALIZADOS de SINGLES femeninos de los ultimos 3 dias.\n"
-            f"EXCLUIR: dobles, mixtos, nombres con '/', '&'.\n"
-            f"CRITICO: p1=GANADORA (sets_p1>sets_p2). p2=perdedora.\n"
-            f"Ej: Sabalenka gano 2-0 a Osaka → p1='Aryna Sabalenka' sets_p1=2, p2='Naomi Osaka' sets_p2=0\n"
-            f"Incluir campo 'fecha' con el dia real del partido (YYYY-MM-DD).\n"
-            f"Responde SOLO con JSON array:\n"
-            f'[{{"p1":"Ganadora Apellido","p2":"Perdedora Apellido",'
-            f'"sets_p1":2,"sets_p2":0,"torneo":"BNP Paribas Open Indian Wells",'
-            f'"tour":"WTA","fecha":"2026-03-07"}}]'
+            f"2. https://www.flashscore.com/tennis/ Indian Wells WTA 1000 2026\n"
+            f"3. Google: 'WTA Indian Wells 2026 results {desde} {now_str} all rounds'\n"
+            f"4. https://www.tennisabstract.com/\n"
+            f"Extrae TODOS los partidos FINALIZADOS de SINGLES femeninos de cada dia.\n"
+            f"Son muchos partidos — incluye primeras rondas, segunda ronda, cuartos, etc.\n"
+            f"EXCLUIR: dobles, mixtos, qualy (no incluir calificacion).\n"
+            f"CRITICO: p1=GANADORA siempre (sets_p1 > sets_p2).\n"
+            f"Incluir campo 'fecha' con el dia exacto del partido (YYYY-MM-DD).\n"
+            f"Responde SOLO con JSON array (sin explicacion, sin markdown, SIN LIMITE de partidos):\n"
+            f'[{{"p1":"Sabalenka","p2":"Osaka","sets_p1":2,"sets_p2":0,'
+            f'"torneo":"BNP Paribas Open Indian Wells","tour":"WTA","fecha":"2026-03-07"}}]'
         )
         wta_text = _call_claude(wta_prompt)
         wta_matches = _parse_json_matches(wta_text, "WTA", "BNP Paribas Open Indian Wells")
         results.extend(wta_matches)
-        if not wta_matches:
-            wta_fallback = (
-                f"Busca resultados WTA Indian Wells 2026 de los ultimos dias.\n"
-                f"CRITICO: p1=GANADORA siempre.\n"
-                f"SOLO JSON array:\n"
-                f'[{{"p1":"Ganadora","p2":"Perdedora","sets_p1":2,"sets_p2":0,'
-                f'"torneo":"Indian Wells","tour":"WTA","fecha":"{now_str}"}}]'
-            )
-            try:
-                wta_text2 = _call_claude(wta_fallback)
-                results.extend(_parse_json_matches(wta_text2, "WTA", "BNP Paribas Open Indian Wells"))
-            except: pass
+    except:
+        pass
+
+    # ── LLAMADA 3: WTA viernes y sábado específico (días que faltan) ──
+    try:
+        from datetime import timedelta as _td2
+        _viernes = (datetime.now(CDMX) - _td2(days=2)).strftime("%Y-%m-%d")
+        _sabado  = (datetime.now(CDMX) - _td2(days=1)).strftime("%Y-%m-%d")
+        wta_dias = (
+            f"Busca ESPECIFICAMENTE los partidos WTA Indian Wells 2026 del viernes {_viernes} "
+            f"y sabado {_sabado}.\n"
+            f"Son rondas importantes — hubo muchos partidos esos dias.\n"
+            f"Google: 'WTA Indian Wells 2026 results {_viernes}' y '{_sabado}'\n"
+            f"Flash Score: https://www.flashscore.com/tennis/wta/indian-wells-wta-2026/results/\n"
+            f"CRITICO: p1=GANADORA, sets_p1>sets_p2, incluir fecha exacta.\n"
+            f"SOLO JSON sin texto adicional:\n"
+            f'[{{"p1":"Ganadora","p2":"Perdedora","sets_p1":2,"sets_p2":1,'
+            f'"torneo":"BNP Paribas Open Indian Wells","tour":"WTA","fecha":"{_viernes}"}}]'
+        )
+        wta_text3 = _call_claude(wta_dias)
+        wta3 = _parse_json_matches(wta_text3, "WTA", "BNP Paribas Open Indian Wells")
+        # Solo añadir los que no están ya (deduplicar por p1+p2+fecha)
+        existing = {(r["home"],r["away"],r["fecha"]) for r in results}
+        for w in wta3:
+            if (w["home"],w["away"],w["fecha"]) not in existing:
+                results.append(w)
+                existing.add((w["home"],w["away"],w["fecha"]))
     except:
         pass
 
@@ -4549,7 +4566,7 @@ Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad,
             },
             json={
                 "model": "claude-opus-4-5",
-                "max_tokens": 2000,
+                "max_tokens": 4000,
                 "messages": [{
                     "role": "user",
                     "content": [
@@ -14131,9 +14148,40 @@ if st.session_state["view"] == "cartelera":
                                         else:
                                             _nba_pl = ""; _nba_pp = 0
                                     except: pass
-                                _nba_ph, _nba_cb = _pick_badge(_nba_pl, _nba_pp, live)
-                                if _nba_ph: st.markdown(_nba_ph, unsafe_allow_html=True)
-                                if st.button(lbl, key=f"nba_{g['id']}", use_container_width=True):
+                                # ── NBA Card: matchup + pick row ──
+                                _nba_pick_row = ""
+                                if _nba_pl and _nba_pp >= 0.46:
+                                    if _nba_pp >= 0.68:    _npe,_npc,_npt = "💎","#00ccff","DIAMANTE"
+                                    elif _nba_pp >= 0.60:  _npe,_npc,_npt = "🔥","#ff8800","ORO"
+                                    elif _nba_pp >= 0.53:  _npe,_npc,_npt = "⚡","#FFD700","SEÑAL"
+                                    else:                  _npe,_npc,_npt = "📊","#888","DÉBIL"
+                                    _npfx = "🔴 " if live else ""
+                                    _nglow = f"box-shadow:0 0 8px {_npc}55;" if _nba_pp>=0.68 else ""
+                                    _nba_pick_row = (
+                                        f"<div style='border-top:1px solid #1a2535;margin-top:6px;"
+                                        f"padding-top:5px;display:flex;align-items:center;gap:6px;{_nglow}'>"
+                                        f"<span style='font-size:1.1rem'>{_npe}</span>"
+                                        f"<div style='flex:1;min-width:0'>"
+                                        f"<div style='font-size:0.6rem;color:{_npc};font-weight:900;"
+                                        f"letter-spacing:.1em'>{_npfx}{_npt}</div>"
+                                        f"<div style='font-size:0.88rem;font-weight:900;color:#fff;"
+                                        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_nba_pl}</div>"
+                                        f"</div>"
+                                        f"<span style='font-size:1.05rem;font-weight:900;color:{_npc}'>{_nba_pp*100:.0f}%</span>"
+                                        f"</div>"
+                                    )
+                                _nba_border = "#ff444466" if live else "#00ccff22"
+                                _nba_hdr_c  = "#ff4444" if live else "#00ccff"
+                                st.markdown(
+                                    f"<div style='background:#060d14;border:1px solid {_nba_border};"
+                                    f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
+                                    f"<div style='font-size:0.87rem;color:{_nba_hdr_c};font-weight:700;"
+                                    f"letter-spacing:.08em;margin-bottom:3px'>{sc}{ou}</div>"
+                                    f"<div style='font-size:0.95rem;color:#ccc;font-weight:700'>{g['away']}</div>"
+                                    f"<div style='font-size:0.8rem;color:#555;margin:1px 0'>@ {g['home']}</div>"
+                                    f"{_nba_pick_row}</div>",
+                                    unsafe_allow_html=True)
+                                if st.button("📊 Analizar", key=f"nba_{g['id']}", use_container_width=True):
                                     with st.spinner("🤖 IA analizando partido..."):
                                         res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
                                         ai_prompt = (
@@ -14462,9 +14510,43 @@ if st.session_state["view"] == "cartelera":
                                                 _ten_pp = min(0.92, _ten_pp + _adv * 0.12)
                                             # Si va empatado, mantener prob del modelo
                                         except: pass
-                                    _ten_ph, _ten_cb = _pick_badge(_ten_pl, _ten_pp, _ten_live)
-                                    if _ten_ph: st.markdown(_ten_ph, unsafe_allow_html=True)
-                                    if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']}{live_badge}", key=f"ten_{m['id']}", use_container_width=True):
+                                    # ── Tennis Card: matchup + pick row + analizar ──
+                                    _ten_pick_row = ""
+                                    if _ten_pl and _ten_pp >= 0.46:
+                                        if _ten_pp >= 0.68:    _tpe,_tpc,_tpt = "💎","#00ccff","DIAMANTE"
+                                        elif _ten_pp >= 0.60:  _tpe,_tpc,_tpt = "🔥","#ff8800","ORO"
+                                        elif _ten_pp >= 0.53:  _tpe,_tpc,_tpt = "⚡","#FFD700","SEÑAL"
+                                        else:                  _tpe,_tpc,_tpt = "📊","#888","DÉBIL"
+                                        _tpfx = "🔴 " if _ten_live else ""
+                                        _tglow = f"box-shadow:0 0 8px {_tpc}55;" if _ten_pp>=0.68 else ""
+                                        _ten_pick_row = (
+                                            f"<div style='border-top:1px solid #1d2a1a;margin-top:6px;"
+                                            f"padding-top:5px;display:flex;align-items:center;gap:6px;{_tglow}'>"
+                                            f"<span style='font-size:1.1rem'>{_tpe}</span>"
+                                            f"<div style='flex:1;min-width:0'>"
+                                            f"<div style='font-size:0.6rem;color:{_tpc};font-weight:900;"
+                                            f"letter-spacing:.1em'>{_tpfx}{_tpt}</div>"
+                                            f"<div style='font-size:0.88rem;font-weight:900;color:#fff;"
+                                            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_ten_pl}</div>"
+                                            f"</div>"
+                                            f"<span style='font-size:1.05rem;font-weight:900;color:{_tpc}'>{_ten_pp*100:.0f}%</span>"
+                                            f"</div>"
+                                        )
+                                    _ten_border = "#ff444466" if _ten_live else "#00ff8822"
+                                    _ten_hdr_c  = "#ff4444" if _ten_live else "#00ff88"
+                                    _ten_tour_c = "#00ccff" if m.get("tour","")=="ATP" else "#aa00ff"
+                                    st.markdown(
+                                        f"<div style='background:#040d06;border:1px solid {_ten_border};"
+                                        f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
+                                        f"<div style='font-size:0.75rem;color:{_ten_tour_c};font-weight:900;"
+                                        f"letter-spacing:.1em;margin-bottom:2px'>{m.get('tour','')} · {m.get('hora','')}{live_badge}</div>"
+                                        f"<div style='font-size:0.95rem;color:#ccc;font-weight:700'>{m['p1']}</div>"
+                                        f"<div style='font-size:0.8rem;color:#555;margin:1px 0'>vs</div>"
+                                        f"<div style='font-size:0.95rem;color:#ccc;font-weight:700'>{m['p2']}</div>"
+                                        f"{_ten_pick_row}</div>",
+                                        unsafe_allow_html=True)
+                                    if st.button("📊 Analizar", key=f"ten_{m['id']}", use_container_width=True,
+                                                 help=f"Analizar {m['p1']} vs {m['p2']}"):
                                         sel_m = {**m,
                                             "home":m["p1"],"away":m["p2"],
                                             "home_id":m["id"]+"_p1","away_id":m["id"]+"_p2",
@@ -14795,9 +14877,31 @@ if st.session_state["view"] == "cartelera":
                                                     _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
                                                     _score_or_hora = _sc if _live else _m.get("hora","")
                                                     _hdr_color = "#ff4444" if _live else "#6b5a3a"
+                                                    # ── Construir pick row HTML para insertar dentro del card ──
+                                                    _pick_row = ""
+                                                    if _pick_lbl and _pick_prob >= 0.46:
+                                                        if _pick_prob >= 0.68:    _pe, _pc, _pt = "💎", "#00ccff", "DIAMANTE"
+                                                        elif _pick_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff8800", "ORO"
+                                                        elif _pick_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "SEÑAL"
+                                                        else:                     _pe, _pc, _pt = "📊", "#888",    "DÉBIL"
+                                                        _pfx = "🔴 " if _live else ""
+                                                        _glow = f"box-shadow:0 0 8px {_pc}55;" if _pick_prob >= 0.68 else ""
+                                                        _pick_row = (
+                                                            f"<div style='border-top:1px solid #2a2010;margin-top:6px;padding-top:5px;"
+                                                            f"display:flex;align-items:center;gap:6px;{_glow}'>"
+                                                            f"<span style='font-size:1.1rem'>{_pe}</span>"
+                                                            f"<div style='flex:1;min-width:0'>"
+                                                            f"<div style='font-size:0.6rem;color:{_pc};font-weight:900;"
+                                                            f"letter-spacing:.1em'>{_pfx}{_pt}</div>"
+                                                            f"<div style='font-size:0.88rem;font-weight:900;color:#fff;"
+                                                            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_pick_lbl}</div>"
+                                                            f"</div>"
+                                                            f"<span style='font-size:1.05rem;font-weight:900;color:{_pc}'>{_pick_prob*100:.0f}%</span>"
+                                                            f"</div>"
+                                                        )
                                                     st.markdown(
                                                         f"<div style='background:#0d0900;border:1px solid {_card_border};"
-                                                        f"border-radius:8px;padding:7px 8px;margin-bottom:2px'>"
+                                                        f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
                                                         f"<div style='font-size:0.87rem;color:{_hdr_color};font-weight:700;"
                                                         f"letter-spacing:.1em'>{_score_or_hora}</div>"
                                                         f"<div style='font-size:0.975rem;color:#ccc;font-weight:700;"
@@ -14806,21 +14910,21 @@ if st.session_state["view"] == "cartelera":
                                                         f"<div style='font-size:0.975rem;color:#ccc;font-weight:700;"
                                                         f"line-height:1.3;word-break:break-word'>{_away_short}</div>"
                                                         f"<div style='display:flex;gap:3px;margin-top:5px'>"
-                                                        f"<div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>"
+                                                        f"<div style='flex:1;text-align:center;background:#100c04;"
+                                                        f"border-radius:4px;padding:3px 1px'>"
                                                         f"<div style='font-size:1.125rem;font-weight:{_bh};color:{_ch}'>{_ph2*100:.0f}%</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>🏠</div></div>"
-                                                        f"<div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>"
+                                                        f"<div style='flex:1;text-align:center;background:#100c04;"
+                                                        f"border-radius:4px;padding:3px 1px'>"
                                                         f"<div style='font-size:1.125rem;font-weight:{_bd};color:{_cd}'>{_pd2*100:.0f}%</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>🤝</div></div>"
-                                                        f"<div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>"
+                                                        f"<div style='flex:1;text-align:center;background:#100c04;"
+                                                        f"border-radius:4px;padding:3px 1px'>"
                                                         f"<div style='font-size:1.125rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>✈️</div></div>"
-                                                        f"</div></div>",
+                                                        f"</div>{_pick_row}</div>",
                                                         unsafe_allow_html=True)
-                                                    # ── Pick Diamante AFUERA de la card, arriba del botón ──
-                                                    if _pick_html:
-                                                        st.markdown(_pick_html, unsafe_allow_html=True)
-                                                    if st.button("📊", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_fi}_{_pi}",
+                                                    if st.button("📊 Analizar", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_fi}_{_pi}",
                                                                  use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
                                                         st.session_state["sel"]  = {**_m, "_sport":"futbol"}
                                                         st.session_state["view"] = "analisis"
