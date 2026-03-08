@@ -570,6 +570,31 @@ def get_cartelera():
                         "score_a":  parse_score(ac.get("score", 0)),
                         "minute":   (lambda _dc: int("".join(c for c in _dc.replace("+"," ").split()[0].split("'")[0].split(":")[0] if c.isdigit()) or "0"))(str(ev.get("status",{}).get("displayClock","0") or "0")),
                     })
+                    # ── Enrich live matches with ESPN in-play stats ──
+                    if state == "in":
+                        try:
+                            _m = matches[-1]
+                            _sit = comp.get("situation", {})
+                            _h_sit = _sit.get("homeTeamSituation", _sit)
+                            _a_sit = _sit.get("awayTeamSituation", _sit)
+                            _m["red_h"] = int(_h_sit.get("redCards", 0) or 0)
+                            _m["red_a"] = int(_a_sit.get("redCards", 0) or 0)
+                            _m["yel_h"] = int(_h_sit.get("yellowCards", 0) or 0)
+                            _m["yel_a"] = int(_a_sit.get("yellowCards", 0) or 0)
+                            # shots on target + possession from statistics array
+                            for _stat in comp.get("statistics", []):
+                                _n = _stat.get("name","").lower()
+                                _cats = _stat.get("splits",{}).get("categories",[])
+                                def _sv(cats, idx, dflt=0):
+                                    try: return float(cats[idx].get("stats",[{}])[0].get("value", dflt) or dflt)
+                                    except: return dflt
+                                if "shot" in _n and "target" in _n:
+                                    _m["shots_h"] = int(_sv(_cats, 0)); _m["shots_a"] = int(_sv(_cats, 1))
+                                elif "possession" in _n:
+                                    _m["poss_h"] = _sv(_cats, 0, 50); _m["poss_a"] = _sv(_cats, 1, 50)
+                                elif "corner" in _n:
+                                    _m["corners_h"] = int(_sv(_cats, 0)); _m["corners_a"] = int(_sv(_cats, 1))
+                        except: pass
                 except Exception as _ce: _parse_errs.append(str(_ce)); continue
 
     now_cdmx = datetime.now(CDMX)
@@ -7833,7 +7858,7 @@ def diamond_engine(mc, h2h_s, hform, aform, match=None):
 # Dixon-Coles condicional: P(resultado_final | marcador_X:Y, minuto_T)
 # Ref: Dixon & Robinson 1998 — A birth process model for association football matches
 # ══════════════════════════════════════════════════════════════════════════════
-def _inplay_poisson(hxg_pre, axg_pre, score_h, score_a, minute):
+def _inplay_poisson(hxg_pre, axg_pre, score_h, score_a, minute, **kwargs):
     """
     Recalcula xG restante según marcador actual y minuto.
     Retorna (hxg_rest, axg_rest, ph_final, pd_final, pa_final).
@@ -7849,6 +7874,11 @@ def _inplay_poisson(hxg_pre, axg_pre, score_h, score_a, minute):
         a_trailing = score_a < score_h
         h_mult = 1.15 if h_trailing else (0.90 if score_h > score_a + 1 else 1.0)
         a_mult = 1.15 if a_trailing else (0.90 if score_a > score_h + 1 else 1.0)
+        # Red card penalty: -12% xG per card (10 vs 11 reduces attack ~15%)
+        h_red = int(kwargs.get("red_h", 0) if kwargs else 0)
+        a_red = int(kwargs.get("red_a", 0) if kwargs else 0)
+        h_mult *= max(0.5, 1.0 - 0.12 * h_red)
+        a_mult *= max(0.5, 1.0 - 0.12 * a_red)
         hxg_r = max(0.05, hxg_pre * frac_rest * h_mult)
         axg_r = max(0.05, axg_pre * frac_rest * a_mult)
         # Distribución de goles adicionales
@@ -11111,50 +11141,55 @@ st.markdown("""
 
 # ── Sport selector ──
 _sport = st.session_state.get("sport","futbol")
-# Solid color buttons per sport — green/yellow/orange with black text
 _fut_bg  = "#16a34a" if _sport=="futbol" else "#14532d"
 _ten_bg  = "#ca8a04" if _sport=="tenis"  else "#713f12"
 _nba_bg  = "#ea580c" if _sport=="nba"    else "#7c2d12"
+# JS injection: apply colors directly to buttons by text after Streamlit renders
 st.markdown(f"""
+<script>
+(function applyBtnColors() {{
+  const colors = {{"Fútbol": "{_fut_bg}", "Tenis": "{_ten_bg}", "NBA": "{_nba_bg}"}};
+  function paint() {{
+    document.querySelectorAll('button[data-testid]').forEach(btn => {{
+      const txt = btn.innerText || btn.textContent || "";
+      for (const [kw, bg] of Object.entries(colors)) {{
+        if (txt.includes(kw)) {{
+          btn.style.setProperty('background-color', bg, 'important');
+          btn.style.setProperty('color', '#000', 'important');
+          btn.style.setProperty('font-weight', '900', 'important');
+          btn.style.setProperty('border', 'none', 'important');
+          btn.style.setProperty('font-size', '1rem', 'important');
+          // Also paint child p tag
+          btn.querySelectorAll('p').forEach(p => {{
+            p.style.setProperty('color', '#000', 'important');
+            p.style.setProperty('font-weight', '900', 'important');
+          }});
+        }}
+      }}
+    }});
+  }}
+  paint();
+  // Re-apply after Streamlit re-renders
+  const obs = new MutationObserver(paint);
+  obs.observe(document.body, {{childList: true, subtree: true}});
+}})();
+</script>
 <style>
-.sport-btn-row button {{ transition: none !important; }}
-.sport-btn-row > div:nth-child(1) button,
-.sport-btn-row > div:nth-child(1) button:hover,
-.sport-btn-row > div:nth-child(1) button:active,
-.sport-btn-row > div:nth-child(1) button:focus {{
-  background:{_fut_bg} !important;
-  color:#000 !important;
-  font-weight:900 !important;
-  border:none !important;
-  border-radius:8px !important;
-  font-size:1rem !important;
+/* CSS fallback targeting all buttons matching sport text via known keys */
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) div[data-testid="stButton"] button {{
+    background-color:{_fut_bg} !important; color:#000 !important; font-weight:900 !important; border:none !important;
 }}
-.sport-btn-row > div:nth-child(2) button,
-.sport-btn-row > div:nth-child(2) button:hover,
-.sport-btn-row > div:nth-child(2) button:active,
-.sport-btn-row > div:nth-child(2) button:focus {{
-  background:{_ten_bg} !important;
-  color:#000 !important;
-  font-weight:900 !important;
-  border:none !important;
-  border-radius:8px !important;
-  font-size:1rem !important;
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) div[data-testid="stButton"] button {{
+    background-color:{_ten_bg} !important; color:#000 !important; font-weight:900 !important; border:none !important;
 }}
-.sport-btn-row > div:nth-child(3) button,
-.sport-btn-row > div:nth-child(3) button:hover,
-.sport-btn-row > div:nth-child(3) button:active,
-.sport-btn-row > div:nth-child(3) button:focus {{
-  background:{_nba_bg} !important;
-  color:#000 !important;
-  font-weight:900 !important;
-  border:none !important;
-  border-radius:8px !important;
-  font-size:1rem !important;
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(3) div[data-testid="stButton"] button {{
+    background-color:{_nba_bg} !important; color:#000 !important; font-weight:900 !important; border:none !important;
 }}
-.sport-btn-row button p {{ color:#000 !important; font-weight:900 !important; }}
+div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button p {{
+    color:#000 !important; font-weight:900 !important;
+}}
 </style>
 """, unsafe_allow_html=True)
-st.markdown("<div class='sport-btn-row'>", unsafe_allow_html=True)
 sp1,sp2,sp3 = st.columns(3)
 with sp1:
     if st.button("⚽ Fútbol", use_container_width=True, key="sp_fut"):
@@ -11165,7 +11200,6 @@ with sp2:
 with sp3:
     if st.button("🏀 NBA", use_container_width=True, key="sp_nba"):
         st.session_state["sport"]="nba"; st.session_state["view"]="cartelera"; st.rerun()
-st.markdown("</div>", unsafe_allow_html=True)
 if "sport" not in st.session_state: st.session_state["sport"]="futbol"
 deporte = st.session_state["sport"]
 
@@ -12335,9 +12369,9 @@ else:
         dp = diamond_engine(mc, h2s, hform, aform, match=g)
 
         # En análisis manual: blend más agresivo 75% inplay / 25% pre
-        if _is_live and _score_h >= 0 and _score_a >= 0 and _minute > 0:
+        if _is_live and _score_h >= 0 and _score_a >= 0:  # minute can be 0 at kickoff
             try:
-                _, _, _iph, _ipd, _ipa = _inplay_poisson(hxg, axg, _score_h, _score_a, _minute)
+                _, _, _iph, _ipd, _ipa = _inplay_poisson(hxg, axg, _score_h, _score_a, _minute, red_h=g.get('red_h',0), red_a=g.get('red_a',0))
                 if _iph is not None:
                     _bh = 0.75*_iph + 0.25*dp["ph"]
                     _bd = 0.75*_ipd + 0.25*dp["pd"]
@@ -12352,7 +12386,7 @@ else:
         prog.progress(100,"✅ Listo"); prog.empty()
 
         # ── Banner en vivo + Pick live ──
-        if _is_live and _inplay_applied:
+        if _is_live:
             _min_str   = f"Min {_minute}'" if _minute > 0 else "En curso"
             _score_str = f"{_score_h} – {_score_a}"
             _lead_team = g["away"] if _score_a > _score_h else (g["home"] if _score_h > _score_a else "")
@@ -12389,13 +12423,22 @@ else:
             elif _lv_prob >= 0.53: _lv_emoji,_lv_col = "⚡","#FFD700"
             else:                   _lv_emoji,_lv_col = "","#aaa"
             # Red cards / stats context (passed from ESPN if available)
-            _lv_red_h = g.get("red_h",0); _lv_red_a = g.get("red_a",0)
-            _lv_sot_h = g.get("shots_h",0); _lv_sot_a = g.get("shots_a",0)
+            _lv_red_h  = g.get("red_h",0);   _lv_red_a  = g.get("red_a",0)
+            _lv_yel_h  = g.get("yel_h",0);   _lv_yel_a  = g.get("yel_a",0)
+            _lv_sot_h  = g.get("shots_h",0); _lv_sot_a  = g.get("shots_a",0)
+            _lv_poss_h = g.get("poss_h",0);  _lv_poss_a = g.get("poss_a",0)
             _lv_stats_txt = ""
             if _lv_red_h or _lv_red_a:
-                _lv_stats_txt += f" · 🟥 {g['home'][:8]}:{_lv_red_h} {g['away'][:8]}:{_lv_red_a}"
+                _lv_stats_txt += f" · 🟥 {_lv_red_h}-{_lv_red_a}"
+            if _lv_yel_h or _lv_yel_a:
+                _lv_stats_txt += f" · 🟨 {_lv_yel_h}-{_lv_yel_a}"
             if _lv_sot_h or _lv_sot_a:
                 _lv_stats_txt += f" · 🎯 {_lv_sot_h}-{_lv_sot_a}"
+            _lv_corners_h = g.get("corners_h",0); _lv_corners_a = g.get("corners_a",0)
+            if _lv_poss_h or _lv_poss_a:
+                _lv_stats_txt += f" · 🔵 {_lv_poss_h:.0f}%-{_lv_poss_a:.0f}%"
+            if _lv_corners_h or _lv_corners_a:
+                _lv_stats_txt += f" · 🚩 {_lv_corners_h}-{_lv_corners_a}"
             st.markdown(
                 f"<div style='background:linear-gradient(90deg,#1a0000,#0a0014,#1a0000);"
                 f"border:1.5px solid #ff4444;border-radius:10px;padding:10px 14px;"
@@ -12602,7 +12645,7 @@ else:
         _soc_ctx = (f"Liga: {g.get('league','')} | xG: {hxg:.2f}-{axg:.2f} | "
                     f"O2.5: {mc['o25']*100:.0f}% BTTS: {mc['btts']*100:.0f}% | "
                     f"Forma {g['home']}: {_form_h_str} | Forma {g['away']}: {_form_a_str}")
-        if _is_live and _inplay_applied:
+        if _is_live:
             _soc_ctx += f" | EN VIVO {_score_h}-{_score_a} min{_minute}'"
         _ei_soc, _papa_soc = _render_einstein_papa('futbol', g['home'], g['away'], main_lbl, main_prob, main_odd, context_str=_soc_ctx)
 
