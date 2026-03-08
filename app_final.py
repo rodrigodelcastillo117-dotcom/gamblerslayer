@@ -2840,7 +2840,7 @@ def fetch_soccer_results(days_back=10):
     for day_offset in range(days_back, -1, -1):
         d = now - timedelta(days=day_offset)
         ds = d.strftime("%Y%m%d")
-        for slug in list(LIGAS.keys())[:12]:  # Top 12 ligas
+        for slug in list(LIGAS.keys()):  # Todas las ligas
             try:
                 data = eg(f"{ESPN}/{slug}/scoreboard", {"dates": ds, "limit": 50})
                 for ev in data.get("events",[]):
@@ -2871,7 +2871,7 @@ def fetch_soccer_results(days_back=10):
                             "odd_h": _odd_h, "odd_d": _odd_d, "odd_a": _odd_a,
                             "score_h":parse_score(hc.get("score",0)) if state=="post" else -1,
                             "score_a":parse_score(ac.get("score",0)) if state=="post" else -1,
-                            "fecha":fecha, "state":state,
+                            "fecha":fecha, "state":state, "hora":utc.astimezone(CDMX).strftime("%H:%M"), "hora":utc.astimezone(CDMX).strftime("%H:%M"),
                         })
                     except: continue
             except: continue
@@ -3354,16 +3354,14 @@ def update_results_db(force=False):
             idx = existing_map[p["id"]]
             if p["state"] == "post":
                 db["partidos"][idx]["state"] = "post"
-                # Solo sobreescribir score si el nuevo es válido (>= 0)
-                # y no reemplazar un score real con 0-0 incorrecto
                 _new_sh = p.get("score_h", -1)
                 _new_sa = p.get("score_a", -1)
-                _old_sh = db["partidos"][idx].get("score_h", -1)
-                _old_sa = db["partidos"][idx].get("score_a", -1)
-                # Actualizar si: no había score antes, o el nuevo es mayor (más goles/sets)
-                if _new_sh >= 0 and (_old_sh < 0 or _new_sh > 0 or _old_sh == 0):
+                if _new_sh >= 0 and _new_sa >= 0:
                     db["partidos"][idx]["score_h"] = _new_sh
                     db["partidos"][idx]["score_a"] = _new_sa
+                for _fld in ("odd_h","odd_d","odd_a","home_rec","away_rec","hora"):
+                    if p.get(_fld) and not db["partidos"][idx].get(_fld):
+                        db["partidos"][idx][_fld] = p[_fld]
                 if not db["partidos"][idx].get("rank1") and p.get("rank1"):
                     db["partidos"][idx]["rank1"] = p["rank1"]
                     db["partidos"][idx]["rank2"] = p["rank2"]
@@ -3373,11 +3371,12 @@ def update_results_db(force=False):
                 db["partidos"][idx]["state"] = "post"
                 _new_sh = p.get("score_h", -1)
                 _new_sa = p.get("score_a", -1)
-                _old_sh = db["partidos"][idx].get("score_h", -1)
-                _old_sa = db["partidos"][idx].get("score_a", -1)
-                if _new_sh >= 0 and (_old_sh < 0 or _new_sh > 0 or _old_sh == 0):
+                if _new_sh >= 0 and _new_sa >= 0:
                     db["partidos"][idx]["score_h"] = _new_sh
                     db["partidos"][idx]["score_a"] = _new_sa
+                for _fld in ("odd_h","odd_d","odd_a","home_rec","away_rec","hora"):
+                    if p.get(_fld) and not db["partidos"][idx].get(_fld):
+                        db["partidos"][idx][_fld] = p[_fld]
                 if not db["partidos"][idx].get("rank1") and p.get("rank1"):
                     db["partidos"][idx]["rank1"] = p["rank1"]
                     db["partidos"][idx]["rank2"] = p["rank2"]
@@ -4114,7 +4113,7 @@ def render_resultados_tab():
     # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
     _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
     _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-    _inicio_conteo = "2026-03-06"  # contar desde viernes 6 marzo 2026
+    _inicio_conteo = (datetime.now(CDMX)-timedelta(days=7)).strftime("%Y-%m-%d")  # últimos 7 días
     _fut_c = 0
     for _fp in [p for p in partidos if p.get("state")=="post"]:
         _sp = _fp.get("deporte","")
@@ -4300,7 +4299,7 @@ def render_resultados_tab():
             # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
             # NBA/Tenis: hasta 14 días atrás
             _catorce_dias = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
-            _inicio_conteo_tab = "2026-03-06"  # contar desde viernes 6 marzo 2026
+            _inicio_conteo_tab = (datetime.now(CDMX)-timedelta(days=7)).strftime("%Y-%m-%d")  # últimos 7 días
             _auto_pk_cache = {}
             _fut_count = 0
             for _fp in finalizados:
