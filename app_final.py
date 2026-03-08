@@ -50,6 +50,61 @@ LIGAS = {
     "gre.1":"Super League 🇬🇷",
 }
 
+# Mapa slug → (país, bandera, orden) para agrupar cartelera
+_COUNTRY_MAP = {
+    # Europa top
+    "eng.1":("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿",1), "eng.2":("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿",1), "eng.fa":("Inglaterra","🏴󠁧󠁢󠁥󠁮󠁧󠁿",1),
+    "esp.1":("España","🇪🇸",2),        "esp.2":("España","🇪🇸",2),
+    "ger.1":("Alemania","🇩🇪",3),       "ger.2":("Alemania","🇩🇪",3),
+    "ita.1":("Italia","🇮🇹",4),
+    "fra.1":("Francia","🇫🇷",5),
+    "ned.1":("Holanda","🇳🇱",6),
+    "por.1":("Portugal","🇵🇹",7),
+    "sco.1":("Escocia","🏴󠁧󠁢󠁳󠁣󠁴󠁿",8),
+    "bel.1":("Bélgica","🇧🇪",9),
+    "tur.1":("Turquía","🇹🇷",10),
+    "gre.1":("Grecia","🇬🇷",11),
+    "den.1":("Dinamarca","🇩🇰",12),
+    "nor.1":("Noruega","🇳🇴",13),
+    # América
+    "mex.1":("México","🇲🇽",20),        "mex.2":("México","🇲🇽",20),
+    "usa.1":("Estados Unidos","🇺🇸",21),
+    "bra.1":("Brasil","🇧🇷",22),
+    "arg.1":("Argentina","🇦🇷",23),
+    "col.1":("Colombia","🇨🇴",24),
+    "chi.1":("Chile","🇨🇱",25),
+    # Internacional
+    "uefa.champions":("UEFA","🏆",30),
+    "uefa.europa":("UEFA","🏆",30),
+    "uefa.europa.conf":("UEFA","🏆",30),
+    # Resto
+    "sau.1":("Arabia Saudí","🇸🇦",40),
+}
+
+def _slug_from_liga_name(liga_name):
+    """Intenta recuperar el slug desde el nombre de liga en LIGAS."""
+    for slug, name in LIGAS.items():
+        if name.split(" 🇺")[0].split(" 🏴")[0].split(" 🏆")[0].strip() in liga_name:
+            return slug
+    return ""
+
+def _country_for_liga(liga_str):
+    """Devuelve (pais, bandera, orden) dado un string de liga (slug o nombre)."""
+    # Try direct slug match
+    if liga_str in _COUNTRY_MAP:
+        return _COUNTRY_MAP[liga_str]
+    # Try slug from name
+    slug = _slug_from_liga_name(liga_str)
+    if slug in _COUNTRY_MAP:
+        return _COUNTRY_MAP[slug]
+    # Fallback: scan for prefix
+    for slug, val in _COUNTRY_MAP.items():
+        prefix = slug.split(".")[0]
+        if liga_str.lower().startswith(prefix):
+            return val
+    return ("Otras Ligas", "🌍", 99)
+
+
 # ══════════════════════════════════════════════════════════
 # CSS
 # ══════════════════════════════════════════════════════════
@@ -11658,9 +11713,14 @@ if st.session_state["view"] == "cartelera":
                 st.info("No hay partidos de fútbol disponibles.")
             else:
                 from collections import defaultdict
-                fut_por_fecha = defaultdict(lambda: defaultdict(list))
+
+                # Agrupar: fecha → (orden,pais,bandera) → liga → partidos
+                fut_por_fecha = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
                 for _m in matches:
-                    fut_por_fecha[_m["fecha"]][_m.get("league","")].append(_m)
+                    _slug = _m.get("slug", _m.get("league",""))
+                    _pais, _bandera, _orden = _country_for_liga(_slug or _m.get("league",""))
+                    fut_por_fecha[_m["fecha"]][(_orden, _pais, _bandera)][_m.get("league","")].append(_m)
+
                 def _fecha_lbl_fut(f):
                     try:
                         d=datetime.strptime(f,"%Y-%m-%d")
@@ -11668,89 +11728,100 @@ if st.session_state["view"] == "cartelera":
                         meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
                         return f"⚽ {dias[d.weekday()]} {d.day} {meses[d.month]}"
                     except: return f
+
                 for _fi, _fecha in enumerate(sorted(fut_por_fecha.keys())):
-                    _ligas = fut_por_fecha[_fecha]
-                    _total = sum(len(v) for v in _ligas.values())
+                    _paises_dict = fut_por_fecha[_fecha]
+                    _total_fecha = sum(sum(len(ms) for ms in ld.values()) for ld in _paises_dict.values())
                     _is_hoy = _fecha == datetime.now(CDMX).strftime("%Y-%m-%d")
-                    with st.expander(f"{_fecha_lbl_fut(_fecha)}  ·  {_total} partidos", expanded=(_fi==0)):
-                        for _li, (_liga, _lms) in enumerate(sorted(_ligas.items())):
-                            _n_pre  = sum(1 for m in _lms if m["state"]!="post")
-                            _n_post = sum(1 for m in _lms if m["state"]=="post")
-                            _liga_badge = f"{'🔴 ' if any(m['state']=='in' for m in _lms) else ''}{'✅ ' if _n_post and not _n_pre else ''}{_liga}  ·  {len(_lms)} partidos"
-                            with st.expander(_liga_badge, expanded=False):
-                                _post_ms = [m for m in _lms if m["state"]=="post"]
-                                _pre_ms  = [m for m in _lms if m["state"]!="post"]
-                                # Finalizados — clickeables
-                                for _m in _post_ms:
-                                    _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
-                                    _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
-                                    _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
-                                    if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}", key=f"fut_post_{_m['home_id']}_{_m['away_id']}", use_container_width=True):
-                                        st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                        st.session_state["view"] = "analisis"
-                                        st.rerun()
-                                # Pre/live — 2 tarjetas por fila, diseño compacto
-                                for _pi in range(0, len(_pre_ms), 2):
-                                    _pair = _pre_ms[_pi:_pi+2]
-                                    _cols = st.columns(len(_pair))
-                                    for _col, _m in zip(_cols, _pair):
-                                        with _col:
-                                            _live = _m["state"] == "in"
-                                            _sc   = f"🔴 {_m['score_h']}-{_m['score_a']}" if _live else _m["hora"]
-                                            try:
-                                                _hf2 = get_form(_m["home_id"], _m["slug"]) or []
-                                                _af2 = get_form(_m["away_id"], _m["slug"]) or []
-                                                _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug","")) if _hf2 else 1.2
-                                                _ax2 = xg_weighted(_af2,False,slug=_m.get("slug","")) if _af2 else 1.1
-                                                _mc2 = mc50k(_hx2, _ax2)
-                                                _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2["pa"])); _pa2 = _mc2["pa"]
-                                            except:
-                                                _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
-                                            _mx = max(_ph2,_pd2,_pa2)
-                                            _ch = "#00ff88" if _ph2==_mx else "#666"
-                                            _cd = "#FFD700" if _pd2==_mx else "#666"
-                                            _ca = "#00ff88" if _pa2==_mx else "#666"
-                                            _bh = "900" if _ph2==_mx else "400"
-                                            _bd = "900" if _pd2==_mx else "400"
-                                            _ba = "900" if _pa2==_mx else "400"
-                                            _border = "#ff444466" if _live else "#1a1a3a"
-                                            _home_short = _m["home"][:11]
-                                            _away_short = _m["away"][:11]
-                                            # Diamond bridge pick si existe
-                                            _br_key = _m.get("id","")
-                                            _br = st.session_state.get("_diamond_bridge",{}).get(_br_key,{})
-                                            _pick_lbl = _br.get("pick","") if _br else ""
-                                            _pick_prob = _br.get("prob",0) if _br else 0
-                                            _pick_html = (
-                                                f"<div style='font-size:.6rem;color:#FFD700;font-weight:700;"
-                                                f"margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
-                                                f"💎 {_pick_lbl[:22]}</div>"
-                                            ) if _pick_lbl else ""
-                                            st.markdown(f"""<div style='background:#0d0900;border:1px solid {_border};
+                    with st.expander(f"{_fecha_lbl_fut(_fecha)}  ·  {_total_fecha} partidos", expanded=_is_hoy and _fi==0):
+                        for (_orden, _pais, _bandera) in sorted(_paises_dict.keys()):
+                            _ligas_del_pais = _paises_dict[(_orden, _pais, _bandera)]
+                            _total_pais = sum(len(ms) for ms in _ligas_del_pais.values())
+                            _live_pais = any(m["state"]=="in" for ld in _ligas_del_pais.values() for m in ld)
+                            _live_dot = "🔴 " if _live_pais else ""
+                            with st.expander(f"{_live_dot}{_bandera} {_pais}  ·  {_total_pais} partidos", expanded=False):
+                                for _liga, _lms in sorted(_ligas_del_pais.items()):
+                                    _n_live = sum(1 for m in _lms if m["state"]=="in")
+                                    _n_pre  = sum(1 for m in _lms if m["state"]=="pre")
+                                    _n_post = sum(1 for m in _lms if m["state"]=="post")
+                                    _live_badge = "🔴 " if _n_live>0 else ""
+                                    _liga_display = LIGAS.get(_liga, _liga)
+                                    _liga_clean = _liga_display
+                                    for _flag in ["🇪🇸","🇩🇪","🇮🇹","🇫🇷","🇳🇱","🇵🇹","🇲🇽","🇺🇸","🇧🇷","🇦🇷","🇨🇴","🇨🇱","🇸🇦","🇹🇷","🇬🇷","🇩🇰","🇳🇴","🇧🇪","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🏴󠁧󠁢󠁳󠁣󠁴󠁿","🏆"]:
+                                        _liga_clean = _liga_clean.replace(_flag,"").strip()
+                                    _count_str = f"({_n_pre+_n_live}" + (" 🔴" if _n_live else "") + (f" · {_n_post} FT" if _n_post else "") + ")"
+                                    with st.expander(f"{_live_badge}{_liga_clean}  {_count_str}", expanded=_n_live>0):
+                                        _post_ms = [m for m in _lms if m["state"]=="post"]
+                                        _pre_ms  = [m for m in _lms if m["state"]!="post"]
+                                        for _m in _post_ms:
+                                            _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
+                                            _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
+                                            _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
+                                            if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}",
+                                                         key=f"fut_post_{_m.get('id',_m['home'][:4]+_m['away'][:4]+_sf)}", use_container_width=True):
+                                                st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                                st.session_state["view"] = "analisis"
+                                                st.rerun()
+                                        for _pi in range(0, len(_pre_ms), 2):
+                                            _pair = _pre_ms[_pi:_pi+2]
+                                            _cols = st.columns(len(_pair))
+                                            for _col, _m in zip(_cols, _pair):
+                                                with _col:
+                                                    _live = _m["state"] == "in"
+                                                    _sc   = f"🔴 {_m['score_h']}-{_m['score_a']}" if _live and _m.get("score_h") is not None else ""
+                                                    try:
+                                                        _hf2 = get_form(_m["home_id"], _m["slug"])
+                                                        _af2 = get_form(_m["away_id"], _m["slug"])
+                                                        _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug",""))
+                                                        _ax2 = xg_weighted(_af2,False,slug=_m.get("slug",""))
+                                                        _mc2 = mc50k(_hx2, _ax2)
+                                                        _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
+                                                    except:
+                                                        _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
+                                                    _mx = max(_ph2,_pd2,_pa2)
+                                                    _ch = "#00ff88" if _ph2==_mx else "#666"
+                                                    _cd = "#FFD700" if _pd2==_mx else "#666"
+                                                    _ca = "#00ff88" if _pa2==_mx else "#666"
+                                                    _bh = "900" if _ph2==_mx else "400"
+                                                    _bd = "900" if _pd2==_mx else "400"
+                                                    _ba = "900" if _pa2==_mx else "400"
+                                                    _border = "#ff444466" if _live else "#c9a84c1a"
+                                                    _home_short = _m["home"][:11]
+                                                    _away_short = _m["away"][:11]
+                                                    _br_key = _m.get("id","")
+                                                    _br = st.session_state.get("_diamond_bridge",{}).get(_br_key) or st.session_state.get("_diamond_bridge",{}).get(f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}")
+                                                    _pick_lbl = _br.get("pick","") if _br else ""
+                                                    _pick_prob = _br.get("prob",0) if _br else 0
+                                                    _pick_html = (
+                                                        f"<div style='font-size:.6rem;color:#FFD700;font-weight:700;"
+                                                        f"margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+                                                        f"💎 {_pick_lbl[:22]}</div>"
+                                                    ) if _pick_lbl else ""
+                                                    st.markdown(f"""<div style='background:#0d0900;border:1px solid {_border};
 border-radius:8px;padding:7px 8px;margin-bottom:2px'>
-  <div style='font-size:.58rem;color:{"#ff4444" if _live else "#444"};font-weight:700;letter-spacing:.05em'>{_sc}</div>
+  <div style='font-size:.58rem;color:{"#ff4444" if _live else "#6b5a3a"};font-weight:700;letter-spacing:.1em'>{_sc or _m.get("hora","")}</div>
   <div style='font-size:.72rem;color:#ccc;font-weight:700;line-height:1.2;margin:2px 0'>{_home_short}</div>
   <div style='font-size:.58rem;color:#6b5a3a;margin:1px 0'>vs</div>
   <div style='font-size:.72rem;color:#ccc;font-weight:700;line-height:1.2'>{_away_short}</div>
   <div style='display:flex;gap:3px;margin-top:5px'>
-    <div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:3px 2px;border:1px solid {_ch}33'>
+    <div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>
       <div style='font-size:.75rem;font-weight:{_bh};color:{_ch}'>{_ph2*100:.0f}%</div>
-      <div style='font-size:.5rem;color:#444'>🏠</div>
+      <div style='font-size:.5rem;color:#6b5a3a'>🏠</div>
     </div>
-    <div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:3px 2px;border:1px solid {_cd}33'>
+    <div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>
       <div style='font-size:.75rem;font-weight:{_bd};color:{_cd}'>{_pd2*100:.0f}%</div>
-      <div style='font-size:.5rem;color:#444'>🤝</div>
+      <div style='font-size:.5rem;color:#6b5a3a'>🤝</div>
     </div>
-    <div style='flex:1;text-align:center;background:#0d0d22;border-radius:5px;padding:3px 2px;border:1px solid {_ca}33'>
+    <div style='flex:1;text-align:center;background:#100c04;border-radius:5px;padding:3px 2px'>
       <div style='font-size:.75rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>
-      <div style='font-size:.5rem;color:#444'>✈️</div>
+      <div style='font-size:.5rem;color:#6b5a3a'>✈️</div>
     </div>
   </div>{_pick_html}</div>""", unsafe_allow_html=True)
-                                            if st.button("📊", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_m.get('hora','')}",
-                                                         use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
-                                                st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                                st.session_state["view"] = "analisis"
-                                                st.rerun()
+                                                    if st.button("📊", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_fi}_{_pi}",
+                                                                 use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
+                                                        st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                                        st.session_state["view"] = "analisis"
+                                                        st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
             with st.spinner("Calculando TRILAY..."):
