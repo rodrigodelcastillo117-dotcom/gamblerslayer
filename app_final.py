@@ -10688,6 +10688,10 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
                 elif _o25 >= 0.54:
                     lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
+                elif (1-_o25) >= 0.60 and _xg_total_kr < 2.2:
+                    lbl, prob, odd, mkt = "🧱 Under 2.5", 1-_o25, 0, "O/U"
+                elif (1-_o15) >= 0.55 and _xg_total_kr < 1.5:
+                    lbl, prob, odd, mkt = "🧱 Under 1.5", 1-_o15, 0, "O/U"
                 elif _best_ml_kr >= 0.55:
                     if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
                     else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
@@ -12234,7 +12238,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
 
     # ── Fútbol ──────────────────────────────────────────────────────────
     for m in (matches_fut or [])[:40]:
-        if m.get("state","pre") != "pre": continue
+        if m.get("state","pre") not in ("pre","in"): continue  # incluir en vivo
         try:
             # get_form con fallback — nunca salta el partido por error de red
             try:
@@ -12281,7 +12285,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
 
     # ── NBA ──────────────────────────────────────────────────────────────
     for g in (nba_games or [])[:20]:
-        if g.get("state","pre") != "pre": continue
+        if g.get("state","pre") not in ("pre","in"): continue
         try:
             try:
                 nr = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",220.5))
@@ -12315,7 +12319,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
 
     # ── Tenis ────────────────────────────────────────────────────────────
     for t in (ten_matches or [])[:25]:
-        if t.get("state","pre") != "pre": continue
+        if t.get("state","pre") not in ("pre","in"): continue
         try:
             r1 = t.get("rank1",80); r2 = t.get("rank2",120)
             o1 = t.get("odd_1",0) or 1.75; o2 = t.get("odd_2",0) or 2.10
@@ -12610,7 +12614,23 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
                     )
                     _papi_telegram(msg)
                     # NO rerun — el bloque de display abajo mostrará el pick inmediatamente
-                    st.success("✅ Pick encontrado — ver abajo")
+                    # Mostrar pick inline — no requiere navegar a otra pestaña
+                    _sv = state.get('pick_del_dia'); _sv_stake = round(capital*0.20)
+                    _sv_gan = round(_sv_stake*(_sv['cuota']-1)) if _sv else 0
+                    _sv_col = {"verde":"#00ff88","amarillo":"#FFD700","rojo":"#ff4444"}.get((_sv.get('panel') or {}).get('veredicto','amarillo'),'#FFD700') if _sv else '#FFD700'
+                    if _sv:
+                        st.markdown(f"""<div style='background:linear-gradient(135deg,#0a0018,#001208);
+                    border:2px solid {_sv_col}88;border-radius:12px;padding:16px;margin:8px 0'>
+                    <div style='color:{_sv_col};font-size:0.85rem;font-weight:900;letter-spacing:.15em'>
+                    ✅ PICK DEL DÍA ENCONTRADO</div>
+                    <div style='font-size:1.8rem;font-weight:900;color:#F0E6C8;margin:6px 0'>
+                    {_sv['pick']}</div>
+                    <div style='color:#aaa;font-size:0.95rem'>{_sv['partido']}</div>
+                    <div style='display:flex;gap:12px;margin-top:10px'>
+                    <span style='color:#00ccff;font-weight:900'>{_sv['prob']*100:.0f}% prob</span>
+                    <span style='color:#FFD700;font-weight:900'>@{_sv['cuota']:.2f}</span>
+                    <span style='color:#00ff88;font-weight:900'>Stake ${_sv_stake:,.0f}</span>
+                    </div></div>""", unsafe_allow_html=True)
                 else:
                     # Debug: show what data was available
                     _dbg_fut = len(st.session_state.get("_ajb_cache_fut") or [])
@@ -14934,7 +14954,8 @@ if st.session_state["view"] == "cartelera":
                                           for _col, _m in zip(_cols, _pair):
                                               with _col:
                                                     _live = _m["state"] == "in"
-                                                    _sc   = f"🔴 {_m['score_h']}-{_m['score_a']}" if _live and _m.get("score_h") is not None else ""
+                                                    _sc_min = _m.get('minute', _m.get('min', 0)) or 0
+                                                    _sc   = f"🔴 {_sc_min}'  {_m['score_h']}-{_m['score_a']}" if _live and _m.get('score_h') is not None else ""
                                                     try:
                                                         _hf2 = get_form(_m["home_id"], _m["slug"])
                                                         _af2 = get_form(_m["away_id"], _m["slug"])
@@ -15606,6 +15627,22 @@ else:
             _lead_team = g["away"] if _score_a > _score_h else (g["home"] if _score_h > _score_a else "")
             _lead_txt  = f" · {_lead_team[:14]} ganando" if _lead_team else " · Empate"
             # Compute live pick from already-blended dp (75% inplay + 25% pre)
+            # Usar live stats si disponibles para recalcular probs
+            _live_s_lv = _fetch_live_stats(str(g.get('id','')), g.get('slug','')) if g.get('id') else {}
+            if _live_s_lv.get('score_h') is not None:
+                _minute = _live_s_lv.get('minute', _minute)
+                _score_h = _live_s_lv.get('score_h', _score_h)
+                _score_a = _live_s_lv.get('score_a', _score_a)
+                try:
+                    _, _, _lv_iph, _lv_ipd, _lv_ipa = _inplay_poisson(hxg, axg, _score_h, _score_a, _minute,
+                        red_h=_live_s_lv.get('red_h',0), red_a=_live_s_lv.get('red_a',0))
+                    if _lv_iph is not None:
+                        _s_lv = _lv_iph+_lv_ipd+_lv_ipa
+                        if _s_lv > 0:
+                            dp = {**dp, 'ph':0.80*_lv_iph/_s_lv+0.20*dp['ph'],
+                                    'pd':0.80*_lv_ipd/_s_lv+0.20*dp.get('pd',0),
+                                    'pa':0.80*_lv_ipa/_s_lv+0.20*dp['pa']}
+                except: pass
             _lv_ph = dp["ph"]; _lv_pd = dp.get("pd",0); _lv_pa = dp["pa"]
             _lv_o25 = mc.get("o25",0); _lv_btts = mc.get("btts",0)
             # Re-score o25 with Poisson conditional (goals remaining)
@@ -15632,13 +15669,13 @@ else:
                 ("⚡ Ambos Anotan", _lv_btts),
             ]
             _lv_pick_lbl, _lv_prob = max(_lv_candidates, key=lambda x:x[1])
-            # Solo mostrar pick en vivo si tiene 70%+ de probabilidad
-            if _lv_prob < 0.70:
+            # Solo mostrar pick en vivo si tiene 64%+ de probabilidad
+            if _lv_prob < 0.64:
                 _lv_pick_lbl = "— Sin señal ≥70% —"
                 _lv_emoji, _lv_col = "⏳", "#555"
-            if _lv_prob >= 0.80:   _lv_emoji,_lv_col = "💎","#00ccff"
-            elif _lv_prob >= 0.74: _lv_emoji,_lv_col = "🔥","#ff6600"
-            elif _lv_prob >= 0.70: _lv_emoji,_lv_col = "⚡","#FFD700"
+            if _lv_prob >= 0.76:   _lv_emoji,_lv_col = "💎","#00ccff"
+            elif _lv_prob >= 0.70: _lv_emoji,_lv_col = "🔥","#ff6600"
+            elif _lv_prob >= 0.64: _lv_emoji,_lv_col = "⚡","#FFD700"
             else:                   _lv_emoji,_lv_col = "","#aaa"
             # Red cards / stats context (passed from ESPN if available)
             _lv_red_h  = g.get("red_h",0);   _lv_red_a  = g.get("red_a",0)
@@ -15845,13 +15882,13 @@ else:
                 f"<div style='font-size:1.05rem;color:#bbb'>" + " + ".join(f"<span style='color:#ccc'>{_l}</span>" for _l in _legs) + "</div>"
                 f"<div style='display:flex;gap:4px;margin-top:4px'>"
                 f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:4px;padding:2px'>"
-                f"<div style='font-size:1.125rem;font-weight:900;color:#00ccff'>{_best.get('prob',0)*100:.1f}%</div>"
+                f"<div style='font-size:1.125rem;font-weight:900;color:#00ccff'>{_best.get('cp',0)*100:.1f}%</div>"
                 f"<div style='font-size:0.75rem;color:#444'>Prob</div></div>"
                 f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:4px;padding:2px'>"
-                f"<div style='font-size:1.125rem;font-weight:900;color:#FFD700'>@{_best.get('odds',0):.2f}</div>"
+                f"<div style='font-size:1.125rem;font-weight:900;color:#FFD700'>@{_best.get('odds',_best.get('cp',0) and round(1/_best.get('cp',0.5),2)):.2f}</div>"
                 f"<div style='font-size:0.75rem;color:#444'>Cuota</div></div>"
                 f"<div style='flex:1;text-align:center;background:#0d0d22;border-radius:4px;padding:2px'>"
-                f"<div style='font-size:1.125rem;font-weight:900;color:#00ff88'>{_best.get('ev',0)*100:.1f}%</div>"
+                f"<div style='font-size:1.125rem;font-weight:900;color:#00ff88'>{((_best.get('cp',0)*_best.get('odds',1))-1)*100:.1f}%</div>"
                 f"<div style='font-size:0.75rem;color:#444'>EV</div></div>"
                 f"</div></div>",
                 unsafe_allow_html=True)
