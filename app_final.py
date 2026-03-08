@@ -11153,7 +11153,7 @@ _sport = st.session_state.get("sport","futbol")
 # Colors: active = bright, inactive = dark version
 _SPORT_COLORS = {
     "futbol": {"active": "#16a34a", "inactive": "#14532d", "text": "#000000"},
-    "tenis":  {"active": "#ca8a04", "inactive": "#78350f", "text": "#000000"},
+    "tenis":  {"active": "#eab308", "inactive": "#a16207", "text": "#000000"},
     "nba":    {"active": "#ea580c", "inactive": "#7c2d12", "text": "#000000"},
 }
 _fc = _SPORT_COLORS["futbol"]["active"] if _sport=="futbol" else _SPORT_COLORS["futbol"]["inactive"]
@@ -11840,8 +11840,7 @@ if st.session_state["view"] == "cartelera":
             from collections import defaultdict
             ten_por_fecha = defaultdict(lambda: defaultdict(list))
             for m in ten_matches:
-                if m["state"] != "post":  # solo pre + live en cartelera
-                    ten_por_fecha[m["fecha"]][m["tour"]].append(m)
+                ten_por_fecha[m["fecha"]][m["tour"]].append(m)  # incluye post
 
             def fecha_label_ten(f):
                 try:
@@ -12095,10 +12094,38 @@ if st.session_state["view"] == "cartelera":
                                                     _home_short = _m["home"]
                                                     _away_short = _m["away"]
                                                     _br_key = _m.get("id","")
-                                                    _br = st.session_state.get("_diamond_bridge",{}).get(_br_key) or st.session_state.get("_diamond_bridge",{}).get(f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}")
-                                                    _pick_lbl  = _br.get("pick","")  if _br else ""
-                                                    _pick_prob = _br.get("prob",0)   if _br else 0
-                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
+                                                    _br_key = _m.get("id","")
+                                                    _br_val = st.session_state.get("_diamond_bridge",{})
+                                                    _br = _br_val.get(_br_key)
+                                                    # ── Para partidos EN VIVO: calcular pick en tiempo real ──
+                                                    if _live:
+                                                        try:
+                                                            import math as _lmath
+                                                            _sc_h = int(_m.get("score_h",0) or 0)
+                                                            _sc_a = int(_m.get("score_a",0) or 0)
+                                                            _min  = int(_m.get("minute",45) or 45)
+                                                            _, _, _iph_l, _ipd_l, _ipa_l = _inplay_poisson(_hx2, _ax2, _sc_h, _sc_a, _min)
+                                                            _bl_h = (0.75*(_iph_l or _ph2)+0.25*_ph2)
+                                                            _bl_d = (0.75*(_ipd_l or _pd2)+0.25*_pd2)
+                                                            _bl_a = (0.75*(_ipa_l or _pa2)+0.25*_pa2)
+                                                            _s_bl = _bl_h+_bl_d+_bl_a
+                                                            if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
+                                                            _xg_rem = (_hx2+_ax2)*max(0.05,(90-_min)/90)
+                                                            _goals_now = _sc_h+_sc_a
+                                                            _o25_l = 1-sum(_xg_rem**k*_lmath.exp(-_xg_rem)/_lmath.factorial(k) for k in range(max(0,3-_goals_now)))
+                                                            _p_h_s = 1-_lmath.exp(-_hx2*max(0.05,(90-_min)/90)) if _sc_h==0 else 1.0
+                                                            _p_a_s = 1-_lmath.exp(-_ax2*max(0.05,(90-_min)/90)) if _sc_a==0 else 1.0
+                                                            _btts_l = _p_h_s * _p_a_s
+                                                            _h_nm = _m["home"][:11]; _a_nm = _m["away"][:11]
+                                                            _lv_opts = [(_h_nm+" Gana",_bl_h),(_a_nm+" Gana",_bl_a),("Over 2.5",_o25_l),("Ambos Anotan",_btts_l)]
+                                                            _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
+                                                            _pick_lbl = "🔴 EN VIVO · " + _pick_lbl
+                                                        except:
+                                                            _pick_lbl  = _br.get("pick","") if _br else ""
+                                                            _pick_prob = _br.get("prob",0)  if _br else 0
+                                                    else:
+                                                        _pick_lbl  = _br.get("pick","") if _br else ""
+                                                        _pick_prob = _br.get("prob",0)  if _br else 0
                                                     st.markdown(f"""<div style='background:#0d0900;border:1px solid {_card_border};
 border-radius:8px;padding:7px 8px;margin-bottom:2px'>
   <div style='font-size:.58rem;color:{"#ff4444" if _live else "#6b5a3a"};font-weight:700;letter-spacing:.1em'>{_sc or _m.get("hora","")}</div>
@@ -12118,7 +12145,11 @@ border-radius:8px;padding:7px 8px;margin-bottom:2px'>
       <div style='font-size:.75rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>
       <div style='font-size:.5rem;color:#6b5a3a'>✈️</div>
     </div>
-  </div>{_pick_html}</div>""", unsafe_allow_html=True)
+  </div>"
+  + ("<div style='font-size:.52rem;color:#ff4444;font-weight:800;letter-spacing:.12em;"
+     "text-transform:uppercase;margin:4px 0 0;padding:2px 5px;"
+     "border-left:2px solid #ff444466'>📡 PICK RECOMENDADO EN VIVO</div>" if _live else "")
+  + f"{_pick_html}</div>""", unsafe_allow_html=True)
                                                     if st.button("📊", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_fi}_{_pi}",
                                                                  use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
                                                         st.session_state["sel"]  = {**_m, "_sport":"futbol"}
