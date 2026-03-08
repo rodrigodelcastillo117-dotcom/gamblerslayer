@@ -4,7 +4,7 @@ THE GAMBLERS DEN — FINAL
 """
 import streamlit as st
 import streamlit.components.v1 as _st_components
-import requests, numpy as np, math, threading
+import requests, numpy as np, math, threading, time
 from datetime import datetime, timedelta
 import pytz
 
@@ -626,7 +626,7 @@ def get_cartelera():
         except: pass
     return matches
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def get_form(team_id, slug):
     """
     Últimos 15 partidos desde ESPN schedule.
@@ -822,7 +822,7 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
 
     return round(max(0.20, min(4.5, xg_base)), 3)
 
-@st.cache_data(ttl=7200, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_h2h(home_id, away_id, slug, home_name, away_name):
     home_id = str(home_id); away_id = str(away_id)
     data    = eg(f"{ESPN}/{slug}/teams/{home_id}/schedule")
@@ -846,7 +846,7 @@ def get_h2h(home_id, away_id, slug, home_name, away_name):
     h2h.sort(key=lambda x: x["date"], reverse=True)
     return h2h[:10]
 
-@st.cache_data(ttl=7200, show_spinner=False)
+@st.cache_data(ttl=43200, show_spinner=False)
 def get_standings(slug):
     """Tabla de posiciones desde ESPN."""
     data = eg(f"{ESPN}/{slug}/standings")
@@ -2618,6 +2618,7 @@ def _needs_daily_reset():
         except: return False
     return False
 
+@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_soccer_results(days_back=10):
     """Fetch last N days of soccer results from ESPN."""
     partidos = []
@@ -2652,6 +2653,7 @@ def fetch_soccer_results(days_back=10):
             except: continue
     return partidos
 
+@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_nba_results(days_back=10):
     """Fetch last N days of NBA results."""
     partidos = []
@@ -8733,7 +8735,7 @@ def _ventana_22h(matches):
     return result
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def compute_trilay(matches):
     """
     TRILAY estructurado: 1 pick ML (favorito fuerte) + 1 Over 2.5 + 1 AA (Ambos Anotan).
@@ -8798,7 +8800,7 @@ def compute_trilay(matches):
 
     return result[:3]
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def compute_pato(matches):
     cands=[]
     for m in matches[:80]:
@@ -11328,17 +11330,15 @@ if _now_ts2 - st.session_state.get(_auto_sync_key, 0) > 600:  # cada 10 min
     st.session_state[_auto_sync_key] = _now_ts2
 
 if deporte == "futbol":
-    with st.spinner("Cargando cartelera..."):
-        try:
-            all_matches = get_cartelera()
-        except Exception as _e:
-            all_matches = []
-            st.warning(f"⚠️ Error cargando fútbol: {_e}")
+    try:
+        all_matches = get_cartelera()
+    except Exception as _e:
+        all_matches = []
+        st.warning(f"⚠️ Error cargando fútbol: {_e}")
 
     # ── Pre-calcular xG UNA sola vez para todos los partidos (cache 30min) ──
-    import time as _xgtt
-    _xg_k = "xg_pre_fut"; _xg_ts_k = "xg_pre_fut_ts"
-    if _xg_k not in st.session_state or (_xgtt.time()-st.session_state.get(_xg_ts_k,0)) > 1800:
+        _xg_k = "xg_pre_fut"; _xg_ts_k = "xg_pre_fut_ts"
+    if _xg_k not in st.session_state or (time.time()-st.session_state.get(_xg_ts_k,0)) > 3600:
         _xgd = {}
         for _pm in (all_matches or [])[:40]:
             try:
@@ -11348,7 +11348,7 @@ if deporte == "futbol":
                 )
             except: pass
         st.session_state[_xg_k]    = _xgd
-        st.session_state[_xg_ts_k] = _xgtt.time()
+        st.session_state[_xg_ts_k] = time.time()
     _xg_pre = st.session_state.get(_xg_k, {})
 
     # ── AUTO-BRIDGE: calcular Jugada Diamante real para todos los partidos ──
@@ -11358,7 +11358,9 @@ if deporte == "futbol":
     if all_matches:
         _bridge = st.session_state.setdefault("_diamond_bridge", {})
         _bridge_dirty = False
-        for _am in all_matches:
+        _bridge_last = st.session_state.get("_bridge_last_run", 0)
+        _bridge_skip = (time.time() - _bridge_last) < 1800 and len(_bridge) >= len(all_matches)
+        for _am in ([] if _bridge_skip else all_matches):
             try:
                 _am_id   = _am.get("id","")
                 _am_id2  = f"{_am.get('home_id','')}_{_am.get('away_id','')}_{_am.get('fecha','')}"
@@ -11432,6 +11434,7 @@ if deporte == "futbol":
                 _bridge_dirty = True
             except: continue
         if _bridge_dirty:
+            st.session_state["_bridge_last_run"] = time.time()
             try:
                 import json as _jb3
                 with open("/tmp/gamblers_diamond_bridge.json","w") as _bf3:
@@ -11461,20 +11464,18 @@ if deporte == "futbol":
         matches   = all_matches if liga_sel=="Todas" else [m for m in all_matches if m["league"]==liga_sel]
 
 elif deporte == "nba":
-    with st.spinner("Cargando NBA..."):
-        try:
-            nba_games = get_nba_cartelera()
-        except Exception as _e:
-            nba_games = []
-            st.warning(f"⚠️ Error cargando NBA: {_e}")
+    try:
+        nba_games = get_nba_cartelera()
+    except Exception as _e:
+        nba_games = []
+        st.warning(f"⚠️ Error cargando NBA: {_e}")
 
 elif deporte == "tenis":
-    with st.spinner("Cargando Tenis..."):
-        try:
-            ten_matches = get_tennis_cartelera()
-        except Exception as _e:
-            ten_matches = []
-            st.warning(f"⚠️ Error cargando Tenis: {_e}")
+    try:
+        ten_matches = get_tennis_cartelera()
+    except Exception as _e:
+        ten_matches = []
+        st.warning(f"⚠️ Error cargando Tenis: {_e}")
 
 def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
     """Returns (pick_html, card_border) based on pick confidence."""
@@ -11512,26 +11513,35 @@ def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
         )
         return _html, "#00ff8866"
     if pick_prob >= 0.68:
-        emoji, color = "💎", "#00ccff"
+        emoji, conf_lbl, color = "💎", "DIAMANTE", "#00ccff"
     elif pick_prob >= 0.60:
-        emoji, color = "🔥", "#ff6600"
+        emoji, conf_lbl, color = "🔥", "ORO", "#ff8800"
     elif pick_prob >= 0.53:
-        emoji, color = "⚡", "#FFD700"
+        emoji, conf_lbl, color = "⚡", "SEÑAL", "#FFD700"
     else:
         return "", "#ff444466" if is_live else default_border
-    card_border = "#ff444466" if is_live else f"{color}88"
+    _pct_str = f"{pick_prob*100:.0f}%" if pick_prob <= 1 else f"{pick_prob:.0f}%"
+    card_border = "#ff444466" if is_live else f"{color}99"
+    _rec_lbl = "📡 PICK EN VIVO" if is_live else "📡 PICK RECOMENDADO"
     html = (
-        f"<div style='margin-top:6px;background:{color}15;"
-        f"border:2px solid {color}99;border-radius:6px;padding:5px 8px'>"
-        f"<div style='display:flex;align-items:center;gap:5px'>"
-        f"<span style='font-size:1.3rem;line-height:1'>{emoji}</span>"
-        f"<span style='font-size:.96rem;font-weight:900;color:{color};"
-        f"letter-spacing:.02em;line-height:1.2;word-break:break-word'>{pick_lbl}</span>"
-        f"<span style='font-size:.86rem;font-weight:900;color:{color};margin-left:auto;white-space:nowrap'>{pick_prob*100:.0f}%</span>"
+        f"<div style='margin-top:7px;background:{color}18;"
+        f"border:2px solid {color};border-radius:8px;padding:7px 10px'>"
+        f"<div style='font-size:.58rem;font-weight:800;color:{color}99;"
+        f"letter-spacing:.14em;margin-bottom:4px;text-transform:uppercase'>{_rec_lbl}</div>"
+        f"<div style='display:flex;align-items:center;gap:7px'>"
+        f"<span style='font-size:1.7rem;line-height:1'>{emoji}</span>"
+        f"<div style='flex:1;min-width:0'>"
+        f"<div style='font-size:1.1rem;font-weight:900;color:{color};"
+        f"letter-spacing:.02em;line-height:1.25;word-break:break-word'>{pick_lbl}</div>"
+        f"<div style='font-size:.72rem;font-weight:700;color:{color}bb;margin-top:1px'>{conf_lbl}</div>"
+        f"</div>"
+        f"<div style='text-align:right;flex-shrink:0;padding-left:4px'>"
+        f"<div style='font-size:1.5rem;font-weight:900;color:{color};line-height:1'>{_pct_str}</div>"
+        f"<div style='font-size:.6rem;color:{color}77'>conf.</div>"
+        f"</div>"
         f"</div></div>"
     )
     return html, card_border
-
 
 # ══════════════════════════════════════════════════════════════════════
 # LIVE STATS REFRESH — Fetches ESPN in-play stats every 5 minutes
@@ -12178,7 +12188,6 @@ if st.session_state["view"] == "cartelera":
                                                     # ── Para partidos EN VIVO: detectar si pick se cumplió, o calcular nuevo ──
                                                     if _live:
                                                         try:
-                                                            import math as _lmath
                                                             _sc_h2 = int(_m.get("score_h",0) or 0)
                                                             _sc_a2 = int(_m.get("score_a",0) or 0)
                                                             _min2  = int(_m.get("minute",45) or 45)
@@ -12218,7 +12227,7 @@ if st.session_state["view"] == "cartelera":
                                                                 _s_bl = _bl_h+_bl_d+_bl_a
                                                                 if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
                                                                 _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                                _o25_c = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
+                                                                _o25_c = 1-sum(_xg_rem2**k*math.exp(-_xg_rem2)/math.factorial(k) for k in range(max(0,3-_goals_n)))
                                                                 # Buscar pick alternativo solo si >= 70%
                                                                 _alt_opts = []
                                                                 if _goals_n < 3 and _o25_c >= 0.70: _alt_opts.append(("Over 2.5", _o25_c))
@@ -12241,9 +12250,9 @@ if st.session_state["view"] == "cartelera":
                                                                 _s_bl = _bl_h+_bl_d+_bl_a
                                                                 if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
                                                                 _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                                _o25_l = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
-                                                                _p_h_s = 1-_lmath.exp(-_hx2*max(0.05,(90-_min2)/90)) if _sc_h2==0 else 1.0
-                                                                _p_a_s = 1-_lmath.exp(-_ax2*max(0.05,(90-_min2)/90)) if _sc_a2==0 else 1.0
+                                                                _o25_l = 1-sum(_xg_rem2**k*math.exp(-_xg_rem2)/math.factorial(k) for k in range(max(0,3-_goals_n)))
+                                                                _p_h_s = 1-math.exp(-_hx2*max(0.05,(90-_min2)/90)) if _sc_h2==0 else 1.0
+                                                                _p_a_s = 1-math.exp(-_ax2*max(0.05,(90-_min2)/90)) if _sc_a2==0 else 1.0
                                                                 _btts_l = _p_h_s * _p_a_s
                                                                 _lv_opts = []
                                                                 if abs(_sc_h2-_sc_a2) <= 2:
@@ -12254,7 +12263,7 @@ if st.session_state["view"] == "cartelera":
                                                                 if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.53: _lv_opts.append(("Ambos Anotan", _btts_l))
                                                                 if _goals_n < 2 and _min2 < 70:
                                                                     _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                                    _o15_l = 1-sum(_xg_rem_15**k*_lmath.exp(-_xg_rem_15)/_lmath.factorial(k) for k in range(max(0,2-_goals_n)))
+                                                                    _o15_l = 1-sum(_xg_rem_15**k*math.exp(-_xg_rem_15)/math.factorial(k) for k in range(max(0,2-_goals_n)))
                                                                     if _o15_l >= 0.60: _lv_opts.append(("Over 1.5", _o15_l))
                                                                 if _lv_opts:
                                                                     _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
