@@ -9169,8 +9169,9 @@ def get_tennis_cartelera():
                 # Convertir hora a CDMX (API devuelve UTC)
                 try:
                     utc_t = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M").replace(tzinfo=pytz.UTC)
-                    hora  = utc_t.astimezone(CDMX).strftime("%H:%M")
-                    # fecha conserva event_date original (no cruzar zona horaria)
+                    cdmx_t = utc_t.astimezone(CDMX)
+                    hora  = cdmx_t.strftime("%H:%M")
+                    fecha = cdmx_t.strftime("%Y-%m-%d")  # convertir fecha UTC→CDMX
                 except: pass
                 if fecha < hoy or fecha > fin: continue
                 tour_type   = ev.get("event_type_type","").upper()
@@ -11438,6 +11439,37 @@ def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
     """Returns (pick_html, card_border) based on pick confidence."""
     if not pick_lbl:
         return "", "#ff444466" if is_live else default_border
+    # ── Va ganando (partido en curso): amarillo ──
+    if pick_lbl.startswith("🟡"):
+        _html = (
+            f"<div style='margin-top:6px;background:#FFD70015;border:2px solid #FFD70066;"
+            f"border-radius:6px;padding:5px 8px'>"
+            f"<div style='font-size:.82rem;font-weight:900;color:#FFD700;line-height:1.3'>"
+            f"{pick_lbl}</div>"
+            f"</div>"
+        )
+        return _html, "#FFD70066"
+    # ── Pick cumplido: palomita verde ──
+    if pick_lbl.startswith("🟢"):
+        _parts = pick_lbl.split("  ·  ", 1)
+        _cumplido_part = _parts[0]
+        _alt_part = _parts[1] if len(_parts) > 1 else ""
+        _alt_html = ""
+        if _alt_part:
+            _alt_html = (
+                f"<div style='margin-top:4px;background:#ff660015;border:1px solid #ff660066;"
+                f"border-radius:4px;padding:3px 6px;font-size:.78rem;font-weight:900;color:#ff6600'>"
+                f"🔴 {_alt_part.replace('🔴 ','')}</div>"
+            )
+        _html = (
+            f"<div style='margin-top:6px;background:#00ff8815;border:2px solid #00ff8866;"
+            f"border-radius:6px;padding:5px 8px'>"
+            f"<div style='font-size:.9rem;font-weight:900;color:#00ff88;line-height:1.3'>"
+            f"{_cumplido_part}</div>"
+            + _alt_html +
+            f"</div>"
+        )
+        return _html, "#00ff8866"
     if pick_prob >= 0.68:
         emoji, color = "💎", "#00ccff"
     elif pick_prob >= 0.60:
@@ -12097,39 +12129,95 @@ if st.session_state["view"] == "cartelera":
                                                     _br_val = st.session_state.get("_diamond_bridge",{})
                                                     _br = _br_val.get(_br_key)
                                                     # ── Para partidos EN VIVO: calcular pick en tiempo real ──
+                                                    # ── Para partidos EN VIVO: detectar si pick se cumplió, o calcular nuevo ──
                                                     if _live:
                                                         try:
                                                             import math as _lmath
                                                             _sc_h2 = int(_m.get("score_h",0) or 0)
                                                             _sc_a2 = int(_m.get("score_a",0) or 0)
                                                             _min2  = int(_m.get("minute",45) or 45)
-                                                            _, _, _iph_l, _ipd_l, _ipa_l = _inplay_poisson(_hx2, _ax2, _sc_h2, _sc_a2, _min2)
-                                                            _bl_h = (0.75*(_iph_l or _ph2)+0.25*_ph2)
-                                                            _bl_d = (0.75*(_ipd_l or _pd2)+0.25*_pd2)
-                                                            _bl_a = (0.75*(_ipa_l or _pa2)+0.25*_pa2)
-                                                            _s_bl = _bl_h+_bl_d+_bl_a
-                                                            if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
-                                                            _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                            _goals_n = _sc_h2+_sc_a2
-                                                            _o25_l = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
-                                                            _p_h_s = 1-_lmath.exp(-_hx2*max(0.05,(90-_min2)/90)) if _sc_h2==0 else 1.0
-                                                            _p_a_s = 1-_lmath.exp(-_ax2*max(0.05,(90-_min2)/90)) if _sc_a2==0 else 1.0
-                                                            _btts_l = _p_h_s * _p_a_s
-                                                            _h_nm = _m["home"][:11]; _a_nm = _m["away"][:11]
-                                                            _lv_opts = [(_h_nm+" Gana",_bl_h),(_a_nm+" Gana",_bl_a),("Over 2.5",_o25_l),("Ambos Anotan",_btts_l)]
-                                                            _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
-                                                            _pick_lbl = "🔴 " + _pick_lbl
+                                                            _goals_n = _sc_h2 + _sc_a2
+                                                            _h_nm = _m["home"][:13]; _a_nm = _m["away"][:13]
+                                                            # ── Detectar si el pick del bridge ya se cumplió ──
+                                                            _br_pick = (_br.get("pick","") if _br else "").upper()
+                                                            _cumplido = False
+                                                            _cumplido_lbl = ""
+                                                            if _br_pick:
+                                                                if ("OVER 2.5" in _br_pick or "O2.5" in _br_pick) and _goals_n >= 3:
+                                                                    _cumplido = True; _cumplido_lbl = "✅ Over 2.5 cumplido"
+                                                                elif ("OVER 1.5" in _br_pick or "O1.5" in _br_pick) and _goals_n >= 2:
+                                                                    _cumplido = True; _cumplido_lbl = "✅ Over 1.5 cumplido"
+                                                                elif ("AMBOS" in _br_pick or "BTTS" in _br_pick or "ANOTAN" in _br_pick) and _sc_h2>=1 and _sc_a2>=1:
+                                                                    _cumplido = True; _cumplido_lbl = "✅ Ambos Anotan cumplido"
+                                                                elif ("GANA" in _br_pick or "HOME" in _br_pick) and _h_nm.upper() in _br_pick:
+                                                                    # ML cumplido solo si el partido ya terminó (state=post)
+                                                                    if _m.get("state") == "post" and _sc_h2 > _sc_a2:
+                                                                        _cumplido = True; _cumplido_lbl = f"✅ {_h_nm} ganó"
+                                                                    elif _sc_h2 > _sc_a2:  # va ganando pero no terminó
+                                                                        _cumplido_lbl = f"🟡 {_h_nm} va ganando {_sc_h2}-{_sc_a2}"
+                                                                elif ("GANA" in _br_pick or "AWAY" in _br_pick) and _a_nm.upper() in _br_pick:
+                                                                    if _m.get("state") == "post" and _sc_a2 > _sc_h2:
+                                                                        _cumplido = True; _cumplido_lbl = f"✅ {_a_nm} ganó"
+                                                                    elif _sc_a2 > _sc_h2:
+                                                                        _cumplido_lbl = f"🟡 {_a_nm} va ganando {_sc_a2}-{_sc_h2}"
+                                                            # Si va ganando pero no terminó — mostrar estado amarillo, calcular pick igual
+                                                            if not _cumplido and _cumplido_lbl:
+                                                                _pick_lbl = _cumplido_lbl; _pick_prob = 0.5
+                                                            if _cumplido:
+                                                                # Pick cumplido — solo mostrar alternativo si hay 70%+ confianza
+                                                                _, _, _iph_l, _ipd_l, _ipa_l = _inplay_poisson(_hx2, _ax2, _sc_h2, _sc_a2, _min2)
+                                                                _bl_h = (0.75*(_iph_l or _ph2)+0.25*_ph2)
+                                                                _bl_d = (0.75*(_ipd_l or _pd2)+0.25*_pd2)
+                                                                _bl_a = (0.75*(_ipa_l or _pa2)+0.25*_pa2)
+                                                                _s_bl = _bl_h+_bl_d+_bl_a
+                                                                if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
+                                                                _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
+                                                                _o25_c = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
+                                                                # Buscar pick alternativo solo si >= 70%
+                                                                _alt_opts = []
+                                                                if _goals_n < 3 and _o25_c >= 0.70: _alt_opts.append(("Over 2.5", _o25_c))
+                                                                if abs(_sc_h2-_sc_a2) <= 1:
+                                                                    if _bl_h >= 0.70: _alt_opts.append((_h_nm+" Gana", _bl_h))
+                                                                    if _bl_a >= 0.70: _alt_opts.append((_a_nm+" Gana", _bl_a))
+                                                                if _alt_opts:
+                                                                    _alt_lbl, _alt_prob = max(_alt_opts, key=lambda x:x[1])
+                                                                    _pick_lbl  = f"🟢 {_cumplido_lbl}  ·  🔴 {_alt_lbl}"
+                                                                    _pick_prob = _alt_prob
+                                                                else:
+                                                                    _pick_lbl  = f"🟢 {_cumplido_lbl}"
+                                                                    _pick_prob = 1.0  # cumplido = mostrar siempre en verde
+                                                            else:
+                                                                # No cumplido — calcular pick en tiempo real
+                                                                _, _, _iph_l, _ipd_l, _ipa_l = _inplay_poisson(_hx2, _ax2, _sc_h2, _sc_a2, _min2)
+                                                                _bl_h = (0.75*(_iph_l or _ph2)+0.25*_ph2)
+                                                                _bl_d = (0.75*(_ipd_l or _pd2)+0.25*_pd2)
+                                                                _bl_a = (0.75*(_ipa_l or _pa2)+0.25*_pa2)
+                                                                _s_bl = _bl_h+_bl_d+_bl_a
+                                                                if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
+                                                                _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
+                                                                _o25_l = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
+                                                                _p_h_s = 1-_lmath.exp(-_hx2*max(0.05,(90-_min2)/90)) if _sc_h2==0 else 1.0
+                                                                _p_a_s = 1-_lmath.exp(-_ax2*max(0.05,(90-_min2)/90)) if _sc_a2==0 else 1.0
+                                                                _btts_l = _p_h_s * _p_a_s
+                                                                _lv_opts = []
+                                                                if abs(_sc_h2-_sc_a2) <= 2:
+                                                                    if _bl_h >= 0.53: _lv_opts.append((_h_nm+" Gana", _bl_h))
+                                                                    if _bl_a >= 0.53: _lv_opts.append((_a_nm+" Gana", _bl_a))
+                                                                    if _bl_d >= 0.40 and _min2 < 75: _lv_opts.append(("Empate", _bl_d))
+                                                                if _goals_n < 3 and _o25_l >= 0.55: _lv_opts.append(("Over 2.5", _o25_l))
+                                                                if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.53: _lv_opts.append(("Ambos Anotan", _btts_l))
+                                                                if _goals_n < 2 and _min2 < 70:
+                                                                    _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
+                                                                    _o15_l = 1-sum(_xg_rem_15**k*_lmath.exp(-_xg_rem_15)/_lmath.factorial(k) for k in range(max(0,2-_goals_n)))
+                                                                    if _o15_l >= 0.60: _lv_opts.append(("Over 1.5", _o15_l))
+                                                                if _lv_opts:
+                                                                    _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
+                                                                    _pick_lbl = "🔴 " + _pick_lbl
+                                                                else:
+                                                                    _pick_lbl = ""; _pick_prob = 0
                                                         except:
                                                             _pick_lbl  = _br.get("pick","") if _br else ""
                                                             _pick_prob = _br.get("prob",0)  if _br else 0
-                                                    else:
-                                                        _pick_lbl  = _br.get("pick","") if _br else ""
-                                                        _pick_prob = _br.get("prob",0)  if _br else 0
-                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
-                                                    _live_label = ("<div style='font-size:.5rem;color:#ff4444;font-weight:800;"
-                                                                   "letter-spacing:.12em;text-transform:uppercase;"
-                                                                   "margin:4px 0 0;padding:2px 5px;border-left:2px solid #ff444466'>" 
-                                                                   "📡 PICK RECOMENDADO EN VIVO</div>") if _live else ""
                                                     _score_or_hora = _sc if _live else _m.get("hora","")
                                                     _hdr_color = "#ff4444" if _live else "#6b5a3a"
                                                     st.markdown(
