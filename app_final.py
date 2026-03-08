@@ -12147,7 +12147,9 @@ def _papi_bot_consensus(candidato: dict) -> dict:
                 timeout=7
             )
             if _r3.status_code == 200:
-                _txt3 = _r3.json()["content"][0]["text"].strip()
+                _blocks3 = _r3.json().get("content", [])
+                _txt3 = next((b["text"] for b in _blocks3 if b.get("type")=="text"), "")
+                _txt3 = _txt3.strip()
                 _txt3 = _txt3.replace("```json", "").replace("```", "").strip()
                 _vd = json.loads(_txt3)
                 return {
@@ -12214,7 +12216,10 @@ def _papi_justificar(pick_lbl,partido,prob,cuota,panel):
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
                   "messages":[{"role":"user","content":p}]},timeout=10)
-        if r.status_code==200: return r.json()["content"][0]["text"].strip()
+        if r.status_code==200:
+            _jblocks = r.json().get("content",[])
+            _jtxt = next((b["text"] for b in _jblocks if b.get("type")=="text"),"")
+            if _jtxt: return _jtxt.strip()
     except: pass
     return f"{pick_lbl} prob {prob*100:.0f}% cuota {cuota:.2f}."
 
@@ -12323,22 +12328,41 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
         return None   # genuinamente sin partidos hoy
 
     cands.sort(key=lambda c: c["score"], reverse=True)
+
+    # ── Excluir pick idéntico al de King Rongo ──────────────────────
+    try:
+        _kr_el = st.session_state.get("_king_el_pick") or {}
+        _kr_label   = (_kr_el.get("pick","") or _kr_el.get("label","")).lower()
+        _kr_partido = (_kr_el.get("label","") or _kr_el.get("partido","")).lower()
+        if (_kr_label or _kr_partido) and len(cands) > 1:
+            for _ci, _c in enumerate(cands):
+                _c_partido = _c.get("partido","").lower()
+                _c_pick    = _c.get("pick","").lower()
+                _kr_teams  = [t.strip() for t in _kr_partido.split(" vs ") if len(t.strip())>3]
+                _mismo_juego   = any(t in _c_partido for t in _kr_teams)
+                _mismo_mercado = bool(_kr_label) and _kr_label[:10] in _c_pick
+                if not (_mismo_juego and _mismo_mercado):
+                    cands = [cands[_ci]] + [c for j,c in enumerate(cands) if j!=_ci]
+                    break
+    except: pass
+
     best = cands[0]
 
-    # Panel de consenso — no descartar si es rojo, pero intentar alternativa
+    # Panel de consenso — nunca bloquea el pick, solo anota
+    best["panel"] = None
     try:
         panel = _papi_bot_consensus(best)
         best["panel"] = panel
-        if panel.get("veredicto") == "rojo" and len(cands) > 1:
-            for alt in cands[1:5]:
+        # Solo swap si hay alternativa verde/amarilla MUY superior (score>=2 pts más)
+        if panel.get("veredicto") == "rojo" and panel.get("score",5) < 3 and len(cands) > 1:
+            for alt in cands[1:4]:
                 try:
                     alt_panel = _papi_bot_consensus(alt)
-                    if alt_panel.get("veredicto") in ("verde","amarillo"):
+                    if alt_panel.get("veredicto") in ("verde","amarillo") and alt_panel.get("score",0) >= 5:
                         alt["panel"] = alt_panel
                         return alt
                 except: continue
-    except:
-        best["panel"] = None
+    except: pass   # consensus falla → igual devolvemos best
 
     return best
 
@@ -12575,7 +12599,14 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
                     # NO rerun — el bloque de display abajo mostrará el pick inmediatamente
                     st.success("✅ Pick encontrado — ver abajo")
                 else:
-                    st.warning("⚠️ Sin pick con valor hoy. Proteger bankroll.")
+                    # Debug: show what data was available
+                    _dbg_fut = len(st.session_state.get("_ajb_cache_fut") or [])
+                    _dbg_nba = len(st.session_state.get("_ajb_cache_nba") or [])
+                    _dbg_ten = len(st.session_state.get("_ajb_cache_ten") or [])
+                    st.warning(
+                        f"⚠️ Sin pick — datos: ⚽{_dbg_fut} 🏀{_dbg_nba} 🎾{_dbg_ten} partidos. "
+                        f"{'Ve a otro deporte primero y regresa.' if _dbg_fut+_dbg_nba+_dbg_ten==0 else 'Reintenta.'}"
+                    )
     with col_btn2:
         if st.button("🔄 Reset Reto", use_container_width=True):
             if st.session_state.get("_papi_confirm_reset"):
