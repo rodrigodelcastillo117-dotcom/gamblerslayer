@@ -12236,15 +12236,21 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     for m in (matches_fut or [])[:40]:
         if m.get("state","pre") != "pre": continue
         try:
-            hf  = get_form(m.get("home_id",""), m.get("slug","")) or []
-            af  = get_form(m.get("away_id",""), m.get("slug","")) or []
-            hxg = xg_weighted(hf, True)  if hf else 1.2
-            axg = xg_weighted(af, False) if af else 1.0
-            mc  = mc50k(hxg, axg)
-            ph, pd, pa = mc["ph"], mc.get("pd",0), mc["pa"]
-            o25 = mc.get("o25", 0)
-            o15 = mc.get("o15", 0)
-            xg_tot = hxg + axg
+            # get_form con fallback — nunca salta el partido por error de red
+            try:
+                hf = get_form(m.get("home_id",""), m.get("slug","")) or []
+                af = get_form(m.get("away_id",""), m.get("slug","")) or []
+            except: hf, af = [], []
+            hxg = xg_weighted(hf, True)  if hf else 1.20
+            axg = xg_weighted(af, False) if af else 1.00
+            try:
+                mc  = mc50k(hxg, axg)
+                ph, pd, pa = mc["ph"], mc.get("pd",0.25), mc["pa"]
+                o25 = mc.get("o25", 0.45)
+                o15 = mc.get("o15", 0.65)
+            except:
+                ph, pd, pa = 0.40, 0.25, 0.35
+                o25, o15   = 0.45, 0.65
             # Tabla posición delta
             try:
                 tbl = _tabla_posicion_delta(m["home"], m["away"], m.get("slug",""))
@@ -12253,14 +12259,16 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
             except: pass
             # Todos los mercados candidatos
             for bl, bp, bo in [
-                (f"{m.get('home','?')} Gana",            ph,   m.get("odd_h",0)),
-                (f"{m.get('away','?')} Gana",            pa,   m.get("odd_a",0)),
-                (f"Over 2.5",                             o25,  1.90),
-                (f"Over 1.5",                             o15,  1.55),
-                (f"{m.get('home','?')} o Empate",        min(0.95,ph+pd), 1.40),
-                (f"{m.get('away','?')} o Empate",        min(0.95,pa+pd), 1.40),
+                (f"{m.get('home','?')} Gana",        ph,             m.get("odd_h",0)),
+                (f"{m.get('away','?')} Gana",        pa,             m.get("odd_a",0)),
+                (f"Over 2.5",                         o25,            1.90),
+                (f"Over 1.5",                         o15,            1.55),
+                (f"Under 2.5",                        1-o25,          1.90),
+                (f"Under 1.5",                        1-o15,          1.55),
+                (f"{m.get('home','?')} o Empate",    min(0.95,ph+pd),1.40),
+                (f"{m.get('away','?')} o Empate",    min(0.95,pa+pd),1.40),
             ]:
-                if bp < 0.35: continue   # descarta solo si prob muy baja
+                if bp < 0.35: continue
                 if bo <= 1.0: bo = max(1.25, round(1/max(bp,0.01)*0.88, 2))
                 edge = bp - (1/bo if bo > 1 else 0.55)
                 score = bp*10 + max(0,edge)*30 + (0.5 if "Gana" in bl else 0)
@@ -12275,7 +12283,10 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     for g in (nba_games or [])[:20]:
         if g.get("state","pre") != "pre": continue
         try:
-            nr  = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",220.5))
+            try:
+                nr = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",220.5))
+            except:
+                nr = {"p_over":0.52,"p_under":0.48,"line":g.get("ou_line",220.5),"p_h_win":0.55}
             # O/U
             bp  = max(nr["p_over"], nr["p_under"])
             bl  = (f"Over {nr['line']}" if nr["p_over"]>=nr["p_under"] else f"Under {nr['line']}")
@@ -12308,7 +12319,10 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
         try:
             r1 = t.get("rank1",80); r2 = t.get("rank2",120)
             o1 = t.get("odd_1",0) or 1.75; o2 = t.get("odd_2",0) or 2.10
-            tr = tennis_model(r1, r2, o1, o2)
+            try:
+                tr = tennis_model(r1, r2, o1, o2)
+            except:
+                p1 = 1/o1/(1/o1+1/o2); tr = {"p1":p1,"p2":1-p1}
             bp = max(tr["p1"], tr["p2"])
             fav = t.get("p1","?") if tr["p1"]>=tr["p2"] else t.get("p2","?")
             bo  = (o1 if tr["p1"]>=tr["p2"] else o2)
@@ -15006,7 +15020,7 @@ if st.session_state["view"] == "cartelera":
                                                                     _pick_prob = _alt_prob
                                                                 else:
                                                                     _pick_lbl  = f"🟢 {_cumplido_lbl}"
-                                                                    _pick_prob = 1.0  # cumplido = mostrar siempre en verde
+                                                                    _pick_prob = (_br.get('prob',0.85) if _br else 0.85)  # cumplido: usar prob del bridge
                                                             else:
                                                                 # No cumplido — calcular pick en tiempo real
                                                                 _, _, _iph_l, _ipd_l, _ipa_l = _inplay_poisson(_hx2, _ax2, _sc_h2, _sc_a2, _min2)
@@ -15075,6 +15089,8 @@ if st.session_state["view"] == "cartelera":
                                                                 # Over si xG lo soporta
                                                                 if _o25_pre >= 0.50: _opts_pre.append(("Over 2.5", _o25_pre))
                                                                 elif _o15_pre >= 0.55: _opts_pre.append(("Over 1.5", _o15_pre))
+                                                                _u25_pre = 1 - _o25_pre
+                                                                if _u25_pre >= 0.55: _opts_pre.append(("Under 2.5", _u25_pre))
                                                                 # Empate solo si es genuinamente el más probable
                                                                 if _pd2 > _ph2_adj and _pd2 > _pa2_adj: _opts_pre.append(("Empate", _pd2))
                                                                 _pick_lbl, _pick_prob = max(_opts_pre, key=lambda x: x[1])
