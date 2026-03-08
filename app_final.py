@@ -703,6 +703,46 @@ def get_cartelera():
             with open("/tmp/gl_cartelera_errors.json","w") as _fd:
                 _jd.dump({"errors":_parse_errs[:20],"dates":dates,"hoy":hoy}, _fd)
         except: pass
+    # ── Enrich UEFA matches that have no ESPN odds ──
+    _UEFA_BULK = {
+        "uefa.champions": "soccer_uefa_champs_league",
+        "uefa.europa":    "soccer_uefa_europa_league",
+        "uefa.europa.conf":"soccer_uefa_europa_conference_league",
+    }
+    _bulk_cache = {}  # slug → list of odds from API
+    _odds_key = ODDS_API_KEY
+    if _odds_key:
+        for _m in matches:
+            if _m.get("slug") in _UEFA_BULK and not (_m.get("odd_h",0) and _m.get("odd_a",0)):
+                _sl = _m["slug"]
+                if _sl not in _bulk_cache:
+                    try:
+                        _r = requests.get(
+                            f"https://api.the-odds-api.com/v4/sports/{_UEFA_BULK[_sl]}/odds",
+                            params={"apiKey": _odds_key, "regions": "eu",
+                                    "markets": "h2h", "oddsFormat": "decimal",
+                                    "bookmakers": ",".join(BOOKMAKERS)},
+                            timeout=8)
+                        _bulk_cache[_sl] = _r.json() if _r.status_code == 200 else []
+                    except: _bulk_cache[_sl] = []
+                for _g in _bulk_cache.get(_sl, []):
+                    _gh = (_g.get("home_team") or "").lower()
+                    _ga = (_g.get("away_team") or "").lower()
+                    _mh = _m["home"].lower(); _ma = _m["away"].lower()
+                    if _mh[:5] in _gh or _ma[:5] in _ga or _gh[:5] in _mh or _ga[:5] in _ma:
+                        _prices_h = []; _prices_d = []; _prices_a = []
+                        for _bk in _g.get("bookmakers", []):
+                            for _mkt in _bk.get("markets", []):
+                                if _mkt["key"] == "h2h":
+                                    _outs = {o["name"].lower(): o["price"] for o in _mkt["outcomes"]}
+                                    if _outs.get(_gh,0) > 1: _prices_h.append(_outs[_gh])
+                                    if _outs.get("draw",0) > 1: _prices_d.append(_outs["draw"])
+                                    if _outs.get(_ga,0) > 1: _prices_a.append(_outs[_ga])
+                        if _prices_h and _prices_a:
+                            _m["odd_h"] = round(sum(_prices_h)/len(_prices_h), 2)
+                            _m["odd_d"] = round(sum(_prices_d)/len(_prices_d), 2) if _prices_d else 3.4
+                            _m["odd_a"] = round(sum(_prices_a)/len(_prices_a), 2)
+                        break
     return matches
 
 @st.cache_data(ttl=1800, show_spinner=False)
