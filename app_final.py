@@ -11337,7 +11337,7 @@ if deporte == "futbol":
         st.warning(f"⚠️ Error cargando fútbol: {_e}")
 
     # ── Pre-calcular xG UNA sola vez para todos los partidos (cache 30min) ──
-        _xg_k = "xg_pre_fut"; _xg_ts_k = "xg_pre_fut_ts"
+    _xg_k = "xg_pre_fut"; _xg_ts_k = "xg_pre_fut_ts"
     if _xg_k not in st.session_state or (time.time()-st.session_state.get(_xg_ts_k,0)) > 3600:
         _xgd = {}
         for _pm in (all_matches or [])[:40]:
