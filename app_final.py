@@ -330,7 +330,7 @@ code{
   .stand-row{font-size:.6rem!important;padding:3px 2px!important}
   .mval{font-size:.78rem!important}
 }
-</style>""", un, un, unsafe_allow_html=True)
+</style>""", unsafe_allow_html=True)
 
 # ── Loading animation — inyectada via components para que el JS se ejecute ──
 # st.markdown bloquea <script>; st.components.v1.html() vive en iframe
