@@ -4,7 +4,7 @@ THE GAMBLERS DEN — FINAL
 """
 import streamlit as st
 import streamlit.components.v1 as _st_components
-import requests, numpy as np, math, threading, time
+import requests, numpy as np, math, threading
 from datetime import datetime, timedelta
 import pytz
 
@@ -626,7 +626,7 @@ def get_cartelera():
         except: pass
     return matches
 
-@st.cache_data(ttl=7200, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def get_form(team_id, slug):
     """
     Últimos 15 partidos desde ESPN schedule.
@@ -822,7 +822,7 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
 
     return round(max(0.20, min(4.5, xg_base)), 3)
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def get_h2h(home_id, away_id, slug, home_name, away_name):
     home_id = str(home_id); away_id = str(away_id)
     data    = eg(f"{ESPN}/{slug}/teams/{home_id}/schedule")
@@ -846,7 +846,7 @@ def get_h2h(home_id, away_id, slug, home_name, away_name):
     h2h.sort(key=lambda x: x["date"], reverse=True)
     return h2h[:10]
 
-@st.cache_data(ttl=43200, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_standings(slug):
     """Tabla de posiciones desde ESPN."""
     data = eg(f"{ESPN}/{slug}/standings")
@@ -878,7 +878,7 @@ except:
     ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 BOOKMAKERS   = ["bet365","pinnacle","unibet","williamhill"]
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_real_odds(home_name, away_name, league_slug):
     """
     Intenta obtener cuotas reales de The Odds API.
@@ -2618,7 +2618,6 @@ def _needs_daily_reset():
         except: return False
     return False
 
-@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_soccer_results(days_back=10):
     """Fetch last N days of soccer results from ESPN."""
     partidos = []
@@ -2653,7 +2652,6 @@ def fetch_soccer_results(days_back=10):
             except: continue
     return partidos
 
-@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_nba_results(days_back=10):
     """Fetch last N days of NBA results."""
     partidos = []
@@ -4026,219 +4024,194 @@ def render_resultados_tab():
                 if _n_validos == 0:
                     continue  # no mostrar día si no hay partidos con score
                 with st.expander(f"{dlbl} · {_n_validos} partidos", expanded=is_today):
-                    # ── Agrupar por continente → país → liga (igual que cartelera) ──
-                    from collections import defaultdict as _dd2
-                    _por_cont = _dd2(lambda: _dd2(lambda: _dd2(list)))
+                    por_liga = defaultdict(list)
                     for p in dia_ps:
-                        _p_liga = p.get("liga", p.get("tour", p.get("league","Sin liga")))
-                        _p_slug = p.get("slug","") or ""
-                        if sport_key == "futbol":
-                            try: _pais, _bandera, _cont = _country_for_liga(_p_slug or _p_liga)
-                            except: _pais, _bandera, _cont = "Otro", "🌍", "Otro"
-                        elif sport_key == "nba":
-                            _pais, _bandera, _cont = "EUA", "🇺🇸", "América"
-                        else:  # tenis
-                            _tour = p.get("tour","ATP")
-                            _cont = "ATP" if _tour == "ATP" else "WTA"
-                            _pais, _bandera = _p_liga.split(" · ",1)[-1] if " · " in _p_liga else _p_liga, "🎾"
-                            _bandera = ""
-                        _por_cont[_cont][f"{_bandera} {_pais}".strip()][_p_liga].append(p)
-                    
-                    for _cont_name in sorted(_por_cont.keys()):
-                        _cont_data = _por_cont[_cont_name]
-                        _cont_total = sum(len(ps) for pais_d in _cont_data.values() for ps in pais_d.values())
-                        _cont_live = any(p.get("state")=="in" for pais_d in _cont_data.values() for ps in pais_d.values() for p in ps)
-                        with st.expander(f"🌎 {_cont_name}  ·  {_cont_total}", expanded=_cont_live):
-                            for _pais_name in sorted(_cont_data.keys()):
-                                _pais_data = _cont_data[_pais_name]
-                                _pais_total = sum(len(ps) for ps in _pais_data.values())
-                                with st.expander(f"{_pais_name}  ·  {_pais_total}", expanded=False):
-                                    for liga, lps in sorted(_pais_data.items()):
-                                        _liga_clean = liga.split(" · ",1)[-1] if " · " in liga else liga
-                                        st.markdown(
-                                            f"<div style='font-size:.65rem;font-weight:700;color:#FFD700;"
-                                            f"text-transform:uppercase;letter-spacing:.1em;margin:8px 0 4px;"
-                                            f"border-left:2px solid #c9a84c44;padding-left:6px'>"
-                                            f"{sport_emoji} {_liga_clean}</div>", unsafe_allow_html=True)
-                    
-                                    for p in lps:
-                                        sh=p.get("score_h",-1); sa=p.get("score_a",-1)
-                                        # Fútbol/NBA: saltar si no hay score
-                                        if sport_key != "tenis" and (sh<0 or sa<0): continue
-                                        # Tenis: 0-0 imposible — si ambos 0 o -1, score no disponible
-                                        if sport_key == "tenis":
-                                            if sh < 0: sh = 0
-                                            if sa < 0: sa = 0
-                                            if sh == 0 and sa == 0:
-                                                continue
-                                        # CRÍTICO: crear copia del partido con scores ya validados
-                                        # para que _villar_match_pick_to_result reciba scores reales
-                                        _p_fixed = dict(p)
-                                        _p_fixed["score_h"] = sh
-                                        _p_fixed["score_a"] = sa
-                                        # Nombres: buscar en todos los campos posibles
-                                        home_n = (p.get("home") or p.get("p1") or "?").strip() or "?"
-                                        away_n = (p.get("away") or p.get("p2") or "?").strip() or "?"
+                        por_liga[p.get("liga",p.get("tour","Sin liga"))].append(p)
 
-                                        won_h=sh>sa; won_a=sa>sh; draw=(sh==sa and sport_key=="futbol")
-                                        if sport_key=="futbol":
-                                            hc="#00ff88" if won_h else ("#FFD700" if draw else "#aaa")
-                                            ac="#00ff88" if won_a else ("#FFD700" if draw else "#aaa")
-                                        else:
-                                            hc="#00ff88" if won_h else "#aaa"
-                                            ac="#00ff88" if won_a else "#aaa"
+                    for liga, lps in sorted(por_liga.items()):
+                        st.markdown(
+                            f"<div style='font-size:.68rem;font-weight:700;color:#FFD700;"
+                            f"text-transform:uppercase;letter-spacing:.1em;margin:10px 0 5px'>"
+                            f"{sport_emoji} {liga}</div>", unsafe_allow_html=True)
 
-                                        # 1. Pick manual guardado por usuario
-                                        manual_pks = [pk for pk in pick_history
-                                                      if _villar_find_result(pk,[p]) is not None]
-                                        # 2. Pick automático — BRIDGE DIAMANTE es la fuente de verdad
-                                        _mid = p.get("id","")
-                                        auto_pk = None
-                                        if not manual_pks:
-                                            _p_state = p.get("state","pre")
-                                            _bridge = st.session_state.get("_diamond_bridge", {})
-                                            # Buscar por ID directo
-                                            _bp = _bridge.get(_mid)
-                                            # Fallback 1: home_id+away_id+fecha
-                                            if not _bp:
-                                                _alt = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
-                                                _bp = _bridge.get(_alt)
-                                            # Fallback 2: nombre equipo local + fecha (IDs distintos entre ESPN endpoints)
-                                            if not _bp:
-                                                _ph = (p.get("home","") or "").lower().strip()
-                                                _pf = p.get("fecha","")
-                                                for _bv in _bridge.values():
-                                                    if (_bv.get("fecha","") == _pf and
-                                                        _ph and _bv.get("home","").lower().strip() == _ph):
-                                                        _bp = _bv
-                                                        break
-                                            if _bp:
-                                                auto_pk = dict(_bp)
-                                            else:
-                                                # Sin bridge: partido no fue visto en cartelera — recalcular
-                                                auto_pk = _auto_pk_cache.get(_mid)
-                                                if not auto_pk:
-                                                    try:
-                                                        _fp2 = {k:v for k,v in p.items() if k not in ("score_h","score_a")}
-                                                        _fp2["score_h"] = 0
-                                                        auto_pk = _villar_auto_pick(_fp2)
-                                                        if auto_pk: _auto_pk_cache[_mid] = auto_pk
-                                                    except: pass
+                        for p in lps:
+                            sh=p.get("score_h",-1); sa=p.get("score_a",-1)
+                            # Fútbol/NBA: saltar si no hay score
+                            if sport_key != "tenis" and (sh<0 or sa<0): continue
+                            # Tenis: 0-0 imposible — si ambos 0 o -1, score no disponible
+                            if sport_key == "tenis":
+                                if sh < 0: sh = 0
+                                if sa < 0: sa = 0
+                                if sh == 0 and sa == 0:
+                                    continue
+                            # CRÍTICO: crear copia del partido con scores ya validados
+                            # para que _villar_match_pick_to_result reciba scores reales
+                            _p_fixed = dict(p)
+                            _p_fixed["score_h"] = sh
+                            _p_fixed["score_a"] = sa
+                            # Nombres: buscar en todos los campos posibles
+                            home_n = (p.get("home") or p.get("p1") or "?").strip() or "?"
+                            away_n = (p.get("away") or p.get("p2") or "?").strip() or "?"
 
-                                        pick_rows = []
-                                        for pk in manual_pks:
-                                            vd,vc,ex = _villar_match_pick_to_result(pk, _p_fixed)
-                                            prob_v = pk.get("prob",0)
-                                            if prob_v<=1: prob_v*=100
-                                            pick_rows.append({
-                                                "label": pk.get("pick","?"),
-                                                "prob": prob_v, "odd": pk.get("odd",0),
-                                                "src": "💾 Tu pick", "verd": vd, "col": vc, "expl": ex,
-                                            })
-                                            _fecha_p = p.get("fecha","")
-                                            if _fecha_p >= _inicio_conteo_tab:
-                                                if "GANÓ" in vd: ok_sp+=1
-                                                elif "FALLÓ" in vd: fail_sp+=1
+                            won_h=sh>sa; won_a=sa>sh; draw=(sh==sa and sport_key=="futbol")
+                            if sport_key=="futbol":
+                                hc="#00ff88" if won_h else ("#FFD700" if draw else "#aaa")
+                                ac="#00ff88" if won_a else ("#FFD700" if draw else "#aaa")
+                            else:
+                                hc="#00ff88" if won_h else "#aaa"
+                                ac="#00ff88" if won_a else "#aaa"
 
-                                        if auto_pk:
-                                            # ── Auditar SOLO el pick principal que el modelo eligió ──
-                                            # Usar snap congelado si existe, si no usar auto_pk directo
-                                            _snap_data = _load_picks_snap().get(p.get("id",""), {})
-                                            _main_pick = auto_pk  # ya viene congelado del flujo arriba
+                            # 1. Pick manual guardado por usuario
+                            manual_pks = [pk for pk in pick_history
+                                          if _villar_find_result(pk,[p]) is not None]
+                            # 2. Pick automático — BRIDGE DIAMANTE es la fuente de verdad
+                            _mid = p.get("id","")
+                            auto_pk = None
+                            if not manual_pks:
+                                _p_state = p.get("state","pre")
+                                _bridge = st.session_state.get("_diamond_bridge", {})
+                                # Buscar por ID directo
+                                _bp = _bridge.get(_mid)
+                                # Fallback 1: home_id+away_id+fecha
+                                if not _bp:
+                                    _alt = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
+                                    _bp = _bridge.get(_alt)
+                                # Fallback 2: nombre equipo local + fecha (IDs distintos entre ESPN endpoints)
+                                if not _bp:
+                                    _ph = (p.get("home","") or "").lower().strip()
+                                    _pf = p.get("fecha","")
+                                    for _bv in _bridge.values():
+                                        if (_bv.get("fecha","") == _pf and
+                                            _ph and _bv.get("home","").lower().strip() == _ph):
+                                            _bp = _bv
+                                            break
+                                if _bp:
+                                    auto_pk = dict(_bp)
+                                else:
+                                    # Sin bridge: partido no fue visto en cartelera — recalcular
+                                    auto_pk = _auto_pk_cache.get(_mid)
+                                    if not auto_pk:
+                                        try:
+                                            _fp2 = {k:v for k,v in p.items() if k not in ("score_h","score_a")}
+                                            _fp2["score_h"] = 0
+                                            auto_pk = _villar_auto_pick(_fp2)
+                                            if auto_pk: _auto_pk_cache[_mid] = auto_pk
+                                        except: pass
 
-                                            _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_main_pick, _p_fixed)
-                                            _prob2 = _main_pick.get("prob", 0)
-                                            _mkt2  = _main_pick.get("mkt", "")
-                                            pick_rows.append({
-                                                "label":   _main_pick.get("pick","?"),
-                                                "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
-                                                "odd":     _main_pick.get("odd", 0),
-                                                "src":     _main_pick.get("src", "🤖 Modelo"),
-                                                "verd":    _vd2, "col": _vc2, "expl": _ex2,
-                                                "is_main": True,
-                                            })
-                                            # Contar para el contador global
-                                            if p.get("fecha","") >= _inicio_conteo_tab:
-                                                if   "GANÓ"  in _vd2: ok_sp   += 1
-                                                elif "FALLÓ" in _vd2: fail_sp += 1
+                            pick_rows = []
+                            for pk in manual_pks:
+                                vd,vc,ex = _villar_match_pick_to_result(pk, _p_fixed)
+                                prob_v = pk.get("prob",0)
+                                if prob_v<=1: prob_v*=100
+                                pick_rows.append({
+                                    "label": pk.get("pick","?"),
+                                    "prob": prob_v, "odd": pk.get("odd",0),
+                                    "src": "💾 Tu pick", "verd": vd, "col": vc, "expl": ex,
+                                })
+                                _fecha_p = p.get("fecha","")
+                                if _fecha_p >= _inicio_conteo_tab:
+                                    if "GANÓ" in vd: ok_sp+=1
+                                    elif "FALLÓ" in vd: fail_sp+=1
 
-                                        # Render card
-                                        has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
-                                        has_fail = any("FALLÓ" in r["verd"] for r in pick_rows)
-                                        border_c = "#00ff88" if has_win else ("#ff4444" if has_fail else "#1a1a40")
+                            if auto_pk:
+                                # ── Auditar SOLO el pick principal que el modelo eligió ──
+                                # Usar snap congelado si existe, si no usar auto_pk directo
+                                _snap_data = _load_picks_snap().get(p.get("id",""), {})
+                                _main_pick = auto_pk  # ya viene congelado del flujo arriba
 
-                                        pick_html = ""
-                                        for r in pick_rows:
-                                            icon = "✅" if "GANÓ" in r["verd"] else ("❌" if "FALLÓ" in r["verd"] else "⏳")
-                                            bg   = "#00ff8810" if icon=="✅" else ("#ff444410" if icon=="❌" else "#1a1a3a")
-                                            bd   = r["col"] if icon in ("✅","❌") else "#333"
-                                            od   = f" · @{r['odd']:.2f}" if r.get("odd",0)>1 else ""
-                                            pct  = f" · {r['prob']:.0f}%" if r.get("prob",0)>0 else ""
-                                            # Badge principal vs secundario
-                                            _is_main = r.get("is_main", True)
-                                            _main_badge = "<span style='background:#FFD70022;color:#FFD700;font-size:.6rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>★ PICK</span>" if _is_main else ""
-                                            pick_html += (
-                                                f"<div style='margin-top:4px;padding:5px 10px;border-radius:8px;"
-                                                f"background:{bg};border:1px solid {bd};"
-                                                f"display:flex;align-items:center;gap:8px'>"
-                                                f"<div style='font-size:1.05rem'>{icon}</div>"
-                                                f"<div style='flex:1'>"
-                                                f"<div style='font-size:.78rem;font-weight:700;color:{r["col"]}'>{r["label"]}{od}{pct}{_main_badge}</div>"
-                                                f"<div style='font-size:.62rem;color:#555'>{r["src"]} · {r["expl"]}</div>"
-                                                f"</div>"
-                                                f"</div>"
-                                            )
+                                _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_main_pick, _p_fixed)
+                                _prob2 = _main_pick.get("prob", 0)
+                                _mkt2  = _main_pick.get("mkt", "")
+                                pick_rows.append({
+                                    "label":   _main_pick.get("pick","?"),
+                                    "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
+                                    "odd":     _main_pick.get("odd", 0),
+                                    "src":     _main_pick.get("src", "🤖 Modelo"),
+                                    "verd":    _vd2, "col": _vc2, "expl": _ex2,
+                                    "is_main": True,
+                                })
+                                # Contar para el contador global
+                                if p.get("fecha","") >= _inicio_conteo_tab:
+                                    if   "GANÓ"  in _vd2: ok_sp   += 1
+                                    elif "FALLÓ" in _vd2: fail_sp += 1
 
-                                        # Score: tenis = solo ganador con ✅
-                                        if sport_key == "tenis":
-                                            _p1 = (p.get("p1") or p.get("home") or "").strip() or home_n
-                                            _p2 = (p.get("p2") or p.get("away") or "").strip() or away_n
-                                            _sh = sh; _sa = sa
-                                            if _sh > _sa:
-                                                winner_n, loser_n = _p1, _p2
-                                            elif _sa > _sh:
-                                                winner_n, loser_n = _p2, _p1
-                                            else:
-                                                _gano = next((r["expl"].replace("Ganó: ","") for r in pick_rows if "Ganó:" in r.get("expl","")), None)
-                                                if _gano:
-                                                    winner_n = _gano
-                                                    loser_n  = _p2 if _gano == _p1 else _p1
-                                                else:
-                                                    winner_n, loser_n = _p1, _p2
-                                            _wko  = p.get("is_walkover") or p.get("walkover_note","")
-                                            _note = " <span style='color:#ff9500;font-size:.65rem'>(RET.)</span>" if _wko else ""
-                                            _bc = "#00ff88" if any("GANÓ" in r.get("verd","") for r in pick_rows) else ("#ff4444" if any("FALLÓ" in r.get("verd","") for r in pick_rows) else "#1a1a40")
-                                            st.markdown(
-                                                f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
-                                                f"margin:4px 0;border:1px solid {_bc}'>"
-                                                f"{pick_html}"
-                                                f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;"
-                                                f"padding-top:6px;border-top:1px solid #1a1a30'>"
-                                                f"<span style='font-size:.75rem;color:#555'>Ganó:</span>"
-                                                f"<span style='color:#00ff88;font-weight:900;font-size:.88rem'>{winner_n}</span>"
-                                                f"<span style='color:#5a4a2e;font-size:.75rem'>vs</span>"
-                                                f"<span style='color:#6b5a3a;font-size:.82rem'>{loser_n}</span>"
-                                                f"{_note}"
-                                                f"</div>"
-                                                f"</div>", unsafe_allow_html=True)
-                                        else:
-                                            st.markdown(
-                                                f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
-                                                f"margin:4px 0;border:1px solid {border_c}'>"
-                                                f"{pick_html}"
-                                                f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
-                                                f"gap:4px;align-items:center;margin-top:6px;padding-top:6px;"
-                                                f"border-top:1px solid #1a1a30'>"
-                                                f"<div style='text-align:right'><span style='color:{hc};"
-                                                f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
-                                                f"<div style='text-align:center;background:#0d0900;border-radius:8px;padding:4px 6px'>"
-                                                f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
-                                                f"<span style='color:#333'> – </span>"
-                                                f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
-                                                f"<div style='text-align:left'><span style='color:{ac};"
-                                                f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
-                                                f"</div>"
-                                                f"</div>", unsafe_allow_html=True)
+                            # Render card
+                            has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
+                            has_fail = any("FALLÓ" in r["verd"] for r in pick_rows)
+                            border_c = "#00ff88" if has_win else ("#ff4444" if has_fail else "#1a1a40")
+
+                            pick_html = ""
+                            for r in pick_rows:
+                                icon = "✅" if "GANÓ" in r["verd"] else ("❌" if "FALLÓ" in r["verd"] else "⏳")
+                                bg   = "#00ff8810" if icon=="✅" else ("#ff444410" if icon=="❌" else "#1a1a3a")
+                                bd   = r["col"] if icon in ("✅","❌") else "#333"
+                                od   = f" · @{r['odd']:.2f}" if r.get("odd",0)>1 else ""
+                                pct  = f" · {r['prob']:.0f}%" if r.get("prob",0)>0 else ""
+                                # Badge principal vs secundario
+                                _is_main = r.get("is_main", True)
+                                _main_badge = "<span style='background:#FFD70022;color:#FFD700;font-size:.6rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>★ PICK</span>" if _is_main else ""
+                                pick_html += (
+                                    f"<div style='margin-top:4px;padding:5px 10px;border-radius:8px;"
+                                    f"background:{bg};border:1px solid {bd};"
+                                    f"display:flex;align-items:center;gap:8px'>"
+                                    f"<div style='font-size:1.05rem'>{icon}</div>"
+                                    f"<div style='flex:1'>"
+                                    f"<div style='font-size:.78rem;font-weight:700;color:{r["col"]}'>{r["label"]}{od}{pct}{_main_badge}</div>"
+                                    f"<div style='font-size:.62rem;color:#555'>{r["src"]} · {r["expl"]}</div>"
+                                    f"</div>"
+                                    f"</div>"
+                                )
+
+                            # Score: tenis = solo ganador con ✅
+                            if sport_key == "tenis":
+                                _p1 = (p.get("p1") or p.get("home") or "").strip() or home_n
+                                _p2 = (p.get("p2") or p.get("away") or "").strip() or away_n
+                                _sh = sh; _sa = sa
+                                if _sh > _sa:
+                                    winner_n, loser_n = _p1, _p2
+                                elif _sa > _sh:
+                                    winner_n, loser_n = _p2, _p1
+                                else:
+                                    _gano = next((r["expl"].replace("Ganó: ","") for r in pick_rows if "Ganó:" in r.get("expl","")), None)
+                                    if _gano:
+                                        winner_n = _gano
+                                        loser_n  = _p2 if _gano == _p1 else _p1
+                                    else:
+                                        winner_n, loser_n = _p1, _p2
+                                _wko  = p.get("is_walkover") or p.get("walkover_note","")
+                                _note = " <span style='color:#ff9500;font-size:.65rem'>(RET.)</span>" if _wko else ""
+                                _bc = "#00ff88" if any("GANÓ" in r.get("verd","") for r in pick_rows) else ("#ff4444" if any("FALLÓ" in r.get("verd","") for r in pick_rows) else "#1a1a40")
+                                st.markdown(
+                                    f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
+                                    f"margin:4px 0;border:1px solid {_bc}'>"
+                                    f"{pick_html}"
+                                    f"<div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;"
+                                    f"padding-top:6px;border-top:1px solid #1a1a30'>"
+                                    f"<span style='font-size:.75rem;color:#555'>Ganó:</span>"
+                                    f"<span style='color:#00ff88;font-weight:900;font-size:.88rem'>{winner_n}</span>"
+                                    f"<span style='color:#5a4a2e;font-size:.75rem'>vs</span>"
+                                    f"<span style='color:#6b5a3a;font-size:.82rem'>{loser_n}</span>"
+                                    f"{_note}"
+                                    f"</div>"
+                                    f"</div>", unsafe_allow_html=True)
+                            else:
+                                st.markdown(
+                                    f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
+                                    f"margin:4px 0;border:1px solid {border_c}'>"
+                                    f"{pick_html}"
+                                    f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
+                                    f"gap:4px;align-items:center;margin-top:6px;padding-top:6px;"
+                                    f"border-top:1px solid #1a1a30'>"
+                                    f"<div style='text-align:right'><span style='color:{hc};"
+                                    f"font-weight:{'900' if won_h else '400'};font-size:.88rem'>{home_n}</span></div>"
+                                    f"<div style='text-align:center;background:#0d0900;border-radius:8px;padding:4px 6px'>"
+                                    f"<span style='font-size:1.1rem;font-weight:900;color:{hc}'>{sh}</span>"
+                                    f"<span style='color:#333'> – </span>"
+                                    f"<span style='font-size:1.1rem;font-weight:900;color:{ac}'>{sa}</span></div>"
+                                    f"<div style='text-align:left'><span style='color:{ac};"
+                                    f"font-weight:{'900' if won_a else '400'};font-size:.88rem'>{away_n}</span></div>"
+                                    f"</div>"
+                                    f"</div>", unsafe_allow_html=True)
 
             total_sp = ok_sp+fail_sp
             pct_sp = round(ok_sp/total_sp*100) if total_sp>0 else 0
@@ -8735,7 +8708,7 @@ def _ventana_22h(matches):
     return result
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def compute_trilay(matches):
     """
     TRILAY estructurado: 1 pick ML (favorito fuerte) + 1 Over 2.5 + 1 AA (Ambos Anotan).
@@ -8800,7 +8773,7 @@ def compute_trilay(matches):
 
     return result[:3]
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def compute_pato(matches):
     cands=[]
     for m in matches[:80]:
@@ -8874,7 +8847,7 @@ def get_nba_cartelera():
     games = _sort_cartelera(games, _now2.strftime("%Y-%m-%d"), int(_now2.strftime("%H")))
     return games
 
-@st.cache_data(ttl=7200, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_nba_team_stats(team_id):
     """
     Extrae stats avanzadas de ESPN NBA:
@@ -8903,7 +8876,7 @@ def get_nba_team_stats(team_id):
     return stats
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def get_nba_recent_form(team_id, n_games=7):
     """
     Últimos N partidos NBA — detecta racha, back-to-back fatigue,
@@ -9075,7 +9048,7 @@ _ATP_RANK_CACHE: dict = {}
 _ATP_RANK_DATE: str   = ""
 
 @st.cache_data(ttl=86400, show_spinner=False)
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _fetch_atp_rankings_raw(tour="ATP"):
     """
     Descarga el ranking ATP/WTA actual desde la tennis API.
@@ -9428,6 +9401,576 @@ def _kr_conf(prob, edge, spread_pp):
         return "⚠️", "BAJA",     "#ff9500"
     return "🔻", "NO APOSTAR",  "#ff4444"
 
+
+
+# ==============================================================================
+# KING RONGO — GOD MODE (10 capas de inteligencia)
+# ==============================================================================
+KR_BRAIN_FILE = "/tmp/kr_god_brain.json"
+KR_ELO_FILE   = "/tmp/kr_elo_ratings.json"
+
+def _kr_brain_load():
+    try:
+        import json as _j
+        with open(KR_BRAIN_FILE) as _f: return _j.load(_f)
+    except:
+        return {"wins":0,"losses":0,"hot":0,"cold":0,
+                "sport_hist":{"futbol":[],"nba":[],"tenis":[]},"league_hist":{},
+                "last5":[],"bucket_hist":{}}
+
+def _kr_brain_save(b):
+    try:
+        import json as _j
+        with open(KR_BRAIN_FILE,"w") as _f: _j.dump(b,_f,ensure_ascii=False)
+    except: pass
+
+def _kr_elo_load():
+    try:
+        import json as _j
+        with open(KR_ELO_FILE) as _f: return _j.load(_f)
+    except: return {}
+
+def _kr_elo_save(e):
+    try:
+        import json as _j
+        with open(KR_ELO_FILE,"w") as _f: _j.dump(e,_f,ensure_ascii=False)
+    except: pass
+
+def _kr_elo_prob(r_home,r_away,home_adv=50.0):
+    return 1.0/(1.0+10**(-(r_home+home_adv-r_away)/400.0))
+
+def _kr_elo_update(r_win,r_los,k=28.0):
+    e=1.0/(1.0+10**((r_los-r_win)/400.0))
+    return round(r_win+k*(1-e),1),round(r_los+k*(0-(1-e)),1)
+
+def _kr_ev(prob,cuota):
+    if cuota<=1.0: return {"ev_pct":-99.0,"valor":"sin_valor","justa":0.0}
+    ev=prob*(cuota-1.0)-(1-prob)*1.0-0.045
+    justa=round(1/prob,3) if prob>0 else cuota
+    v=("excelente" if ev>0.08 else ("bueno" if ev>0.03 else
+       ("marginal" if ev>0 else "negativo")))
+    return {"ev_pct":round(ev*100,2),"valor":v,"justa":justa}
+
+def _kr_momentum(team,sport,last5):
+    try:
+        hits=[p for p in last5
+              if team.lower()[:6] in str(p.get("pick","")).lower()
+              and p.get("result") in ("gano","perdio")][-5:]
+        if len(hits)<3: return 0.0
+        wr=sum(1 for p in hits if p.get("result")=="gano")/len(hits)
+        return (0.07 if wr>=0.70 else 0.03 if wr>=0.60 else
+                -0.07 if wr<=0.30 else -0.03 if wr<=0.40 else 0.0)
+    except: return 0.0
+
+def _kr_rtm(prob,sport,liga,brain):
+    try:
+        hist=brain.get("league_hist",{}).get(liga[:15],[])[-15:]
+        if len(hist)<6: return 0.0
+        return round(max(-0.06,min(0.04,(sum(hist)/len(hist)-0.58)*0.35)),4)
+    except: return 0.0
+
+def _kr_calibrate(prob,sport,brain):
+    try:
+        bucket=str(round(round(prob*10)/10,1))
+        hist=brain.get("bucket_hist",{}).get(sport+bucket,[])[-20:]
+        if len(hist)<8: return prob
+        return round(max(0.10,min(0.92,0.70*prob+0.30*sum(hist)/len(hist))),4)
+    except: return prob
+
+@st.cache_data(ttl=1800,show_spinner=False)
+
+# ==============================================================================
+# ULTRA INTELLIGENCE ENGINE — 20 Variables Avanzadas
+# Alimenta: Einstein, KR GOD, Tenis Expert, Badrino, Papi AJB, Villar
+# Todas 100% Claude Haiku | TTL 1800s (30 min) | Autonomas
+# ==============================================================================
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_fatiga(home, away, sport, fecha):
+    """
+    1. INDICE DE FATIGA REAL — uno de los mas poderosos.
+    Soccer: 3 partidos en 7 dias. NBA: back-to-back. Tenis: 3 sets seguidos.
+    """
+    if not ANTHROPIC_API_KEY: return {"fatiga_h":0.0,"fatiga_a":0.0,"alerta":""}
+    try:
+        p = (f"Analiza fatiga para {home} vs {away} ({sport}, {fecha}).\n"
+             f"Soccer: 3+ partidos en 7 dias=-0.10. NBA: back-to-back=-0.08. "
+             f"Tenis: 3+ sets seguidos=-0.06. Viajes largos=-0.03.\n"
+             f"JSON sin backticks: {{\"fatiga_h\":-0.15 a 0.0,\"fatiga_a\":-0.15 a 0.0,"
+             f"\"descripcion\":\"12 palabras max\",\"alerta\":\"si hay fatiga critica o null\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":120,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("fatiga_h",0.0); d.setdefault("fatiga_a",0.0); d.setdefault("alerta","")
+            return d
+    except: pass
+    return {"fatiga_h":0.0,"fatiga_a":0.0,"descripcion":"sin datos","alerta":""}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_matchup(home, away, sport):
+    """
+    2. MATCHUP ESTILO VS ESTILO — algunos estilos siempre pierden contra otros.
+    Soccer: posesion vs presion. NBA: pequenos vs pivots. Tenis: defensor vs sacador.
+    """
+    if not ANTHROPIC_API_KEY: return {"ventaja":0.0,"estilo_h":"","estilo_a":"","matchup":""}
+    try:
+        p = (f"Analiza matchup tactico {home} vs {away} ({sport}).\n"
+             f"Clasifica estilos: Soccer(posesion|contragolpe|presion|bloque), "
+             f"NBA(pace-up|pace-down|3pt|paint), Tenis(sacador|defensor|agresivo|baseline).\n"
+             f"JSON sin backticks: {{\"estilo_h\":\"tipo\",\"estilo_a\":\"tipo\","
+             f"\"matchup\":\"descripcion 10 palabras\",\"ventaja\":-0.08 a +0.08,"
+             f"\"favorece\":\"local|visita|neutro\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":150,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("ventaja",0.0); d.setdefault("matchup",""); return d
+    except: pass
+    return {"ventaja":0.0,"estilo_h":"?","estilo_a":"?","matchup":"sin datos","favorece":"neutro"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_forma_real(home, away, sport):
+    """
+    3. FORMA REAL (estadisticas, no resultados).
+    Soccer: xG, tiros, posesion. NBA: OffRtg, DefRtg. Tenis: % puntos servicio/resto.
+    """
+    if not ANTHROPIC_API_KEY: return {"forma_h":0.0,"forma_a":0.0,"descripcion":""}
+    try:
+        p = (f"Analiza forma real (estadisticas, no resultados) {home} vs {away} ({sport}).\n"
+             f"Soccer: xG ultimos 5, tiros. NBA: OffRtg/DefRtg reciente. Tenis: % servicio/resto.\n"
+             f"Un equipo puede perder pero jugar mejor. Eso importa.\n"
+             f"JSON sin backticks: {{\"forma_h\":-0.08 a +0.08,\"forma_a\":-0.08 a +0.08,"
+             f"\"stat_clave_h\":\"estadistica principal\",\"stat_clave_a\":\"estadistica principal\","
+             f"\"tendencia\":\"mejorando|estable|cayendo por equipo\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":160,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("forma_h",0.0); d.setdefault("forma_a",0.0); return d
+    except: pass
+    return {"forma_h":0.0,"forma_a":0.0,"stat_clave_h":"","stat_clave_a":"","tendencia":""}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_ventaja_fisica(home, away, sport):
+    """
+    4. VENTAJA FISICA.
+    NBA: altura, rebotes. Soccer: velocidad extremos, duelos aereos. Tenis: potencia servicio.
+    """
+    if not ANTHROPIC_API_KEY: return {"ventaja_fisica":0.0,"descripcion":""}
+    try:
+        p = (f"Analiza ventaja fisica {home} vs {away} ({sport}).\n"
+             f"NBA: altura promedio, dominio pintura. Soccer: velocidad, duelos aereos, fisico.\n"
+             f"Tenis: potencia servicio, resistencia, envergadura.\n"
+             f"JSON sin backticks: {{\"ventaja_fisica\":-0.06 a +0.06,"
+             f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":120,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("ventaja_fisica",0.0); return d
+    except: pass
+    return {"ventaja_fisica":0.0,"favorece":"neutro","descripcion":"sin datos"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_localia(home, away, sport, liga):
+    """
+    5. LOCALIA PROFUNDA — no solo 'juega en casa'.
+    % real victorias local, goles a favor/contra, presion del estadio.
+    """
+    if not ANTHROPIC_API_KEY: return {"bonus_local":0.0,"descripcion":""}
+    try:
+        p = (f"Analiza ventaja de localia profunda: {home} (local) vs {away} ({sport}, {liga}).\n"
+             f"% real victorias en casa, diferencia goles/puntos local vs visita, presion estadio.\n"
+             f"Algunos equipos suben 25-40%% en casa. Cuantificalo.\n"
+             f"JSON sin backticks: {{\"bonus_local\":-0.05 a +0.12,"
+             f"\"wr_local_est\":\"% estimado\",\"descripcion\":\"12 palabras max\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":120,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("bonus_local",0.0); return d
+    except: pass
+    return {"bonus_local":0.05,"wr_local_est":"50%","descripcion":"ventaja estandar de localia"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_motivacion(home, away, sport, liga):
+    """
+    6. MOTIVACION COMPETITIVA — una de las variables mas fuertes.
+    Descenso, playoffs, eliminacion, rivalidad historica.
+    """
+    if not ANTHROPIC_API_KEY: return {"motivacion_h":0.0,"motivacion_a":0.0,"situacion":""}
+    try:
+        p = (f"Analiza motivacion competitiva {home} vs {away} ({sport}, {liga}).\n"
+             f"Factores: descenso, clasificacion playoffs, eliminacion directa, rivalidad clasica.\n"
+             f"Equipos con algo en juego suben intensidad significativamente.\n"
+             f"JSON sin backticks: {{\"motivacion_h\":-0.05 a +0.10,"
+             f"\"motivacion_a\":-0.05 a +0.10,\"situacion\":\"descripcion 12 palabras\","
+             f"\"urgencia\":\"critica|alta|media|baja\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":130,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("motivacion_h",0.0); d.setdefault("motivacion_a",0.0); return d
+    except: pass
+    return {"motivacion_h":0.0,"motivacion_a":0.0,"situacion":"sin datos","urgencia":"baja"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_consistencia(home, away, sport):
+    """
+    7+10. INDICE DE CONSISTENCIA (desviacion estandar de rendimiento).
+    Equipo volatil = riesgo alto. Equipo consistente = apuesta mas segura.
+    """
+    if not ANTHROPIC_API_KEY: return {"consist_h":0.5,"consist_a":0.5,"descripcion":""}
+    try:
+        p = (f"Mide consistencia de rendimiento (NO resultados) de {home} y {away} ({sport}).\n"
+             f"Consistencia = estabilidad estadistica. Volatilidad = alternancia extrema.\n"
+             f"Escala 0-1: 1=muy consistente, 0=muy volatil.\n"
+             f"JSON sin backticks: {{\"consist_h\":0-1,\"consist_a\":0-1,"
+             f"\"volatilidad_h\":\"alta|media|baja\",\"volatilidad_a\":\"alta|media|baja\","
+             f"\"confiable\":\"local|visita|ambos|ninguno\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":130,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("consist_h",0.5); d.setdefault("consist_a",0.5); return d
+    except: pass
+    return {"consist_h":0.5,"consist_a":0.5,"volatilidad_h":"media","volatilidad_a":"media","confiable":"ambos"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_presion(home, away, sport):
+    """
+    1+7(KR). EFICIENCIA BAJO PRESION + DESCANSO MENTAL.
+    Clutch stats, break points, partido empatado. Rebote mental post-derrota.
+    """
+    if not ANTHROPIC_API_KEY: return {"presion_h":0.0,"presion_a":0.0,"descripcion":""}
+    try:
+        p = (f"Analiza eficiencia bajo presion y estado mental de {home} y {away} ({sport}).\n"
+             f"Soccer: rendimiento en empates, rachas recientes. NBA: clutch stats ultimos 5min.\n"
+             f"Tenis: break points salvados. Rebote mental post-derrota dura.\n"
+             f"JSON sin backticks: {{\"presion_h\":-0.08 a +0.06,\"presion_a\":-0.08 a +0.06,"
+             f"\"clutch_h\":\"bueno|regular|malo\",\"clutch_a\":\"bueno|regular|malo\","
+             f"\"estado_mental\":\"descripcion 10 palabras\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":140,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("presion_h",0.0); d.setdefault("presion_a",0.0); return d
+    except: pass
+    return {"presion_h":0.0,"presion_a":0.0,"clutch_h":"regular","clutch_a":"regular","estado_mental":"neutro"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_ritmo_juego(home, away, sport):
+    """
+    9+8(KR). RITMO DE JUEGO + EFICIENCIA EN TRANSICION.
+    NBA pace, Soccer lento vs rapido, contraataques, fast breaks.
+    """
+    if not ANTHROPIC_API_KEY: return {"ritmo_delta":0.0,"descripcion":""}
+    try:
+        p = (f"Analiza ritmo de juego y eficiencia en transicion {home} vs {away} ({sport}).\n"
+             f"NBA: pace preferido (alto vs bajo). Soccer: equipo lento vs rapido, contraataque.\n"
+             f"Si el ritmo favorece a uno -> ventaja clara. Tambien: fast break / contragolpe.\n"
+             f"JSON sin backticks: {{\"ritmo_delta\":-0.07 a +0.07,"
+             f"\"ritmo_h\":\"alto|medio|bajo\",\"ritmo_a\":\"alto|medio|bajo\","
+             f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":130,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("ritmo_delta",0.0); return d
+    except: pass
+    return {"ritmo_delta":0.0,"ritmo_h":"medio","ritmo_a":"medio","favorece":"neutro","descripcion":"sin datos"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_dependencia_estrella(home, away, sport):
+    """
+    7(KR). INDICE DE DEPENDENCIA DE ESTRELLA.
+    NBA: jugador produce 40%+ del ataque. Soccer: goleador unico. Tenis: servicio.
+    """
+    if not ANTHROPIC_API_KEY: return {"dep_h":0.0,"dep_a":0.0,"estrella_h":"","estrella_a":""}
+    try:
+        p = (f"Analiza dependencia de estrella en {home} y {away} ({sport}).\n"
+             f"Si el equipo depende de 1 jugador -> vulnerabilidad si lo neutralizan.\n"
+             f"Penalizacion si dependencia alta y rival puede neutralizarlo.\n"
+             f"JSON sin backticks: {{\"dep_h\":-0.06 a 0.0,\"dep_a\":-0.06 a 0.0,"
+             f"\"estrella_h\":\"nombre si aplica o null\",\"estrella_a\":\"nombre si aplica o null\","
+             f"\"riesgo\":\"alto|medio|bajo\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":130,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("dep_h",0.0); d.setdefault("dep_a",0.0); return d
+    except: pass
+    return {"dep_h":0.0,"dep_a":0.0,"estrella_h":None,"estrella_a":None,"riesgo":"bajo"}
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _ultra_adaptabilidad(home, away, sport):
+    """
+    6(KR). ADAPTABILIDAD TACTICA + EFICIENCIA DEL ENTRENADOR.
+    Equipos que cambian sistema vs equipos de un solo sistema.
+    """
+    if not ANTHROPIC_API_KEY: return {"adapt_h":0.0,"adapt_a":0.0,"descripcion":""}
+    try:
+        p = (f"Analiza adaptabilidad tactica y calidad del entrenador {home} vs {away} ({sport}).\n"
+             f"Equipo flexible = puede ajustar plan. Dependiente = vulnerables a cambios.\n"
+             f"NBA: uso de timeouts, ajustes defensivos. Soccer: cambios impacto.\n"
+             f"JSON sin backticks: {{\"adapt_h\":-0.04 a +0.05,\"adapt_a\":-0.04 a +0.05,"
+             f"\"flexibilidad_h\":\"alta|media|baja\",\"flexibilidad_a\":\"alta|media|baja\","
+             f"\"ventaja_coach\":\"local|visita|par\"}}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":130,
+                  "messages":[{"role":"user","content":p}]},timeout=7)
+        if r.status_code==200:
+            d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
+            d.setdefault("adapt_h",0.0); d.setdefault("adapt_a",0.0); return d
+    except: pass
+    return {"adapt_h":0.0,"adapt_a":0.0,"flexibilidad_h":"media","flexibilidad_a":"media","ventaja_coach":"par"}
+
+
+def _ultra_intel_full(home, away, sport, liga, fecha):
+    """
+    MAESTRO: Corre las 10 Ultra Intelligence en paralelo (ThreadPoolExecutor).
+    Combina todos los deltas en un ajuste neto de probabilidad.
+    Genera contexto rico para TODOS los AIs del sistema.
+    Retorna: {delta_h, delta_a, score_ultra, flags, context_str, raw}
+    """
+    import concurrent.futures as _cf
+    results = {}
+    def _run(fn, key, *args):
+        try: results[key] = fn(*args)
+        except: results[key] = {}
+
+    with _cf.ThreadPoolExecutor(max_workers=10) as ex:
+        ex.submit(_run, _ultra_fatiga,            "fatiga",    home, away, sport, fecha)
+        ex.submit(_run, _ultra_matchup,           "matchup",   home, away, sport)
+        ex.submit(_run, _ultra_forma_real,        "forma",     home, away, sport)
+        ex.submit(_run, _ultra_ventaja_fisica,    "fisica",    home, away, sport)
+        ex.submit(_run, _ultra_localia,           "localia",   home, away, sport, liga)
+        ex.submit(_run, _ultra_motivacion,        "motivacion",home, away, sport, liga)
+        ex.submit(_run, _ultra_consistencia,      "consist",   home, away, sport)
+        ex.submit(_run, _ultra_presion,           "presion",   home, away, sport)
+        ex.submit(_run, _ultra_ritmo_juego,       "ritmo",     home, away, sport)
+        ex.submit(_run, _ultra_dependencia_estrella,"dep",     home, away, sport)
+
+    fat = results.get("fatiga",{});  mch = results.get("matchup",{})
+    frm = results.get("forma",{});   fis = results.get("fisica",{})
+    loc = results.get("localia",{}); mot = results.get("motivacion",{})
+    cst = results.get("consist",{}); pre = results.get("presion",{})
+    rit = results.get("ritmo",{});   dep = results.get("dep",{})
+
+    # Delta neto para equipo LOCAL (home)
+    delta_h = sum([
+        float(fat.get("fatiga_h",0))     * 1.2,   # fatiga pesa mucho
+        float(mch.get("ventaja",0))      * 0.8,   # matchup
+        float(frm.get("forma_h",0))      * 0.9,   # forma real
+        float(fis.get("ventaja_fisica",0))* 0.6,  # ventaja fisica
+        float(loc.get("bonus_local",0))  * 0.7,   # localia
+        float(mot.get("motivacion_h",0)) * 1.1,   # motivacion pesa mucho
+        (float(cst.get("consist_h",0.5))-0.5)*0.4,# consistencia
+        float(pre.get("presion_h",0))    * 0.8,   # presion/clutch
+        float(rit.get("ritmo_delta",0))  * 0.5,   # ritmo
+        float(dep.get("dep_h",0))        * 0.7,   # dependencia estrella
+    ])
+    # Delta neto para equipo VISITANTE (away)
+    delta_a = sum([
+        float(fat.get("fatiga_a",0))     * 1.2,
+        -float(mch.get("ventaja",0))     * 0.8,
+        float(frm.get("forma_a",0))      * 0.9,
+        -float(fis.get("ventaja_fisica",0))* 0.6,
+        float(mot.get("motivacion_a",0)) * 1.1,
+        (float(cst.get("consist_a",0.5))-0.5)*0.4,
+        float(pre.get("presion_a",0))    * 0.8,
+        -float(rit.get("ritmo_delta",0)) * 0.5,
+        float(dep.get("dep_a",0))        * 0.7,
+    ])
+    # Clip
+    delta_h = max(-0.18, min(0.18, delta_h))
+    delta_a = max(-0.18, min(0.18, delta_a))
+
+    # Score ultra 0-10 (qué tan favorable es el conjunto para local)
+    score_ultra = round(5.0 + delta_h * 20, 2)
+    score_ultra = max(0, min(10, score_ultra))
+
+    # Flags consolidados
+    flags = []
+    if abs(float(fat.get("fatiga_h",0))) >= 0.06: flags.append(f"FATIGA {home[:10]}: {fat.get('alerta','critica')}")
+    if abs(float(fat.get("fatiga_a",0))) >= 0.06: flags.append(f"FATIGA {away[:10]}: {fat.get('alerta','critica')}")
+    if abs(float(mch.get("ventaja",0))) >= 0.05:  flags.append(f"MATCHUP: {mch.get('matchup','estilo favorable')}")
+    if mot.get("urgencia") in ("critica","alta"):   flags.append(f"MOTIVACION: {mot.get('situacion','alta urgencia')}")
+    if cst.get("confiable") in ("ninguno",):        flags.append("VOLATILIDAD: ambos equipos inconsistentes")
+    if pre.get("clutch_h") == "malo":               flags.append(f"CLUTCH BAJO: {home[:10]}")
+    if dep.get("riesgo") == "alto":                 flags.append(f"DEP.ESTRELLA: {dep.get('estrella_h') or dep.get('estrella_a','jugador clave')}")
+
+    # Context string para prompts de Claude
+    ctx = (
+        f"\n[ULTRA INTELLIGENCE — 10 Variables Avanzadas]\n"
+        f"Fatiga:    {home[:10]}={fat.get('fatiga_h',0):+.2f} {away[:10]}={fat.get('fatiga_a',0):+.2f} | {fat.get('descripcion','')}\n"
+        f"Matchup:   {mch.get('estilo_h','?')} vs {mch.get('estilo_a','?')} | {mch.get('matchup','')} | delta={mch.get('ventaja',0):+.2f}\n"
+        f"Forma:     {home[:10]}={frm.get('stat_clave_h','')} ({frm.get('forma_h',0):+.2f}) | {away[:10]}={frm.get('stat_clave_a','')} ({frm.get('forma_a',0):+.2f})\n"
+        f"Fisica:    {fis.get('favorece','neutro')} | {fis.get('descripcion','')} | delta={fis.get('ventaja_fisica',0):+.2f}\n"
+        f"Localia:   bonus={loc.get('bonus_local',0):+.2f} | WR casa estimado={loc.get('wr_local_est','?')}\n"
+        f"Motivacion:{home[:10]}={mot.get('motivacion_h',0):+.2f} {away[:10]}={mot.get('motivacion_a',0):+.2f} | {mot.get('situacion','')}\n"
+        f"Consist.:  {home[:10]}={cst.get('consist_h',0.5):.2f} {away[:10]}={cst.get('consist_a',0.5):.2f} | confiable={cst.get('confiable','?')}\n"
+        f"Presion:   clutch_h={pre.get('clutch_h','?')} clutch_a={pre.get('clutch_a','?')} | {pre.get('estado_mental','')}\n"
+        f"Ritmo:     {rit.get('ritmo_h','?')} vs {rit.get('ritmo_a','?')} | favorece={rit.get('favorece','neutro')}\n"
+        f"Dep.Star:  h={dep.get('dep_h',0):.2f} a={dep.get('dep_a',0):.2f} | riesgo={dep.get('riesgo','?')}\n"
+        f"DELTA NET: local={delta_h:+.4f} visita={delta_a:+.4f} | Ultra Score={score_ultra:.1f}/10\n"
+    )
+
+    return {
+        "delta_h": delta_h, "delta_a": delta_a,
+        "score_ultra": score_ultra,
+        "flags": flags, "context_str": ctx,
+        "raw": results,
+    }
+
+def _kr_situacional(home,away,sport,liga,hora):
+    if not ANTHROPIC_API_KEY: return {"factor":0.0,"ctx":""}
+    try:
+        prompt=(
+            f"Partido: {home} vs {away} | {sport} | {liga}\n"
+            f"Analiza contexto situacional: must-win, relegacion, revancha, clasico, presion.\n"
+            f"Responde SOLO JSON sin backticks: "
+            f"{{\"factor\": -0.10 a +0.10, \"favorece\": \"local|visita|neutro\", "
+            f"\"ctx\": \"max 12 palabras\", \"urgencia\": \"alta|media|baja\"}}"
+        )
+        r=requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
+                     "content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":120,
+                  "messages":[{"role":"user","content":prompt}]},timeout=7)
+        if r.status_code==200:
+            txt=r.json()["content"][0]["text"].strip()
+            txt=re.sub(r"```json|```","",txt).strip()
+            d=json.loads(txt)
+            d.setdefault("factor",0.0); d.setdefault("ctx","")
+            return d
+    except: pass
+    return {"factor":0.0,"ctx":"","favorece":"neutro","urgencia":"baja"}
+
+@st.cache_data(ttl=1800,show_spinner=False)
+def _kr_monte_carlo_god(hxg,axg,h_mom=0.0,a_mom=0.0,n=50000):
+    import random as _rnd; _rnd.seed(42)
+    hxg_a=max(0.1,hxg*(1.0+h_mom*0.12)); axg_a=max(0.1,axg*(1.0+a_mom*0.12))
+    wh=wa=wd=btts=o25=o35=0
+    for _ in range(n):
+        lh=max(0.05,_rnd.gauss(hxg_a,hxg_a*0.11)); la=max(0.05,_rnd.gauss(axg_a,axg_a*0.11))
+        gh=sum(1 for _ in range(20) if _rnd.random()<lh/20)
+        ga=sum(1 for _ in range(20) if _rnd.random()<la/20)
+        t=gh+ga
+        if gh>ga: wh+=1
+        elif ga>gh: wa+=1
+        else: wd+=1
+        if gh>0 and ga>0: btts+=1
+        if t>2: o25+=1
+        if t>3: o35+=1
+    return {"ph":round(wh/n,4),"pa":round(wa/n,4),"pd":round(wd/n,4),
+            "o25":round(o25/n,4),"o35":round(o35/n,4),"btts":round(btts/n,4)}
+
+@st.cache_data(ttl=600,show_spinner=False)
+def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
+    if not ANTHROPIC_API_KEY or not top5_t:
+        return {"idx":0,"razon":"","confianza":0.5,"alerta":None}
+    try:
+        ct=""
+        for i,c in enumerate(top5_t[:5],1):
+            ct+=(f"\nC{i}: {c[0]} | {c[1]}\n"
+                 f"  Prob:{c[2]*100:.1f}% Cuota:{c[3]:.2f} GODscore:{c[4]:.2f}\n"
+                 f"  EV:{c[5]:+.1f}% Ctx:{c[6]} Contra:{'SI' if c[7] else 'NO'}\n")
+        sys_p=("Eres KING RONGO GOD MODE, mejor apostador de IA del mundo. "
+               "Tienes ELO, Monte Carlo 50k, EV real, momentum, calibracion. "
+               "Elige EL mejor pick. SOLO JSON sin backticks.")
+        _jfmt = '{"idx":0-4,"confianza":0-1,"razon":"3 frases","alerta":"o null"}'
+        usr_p = (f"Historial:{b_wins}W-{b_loss}L Hot:{b_hot} Cold:{b_cold}\n"
+                 f"Ultimos5:{last5_s}\n{ct}\n"
+                 f"Elige el mejor. JSON: {_jfmt}")
+        r=requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
+                     "content-type":"application/json"},
+            json={"model":"claude-sonnet-4-20250514","max_tokens":300,
+                  "system":sys_p,"messages":[{"role":"user","content":usr_p}]},
+            timeout=12)
+        if r.status_code==200:
+            txt=r.json()["content"][0]["text"].strip()
+            txt=re.sub(r"```json|```","",txt).strip()
+            d=json.loads(txt)
+            d.setdefault("idx",0); d.setdefault("confianza",0.5); d.setdefault("razon","")
+            return d
+    except: pass
+    return {"idx":0,"razon":"","confianza":0.5,"alerta":None}
+
+def _kr_god_score(c,brain,elo_r,ph_tuple):
+    try:
+        prob=c.get("prob",0.5); edge=c.get("edge",0.0); kelly=c.get("kelly_pct",0.0)
+        spread=c.get("model_spread",10.0); contra=c.get("contradiccion",False)
+        odd=c.get("odd",0.0); sport=c.get("sport","futbol"); liga=c.get("liga","")
+        home=c.get("label","").split(" vs ")[0].split(" @ ")[-1].strip()
+        s=min(prob*6.2,5.0)
+        ev=_kr_ev(prob,odd); s+=max(-1.2,min(1.5,ev["ev_pct"]/12.0))
+        s+=min(kelly/10.0,0.8); s-=min(spread/22.0,1.0)
+        if contra: s-=2.0
+        last5=list(ph_tuple)[-5:] if ph_tuple else []
+        s+=_kr_momentum(home,sport,last5)*6.0
+        s+=_kr_rtm(prob,sport,liga,brain)*4.0
+        s+=((_kr_calibrate(prob,sport,brain))-prob)*5.0
+        if brain.get("hot",0)>=3: s+=0.4
+        if brain.get("cold",0)>=3: s-=0.6
+        # Ultra Intelligence bonus
+        s += float(c.get("ultra_score",5.0)-5.0)*0.15
+        return round(max(0.0,min(10.0,s)),3)
+    except: return c.get("score",5.0)
+
+def _kr_learn(pick,resultado):
+    brain=_kr_brain_load(); elo=_kr_elo_load()
+    won=resultado in ("gano","ok","✅")
+    if won: brain["wins"]=brain.get("wins",0)+1; brain["hot"]=brain.get("hot",0)+1; brain["cold"]=0
+    else: brain["losses"]=brain.get("losses",0)+1; brain["cold"]=brain.get("cold",0)+1; brain["hot"]=0
+    brain.setdefault("last5",[])
+    brain["last5"].append({"pick":pick.get("pick",""),"result":"gano" if won else "perdio"})
+    brain["last5"]=brain["last5"][-5:]
+    sport=pick.get("sport","futbol"); liga=pick.get("liga","?")[:15]
+    brain.setdefault("sport_hist",{}).setdefault(sport,[])
+    brain["sport_hist"][sport].append(1 if won else 0)
+    brain["sport_hist"][sport]=brain["sport_hist"][sport][-60:]
+    brain.setdefault("league_hist",{}).setdefault(liga,[])
+    brain["league_hist"][liga].append(1 if won else 0)
+    brain["league_hist"][liga]=brain["league_hist"][liga][-30:]
+    prob=pick.get("prob",0.5); bucket=str(round(round(prob*10)/10,1))
+    brain.setdefault("bucket_hist",{})
+    key=sport+bucket; brain["bucket_hist"].setdefault(key,[])
+    brain["bucket_hist"][key].append(1 if won else 0)
+    brain["bucket_hist"][key]=brain["bucket_hist"][key][-40:]
+    _kr_brain_save(brain)
+    try:
+        label=pick.get("label",""); home=label.split(" vs ")[0].split(" @ ")[-1].strip()
+        away=label.split(" vs ")[-1].split(" @ ")[0].strip()
+        hp=home.lower()[:6] in pick.get("pick","").lower()
+        winner,loser=(home,away) if (hp and won) or (not hp and not won) else (away,home)
+        rw,rl=elo.get(winner,1500.0),elo.get(loser,1500.0)
+        elo[winner],elo[loser]=_kr_elo_update(rw,rl)
+        _kr_elo_save(elo)
+    except: pass
 
 def _kr_score(prob, edge, spread_pp, kelly, contradiccion):
     """Score compuesto 0-10 para rankear candidatos.
@@ -9855,6 +10398,38 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
     except: pass
 
     # ── Rankear ──
+    # GOD MODE pipeline
+    _brain_kr = _kr_brain_load()
+    _elo_kr   = _kr_elo_load()
+    _ph_t = tuple({"pick":p.get("pick",""),"result":"gano" if p.get("result") in ("ok","✅","gano") else "perdio"} for p in pick_history[-50:])
+    for _c in candidates:
+        try:
+            _c["score"] = _kr_god_score(_c, _brain_kr, _elo_kr, _ph_t)
+            _ev_c       = _kr_ev(_c.get("prob",0.5), _c.get("odd",0))
+            _c["ev_pct"]    = _ev_c["ev_pct"]
+            _c["ev_valor"]  = _ev_c["valor"]
+            _c["cuota_justa"] = _ev_c["justa"]
+            _home_c = _c.get("label","").split(" vs ")[0].split(" @ ")[-1].strip()
+            _away_c = _c.get("label","").split(" vs ")[-1].split(" @ ")[0].strip()
+            _sit = _kr_situacional(_home_c,_away_c,_c.get("sport","futbol"),_c.get("liga",""),_c.get("hora",""))
+            _sf  = float(_sit.get("factor",0.0))
+            _c["prob"]    = max(0.10,min(0.92,_c["prob"]+_sf*0.35))
+            _c["sit_ctx"] = _sit.get("ctx","")
+            if abs(_sf)>=0.05: _c["score"]=min(10.0,_c["score"]+abs(_sf)*4.0)
+            # Ultra Intelligence (10 variables avanzadas)
+            try:
+                _ui = _ultra_intel_full(
+                    _home_c, _away_c,
+                    _c.get("sport","futbol"), _c.get("liga",""), _c.get("hora","")
+                )
+                _c["prob"]        = max(0.10,min(0.92,_c["prob"]+_ui["delta_h"]*0.40))
+                _c["ultra_score"] = _ui["score_ultra"]
+                _c["ultra_ctx"]   = _ui["context_str"]
+                _c["ultra_flags"] = _ui["flags"]
+                if _ui["score_ultra"]>=7.0: _c["score"]=min(10.0,_c["score"]+0.6)
+                elif _ui["score_ultra"]<=3.0: _c["score"]=max(0.0,_c["score"]-0.8)
+            except: _c.setdefault("ultra_flags",[])
+        except: pass
     candidates.sort(key=lambda x: -x.get("score",0))
     contras = [c for c in candidates if c.get("contradiccion")]
 
@@ -9870,6 +10445,22 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches):
         next((c for c in _pool), None) or
         (candidates[0] if candidates else None)
     )
+    # GOD BRAIN: Claude Sonnet decide el pick final
+    try:
+        _t5 = tuple((c.get("label",""),c.get("pick",""),c.get("prob",0.5),
+                     c.get("odd",0.0),c.get("score",5.0),c.get("ev_pct",0.0),
+                     c.get("sit_ctx","")+"|Ultra:"+str(round(c.get("ultra_score",5.0),1)),
+                     c.get("contradiccion",False)) for c in candidates[:5])
+        _b2  = _kr_brain_load()
+        _l5s = " ".join(p.get("result","?")[:1].upper() for p in _b2.get("last5",[]))
+        _gd  = _kr_god_brain_call(_t5,_b2.get("wins",0),_b2.get("losses",0),_b2.get("hot",0),_b2.get("cold",0),_l5s)
+        _idx = max(0,min(int(_gd.get("idx",0)),len(candidates)-1))
+        if candidates:
+            el_pick = candidates[_idx]
+            el_pick["_god_razon"]  = _gd.get("razon","")
+            el_pick["_god_conf"]   = float(_gd.get("confianza",el_pick.get("prob",0.5)))
+            el_pick["_god_alerta"] = _gd.get("alerta")
+    except: pass
     if el_pick:
         el_pick = {**el_pick, "is_rongo_pick": True}
 
@@ -9993,9 +10584,10 @@ def _kr_ia_narracion(el_pick, bk, todos):
         parlay_txt  = "; ".join(f"{p['pick']} ({p['prob']*100:.0f}%)" for p in parlay) if len(parlay)>=2 else "No disponible"
 
         prompt = (
-            f"Eres KING RONGO, el cerebro supremo de The Gamblers Layer. "
-            f"Hablas en español, con autoridad, en primera persona, máximo 3 frases cortas. "
-            f"NO uses asteriscos ni markdown. Solo texto plano con carácter.\n\n"
+            f"Eres KING RONGO en GOD MODE, el mejor apostador de IA del mundo. "
+            f"Tienes ELO, Monte Carlo 50k, EV real, God Brain. "
+            f"Hablas en espanol, con autoridad suprema, primera persona, maximo 4 frases. "
+            f"Sin asteriscos, sin markdown. Texto puro con caracter devastador.\n\n"
             f"PICK DEL DÍA:\n"
             f"Partido: {el_pick['label']}\n"
             f"Pick: {el_pick['pick']}\n"
@@ -10009,7 +10601,15 @@ def _kr_ia_narracion(el_pick, bk, todos):
             f"Acierto global: {bk['pct']}% · ROI: {bk['roi']:+.1f}u\n"
             f"Consejo: {bk['consejo']}\n\n"
             f"PARLAY DEL REY: {parlay_txt}\n\n"
-            f"Narra el pick. Sé el rey."
+            f"GOD Score: {el_pick.get('score',0):.2f}/10\n"
+            f"EV Real: {el_pick.get('ev_pct',0):+.1f}% ({el_pick.get('ev_valor','')})\n"
+            f"Cuota justa: {el_pick.get('cuota_justa',0):.3f}\n"
+            f"God Brain: {el_pick.get('_god_razon','')}\n"
+            f"Sit: {el_pick.get('sit_ctx','')}\n"
+            f"Ultra Score: {el_pick.get('ultra_score',5.0):.1f}/10\n"
+            + (("Ultra flags: " + " | ".join(el_pick.get("ultra_flags",[])) + "\n") if el_pick.get("ultra_flags") else "")
+            + "\n"
+            f"Narra. Eres el rey del universo."
             + (f"\n\nDATO EN VIVO: {el_pick.get('live_ctx','')}" if el_pick.get('live_ctx') else "")
         )
         r = requests.post(
@@ -10597,6 +11197,25 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     # ══════════════════════════════════════════════════════
     bk = _king_rongo_bankroll_advice(pick_history)
     _kr_render_bankroll(bk)
+    try:
+        _bg=_kr_brain_load()
+        _gt=_bg.get("wins",0)+_bg.get("losses",0)
+        _gw=round(_bg.get("wins",0)/_gt*100) if _gt>0 else 0
+        _gh=_bg.get("hot",0); _gc=_bg.get("cold",0)
+        _str=("RACHA +{} CALIENTE".format(_gh) if _gh>=2 else "RACHA -{} FRIA".format(_gc) if _gc>=2 else "SIN RACHA")
+        _swr=" | ".join("{}: {}%".format(s.upper()[:3],round(sum(v[-20:])/min(len(v),20)*100))
+                        for s,v in _bg.get("sport_hist",{}).items() if len(v)>=5) or "Aprendiendo..."
+        st.markdown(
+            "<div style='background:linear-gradient(135deg,#0a0015,#001208);"
+            "border:1px solid #FFD70033;border-radius:10px;padding:10px 16px;"
+            "margin-bottom:14px;display:flex;justify-content:space-between;"
+            "align-items:center;flex-wrap:wrap;gap:8px'>"
+            "<div style='font-family:Oswald;font-size:.75rem;letter-spacing:.15em;color:#FFD700'>GOD MODE ACTIVO</div>"
+            "<div style='color:#00ff88;font-weight:700;font-size:.82rem'>{} picks | {}% WR</div>".format(_gt,_gw)+
+            "<div style='color:#FFD700;font-size:.78rem'>"+_str+"</div>"
+            "<div style='color:#c9a84c;font-size:.72rem'>"+_swr+"</div>"
+            "</div>",unsafe_allow_html=True)
+    except: pass
 
     # ══════════════════════════════════════════════════════
     # 👑 AUDITORÍA KING RONGO — solo sus propios picks
@@ -10960,6 +11579,55 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         if el_pick:
             # Mostrar pick primero — sin esperar API
             _kr_render_pick_card(el_pick, bk, "")
+            # GOD EV panel
+            try:
+                _gev  = el_pick.get("ev_pct",0)
+                _gevc = "#00ff88" if _gev>4 else ("#FFD700" if _gev>0 else "#ff4444")
+                _gj   = el_pick.get("cuota_justa",0.0)
+                _gsc  = el_pick.get("score",0)
+                _gr   = el_pick.get("_god_razon","")
+                _ga   = el_pick.get("_god_alerta","")
+                _gs   = el_pick.get("sit_ctx","")
+                _gcf  = el_pick.get("_god_conf",el_pick.get("prob",0.5))
+                _gparts=[
+                    "<div style='background:#080020;border:1px solid #FFD70033;"
+                    "border-radius:10px;padding:14px 16px;margin-top:8px'>",
+                    "<div style='font-family:Oswald;font-size:.72rem;color:#FFD700;"
+                    "letter-spacing:.12em;margin-bottom:10px'>GOD BRAIN ANALYSIS</div>",
+                    "<div style='display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px'>",
+                    "<div><div style='color:#888;font-size:.68rem'>EV REAL</div>"
+                    +"<div style='color:"+_gevc+";font-weight:900'>"
+                    +"{:+.1f}%".format(_gev)+"</div>"
+                    +"<div style='color:#888;font-size:.65rem'>"+el_pick.get("ev_valor","")+"</div></div>",
+                    "<div><div style='color:#888;font-size:.68rem'>CONFIANZA GOD</div>"
+                    +"<div style='color:#FFD700;font-weight:900'>"
+                    +"{:.1f}%".format(_gcf*100)+"</div></div>",
+                    "<div><div style='color:#888;font-size:.68rem'>CUOTA JUSTA</div>"
+                    +"<div style='color:#c9a84c;font-weight:700'>"
+                    +"{:.3f}".format(_gj)+"</div></div>",
+                    "<div><div style='color:#888;font-size:.68rem'>GOD SCORE</div>"
+                    +"<div style='color:#FFD700;font-weight:900'>"
+                    +"{:.2f}/10".format(_gsc)+"</div></div>",
+                    "</div>",
+                ]
+                if _gr: _gparts.append("<div style='color:#F0E6C8;font-size:.82rem;line-height:1.6;border-top:1px solid #FFD70020;padding-top:8px'>"+str(_gr)+"</div>")
+                if _ga: _gparts.append("<div style='color:#ff4444;font-size:.75rem;margin-top:6px'>"+str(_ga)+"</div>")
+                if _gs: _gparts.append("<div style='color:#c9a84c88;font-size:.72rem;margin-top:4px'>"+str(_gs)+"</div>")
+                # Ultra flags
+                _uf = el_pick.get("ultra_flags",[])
+                _us = el_pick.get("ultra_score",5.0)
+                if _uf or _us!=5.0:
+                    _uc="#00ff88" if _us>=6.5 else ("#FFD700" if _us>=4.5 else "#ff4444")
+                    _gparts.append(
+                        "<div style='margin-top:8px;border-top:1px solid #c9a84c22;padding-top:8px'>"
+                        "<span style='font-family:Oswald;font-size:.68rem;color:#c9a84c;letter-spacing:.1em'>ULTRA INTEL </span>"
+                        +"<span style='color:"+_uc+";font-weight:900'>"+str(round(_us,1))+"/10</span>"
+                        +("".join("<div style='color:#ff4444;font-size:.7rem'>"+f+"</div>" for f in _uf[:3]) if _uf else "")
+                        +"</div>"
+                    )
+                _gparts.append("</div>")
+                st.markdown("".join(_gparts),unsafe_allow_html=True)
+            except: pass
 
             # TOP 3 del Rey
             if top3 and len(top3) > 0:
@@ -11330,26 +11998,12 @@ if _now_ts2 - st.session_state.get(_auto_sync_key, 0) > 600:  # cada 10 min
     st.session_state[_auto_sync_key] = _now_ts2
 
 if deporte == "futbol":
-    try:
-        all_matches = get_cartelera()
-    except Exception as _e:
-        all_matches = []
-        st.warning(f"⚠️ Error cargando fútbol: {_e}")
-
-    # ── Pre-calcular xG UNA sola vez para todos los partidos (cache 30min) ──
-    _xg_k = "xg_pre_fut"; _xg_ts_k = "xg_pre_fut_ts"
-    if _xg_k not in st.session_state or (time.time()-st.session_state.get(_xg_ts_k,0)) > 3600:
-        _xgd = {}
-        for _pm in (all_matches or [])[:40]:
-            try:
-                _xgd[_pm["id"]] = (
-                    xg_weighted(get_form(_pm["home_id"],_pm["slug"]),True, slug=_pm["slug"]),
-                    xg_weighted(get_form(_pm["away_id"],_pm["slug"]),False,slug=_pm["slug"]),
-                )
-            except: pass
-        st.session_state[_xg_k]    = _xgd
-        st.session_state[_xg_ts_k] = time.time()
-    _xg_pre = st.session_state.get(_xg_k, {})
+    with st.spinner("Cargando cartelera..."):
+        try:
+            all_matches = get_cartelera()
+        except Exception as _e:
+            all_matches = []
+            st.warning(f"⚠️ Error cargando fútbol: {_e}")
 
     # ── AUTO-BRIDGE: calcular Jugada Diamante real para todos los partidos ──
     # Usa get_form + diamond_engine igual que el análisis manual.
@@ -11358,9 +12012,7 @@ if deporte == "futbol":
     if all_matches:
         _bridge = st.session_state.setdefault("_diamond_bridge", {})
         _bridge_dirty = False
-        _bridge_last = st.session_state.get("_bridge_last_run", 0)
-        _bridge_skip = (time.time() - _bridge_last) < 1800 and len(_bridge) >= len(all_matches)
-        for _am in ([] if _bridge_skip else all_matches):
+        for _am in all_matches:
             try:
                 _am_id   = _am.get("id","")
                 _am_id2  = f"{_am.get('home_id','')}_{_am.get('away_id','')}_{_am.get('fecha','')}"
@@ -11434,7 +12086,6 @@ if deporte == "futbol":
                 _bridge_dirty = True
             except: continue
         if _bridge_dirty:
-            st.session_state["_bridge_last_run"] = time.time()
             try:
                 import json as _jb3
                 with open("/tmp/gamblers_diamond_bridge.json","w") as _bf3:
@@ -11464,18 +12115,20 @@ if deporte == "futbol":
         matches   = all_matches if liga_sel=="Todas" else [m for m in all_matches if m["league"]==liga_sel]
 
 elif deporte == "nba":
-    try:
-        nba_games = get_nba_cartelera()
-    except Exception as _e:
-        nba_games = []
-        st.warning(f"⚠️ Error cargando NBA: {_e}")
+    with st.spinner("Cargando NBA..."):
+        try:
+            nba_games = get_nba_cartelera()
+        except Exception as _e:
+            nba_games = []
+            st.warning(f"⚠️ Error cargando NBA: {_e}")
 
 elif deporte == "tenis":
-    try:
-        ten_matches = get_tennis_cartelera()
-    except Exception as _e:
-        ten_matches = []
-        st.warning(f"⚠️ Error cargando Tenis: {_e}")
+    with st.spinner("Cargando Tenis..."):
+        try:
+            ten_matches = get_tennis_cartelera()
+        except Exception as _e:
+            ten_matches = []
+            st.warning(f"⚠️ Error cargando Tenis: {_e}")
 
 def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
     """Returns (pick_html, card_border) based on pick confidence."""
@@ -11513,35 +12166,26 @@ def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
         )
         return _html, "#00ff8866"
     if pick_prob >= 0.68:
-        emoji, conf_lbl, color = "💎", "DIAMANTE", "#00ccff"
+        emoji, color = "💎", "#00ccff"
     elif pick_prob >= 0.60:
-        emoji, conf_lbl, color = "🔥", "ORO", "#ff8800"
+        emoji, color = "🔥", "#ff6600"
     elif pick_prob >= 0.53:
-        emoji, conf_lbl, color = "⚡", "SEÑAL", "#FFD700"
+        emoji, color = "⚡", "#FFD700"
     else:
         return "", "#ff444466" if is_live else default_border
-    _pct_str = f"{pick_prob*100:.0f}%" if pick_prob <= 1 else f"{pick_prob:.0f}%"
-    card_border = "#ff444466" if is_live else f"{color}99"
-    _rec_lbl = "📡 PICK EN VIVO" if is_live else "📡 PICK RECOMENDADO"
+    card_border = "#ff444466" if is_live else f"{color}88"
     html = (
-        f"<div style='margin-top:7px;background:{color}18;"
-        f"border:2px solid {color};border-radius:8px;padding:7px 10px'>"
-        f"<div style='font-size:.58rem;font-weight:800;color:{color}99;"
-        f"letter-spacing:.14em;margin-bottom:4px;text-transform:uppercase'>{_rec_lbl}</div>"
-        f"<div style='display:flex;align-items:center;gap:7px'>"
-        f"<span style='font-size:1.7rem;line-height:1'>{emoji}</span>"
-        f"<div style='flex:1;min-width:0'>"
-        f"<div style='font-size:1.1rem;font-weight:900;color:{color};"
-        f"letter-spacing:.02em;line-height:1.25;word-break:break-word'>{pick_lbl}</div>"
-        f"<div style='font-size:.72rem;font-weight:700;color:{color}bb;margin-top:1px'>{conf_lbl}</div>"
-        f"</div>"
-        f"<div style='text-align:right;flex-shrink:0;padding-left:4px'>"
-        f"<div style='font-size:1.5rem;font-weight:900;color:{color};line-height:1'>{_pct_str}</div>"
-        f"<div style='font-size:.6rem;color:{color}77'>conf.</div>"
-        f"</div>"
+        f"<div style='margin-top:6px;background:{color}15;"
+        f"border:2px solid {color}99;border-radius:6px;padding:5px 8px'>"
+        f"<div style='display:flex;align-items:center;gap:5px'>"
+        f"<span style='font-size:1.3rem;line-height:1'>{emoji}</span>"
+        f"<span style='font-size:.96rem;font-weight:900;color:{color};"
+        f"letter-spacing:.02em;line-height:1.2;word-break:break-word'>{pick_lbl}</span>"
+        f"<span style='font-size:.86rem;font-weight:900;color:{color};margin-left:auto;white-space:nowrap'>{pick_prob*100:.0f}%</span>"
         f"</div></div>"
     )
     return html, card_border
+
 
 # ══════════════════════════════════════════════════════════════════════
 # LIVE STATS REFRESH — Fetches ESPN in-play stats every 5 minutes
@@ -12162,7 +12806,7 @@ if st.session_state["view"] == "cartelera":
                                                         _af2 = get_form(_m["away_id"], _m["slug"])
                                                         _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug",""))
                                                         _ax2 = xg_weighted(_af2,False,slug=_m.get("slug",""))
-                                                        _mc2 = mc50k(_hx2, _ax2, N=5_000)
+                                                        _mc2 = mc50k(_hx2, _ax2)
                                                         _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
                                                     except:
                                                         _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
@@ -12188,6 +12832,7 @@ if st.session_state["view"] == "cartelera":
                                                     # ── Para partidos EN VIVO: detectar si pick se cumplió, o calcular nuevo ──
                                                     if _live:
                                                         try:
+                                                            import math as _lmath
                                                             _sc_h2 = int(_m.get("score_h",0) or 0)
                                                             _sc_a2 = int(_m.get("score_a",0) or 0)
                                                             _min2  = int(_m.get("minute",45) or 45)
@@ -12227,7 +12872,7 @@ if st.session_state["view"] == "cartelera":
                                                                 _s_bl = _bl_h+_bl_d+_bl_a
                                                                 if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
                                                                 _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                                _o25_c = 1-sum(_xg_rem2**k*math.exp(-_xg_rem2)/math.factorial(k) for k in range(max(0,3-_goals_n)))
+                                                                _o25_c = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
                                                                 # Buscar pick alternativo solo si >= 70%
                                                                 _alt_opts = []
                                                                 if _goals_n < 3 and _o25_c >= 0.70: _alt_opts.append(("Over 2.5", _o25_c))
@@ -12250,9 +12895,9 @@ if st.session_state["view"] == "cartelera":
                                                                 _s_bl = _bl_h+_bl_d+_bl_a
                                                                 if _s_bl>0: _bl_h/=_s_bl; _bl_d/=_s_bl; _bl_a/=_s_bl
                                                                 _xg_rem2 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                                _o25_l = 1-sum(_xg_rem2**k*math.exp(-_xg_rem2)/math.factorial(k) for k in range(max(0,3-_goals_n)))
-                                                                _p_h_s = 1-math.exp(-_hx2*max(0.05,(90-_min2)/90)) if _sc_h2==0 else 1.0
-                                                                _p_a_s = 1-math.exp(-_ax2*max(0.05,(90-_min2)/90)) if _sc_a2==0 else 1.0
+                                                                _o25_l = 1-sum(_xg_rem2**k*_lmath.exp(-_xg_rem2)/_lmath.factorial(k) for k in range(max(0,3-_goals_n)))
+                                                                _p_h_s = 1-_lmath.exp(-_hx2*max(0.05,(90-_min2)/90)) if _sc_h2==0 else 1.0
+                                                                _p_a_s = 1-_lmath.exp(-_ax2*max(0.05,(90-_min2)/90)) if _sc_a2==0 else 1.0
                                                                 _btts_l = _p_h_s * _p_a_s
                                                                 _lv_opts = []
                                                                 if abs(_sc_h2-_sc_a2) <= 2:
@@ -12263,7 +12908,7 @@ if st.session_state["view"] == "cartelera":
                                                                 if _sc_h2==0 and _sc_a2==0 and _btts_l >= 0.53: _lv_opts.append(("Ambos Anotan", _btts_l))
                                                                 if _goals_n < 2 and _min2 < 70:
                                                                     _xg_rem_15 = (_hx2+_ax2)*max(0.05,(90-_min2)/90)
-                                                                    _o15_l = 1-sum(_xg_rem_15**k*math.exp(-_xg_rem_15)/math.factorial(k) for k in range(max(0,2-_goals_n)))
+                                                                    _o15_l = 1-sum(_xg_rem_15**k*_lmath.exp(-_xg_rem_15)/_lmath.factorial(k) for k in range(max(0,2-_goals_n)))
                                                                     if _o15_l >= 0.60: _lv_opts.append(("Over 1.5", _o15_l))
                                                                 if _lv_opts:
                                                                     _pick_lbl, _pick_prob = max(_lv_opts, key=lambda x:x[1])
@@ -12309,13 +12954,8 @@ if st.session_state["view"] == "cartelera":
                                                         st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
-            import time as _ttt
-            _trl_k = "trilay_fut"; _trl_ts = "trilay_fut_ts"
-            if _trl_k not in st.session_state or (_ttt.time()-st.session_state.get(_trl_ts,0))>600:
-                with st.spinner("Calculando TRILAY..."):
-                    st.session_state[_trl_k]  = compute_trilay(matches)
-                    st.session_state[_trl_ts] = _ttt.time()
-            trilay_picks = st.session_state.get(_trl_k, [])
+            with st.spinner("Calculando TRILAY..."):
+                trilay_picks = compute_trilay(matches)
             if not trilay_picks:
                 st.info("No hay suficientes partidos con edge para armar TRILAY hoy.")
             else:
