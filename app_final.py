@@ -4285,8 +4285,16 @@ def render_resultados_tab():
                                 if _api_err2:
                                     st.error(f"Error: {_api_err2}")
                 else:
-                    st.info(f"Sin resultados {sport_emoji}. Haz clic en '🧹 Auditar todo'.")
-                continue
+                    _all_sp2 = [p for p in partidos if p.get("deporte")==sport_key]
+                    _post_sp2 = [p for p in _all_sp2 if p.get("state")=="post"]
+                    _bad_sc = [p for p in _post_sp2 if p.get("score_h",-1) < 0]
+                    st.warning(f"⚠️ {sport_emoji} DB: {len(_all_sp2)} partidos · {len(_post_sp2)} finalizados · {len(_bad_sc)} sin score")
+                    for _bs in _bad_sc[:3]:
+                        st.caption(f"  · {_bs.get('home','?')} vs {_bs.get('away','?')} ({_bs.get('fecha','?')}  sh={_bs.get('score_h')})")
+                    if st.button(f"🔄 Forzar re-fetch {sport_emoji}", key=f"force_{sport_key}"):
+                        st.session_state.pop("results_db", None)
+                        st.cache_data.clear()
+                        st.rerun()
 
             # Contadores sport
             ok_sp=0; fail_sp=0
