@@ -13875,11 +13875,11 @@ def _quick_pick_diamond(pick_lbl: str, pick_prob: float, is_live: bool,
     if pick_prob >= 0.68:
         emoji, color, tier = "💎", "#00ccff", "DIAMANTE"
     elif pick_prob >= 0.60:
-        emoji, color, tier = "🔥", "#ff8800", "ORO"
+        emoji, color, tier = "🔥", "#ff8800", "FUEGO"
     elif pick_prob >= 0.53:
-        emoji, color, tier = "⚡", "#FFD700", "SEÑAL"
+        emoji, color, tier = "⚡", "#FFD700", "TRUENO"
     else:
-        emoji, color, tier = "📊", "#888", "DÉBIL"
+        emoji, color, tier = "📊", "#888", "SEÑAL"
 
     prefix = "🔴 EN VIVO · " if is_live else ""
     border_glow = f"box-shadow:0 0 12px {color}44;" if pick_prob >= 0.68 else ""
@@ -13942,10 +13942,10 @@ def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
         emoji, color, tier_lbl = "💎", "#00ccff", "DIAMANTE"
         is_diamond = True
     elif pick_prob >= 0.60:
-        emoji, color, tier_lbl = "🔥", "#ff6600", "ORO"
+        emoji, color, tier_lbl = "🔥", "#ff6600", "FUEGO"
         is_diamond = False
     elif pick_prob >= 0.53:
-        emoji, color, tier_lbl = "⚡", "#FFD700", "SEÑAL"
+        emoji, color, tier_lbl = "⚡", "#FFD700", "TRUENO"
         is_diamond = False
     else:
         return "", "#ff444066" if is_live else default_border
@@ -14152,9 +14152,9 @@ if st.session_state["view"] == "cartelera":
                                 _nba_pick_row = ""
                                 if _nba_pl and _nba_pp >= 0.46:
                                     if _nba_pp >= 0.68:    _npe,_npc,_npt = "💎","#00ccff","DIAMANTE"
-                                    elif _nba_pp >= 0.60:  _npe,_npc,_npt = "🔥","#ff8800","ORO"
-                                    elif _nba_pp >= 0.53:  _npe,_npc,_npt = "⚡","#FFD700","SEÑAL"
-                                    else:                  _npe,_npc,_npt = "📊","#888","DÉBIL"
+                                    elif _nba_pp >= 0.60:  _npe,_npc,_npt = "🔥","#ff8800","FUEGO"
+                                    elif _nba_pp >= 0.53:  _npe,_npc,_npt = "⚡","#FFD700","TRUENO"
+                                    else:                  _npe,_npc,_npt = "📊","#888","SEÑAL"
                                     _npfx = "🔴 " if live else ""
                                     _nglow = f"box-shadow:0 0 8px {_npc}55;" if _nba_pp>=0.68 else ""
                                     _nba_pick_row = (
@@ -14514,9 +14514,9 @@ if st.session_state["view"] == "cartelera":
                                     _ten_pick_row = ""
                                     if _ten_pl and _ten_pp >= 0.46:
                                         if _ten_pp >= 0.68:    _tpe,_tpc,_tpt = "💎","#00ccff","DIAMANTE"
-                                        elif _ten_pp >= 0.60:  _tpe,_tpc,_tpt = "🔥","#ff8800","ORO"
-                                        elif _ten_pp >= 0.53:  _tpe,_tpc,_tpt = "⚡","#FFD700","SEÑAL"
-                                        else:                  _tpe,_tpc,_tpt = "📊","#888","DÉBIL"
+                                        elif _ten_pp >= 0.60:  _tpe,_tpc,_tpt = "🔥","#ff8800","FUEGO"
+                                        elif _ten_pp >= 0.53:  _tpe,_tpc,_tpt = "⚡","#FFD700","TRUENO"
+                                        else:                  _tpe,_tpc,_tpt = "📊","#888","SEÑAL"
                                         _tpfx = "🔴 " if _ten_live else ""
                                         _tglow = f"box-shadow:0 0 8px {_tpc}55;" if _ten_pp>=0.68 else ""
                                         _ten_pick_row = (
@@ -14741,8 +14741,8 @@ if st.session_state["view"] == "cartelera":
                                                     # ── Defaults seguros para pick (evita NameError) ──
                                                     _pick_lbl  = _br.get("pick","") if _br else ""
                                                     _pick_prob = _br.get("prob",0)  if _br else 0
-                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
-                                                    _live_label = ""
+
+
                                                     # ── Para partidos EN VIVO: calcular pick en tiempo real ──
                                                     # ── Para partidos EN VIVO: detectar si pick se cumplió, o calcular nuevo ──
                                                     if _live:
@@ -14881,9 +14881,9 @@ if st.session_state["view"] == "cartelera":
                                                     _pick_row = ""
                                                     if _pick_lbl and _pick_prob >= 0.46:
                                                         if _pick_prob >= 0.68:    _pe, _pc, _pt = "💎", "#00ccff", "DIAMANTE"
-                                                        elif _pick_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff8800", "ORO"
-                                                        elif _pick_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "SEÑAL"
-                                                        else:                     _pe, _pc, _pt = "📊", "#888",    "DÉBIL"
+                                                        elif _pick_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff8800", "FUEGO"
+                                                        elif _pick_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "TRUENO"
+                                                        else:                     _pe, _pc, _pt = "📊", "#888",    "SEÑAL"
                                                         _pfx = "🔴 " if _live else ""
                                                         _glow = f"box-shadow:0 0 8px {_pc}55;" if _pick_prob >= 0.68 else ""
                                                         _pick_row = (
