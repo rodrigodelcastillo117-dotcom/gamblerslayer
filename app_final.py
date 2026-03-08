@@ -110,43 +110,58 @@ def _country_for_liga(liga_str):
     st.markdown("""
 <script>
 (function(){
-  // Tab persistence — save/restore active tab across Streamlit reruns
-  function getTabKey(){ return 'gd_active_tab'; }
-  
-  function clickTab(idx){
-    var tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
-    if(tabs.length > idx) tabs[idx].click();
+  var KEY = 'gd_active_tab';
+  var _restored = false;
+
+  function getTabs(){
+    return window.parent.document.querySelectorAll('[data-baseweb="tab"]');
   }
-  
+
   function saveTab(idx){
-    try{ window.parent.sessionStorage.setItem(getTabKey(), idx); }catch(e){}
+    try{ window.parent.sessionStorage.setItem(KEY, String(idx)); }catch(e){}
   }
-  
+
+  function clickTab(idx){
+    var tabs = getTabs();
+    if(tabs.length > idx){ tabs[idx].click(); return true; }
+    return false;
+  }
+
   function restoreTab(){
+    if(_restored) return;
     try{
-      var idx = parseInt(window.parent.sessionStorage.getItem(getTabKey()) || '0');
-      if(idx > 0) setTimeout(function(){ clickTab(idx); }, 300);
+      var idx = parseInt(window.parent.sessionStorage.getItem(KEY) || '0');
+      if(idx <= 0) return;
+      // Retry up to 10 times with increasing delay until tabs are rendered
+      var attempts = 0;
+      function tryClick(){
+        if(_restored) return;
+        if(clickTab(idx)){ _restored = true; return; }
+        attempts++;
+        if(attempts < 10) setTimeout(tryClick, 200 + attempts * 150);
+      }
+      setTimeout(tryClick, 250);
     }catch(e){}
   }
-  
+
   function attachListeners(){
-    var tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
-    tabs.forEach(function(tab, idx){
-      tab.addEventListener('click', function(){ saveTab(idx); }, {once:false});
+    getTabs().forEach(function(tab, idx){
+      if(!tab._gdTracked){
+        tab._gdTracked = true;
+        tab.addEventListener('click', function(){ saveTab(idx); _restored = true; });
+      }
     });
   }
-  
-  // Run on load
-  setTimeout(function(){
-    restoreTab();
-    attachListeners();
-  }, 400);
-  
-  // Re-attach after Streamlit rerenders (MutationObserver)
+
+  // MutationObserver — reattach on every DOM change, restore once
   var observer = new MutationObserver(function(){
     attachListeners();
+    if(!_restored) restoreTab();
   });
   observer.observe(window.parent.document.body, {childList:true, subtree:true});
+
+  // Initial run
+  setTimeout(function(){ attachListeners(); restoreTab(); }, 300);
 })();
 </script>
 """, unsafe_allow_html=True)
@@ -10667,18 +10682,22 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             # KR: solo partidos desde ahora (no pasados)
             _kr_state = m.get('state','pre')
             if _kr_state == 'post': continue
-            try:
-                from datetime import datetime as _dt_kr
-                import pytz as _pz_kr
-                _now_kr = _dt_kr.now(_pz_kr.timezone('America/Mexico_City'))
-                _hora_kr = m.get('hora','') or ''
-                if ':' in _hora_kr:
-                    _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
-                    _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
-                    _elapsed_kr = (_now_kr-_gdt_kr).total_seconds()
-                    if _kr_state == 'in' and _elapsed_kr > 600: continue   # en vivo >10min, ya terminó casi
-                    if _kr_state != 'in' and _elapsed_kr > 600: continue   # pre >10min pasados
-            except: pass
+            # Fútbol en vivo: filtrar por minuto real (independiente de hora)
+            if _kr_state == 'in':
+                _min_kr = int(m.get('minute', 0) or 0)
+                if _min_kr < 5 or _min_kr >= 70: continue  # min<5 aún no empieza / min>=70 casi terminado
+            # Pre-partido: filtrar si la hora ya pasó hace >10min
+            if _kr_state != 'in':
+                try:
+                    from datetime import datetime as _dt_kr
+                    import pytz as _pz_kr
+                    _now_kr = _dt_kr.now(_pz_kr.timezone('America/Mexico_City'))
+                    _hora_kr = m.get('hora','') or ''
+                    if ':' in _hora_kr:
+                        _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
+                        _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
+                        if (_now_kr-_gdt_kr).total_seconds() > 600: continue
+                except: pass
             # King Rongo analiza todos los partidos del día (pre, in, post)
             try:
                 home_id = m.get("home_id",""); away_id = m.get("away_id",""); slug = m.get("slug","")
