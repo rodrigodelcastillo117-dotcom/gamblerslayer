@@ -1,5 +1,5 @@
 """
-THE GAMBLERS LAYER — FINAL
+THE GAMBLERS DEN — FINAL
 100% ESPN · Bot Telegram integrado · Sin BD local
 """
 import streamlit as st
@@ -8,7 +8,7 @@ import requests, numpy as np, math, threading
 from datetime import datetime, timedelta
 import pytz
 
-st.set_page_config(page_title="THE GAMBLERS LAYER 💎", page_icon="💎",
+st.set_page_config(page_title="THE GAMBLERS DEN 💎", page_icon="💎",
                    layout="wide", initial_sidebar_state="collapsed")
 
 CDMX = pytz.timezone("America/Mexico_City")
@@ -2574,7 +2574,7 @@ def _needs_update():
     try:
         with open(LAST_UPDATE_F,"r") as f: last = f.read().strip()
         last_dt = datetime.fromisoformat(last).replace(tzinfo=pytz.UTC)
-        return (datetime.now(pytz.UTC) - last_dt).total_seconds() > 7200
+        return (datetime.now(pytz.UTC) - last_dt).total_seconds() > 3600
     except: return True
 
 def _mark_updated():
@@ -3095,48 +3095,98 @@ def update_results_db(force=False):
     db["partidos"] = _deduped
     db["ultima_actualizacion"] = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
     _save_results_db(db)
-    # Daily brain sync — learn from completed picks at 2am
+    # Audit picks against real results on every update
+    _synced = _sync_brain_with_results(db)
+    # Daily full reset still at 2am
     if _needs_daily_reset():
-        _sync_brain_with_results(db)
+        pass  # already synced above
     _mark_updated()
     return True
 
 def _sync_brain_with_results(db):
-    """At 2am daily: auto-update any pending Einstein picks that now have real results."""
+    """Auto-audit pending picks against real results (runs on every update)."""
     brain = _load_brain()
     picks = brain.get("picks",[])
+
+    # Build results lookup: multiple keys per partido for fuzzy matching
     results_map = {}
     for p in db["partidos"]:
-        if p["state"] == "post" and p["score_h"] >= 0:
-            key = f"{p['home'][:8].lower()}_{p['away'][:8].lower()}_{p['fecha']}"
-            results_map[key] = {"score_h":p["score_h"],"score_a":p["score_a"]}
+        if p.get("state") != "post": continue
+        sh = p.get("score_h",-1); sa = p.get("score_a",-1)
+        if sh < 0: continue  # no real score yet
+        fecha = str(p.get("fecha",""))[:10]
+        result = {"score_h":sh,"score_a":sa,"deporte":p.get("deporte","futbol"),
+                  "home":p.get("home",""),"away":p.get("away","")}
+        # Key 1: home8_away8_fecha
+        hk = p.get("home","")[:8].lower().strip()
+        ak = p.get("away","")[:8].lower().strip()
+        results_map[f"{hk}_{ak}_{fecha}"] = result
+        # Key 2: partido id
+        if p.get("id"): results_map[p["id"]] = result
+        # Key 3: p1/p2 for tennis
+        p1k = p.get("p1","")[:8].lower().strip()
+        p2k = p.get("p2","")[:8].lower().strip()
+        if p1k and p1k != hk:
+            results_map[f"{p1k}_{p2k}_{fecha}"] = result
+
+    # Also pull picks_snap for cross-reference
+    snap = _load_picks_snap()
+
     updated = 0
     for pk in picks:
-        if pk.get("resultado") != "⏳": continue
-        eq = str(pk.get("equipos",""))
-        parts = eq.split(" vs ") if " vs " in eq else eq.split(" @ ")
-        if len(parts) < 2: continue
-        h,a = parts[0][:8].lower(), parts[1][:8].lower()
-        # Try to match date from fecha field
-        fecha = str(pk.get("fecha",pk.get("date",""))).split()[0][:10]
-        key = f"{h}_{a}_{fecha}"
-        if key in results_map:
-            r = results_map[key]
-            mkt = str(pk.get("mercado","")).lower()
-            sh,sa = r["score_h"],r["score_a"]
-            won = None
-            if "over 2.5" in mkt: won = (sh+sa) > 2
-            elif "under 2.5" in mkt: won = (sh+sa) <= 2
-            elif "over 3.5" in mkt: won = (sh+sa) > 3
-            elif "under 3.5" in mkt: won = (sh+sa) <= 3
-            elif "btts" in mkt or "ambos" in mkt: won = sh>0 and sa>0
-            elif h in mkt: won = sh > sa
-            elif a in mkt: won = sa > sh
-            if won is not None:
-                pk["resultado"] = "✅" if won else "❌"
-                pk["correcto"]  = won
-                pk["score_real"] = f"{sh}-{sa}"
-                updated += 1
+        if pk.get("resultado") not in ("⏳", None, ""): continue
+        # Try partido_id match first (most reliable)
+        pid = pk.get("partido_id","") or pk.get("id","")
+        result = results_map.get(pid)
+        if not result:
+            # Try team name fuzzy match
+            eq = str(pk.get("equipos",""))
+            parts = eq.split(" vs ") if " vs " in eq else eq.split(" @ ")
+            if len(parts) >= 2:
+                h = parts[0][:8].lower().strip()
+                a = parts[1][:8].lower().strip()
+                fecha = str(pk.get("fecha",pk.get("date",""))).split()[0][:10]
+                result = results_map.get(f"{h}_{a}_{fecha}")
+                if not result:
+                    # Try reversed (away @ home format)
+                    result = results_map.get(f"{a}_{h}_{fecha}")
+        if not result: continue
+
+        sh,sa = result["score_h"], result["score_a"]
+        deporte = result.get("deporte","futbol")
+        home_r  = result.get("home","").lower()
+        away_r  = result.get("away","").lower()
+        mkt = str(pk.get("mercado","")).lower()
+        pick_txt = str(pk.get("pick","") or pk.get("mercado","")).lower()
+        won = None
+
+        if deporte == "futbol":
+            if "over 2.5" in mkt or "over 2.5" in pick_txt: won = (sh+sa) > 2
+            elif "under 2.5" in mkt or "under 2.5" in pick_txt: won = (sh+sa) <= 2
+            elif "over 3.5" in mkt or "over 3.5" in pick_txt: won = (sh+sa) > 3
+            elif "under 3.5" in mkt or "under 3.5" in pick_txt: won = (sh+sa) <= 3
+            elif "btts" in mkt or "ambos" in pick_txt: won = sh>0 and sa>0
+            elif "empate" in pick_txt or "draw" in pick_txt: won = sh == sa
+            elif any(w in pick_txt for w in [home_r[:6], "local", "🏠"]): won = sh > sa
+            elif any(w in pick_txt for w in [away_r[:6], "visita", "✈"]): won = sa > sh
+        elif deporte == "nba":
+            line = float(pk.get("ou_line", pk.get("line", 0)) or 0)
+            total = sh + sa
+            if "over" in pick_txt: won = (total > line) if line > 0 else None
+            elif "under" in pick_txt: won = (total < line) if line > 0 else None
+            elif any(w in pick_txt for w in [home_r[:6], "local"]): won = sh > sa
+            elif any(w in pick_txt for w in [away_r[:6], "visita"]): won = sa > sh
+        elif deporte == "tenis":
+            # sh=sets ganados p1, sa=sets ganados p2
+            if any(w in pick_txt for w in [home_r[:6], "p1", "local"]): won = sh > sa
+            elif any(w in pick_txt for w in [away_r[:6], "p2", "visita"]): won = sa > sh
+
+        if won is not None:
+            pk["resultado"]  = "✅ GANÓ" if won else "❌ PERDIÓ"
+            pk["correcto"]   = won
+            pk["score_real"] = f"{sh}-{sa}"
+            updated += 1
+
     if updated > 0:
         _update_patterns(brain)
         _save_brain(brain)
@@ -8102,7 +8152,7 @@ def escanear_y_enviar(matches):
         tg_send("🛡️ *Escáner Diario:* No hay picks con Edge > 8% hoy. Mantén el dinero en la bolsa.")
         return 0
 
-    msg  = "🦅 *THE GAMBLERS LAYER | ESCÁNER DIARIO* 🦅\n"
+    msg  = "🦅 *THE GAMBLERS DEN | ESCÁNER DIARIO* 🦅\n"
     msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} picks_\n\n"
     for p in sorted(picks, key=lambda x:-x["pick_prob"]):
         msg += f"🚨 *PICK DIAMANTE:* {p['league']}\n"
@@ -8299,7 +8349,7 @@ def escanear_nba_y_enviar(games):
     if not picks:
         tg_send("🏀 *NBA Scanner:* Sin picks O/U con valor hoy.")
         return 0
-    msg  = "🏀 *THE GAMBLERS LAYER | NBA PICKS* 🏀\n"
+    msg  = "🏀 *THE GAMBLERS DEN | NBA PICKS* 🏀\n"
     msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} picks_\n\n"
     for p in sorted(picks, key=lambda x: -x["edge"]):
         msg += f"🚨 {p['away']} @ {p['home']}\n"
@@ -8347,7 +8397,7 @@ def escanear_tenis_y_enviar(matches):
     if not picks:
         tg_send("🎾 *Tennis Scanner:* Sin picks ML con valor hoy.")
         return 0
-    msg  = "🎾 *THE GAMBLERS LAYER | TENNIS PICKS* 🎾\n"
+    msg  = "🎾 *THE GAMBLERS DEN | TENNIS PICKS* 🎾\n"
     msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} picks_\n\n"
     for p in sorted(picks, key=lambda x: -x["best_p"]):
         odd_txt = f"@{p['odd']:.2f}" if p["odd"] > 1 else "N/D"
@@ -11048,7 +11098,7 @@ st.markdown("""
     -webkit-background-clip:text;-webkit-text-fill-color:transparent;
     letter-spacing:.04em;line-height:1;
     text-shadow:none;filter:drop-shadow(0 0 20px #c9a84c44)'>
-    ♠ THE GAMBLERS LAYER ♠
+    ♠ THE GAMBLERS DEN ♠
   </div>
   <div style='color:#6b5a3a!important;font-size:clamp(.5rem,.75vw,.68rem);
     letter-spacing:.3em;font-family:Oswald,sans-serif;font-weight:500;
@@ -11061,21 +11111,36 @@ st.markdown("""
 
 # ── Sport selector ──
 _sport = st.session_state.get("sport","futbol")
+# CSS for sport buttons — each key gets its own color
+_fut_bg  = "#00aa44" if _sport=="futbol" else "#003a15"
+_fut_brd = "#00ff88" if _sport=="futbol" else "#006622"
+_ten_bg  = "#ccaa00" if _sport=="tenis"  else "#3a2e00"
+_ten_brd = "#FFD700" if _sport=="tenis"  else "#665500"
+_nba_bg  = "#cc5500" if _sport=="nba"    else "#3a1800"
+_nba_brd = "#ff7722" if _sport=="nba"    else "#662200"
+st.markdown(f"""<style>
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(1) button {{
+    background:{_fut_bg}!important;color:#000!important;font-weight:900!important;
+    border:2px solid {_fut_brd}!important;border-radius:8px!important;font-size:.95rem!important;
+}}
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(2) button {{
+    background:{_ten_bg}!important;color:#000!important;font-weight:900!important;
+    border:2px solid {_ten_brd}!important;border-radius:8px!important;font-size:.95rem!important;
+}}
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-child(3) button {{
+    background:{_nba_bg}!important;color:#000!important;font-weight:900!important;
+    border:2px solid {_nba_brd}!important;border-radius:8px!important;font-size:.95rem!important;
+}}
+</style>""", unsafe_allow_html=True)
 sp1,sp2,sp3 = st.columns(3)
 with sp1:
-    _active = _sport=="futbol"
-    if st.button("⚽ Fútbol", use_container_width=True,
-                 type="primary" if _active else "secondary", key="sp_fut"):
+    if st.button("⚽ Fútbol", use_container_width=True, key="sp_fut"):
         st.session_state["sport"]="futbol"; st.session_state["view"]="cartelera"; st.rerun()
 with sp2:
-    _active = _sport=="tenis"
-    if st.button("🎾 Tenis", use_container_width=True,
-                 type="primary" if _active else "secondary", key="sp_ten"):
+    if st.button("🎾 Tenis", use_container_width=True, key="sp_ten"):
         st.session_state["sport"]="tenis"; st.session_state["view"]="cartelera"; st.rerun()
 with sp3:
-    _active = _sport=="nba"
-    if st.button("🏀 NBA", use_container_width=True,
-                 type="primary" if _active else "secondary", key="sp_nba"):
+    if st.button("🏀 NBA", use_container_width=True, key="sp_nba"):
         st.session_state["sport"]="nba"; st.session_state["view"]="cartelera"; st.rerun()
 
 if "sport" not in st.session_state: st.session_state["sport"]="futbol"
@@ -11238,11 +11303,8 @@ if deporte == "futbol":
             if st.button("🔄 Limpiar cache", use_container_width=True):
                 get_cartelera.clear()
                 st.rerun()
-        # Mostrar errores de parseo si existen
         try:
             import json as _jd2
-            with open("/tmp/gl_cartelera_errors.json") as _fd2:
-                _dbg = _jd2.load(_fd2)
             if _dbg.get("errors"):
                 with st.expander("🔍 Debug — errores de parseo"):
                     st.write(f"Fechas pedidas: {_dbg.get('dates')}")
@@ -11270,6 +11332,32 @@ elif deporte == "tenis":
         except Exception as _e:
             ten_matches = []
             st.warning(f"⚠️ Error cargando Tenis: {_e}")
+
+def _pick_badge(pick_lbl, pick_prob, is_live=False, default_border="#c9a84c1a"):
+    """Returns (pick_html, card_border) based on pick confidence."""
+    if not pick_lbl:
+        return "", "#ff444466" if is_live else default_border
+    if pick_prob >= 0.68:
+        emoji, color = "💎", "#00ccff"
+    elif pick_prob >= 0.60:
+        emoji, color = "🔥", "#ff6600"
+    elif pick_prob >= 0.53:
+        emoji, color = "⚡", "#FFD700"
+    else:
+        return "", "#ff444466" if is_live else default_border
+    card_border = "#ff444466" if is_live else f"{color}88"
+    html = (
+        f"<div style='margin-top:6px;background:{color}15;"
+        f"border:2px solid {color}99;border-radius:6px;padding:5px 8px'>"
+        f"<div style='display:flex;align-items:center;gap:5px'>"
+        f"<span style='font-size:1.3rem;line-height:1'>{emoji}</span>"
+        f"<span style='font-size:.96rem;font-weight:900;color:{color};"
+        f"letter-spacing:.02em;line-height:1.2;word-break:break-word'>{pick_lbl}</span>"
+        f"<span style='font-size:.86rem;font-weight:900;color:{color};margin-left:auto;white-space:nowrap'>{pick_prob*100:.0f}%</span>"
+        f"</div></div>"
+    )
+    return html, card_border
+
 
 # ══════════════════════════════════════════════════════════
 # CARTELERA
@@ -11320,6 +11408,12 @@ if st.session_state["view"] == "cartelera":
                                 sc   = f"{g['score_h']}-{g['score_a']}" if live else g["hora"]
                                 ou   = f"  O/U {g['ou_line']}" if g["ou_line"]>0 else ""
                                 lbl  = f"{'🔴 ' if live else '🏀 '}{g['away']} @ {g['home']}  ·  {sc}{ou}"
+                                # ── Pick badge NBA ──
+                                _nba_br = st.session_state.get("_diamond_bridge",{}).get(g.get("id",""))
+                                _nba_pl = _nba_br.get("pick","") if _nba_br else ""
+                                _nba_pp = _nba_br.get("prob",0) if _nba_br else 0
+                                _nba_ph, _nba_cb = _pick_badge(_nba_pl, _nba_pp, live)
+                                if _nba_ph: st.markdown(_nba_ph, unsafe_allow_html=True)
                                 if st.button(lbl, key=f"nba_{g['id']}", use_container_width=True):
                                     with st.spinner("🤖 IA analizando partido..."):
                                         res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
@@ -11630,6 +11724,11 @@ if st.session_state["view"] == "cartelera":
                                     fav_p = max(tm["p1"],tm["p2"])
                                     live_badge = " 🔴" if m["state"]=="in" else ""
                                     conf_color = "#FFD700" if "DIAMANTE" in tm["conf"] else ("#00ff88" if "ALTA" in tm["conf"] else "#555")
+                                    # ── Pick badge Tennis ──
+                                    _ten_ph, _ten_cb = _pick_badge(
+                                        f"{m['p1']} gana" if tm["p1"]>=tm["p2"] else f"{m['p2']} gana",
+                                        fav_p, m["state"]=="in")
+                                    if _ten_ph: st.markdown(_ten_ph, unsafe_allow_html=True)
                                     if st.button(f"🎾 {m['p1']} vs {m['p2']}  ·  {m['hora']}{live_badge}", key=f"ten_{m['id']}", use_container_width=True):
                                         sel_m = {**m,
                                             "home":m["p1"],"away":m["p2"],
@@ -11820,38 +11919,7 @@ if st.session_state["view"] == "cartelera":
                                                     _br = st.session_state.get("_diamond_bridge",{}).get(_br_key) or st.session_state.get("_diamond_bridge",{}).get(f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}")
                                                     _pick_lbl  = _br.get("pick","")  if _br else ""
                                                     _pick_prob = _br.get("prob",0)   if _br else 0
-                                                    # Conf level → emoji + color (borde y texto iguales)
-                                                    if _pick_prob >= 0.68:
-                                                        _pick_emoji = "💎"; _pick_color = "#00ccff"  # azul diamante
-                                                        _pick_conf  = "DIAMANTE"
-                                                    elif _pick_prob >= 0.60:
-                                                        _pick_emoji = "🔥"; _pick_color = "#ff6600"  # naranja fuego
-                                                        _pick_conf  = "FUEGO"
-                                                    elif _pick_prob >= 0.53:
-                                                        _pick_emoji = "⚡"; _pick_color = "#FFD700"  # dorado
-                                                        _pick_conf  = "MEDIA"
-                                                    else:
-                                                        _pick_emoji = ""; _pick_color = ""
-                                                        _pick_conf  = ""
-                                                    # Card border: pick color si hay pick, rojo si live, default si no
-                                                    if _live:
-                                                        _card_border = "#ff444466"
-                                                    elif _pick_color:
-                                                        _card_border = f"{_pick_color}66"
-                                                    else:
-                                                        _card_border = "#c9a84c1a"
-                                                    _pick_html = (
-                                                        f"<div style='margin-top:6px;background:{_pick_color}15;"
-                                                        f"border:2px solid {_pick_color}99;border-radius:6px;"
-                                                        f"padding:5px 8px'>"
-                                                        f"<div style='display:flex;align-items:center;gap:5px'>"
-                                                        f"<span style='font-size:1.1rem;line-height:1'>{_pick_emoji}</span>"
-                                                        f"<span style='font-size:.78rem;font-weight:900;color:{_pick_color};"
-                                                        f"letter-spacing:.02em;line-height:1.2;word-break:break-word'>{_pick_lbl}</span>"
-                                                        f"<span style='font-size:.72rem;font-weight:900;color:{_pick_color};margin-left:auto;white-space:nowrap'>"
-                                                        f"{_pick_prob*100:.0f}%</span>"
-                                                        f"</div></div>"
-                                                    ) if _pick_lbl and _pick_color else ""
+                                                    _pick_html, _card_border = _pick_badge(_pick_lbl, _pick_prob, _live)
                                                     st.markdown(f"""<div style='background:#0d0900;border:1px solid {_card_border};
 border-radius:8px;padding:7px 8px;margin-bottom:2px'>
   <div style='font-size:.58rem;color:{"#ff4444" if _live else "#6b5a3a"};font-weight:700;letter-spacing:.1em'>{_sc or _m.get("hora","")}</div>
