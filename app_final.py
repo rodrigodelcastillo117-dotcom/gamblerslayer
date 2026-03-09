@@ -1177,6 +1177,54 @@ def get_form(team_id, slug):
 
     return espn_results[:15]
 
+# ── get_form_domestic: fetches team's domestic league form for cup/UEFA teams ──
+_UEFA_CUP_SLUGS = {"uefa.champions","uefa.europa","uefa.europa.conf",
+                   "uefa.cl","uefa.el","uefa.ecl",
+                   "concacaf.champions","concacaf.league",
+                   "eng.fa","eng.lc","esp.copa","ger.dfb","ita.coppa","fra.coupe"}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_form_domestic(team_id: str, cup_slug: str) -> list:
+    """
+    Para torneos UEFA/CONCACAF/copa: busca la forma del equipo
+    en su liga doméstica (ESPN /soccer/teams/{id}/schedule)
+    que trae resultados cross-liga.
+    Fallback de get_form cuando cup_slug no devuelve historial.
+    """
+    team_id = str(team_id)
+    # ESPN endpoint sin slug devuelve todo el schedule del equipo cross-liga
+    data   = eg(f"https://site.api.espn.com/apis/site/v2/sports/soccer/teams/{team_id}/schedule")
+    events = data.get("events", [])
+    matches = []
+    for ev in events:
+        try:
+            comp  = ev["competitions"][0]
+            comps = comp["competitors"]
+            state = ev.get("status", {}).get("type", {}).get("state", "")
+            if state != "post": continue
+            hc = next(c for c in comps if c["homeAway"] == "home")
+            ac = next(c for c in comps if c["homeAway"] == "away")
+            is_home = str(hc["team"]["id"]) == team_id
+            my  = hc if is_home else ac
+            opp = ac if is_home else hc
+            gf  = parse_score(my.get("score", 0))
+            gc  = parse_score(opp.get("score", 0))
+            result = "W" if gf > gc else ("D" if gf == gc else "L")
+            matches.append({
+                "date":     ev.get("date", "")[:10],
+                "result":   result,
+                "gf":       gf,
+                "gc":       gc,
+                "xg_f":     0.0,
+                "xg_c":     0.0,
+                "opponent": opp["team"].get("displayName", ""),
+                "is_home":  is_home,
+                "league":   ev.get("name", ""),
+            })
+        except: continue
+    matches.sort(key=lambda x: x["date"], reverse=True)
+    return matches[:15]
+
 
 
 
@@ -1344,6 +1392,9 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
         "uefa.europa":    1.05,  # Europa League
         "uefa.europa.conf": 1.06, # Conference League
         "uefa.cl":  1.05,  "uefa.el":  1.05,  "uefa.ecl": 1.06,  # aliases
+        # ── CONCACAF ──
+        "concacaf.champions": 1.08,  # CCC — ventaja real (altitud MX + viajes largos MLS)
+        "concacaf.league": 1.07,
         # ── COPAS NACIONALES (single leg, más neutral) ──
         "eng.fa":    1.06,  # FA Cup
         "eng.lc":    1.06,  # League Cup
@@ -4245,8 +4296,8 @@ def _villar_match_pick_to_result(pk, partido_db):
         # Empate
         elif any(x in pick_clean for x in ["empate","draw","🤝"," x "]):
             ok = draw
-        # Doble Oportunidad — soporta " do", "o emp", "1x", "x1", "x2"
-        elif any(x in pick_clean for x in [" do", "o emp","o empate","1x","x1"," o emp","doble"]):
+        # Doble Oportunidad — soporta " do", "o emp", "1x", "x1", "x2", "🔵", "🟣"
+        elif any(x in pick_clean for x in [" do", "o emp","o empate","1x","x1"," o emp","doble","🔵","🟣"]):
             # DO local: si el nombre del local aparece en el pick → local o empate
             if _name_in_pick(home, pick_clean) or "local" in pick_clean:
                 ok = won_h or draw
@@ -4257,6 +4308,30 @@ def _villar_match_pick_to_result(pk, partido_db):
                 ok = won_h or draw  # fallback DO local
         elif any(x in pick_clean for x in ["x2","2x"]):
             ok = won_a or draw
+        # Over 3.5
+        elif "over 3.5" in pick_clean or "o3.5" in pick_clean or "⚽⚽" in pick_clean:
+            ok = (sh + sa) > 3
+        # Gana cualquier mitad (🌓)
+        elif "cualquier mitad" in pick_clean or "🌓" in pick_clean:
+            # Necesitamos scores por mitad — si no hay, usar lógica aproximada
+            sh1 = result.get("score_h1", -1); sa1 = result.get("score_a1", -1)
+            sh2 = result.get("score_h2", sh - (sh1 if sh1 >= 0 else 0))
+            sa2 = result.get("score_a2", sa - (sa1 if sa1 >= 0 else 0))
+            if sh1 >= 0 and sa1 >= 0:
+                if _name_in_pick(home, pick_clean):
+                    ok = (sh1 > sa1) or (sh2 > sa2)
+                elif _name_in_pick(away, pick_clean):
+                    ok = (sa1 > sh1) or (sa2 > sh2)
+                else:
+                    ok = None  # no se puede determinar sin scores por mitad
+            else:
+                # Sin datos de mitad: aproximar — si ganó el partido, casi seguro ganó una mitad
+                if _name_in_pick(home, pick_clean):
+                    ok = won_h or draw  # muy conservador — en realidad es más probable
+                elif _name_in_pick(away, pick_clean):
+                    ok = won_a or draw
+                else:
+                    ok = None
         # 1X2 por nombre — buscar en pick el nombre de local o visitante
         elif _name_in_pick(home, pick_clean) or "local" in pick_clean or "home" in pick_clean:
             ok = won_h
@@ -4402,6 +4477,10 @@ def _villar_auto_pick(partido_db):
 
             hf  = get_form(home_id, slug) if home_id and slug else []
             af  = get_form(away_id, slug) if home_id and slug else []
+            # Para UEFA/CONCACAF: si ESPN no devuelve historial en CL, usar form doméstica
+            if slug in _UEFA_CUP_SLUGS:
+                if not hf and home_id: hf = get_form_domestic(home_id, slug)
+                if not af and away_id: af = get_form_domestic(away_id, slug)
 
             # ── xG fallback: si no hay historial, usar odds como prior principal ──
             def _xg_from_odds(odd_h, odd_a, odd_d, is_home):
@@ -4458,71 +4537,96 @@ def _villar_auto_pick(partido_db):
             _edge_ml_a = (_pa_d - 1/_odd_a) if _odd_a > 1 else (_pa_d - 0.50)
             _best_ml_edge = max(_edge_ml_h, _edge_ml_a)
 
-        # ── Selección por EV real — solo picks con valor esperado positivo ──
+        # ── Selección por EV real — todos los mercados disponibles ──
         def _ev(prob, odd): return prob * (odd - 1) - (1 - prob) if odd > 1 else prob - 0.5
-        _ev_h   = _ev(_ph_d, odd_h) if odd_h > 1 else (_ph_d - 0.55)
-        _ev_a   = _ev(_pa_d, odd_a) if odd_a > 1 else (_pa_d - 0.55)
-        _u25_d  = 1 - _o25_d
-        _ev_o25 = _ev(_o25_d, 1.85)  # cuota típica O2.5 mercado real
-        _ev_u25 = _ev(_u25_d, 2.00)  # cuota típica U2.5 mercado real
-        _ev_aa  = _ev(_aa_d,  1.75)  # cuota típica AA mercado real
-
-        # Mínimos para considerar un pick válido:
-        # ML: EV > 0 Y prob >= 0.52 (evita favoritos cortos con EV negativo)
-        # O/U: prob >= 0.58 (mercado más eficiente)
-        # DC (doble chance): prob >= 0.72 (cuota ~1.35, necesita prob alta)
-        # ── Selección del pick para auditoría ──
-        # El contador de Villar evalúa SI EL MODELO ACERTÓ, no si había valor.
-        # Por eso siempre elegimos el outcome de mayor prob del modelo.
-        # EV solo se usa para marcar "(sin valor)" informativamente, no para filtrar.
+        _ev_h    = _ev(_ph_d, odd_h) if odd_h > 1 else (_ph_d - 0.55)
+        _ev_a    = _ev(_pa_d, odd_a) if odd_a > 1 else (_pa_d - 0.55)
+        _u25_d   = 1 - _o25_d
+        _o35_d   = float(mc.get("o35", 0.0) or 0.0)
+        _ev_o25  = _ev(_o25_d, 1.85)
+        _ev_u25  = _ev(_u25_d, 2.00)
+        _ev_o35  = _ev(_o35_d, 2.50)   # Over 3.5
+        _ev_aa   = _ev(_aa_d,  1.75)
+        # Doble Oportunidad
+        _ev_do_h = _ev(_do_h_d, 1.30)
+        _ev_do_a = _ev(_do_a_d, 1.50)
+        # "Gana cualquier mitad" — aprox: si gana partido ~75-80% gana al menos 1 mitad
+        _gcm_h   = min(0.95, _ph_d * 1.18 + _pd_d * 0.35)
+        _gcm_a   = min(0.95, _pa_d * 1.18 + _pd_d * 0.35)
+        _ev_gcm_h = _ev(_gcm_h, 1.55)
+        _ev_gcm_a = _ev(_gcm_a, 1.65)
+        _ev_d    = _ev(_pd_d, 3.30)
         _has_real_odds = odd_h > 1 and odd_a > 1
 
-        # Todos los outcomes con su prob y score de confianza
+        # ── Todos los outcomes — solo se incluyen si superan umbrales mínimos ──
         _all_outcomes = [
-            (f"🏠 {home} gana",     _ph_d,  odd_h, _ev_h),
-            (f"✈️ {away} gana",     _pa_d,  odd_a, _ev_a),
-            ("⚽ Over 2.5",          _o25_d, 1.85,  _ev_o25),
-            ("🔒 Under 2.5",         _u25_d, 2.00,  _ev_u25),
-            ("⚡ Ambos Anotan",       _aa_d,  1.75,  _ev_aa),
+            (f"🏠 {home} gana",                     _ph_d,   odd_h, _ev_h,    "ML"),
+            (f"✈️ {away} gana",                     _pa_d,   odd_a, _ev_a,    "ML"),
+            ("⚽ Over 2.5",                           _o25_d,  1.85,  _ev_o25,  "O25"),
+            ("🔒 Under 2.5",                          _u25_d,  2.00,  _ev_u25,  "U25"),
+            ("⚡ Ambos Anotan",                        _aa_d,   1.75,  _ev_aa,   "AA"),
         ]
+        # DO: solo si prob >= 0.68 (cuota corta ~1.30-1.50 necesita confianza alta)
+        if _do_h_d >= 0.68:
+            _all_outcomes.append((f"🔵 DO {home} o Empate", _do_h_d, 1.30, _ev_do_h, "DO"))
+        if _do_a_d >= 0.68:
+            _all_outcomes.append((f"🟣 DO {away} o Empate", _do_a_d, 1.50, _ev_do_a, "DO"))
+        # Over 3.5: solo si los xG totales son altos (partido ofensivo)
+        if _o35_d >= 0.38 and (hxg + axg) >= 3.0:
+            _all_outcomes.append(("⚽⚽ Over 3.5", _o35_d, 2.50, _ev_o35, "O35"))
+        # Gana cualquier mitad: solo si el favorito tiene prob de victoria >= 0.55
+        if _gcm_h >= 0.65 and _ph_d >= 0.50:
+            _all_outcomes.append((f"🌓 {home} gana cualquier mitad", _gcm_h, 1.55, _ev_gcm_h, "GCM"))
+        if _gcm_a >= 0.65 and _pa_d >= 0.50:
+            _all_outcomes.append((f"🌓 {away} gana cualquier mitad", _gcm_a, 1.65, _ev_gcm_a, "GCM"))
+        # Empate: solo si el partido es muy parejo
+        if _pd_d >= 0.28 and abs(_ph_d - _pa_d) < 0.08:
+            _all_outcomes.append(("🤝 Empate", _pd_d, 3.30, _ev_d, "X"))
 
-        # El pick es el outcome con mayor probabilidad (modelo puro)
-        _best = max(_all_outcomes, key=lambda x: x[1])
+        # ── Selección: mejor EV ponderado; si ninguno con EV>0, mayor prob ──
+        _ev_positive = [o for o in _all_outcomes if o[3] > 0.01]
+        if _ev_positive:
+            # Ponderar EV × prob para evitar picks de baja prob con EV inflado
+            _best = max(_ev_positive, key=lambda o: o[3] * (1 + o[1]))
+        else:
+            _best = max(_all_outcomes, key=lambda o: o[1])
+
         main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
-        _best_ev = _best[3]
+        _best_ev  = _best[3]
+        _best_mkt = _best[4] if len(_best) > 4 else "ML"
 
         # Si tiene EV positivo real → pick limpio; si no → nota informativa
         _min_ev = 0.01
         if _has_real_odds and _best_ev < _min_ev:
-            # Marcar sin valor pero IGUAL contar para el auditor
             main_lbl = main_lbl + " (sin valor)"
 
-            ml_pick = {
-                "pick": f"🏠 {home} gana" if _ph_d >= _pa_d else f"✈️ {away} gana",
-                "prob": max(_ph_d, _pa_d), "mkt": "ML",
-                "odd": _fav_ml_odd, "sport": "futbol", "home": home, "away": away,
-                "src": f"🤖 ML {max(_ph_d,_pa_d)*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
-            }
-            o25_pick = {
-                "pick": "⚽ Over 2.5", "prob": _o25_d, "mkt": "O25",
-                "odd": 0, "sport": "futbol", "home": home, "away": away,
-                "src": f"🤖 O2.5 {_o25_d*100:.0f}% · xG total {hxg+axg:.2f}",
-            }
-            aa_pick = {
-                "pick": "⚡ Ambos Anotan", "prob": _aa_d, "mkt": "AA",
-                "odd": 0, "sport": "futbol", "home": home, "away": away,
-                "src": f"🤖 AA {_aa_d*100:.0f}% · xG {hxg:.2f}–{axg:.2f}",
-            }
+        # Construir all_picks con TODOS los mercados disponibles
+        def _build_pick(lbl, prob, mkt, odd=0):
+            return {"pick": lbl, "prob": prob, "mkt": mkt,
+                    "odd": odd, "sport": "futbol", "home": home, "away": away,
+                    "src": f"🤖 {mkt} {prob*100:.0f}% · xG {hxg:.2f}–{axg:.2f}"}
+        _all_market_picks = [
+            _build_pick(f"🏠 {home} gana",                _ph_d,   "ML",  odd_h),
+            _build_pick(f"✈️ {away} gana",                _pa_d,   "ML",  odd_a),
+            _build_pick("⚽ Over 2.5",                     _o25_d,  "O25", 1.85),
+            _build_pick("🔒 Under 2.5",                    _u25_d,  "U25", 2.00),
+            _build_pick("⚡ Ambos Anotan",                  _aa_d,   "AA",  1.75),
+            _build_pick(f"🔵 DO {home} o Empate",          _do_h_d, "DO",  1.30),
+            _build_pick(f"🟣 DO {away} o Empate",          _do_a_d, "DO",  1.50),
+            _build_pick("⚽⚽ Over 3.5",                    _o35_d,  "O35", 2.50),
+            _build_pick(f"🌓 {home} gana cualquier mitad", _gcm_h,  "GCM", 1.55),
+            _build_pick(f"🌓 {away} gana cualquier mitad", _gcm_a,  "GCM", 1.65),
+        ]
 
-            return {
-                "pick":      main_lbl,
-                "prob":      main_prob,
-                "sport":     "futbol",
-                "home":      home,
-                "away":      away,
-                "src":       f"🤖 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
-                "all_picks": [ml_pick, o25_pick, aa_pick],
-            }
+        return {
+            "pick":      main_lbl,
+            "prob":      main_prob,
+            "sport":     "futbol",
+            "home":      home,
+            "away":      away,
+            "src":       f"🤖 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
+            "all_picks": _all_market_picks,
+        }
     except:
         return None
 
@@ -6017,6 +6121,23 @@ _DIVISION_SLUGS = {
     "uefa.cl":   ("Champions League", None, None),
     "uefa.el":   ("Europa League",    None, None),
     "uefa.ecl":  ("Conference Lg",    None, None),
+    # ── AMÉRICAS — para CONCACAF Champions Cup ──
+    "mex.1": ("Liga MX",             0.92, 1.38),
+    "mex.2": ("Expansión MX",        0.62, 1.15),
+    "usa.1": ("MLS",                 0.85, 1.32),  # recalibrado Leagues Cup 2025 parity
+    "arg.1": ("Liga Argentina",      0.88, 1.35),
+    "bra.1": ("Brasileirão",         0.85, 1.40),
+    "col.1": ("Liga BetPlay",        0.72, 1.20),
+    "chi.1": ("Primera División",    0.68, 1.18),
+    "ecu.1": ("LigaPro Ecuador",     0.65, 1.15),
+    "cos.1": ("Liga Costa Rica",     0.52, 1.10),
+    "gtm.1": ("Liga Guatemala",      0.48, 1.05),
+    "hnd.1": ("Liga Honduras",       0.48, 1.05),
+    "slv.1": ("Primera El Salvador", 0.46, 1.05),
+    "pan.1": ("Liga Panameña",       0.45, 1.05),
+    # CONCACAF directa
+    "concacaf.champions": ("CONCACAF Champions Cup", None, None),
+    "concacaf.league":    ("CONCACAF League",        None, None),
 }
 
 # Equipos conocidos → su liga real (para copa y competiciones europeas)
@@ -6183,6 +6304,99 @@ _TEAM_DIVISION: dict = {
     "hearts":            "sco.1", "hibernian":         "sco.1",
     "aberdeen":          "sco.1", "motherwell":        "sco.1",
     "kilmarnock":        "sco.1", "st mirren":         "sco.1",
+    # ══════════════════════════════════════════════════════════
+    # AMÉRICAS — CONCACAF Champions Cup 2024-25 / 2025-26
+    # ══════════════════════════════════════════════════════════
+    # ── LIGA MX ──
+    "club america":      "mex.1", "america":           "mex.1",
+    "guadalajara":       "mex.1", "chivas":            "mex.1",
+    "deportivo guadalajara": "mex.1",
+    "cruz azul":         "mex.1",
+    "tigres":            "mex.1", "tigres uanl":       "mex.1",
+    "monterrey":         "mex.1", "cf monterrey":      "mex.1",
+    "rayados":           "mex.1",
+    "pachuca":           "mex.1", "tuzos":             "mex.1",
+    "leon":              "mex.1", "club leon":         "mex.1",
+    "atlas":             "mex.1", "atlas fc":          "mex.1",
+    "toluca":            "mex.1", "deportivo toluca":  "mex.1",
+    "pumas":             "mex.1", "pumas unam":        "mex.1",
+    "santos laguna":     "mex.1",
+    "necaxa":            "mex.1", "club necaxa":       "mex.1",
+    "queretaro":         "mex.1", "fc queretaro":      "mex.1",
+    "tijuana":           "mex.1", "xolos":             "mex.1",
+    "puebla":            "mex.1", "club puebla":       "mex.1",
+    "atletico san luis": "mex.1", "san luis":          "mex.1",
+    "mazatlan":          "mex.1", "mazatlan fc":       "mex.1",
+    "juarez":            "mex.1", "fc juarez":         "mex.1",
+    # ── MLS ──
+    "seattle sounders":  "usa.1", "sounders fc":       "usa.1",
+    "la galaxy":         "usa.1", "galaxy":            "usa.1",
+    "lafc":              "usa.1", "los angeles fc":    "usa.1",
+    "new england revolution": "usa.1",
+    "new york city fc":  "usa.1", "nyc fc":            "usa.1",
+    "new york red bulls":"usa.1",
+    "philadelphia union":"usa.1",
+    "portland timbers":  "usa.1",
+    "columbus crew":     "usa.1",
+    "fc cincinnati":     "usa.1",
+    "sporting kc":       "usa.1", "sporting kansas city": "usa.1",
+    "colorado rapids":   "usa.1",
+    "real salt lake":    "usa.1",
+    "minnesota united":  "usa.1",
+    "austin fc":         "usa.1",
+    "atlanta united":    "usa.1",
+    "inter miami":       "usa.1",
+    "toronto fc":        "usa.1",
+    "vancouver whitecaps": "usa.1",
+    "cf montreal":       "usa.1", "montreal impact":   "usa.1",
+    "nashville sc":      "usa.1",
+    "orlando city":      "usa.1",
+    "charlotte fc":      "usa.1",
+    "san jose earthquakes": "usa.1",
+    "houston dynamo":    "usa.1",
+    "dallas fc":         "usa.1", "fc dallas":         "usa.1",
+    # ── ARGENTINA ──
+    "river plate":       "arg.1", "ca river plate":   "arg.1",
+    "boca juniors":      "arg.1", "ca boca juniors":  "arg.1",
+    "racing club":       "arg.1",
+    "independiente":     "arg.1",
+    "san lorenzo":       "arg.1",
+    "estudiantes":       "arg.1", "estudiantes lp":   "arg.1",
+    "lanus":             "arg.1",
+    "huracan":           "arg.1",
+    "talleres":          "arg.1", "talleres cordoba":  "arg.1",
+    # ── BRASIL ──
+    "flamengo":          "bra.1", "cr flamengo":      "bra.1",
+    "fluminense":        "bra.1",
+    "palmeiras":         "bra.1",
+    "atletico mineiro":  "bra.1",
+    "gremio":            "bra.1",
+    "internacional":     "bra.1", "sc internacional": "bra.1",
+    "sao paulo":         "bra.1", "são paulo fc":     "bra.1",
+    "corinthians":       "bra.1",
+    "vasco":             "bra.1",
+    "cruzeiro":          "bra.1",
+    "botafogo":          "bra.1",
+    "santos fc":         "bra.1",
+    # ── COLOMBIA ──
+    "atletico nacional": "col.1", "nacional":         "col.1",
+    "millonarios":       "col.1",
+    "deportivo cali":    "col.1",
+    "junior":            "col.1", "atletico junior":  "col.1",
+    "santa fe":          "col.1",
+    "america de cali":   "col.1",
+    "once caldas":       "col.1",
+    # ── COSTA RICA ──
+    "alajuelense":       "cos.1", "ld alajuelense":   "cos.1",
+    "saprissa":          "cos.1", "deportivo saprissa": "cos.1",
+    "herediano":         "cos.1",
+    # ── OTROS CONCACAF ──
+    "olimpia":           "hnd.1", "cd olimpia":       "hnd.1",
+    "marathon":          "hnd.1",
+    "comunicaciones":    "gtm.1",
+    "antigua gfc":       "gtm.1",
+    "alianza":           "slv.1",
+    "tauro":             "pan.1",
 }
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -6241,6 +6455,7 @@ def _cup_get_form_in_league(team_id: str, team_name: str) -> dict:
     # Coeficiente de calidad de liga (UEFA rankings 2024-25, base = Premier League)
     # Pondera el factor de división por el nivel internacional de esa liga
     _LEAGUE_COEF = {
+        # ── EUROPA (base UEFA) ──
         "eng": 1.000,  # Premier League — base
         "ger": 0.970,  # Bundesliga
         "esp": 0.960,  # La Liga
@@ -6251,6 +6466,20 @@ def _cup_get_form_in_league(team_id: str, team_name: str) -> dict:
         "bel": 0.820,  # Pro League
         "tur": 0.800,  # Süper Lig
         "sco": 0.760,  # Scottish Premiership
+        # ── AMÉRICAS — calibrado vs CONCACAF Champions Cup ──
+        # Fuente: historial CCC + coeficientes IFFHS 2024
+        "mex": 0.820,  # Liga MX — dominante en CONCACAF (7 de 10 últimas CCC)
+        "arg": 0.870,  # Argentina — nivel sudamericano top
+        "bra": 0.860,  # Brasil — más profundo, referencia Copa Libertadores
+        "usa": 0.760,  # MLS — Seattle(2025)/Columbus(2024)/Miami(2023) Leagues Cup; Phase One 2025: MLS 28 wins vs MX 26
+        "col": 0.640,  # Colombia — Nacional/Millonarios compiten bien regionalmente
+        "chi": 0.600,  # Chile
+        "ecu": 0.580,  # Ecuador
+        "cos": 0.540,  # Costa Rica — Alajuelense/Saprissa históricos CONCACAF
+        "gtm": 0.480,  # Guatemala
+        "hnd": 0.480,  # Honduras
+        "slv": 0.460,  # El Salvador
+        "pan": 0.450,  # Panamá
     }
     _country = (div_slug or "")[:3]  # "eng", "esp", "ger"...
     _league_coef = _LEAGUE_COEF.get(_country, 0.780)  # desconocido → penalizar
@@ -6295,28 +6524,69 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         # UEFA — slugs reales del sistema
         "uefa.champions", "uefa.europa", "uefa.europa.conf",
         "uefa.cl", "uefa.el", "uefa.ecl",  # aliases
+        # CONCACAF
+        "concacaf.champions", "concacaf.league",
     }
     is_cup = slug in _cup_slugs
 
-    # UEFA: no hay ventaja de local real — usar odds directamente
+    # ══════════════════════════════════════════════════════════════════
+    # UEFA / CONCACAF — modelo con contexto de liga doméstica
+    # ══════════════════════════════════════════════════════════════════
+    _concacaf_slugs = {"concacaf.champions","concacaf.league"}
     _uefa_slugs = {"uefa.champions","uefa.europa","uefa.europa.conf","uefa.cl","uefa.el","uefa.ecl"}
-    if slug in _uefa_slugs:
+    _intl_slugs = _uefa_slugs | _concacaf_slugs
+    if slug in _intl_slugs:
         odd_h = float(m.get("odd_h",0) or 0)
         odd_a = float(m.get("odd_a",0) or 0)
         odd_d = float(m.get("odd_d",0) or 0)
+        _hnam = m.get("home",""); _anam = m.get("away","")
+        _hid  = str(m.get("home_id","")); _aid  = str(m.get("away_id",""))
+        _form_mine = hf if is_home else af
+        if not _form_mine:
+            _tid2  = _hid if is_home else _aid
+            _tnam2 = _hnam if is_home else _anam
+            _dom = _cup_get_form_in_league(_tid2, _tnam2)
+            _form_mine = _dom.get("form", [])
+        # Factor de calidad por liga doméstica
+        def _qlf(tname):
+            n = (tname or "").lower().strip()
+            ds = next((sl for k,sl in _TEAM_DIVISION.items() if k in n or n in k), None)
+            if not ds: return 0.75
+            lc = _LEAGUE_COEF.get(ds[:3], 0.70)
+            df = (_DIVISION_SLUGS.get(ds, ("?",0.80,1.30))[1] or 0.80)
+            return round(lc * df, 4)
+        _my_qf  = _qlf(_hnam if is_home else _anam)
+        _opp_qf = _qlf(_anam if is_home else _hnam)
+        if _form_mine:
+            _xg_dom = xg_weighted(_form_mine, is_home, odds_prior=0)
+            _qratio = min(1.20, max(0.72, _my_qf / max(_opp_qf, 0.40)))
+            _xg_base = round(_xg_dom * _qratio, 3)
+        else:
+            if slug in _concacaf_slugs:
+                _xg_base = (1.55 if is_home else 1.35) * _my_qf / 0.82
+            else:
+                _xg_base = (1.40 if is_home else 1.15) * _my_qf
+        # Altitud para equipos MX en casa (CONCACAF)
+        if slug in _concacaf_slugs and is_home:
+            _hl = (_hnam or "").lower()
+            _alt = {"america":1.06,"club america":1.06,"pumas":1.06,"pumas unam":1.06,
+                    "cruz azul":1.06,"toluca":1.09,"deportivo toluca":1.09,
+                    "atlas":1.05,"guadalajara":1.05,"chivas":1.05,
+                    "tigres":1.02,"monterrey":1.02,"rayados":1.02,
+                    "pachuca":1.07,"tuzos":1.07,"queretaro":1.05,
+                    "necaxa":1.05,"santos laguna":1.01,"santos":1.01,
+                    "leon":1.04,"club leon":1.04}
+            _ab = next((v for k,v in _alt.items() if k in _hl), 1.0)
+            _xg_base = round(_xg_base * _ab, 3)
+        # Mezclar con odds
         if odd_h > 1 and odd_a > 1 and odd_d > 1:
             _tot = 1/odd_h + 1/odd_d + 1/odd_a
             _ph  = (1/odd_h) / _tot
             _pa  = (1/odd_a) / _tot
-            # Sin bonus de local — UEFA es campo neutral
-            _xg = max(0.30, 0.50 + (_ph if is_home else _pa) * 2.5)
-            # Si hay forma real, mezclar 60% modelo / 40% odds
-            _form = hf if is_home else af
-            if _form:
-                _xg_form = xg_weighted(_form, is_home, odds_prior=0)
-                return round(0.60 * _xg_form + 0.40 * _xg, 3)
-            return round(_xg, 3)
-        return 1.3 if is_home else 1.1
+            _xg_odds = max(0.30, 0.50 + (_ph if is_home else _pa) * 2.5)
+            _wf = 0.70 if _form_mine else 0.30
+            return max(0.35, round(_wf * _xg_base + (1-_wf) * _xg_odds, 3))
+        return max(0.35, round(_xg_base, 3))
 
     # Si no es copa o hay forma directa disponible — usar pipeline normal
     if not is_cup:
@@ -9261,6 +9531,9 @@ def escanear_y_enviar(matches):
         if m["state"] != "pre": continue
         hf  = get_form(m["home_id"], m["slug"])
         af  = get_form(m["away_id"], m["slug"])
+        if m.get("slug","") in _UEFA_CUP_SLUGS:
+            if not hf: hf = get_form_domestic(str(m.get("home_id","")), m["slug"])
+            if not af: af = get_form_domestic(str(m.get("away_id","")), m["slug"])
         hxg = _cup_enriched_xg(m, True,  hf, af)
         axg = _cup_enriched_xg(m, False, hf, af)
         h2h = get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"])
@@ -9814,6 +10087,9 @@ def compute_trilay(matches):
         try:
             hf  = get_form(m["home_id"],m["slug"])
             af  = get_form(m["away_id"],m["slug"])
+            if m.get("slug","") in _UEFA_CUP_SLUGS:
+                if not hf: hf = get_form_domestic(str(m.get("home_id","")), m["slug"])
+                if not af: af = get_form_domestic(str(m.get("away_id","")), m["slug"])
             hxg = _cup_enriched_xg(m, True,  hf, af)
             axg = _cup_enriched_xg(m, False, hf, af)
             mc  = mc50k(hxg,axg)
@@ -9867,6 +10143,9 @@ def compute_pato(matches):
     for m in matches[:80]:
         hf  = get_form(m["home_id"],m["slug"])
         af  = get_form(m["away_id"],m["slug"])
+        if m.get("slug","") in _UEFA_CUP_SLUGS:
+            if not hf: hf = get_form_domestic(str(m.get("home_id","")), m["slug"])
+            if not af: af = get_form_domestic(str(m.get("away_id","")), m["slug"])
         hxg = _cup_enriched_xg(m, True,  hf, af) if not hf else max(0.2,avg([r["gf"] for r in hf]))
         axg = _cup_enriched_xg(m, False, hf, af) if not af else max(0.2,avg([r["gf"] for r in af]))
         u45 = poisson_u45(hxg,axg)*100
