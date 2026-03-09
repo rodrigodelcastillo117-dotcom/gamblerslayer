@@ -4311,8 +4311,27 @@ def _villar_match_pick_to_result(pk, partido_db):
         # Over 3.5
         elif "over 3.5" in pick_clean or "o3.5" in pick_clean or "⚽⚽" in pick_clean:
             ok = (sh + sa) > 3
+        # Under 3.5
+        elif "under 3.5" in pick_clean or "u3.5" in pick_clean or "🔒🔒" in pick_clean:
+            ok = (sh + sa) <= 3
+        # Team goals: equipo +0.5 (anota al menos 1)
+        elif "+0.5" in pick_clean:
+            if _name_in_pick(home, pick_clean): ok = sh > 0
+            elif _name_in_pick(away, pick_clean): ok = sa > 0
+        # Team goals: equipo -0.5 (no anota)
+        elif "-0.5" in pick_clean or "sin gol" in pick_clean:
+            if _name_in_pick(home, pick_clean): ok = sh == 0
+            elif _name_in_pick(away, pick_clean): ok = sa == 0
+        # Team goals: equipo +1.5 (anota al menos 2)
+        elif "+1.5" in pick_clean:
+            if _name_in_pick(home, pick_clean): ok = sh > 1
+            elif _name_in_pick(away, pick_clean): ok = sa > 1
+        # Team goals: equipo -1.5 (anota 0 o 1)
+        elif "-1.5" in pick_clean or "0-1 gol" in pick_clean:
+            if _name_in_pick(home, pick_clean): ok = sh <= 1
+            elif _name_in_pick(away, pick_clean): ok = sa <= 1
         # Gana cualquier mitad (🌓)
-        elif "cualquier mitad" in pick_clean or "🌓" in pick_clean:
+        elif "cualquier mitad" in pick_clean or "c/mitad" in pick_clean or "🌓" in pick_clean:
             # Necesitamos scores por mitad — si no hay, usar lógica aproximada
             sh1 = result.get("score_h1", -1); sa1 = result.get("score_a1", -1)
             sh2 = result.get("score_h2", sh - (sh1 if sh1 >= 0 else 0))
@@ -4550,46 +4569,54 @@ def _villar_auto_pick(partido_db):
         # Doble Oportunidad
         _ev_do_h = _ev(_do_h_d, 1.30)
         _ev_do_a = _ev(_do_a_d, 1.50)
-        # "Gana cualquier mitad" — aprox: si gana partido ~75-80% gana al menos 1 mitad
-        _gcm_h   = min(0.95, _ph_d * 1.18 + _pd_d * 0.35)
-        _gcm_a   = min(0.95, _pa_d * 1.18 + _pd_d * 0.35)
-        _ev_gcm_h = _ev(_gcm_h, 1.55)
-        _ev_gcm_a = _ev(_gcm_a, 1.65)
         _ev_d    = _ev(_pd_d, 3.30)
         _has_real_odds = odd_h > 1 and odd_a > 1
 
-        # ── Todos los outcomes — solo se incluyen si superan umbrales mínimos ──
-        _all_outcomes = [
-            (f"🏠 {home} gana",                     _ph_d,   odd_h, _ev_h,    "ML"),
-            (f"✈️ {away} gana",                     _pa_d,   odd_a, _ev_a,    "ML"),
-            ("⚽ Over 2.5",                           _o25_d,  1.85,  _ev_o25,  "O25"),
-            ("🔒 Under 2.5",                          _u25_d,  2.00,  _ev_u25,  "U25"),
-            ("⚡ Ambos Anotan",                        _aa_d,   1.75,  _ev_aa,   "AA"),
-        ]
-        # DO: solo si prob >= 0.68 (cuota corta ~1.30-1.50 necesita confianza alta)
-        if _do_h_d >= 0.68:
-            _all_outcomes.append((f"🔵 DO {home} o Empate", _do_h_d, 1.30, _ev_do_h, "DO"))
-        if _do_a_d >= 0.68:
-            _all_outcomes.append((f"🟣 DO {away} o Empate", _do_a_d, 1.50, _ev_do_a, "DO"))
-        # Over 3.5: solo si los xG totales son altos (partido ofensivo)
-        if _o35_d >= 0.38 and (hxg + axg) >= 3.0:
-            _all_outcomes.append(("⚽⚽ Over 3.5", _o35_d, 2.50, _ev_o35, "O35"))
-        # Gana cualquier mitad: solo si el favorito tiene prob de victoria >= 0.55
-        if _gcm_h >= 0.65 and _ph_d >= 0.50:
-            _all_outcomes.append((f"🌓 {home} gana cualquier mitad", _gcm_h, 1.55, _ev_gcm_h, "GCM"))
-        if _gcm_a >= 0.65 and _pa_d >= 0.50:
-            _all_outcomes.append((f"🌓 {away} gana cualquier mitad", _gcm_a, 1.65, _ev_gcm_a, "GCM"))
-        # Empate: solo si el partido es muy parejo
-        if _pd_d >= 0.28 and abs(_ph_d - _pa_d) < 0.08:
-            _all_outcomes.append(("🤝 Empate", _pd_d, 3.30, _ev_d, "X"))
+        # ── Variables adicionales de goles por equipo (mc50k ya las calcula) ──
+        _gcm_h   = float(mc.get("gcm_h",0) or min(0.95, _ph_d*1.18+_pd_d*0.35))
+        _gcm_a   = float(mc.get("gcm_a",0) or min(0.95, _pa_d*1.18+_pd_d*0.35))
+        _h_o05   = float(mc.get("h_o05",0)); _h_u05 = float(mc.get("h_u05",0))
+        _h_o15   = float(mc.get("h_o15",0)); _h_u15 = float(mc.get("h_u15",0))
+        _a_o05   = float(mc.get("a_o05",0)); _a_u05 = float(mc.get("a_u05",0))
+        _a_o15   = float(mc.get("a_o15",0)); _a_u15 = float(mc.get("a_u15",0))
+        _u35_d   = float(mc.get("u35",0) or max(0, 1-_o35_d))
+        _o15_d   = float(mc.get("o15",0))
+        _ev_gcm_h = _ev(_gcm_h, 1.55); _ev_gcm_a = _ev(_gcm_a, 1.65)
 
-        # ── Selección: mejor EV ponderado; si ninguno con EV>0, mayor prob ──
-        _ev_positive = [o for o in _all_outcomes if o[3] > 0.01]
-        if _ev_positive:
-            # Ponderar EV × prob para evitar picks de baja prob con EV inflado
-            _best = max(_ev_positive, key=lambda o: o[3] * (1 + o[1]))
-        else:
-            _best = max(_all_outcomes, key=lambda o: o[1])
+        # ── Todos los outcomes — mayor prob selecciona el pick ──
+        _all_outcomes = [
+            (f"🏠 {home} gana",                      _ph_d,   odd_h, _ev_h,              "ML"),
+            (f"✈️ {away} gana",                      _pa_d,   odd_a, _ev_a,              "ML"),
+            ("⚽ Over 1.5",                            _o15_d,  1.35,  _ev(_o15_d,1.35),  "O15"),
+            ("⚽ Over 2.5",                            _o25_d,  1.85,  _ev_o25,            "O25"),
+            ("🔒 Under 2.5",                           _u25_d,  2.00,  _ev_u25,            "U25"),
+            ("⚡ Ambos Anotan",                         _aa_d,   1.75,  _ev_aa,             "AA"),
+            ("🤝 Empate",                               _pd_d,   3.30,  _ev_d,             "X"),
+        ]
+        # DO siempre (son mercados válidos)
+        _all_outcomes.append((f"🔵 DO {home[:13]} o Emp", _do_h_d, 1.30, _ev_do_h, "DO"))
+        _all_outcomes.append((f"🟣 DO {away[:13]} o Emp", _do_a_d, 1.50, _ev_do_a, "DO"))
+        # Over/Under 3.5
+        _all_outcomes.append(("⚽⚽ Over 3.5",  _o35_d, 2.50, _ev_o35, "O35"))
+        _all_outcomes.append(("🔒🔒 Under 3.5", _u35_d, 1.50, _ev(_u35_d,1.50), "U35"))
+        # Gana cualquier mitad — basado en MC real (gana 1er tiempo O gana 2do tiempo)
+        _all_outcomes.append((f"🌓 {home[:13]} gana c/mitad", _gcm_h, 1.55, _ev_gcm_h, "GCM"))
+        _all_outcomes.append((f"🌓 {away[:13]} gana c/mitad", _gcm_a, 1.65, _ev_gcm_a, "GCM"))
+        # Goles equipo LOCAL
+        if _h_o05 > 0.10: _all_outcomes.append((f"🎯 {home[:13]} +0.5",    _h_o05, 1.55, _ev(_h_o05,1.55), "TG"))
+        if _h_u05 > 0.10: _all_outcomes.append((f"🛡️ {home[:13]} -0.5",   _h_u05, 2.10, _ev(_h_u05,2.10), "TG"))
+        if _h_o15 > 0.10: _all_outcomes.append((f"🎯🎯 {home[:13]} +1.5",  _h_o15, 2.20, _ev(_h_o15,2.20), "TG"))
+        if _h_u15 > 0.10: _all_outcomes.append((f"🛡️ {home[:13]} -1.5",   _h_u15, 1.65, _ev(_h_u15,1.65), "TG"))
+        # Goles equipo VISITANTE
+        if _a_o05 > 0.10: _all_outcomes.append((f"🎯 {away[:13]} +0.5",    _a_o05, 1.65, _ev(_a_o05,1.65), "TG"))
+        if _a_u05 > 0.10: _all_outcomes.append((f"🛡️ {away[:13]} -0.5",   _a_u05, 2.00, _ev(_a_u05,2.00), "TG"))
+        if _a_o15 > 0.10: _all_outcomes.append((f"🎯🎯 {away[:13]} +1.5",  _a_o15, 2.40, _ev(_a_o15,2.40), "TG"))
+        if _a_u15 > 0.10: _all_outcomes.append((f"🛡️ {away[:13]} -1.5",   _a_u15, 1.75, _ev(_a_u15,1.75), "TG"))
+        # Filtrar outcomes con prob mínima
+        _all_outcomes = [o for o in _all_outcomes if o[1] >= 0.08]
+
+        # ── Selección: MAYOR PROBABILIDAD (honesto, EV con cuotas fijas es estimado) ──
+        _best = max(_all_outcomes, key=lambda o: o[1])
 
         main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
         _best_ev  = _best[3]
@@ -6139,6 +6166,386 @@ _DIVISION_SLUGS = {
     "concacaf.champions": ("CONCACAF Champions Cup", None, None),
     "concacaf.league":    ("CONCACAF League",        None, None),
 }
+# ══════════════════════════════════════════════════════════════════════
+# HISTORICO DE LIGAS — % Over 2.5, promedio de goles y tendencia
+# Datos recopilados 2020/2021 → 2025/2026
+# Fuente: FootyStats, FBRef, WhoScored, Oddsportal
+# ══════════════════════════════════════════════════════════════════════
+# Estructura: slug → {
+#   "o25_rate": float,        # % histórico de partidos con Over 2.5 (0-1)
+#   "avg_goals": float,       # promedio de goles por partido
+#   "trend": str,             # "🔥 Muy Alta" / "⬆️ Subiendo" / "⚖️ Estable" / "⬇️ Bajando" / "❄️ Muy Baja"
+#   "perfil": str,            # descripción del mercado
+#   "under_value": bool,      # si el Under tiene valor historico real
+# }
+_LEAGUE_HISTORICAL: dict = {
+    # ══════════════════════════════════════════════════════════════════
+    # DATOS: % Over 2.5 era 2020/21 → actual 2025/26
+    # Fuente: FootyStats, FBRef, WhoScored, Oddsportal (2020-2026)
+    # Estructura: o25_old (2020/21), o25_rate (2025/26 actual),
+    #             avg_goals, trend, perfil, under_value, delta_note
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── PREMIER LEAGUE — mayor cambio de la historia ──
+    "eng.1": {
+        "o25_old": 0.503, "o25_rate": 0.642, "avg_goals": 3.11,
+        "trend": "🚀 Disparada +13.9%",
+        "perfil": "El mayor cambio histórico (+13.9%). Todos juegan desde atrás → errores en salida → goles fáciles. Partidos duran 100+ min por compensación. Busca Over 3.5, el O2.5 ya está castigado (1.50).",
+        "under_value": False,
+        "delta": +0.139,
+        "flag": "🇬🇧",
+    },
+    # ── CHAMPIONSHIP ──
+    "eng.2": {
+        "o25_old": 0.490, "o25_rate": 0.510, "avg_goals": 2.67,
+        "trend": "⚖️ Estable +2.0%",
+        "perfil": "Liga muy física. Muchos 1-0 y 1-1. Mercado menos eficiente que Premier.",
+        "under_value": True,
+        "delta": +0.020,
+        "flag": "🇬🇧",
+    },
+    # ── LA LIGA — máquina de Unders, territorio seguro ──
+    "esp.1": {
+        "o25_old": 0.445, "o25_rate": 0.478, "avg_goals": 2.53,
+        "trend": "❄️ Muy Baja +3.3%",
+        "perfil": "LaLiga = Máquina de Unders. 53% de partidos acaban con ≤2 goles. Girona/Barça joven inflan el promedio pero sigue siendo territorio Under. Seguro de vida para parlays conservadores.",
+        "under_value": True,
+        "delta": +0.033,
+        "flag": "🇪🇸",
+    },
+    "esp.2": {
+        "o25_old": 0.462, "o25_rate": 0.488, "avg_goals": 2.54,
+        "trend": "❄️ Baja +2.6%",
+        "perfil": "Segunda española — patrón defensivo similar a LaLiga. Under tiene valor.",
+        "under_value": True,
+        "delta": +0.026,
+        "flag": "🇪🇸",
+    },
+    # ── BUNDESLIGA — estándar de fábrica para Over ──
+    "ger.1": {
+        "o25_old": 0.605, "o25_rate": 0.621, "avg_goals": 3.14,
+        "trend": "🔥 Muy Alta +1.6%",
+        "perfil": "Estabilidad pura. Transiciones rapidísimas y presión alta. El O2.5 aquí es casi estándar de fábrica. El valor real está en buscar Over 3.5.",
+        "under_value": False,
+        "delta": +0.016,
+        "flag": "🇩🇪",
+    },
+    "ger.2": {
+        "o25_old": 0.565, "o25_rate": 0.584, "avg_goals": 2.97,
+        "trend": "🔥 Alta +1.9%",
+        "perfil": "Segunda alemana casi tan ofensiva como la Bundesliga.",
+        "under_value": False,
+        "delta": +0.019,
+        "flag": "🇩🇪",
+    },
+    # ── SERIE A — TRAMPA: subió por COVID, volvió a su naturaleza defensiva ──
+    "ita.1": {
+        "o25_old": 0.575, "o25_rate": 0.523, "avg_goals": 2.68,
+        "trend": "⚠️ Bajando -5.2%",
+        "perfil": "ESPEJISMO ITALIANO. El pico 2020-22 fue por jugar sin público (menos presión para atacantes). En 2026 volvió a su naturaleza táctica. Caza cuotas altas de Under 2.5 en Italia — el mercado SOBRESTIMA goles aquí.",
+        "under_value": True,
+        "delta": -0.052,
+        "flag": "🇮🇹",
+    },
+    "ita.2": {
+        "o25_old": 0.492, "o25_rate": 0.497, "avg_goals": 2.59,
+        "trend": "⚖️ Estable +0.5%",
+        "perfil": "Serie B — más defensiva que Serie A. Under tiene valor.",
+        "under_value": True,
+        "delta": +0.005,
+        "flag": "🇮🇹",
+    },
+    # ── LIGUE 1 — estancada tácticamente ──
+    "fra.1": {
+        "o25_old": 0.528, "o25_rate": 0.540, "avg_goals": 2.68,
+        "trend": "⬇️ Estancada +1.2%",
+        "perfil": "Liga estancada tácticamente. Mucho músculo, empates físicos en el mediocampo. Sin PSG/Monaco el Over baja notoriamente.",
+        "under_value": True,
+        "delta": +0.012,
+        "flag": "🇫🇷",
+    },
+    "fra.2": {
+        "o25_old": 0.495, "o25_rate": 0.500, "avg_goals": 2.61,
+        "trend": "⚖️ Estable",
+        "perfil": "Ligue 2 — física y cerrada.",
+        "under_value": True,
+        "delta": +0.005,
+        "flag": "🇫🇷",
+    },
+    # ── EREDIVISIE — el paraíso del Over, cuotas castigadas ──
+    "ned.1": {
+        "o25_old": 0.618, "o25_rate": 0.648, "avg_goals": 3.23,
+        "trend": "🔥 Muy Alta +3.0%",
+        "perfil": "El paraíso del Over europeo. Cuotas O2.5 abren castigadas (1.40-1.50). Poca defensa, ataque total. Mayor % Over de Europa.",
+        "under_value": False,
+        "delta": +0.030,
+        "flag": "🇳🇱",
+    },
+    # ── NORUEGA — Eliteserien — césped sintético y filosofía ofensiva ──
+    "nor.1": {
+        "o25_old": 0.612, "o25_rate": 0.648, "avg_goals": 3.18,
+        "trend": "🔥 Muy Alta +3.6%",
+        "perfil": "El paraíso del Over escandinavo. Juegan en verano, canchas de césped sintético (balón rueda rápido). Efecto Bodø/Glimt contagió filosofía ofensiva a toda la liga.",
+        "under_value": False,
+        "delta": +0.036,
+        "flag": "🇳🇴",
+    },
+    # ── DINAMARCA — Superliga ──
+    "den.1": {
+        "o25_old": 0.523, "o25_rate": 0.551, "avg_goals": 2.83,
+        "trend": "⬆️ Subiendo +2.8%",
+        "perfil": "Liga física con buen desarrollo ofensivo. Midtjylland y Copenhague siempre buscan el arco. Muy predecible para O2.5.",
+        "under_value": False,
+        "delta": +0.028,
+        "flag": "🇩🇰",
+    },
+    # ── PRIMEIRA LIGA — TRAMPA: inflada por los 3 grandes ──
+    "por.1": {
+        "o25_old": 0.489, "o25_rate": 0.512, "avg_goals": 2.75,
+        "trend": "⬆️ Subiendo +2.3%",
+        "perfil": "Liga Trampa. Promedio inflado porque Sporting/Benfica/Porto golean a los demás. Partido entre 8°-12° tabla → Under 2.5 o Under 1.5 casi asegurado.",
+        "under_value": False,
+        "delta": +0.023,
+        "flag": "🇵🇹",
+    },
+    "por.2": {
+        "o25_old": 0.488, "o25_rate": 0.505, "avg_goals": 2.63,
+        "trend": "⚖️ Estable +1.7%",
+        "perfil": "Segunda portuguesa — equilibrada.",
+        "under_value": False,
+        "delta": +0.017,
+        "flag": "🇵🇹",
+    },
+    # ── PRO LEAGUE BÉLGICA ──
+    "bel.1": {
+        "o25_old": 0.552, "o25_rate": 0.574, "avg_goals": 2.93,
+        "trend": "🔥 Alta +2.2%",
+        "perfil": "Liga ofensiva y mercado menos eficiente que las grandes. Buen valor en Over.",
+        "under_value": False,
+        "delta": +0.022,
+        "flag": "🇧🇪",
+    },
+    # ── SÜPER LIG ──
+    "tur.1": {
+        "o25_old": 0.532, "o25_rate": 0.550, "avg_goals": 2.81,
+        "trend": "⚖️ Estable +1.8%",
+        "perfil": "Alta varianza. Galatasaray/Fenerbahce muy ofensivos. Media tabla defiende mejor.",
+        "under_value": False,
+        "delta": +0.018,
+        "flag": "🇹🇷",
+    },
+    # ── PREMIERSHIP ESCOCIA ──
+    "sco.1": {
+        "o25_old": 0.528, "o25_rate": 0.544, "avg_goals": 2.78,
+        "trend": "⚖️ Estable +1.6%",
+        "perfil": "Celtic domina y mete goles. Sin Celtic/Rangers el Over baja notoriamente.",
+        "under_value": False,
+        "delta": +0.016,
+        "flag": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    },
+    "sco.2": {
+        "o25_old": 0.478, "o25_rate": 0.498, "avg_goals": 2.59,
+        "trend": "⚖️ Estable +2.0%",
+        "perfil": "División escocesa — partidos cerrados.",
+        "under_value": True,
+        "delta": +0.020,
+        "flag": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    },
+    # ── LIGA MX — delanteros extranjeros vs defensas locales ──
+    "mex.1": {
+        "o25_old": 0.485, "o25_rate": 0.541, "avg_goals": 2.78,
+        "trend": "⬆️ Subiendo +5.6%",
+        "perfil": "Formato de Play-In/Liguilla obliga a arriesgar más. Escasez de defensas élite frente a delanteros extranjeros bien pagados. Muy buen mercado para Ambos Anotan.",
+        "under_value": False,
+        "delta": +0.056,
+        "flag": "🇲🇽",
+    },
+    "mex.2": {
+        "o25_old": 0.495, "o25_rate": 0.514, "avg_goals": 2.65,
+        "trend": "⚖️ Estable +1.9%",
+        "perfil": "Expansión MX — menos calidad, más errores.",
+        "under_value": False,
+        "delta": +0.019,
+        "flag": "🇲🇽",
+    },
+    # ── MLS — efecto Messi, defensas de bajo presupuesto ──
+    "usa.1": {
+        "o25_old": 0.554, "o25_rate": 0.595, "avg_goals": 2.92,
+        "trend": "⬆️ Subiendo +4.1%",
+        "perfil": "Regla de oro MLS: mucho dinero en atacantes (Efecto Messi/Suárez y Jugadores Franquicia), defensas de bajo presupuesto vulnerables. En subida fuerte.",
+        "under_value": False,
+        "delta": +0.041,
+        "flag": "🇺🇸",
+    },
+    # ── BRASILEIRÃO — cansancio por calendario brutal ──
+    "bra.1": {
+        "o25_old": 0.442, "o25_rate": 0.468, "avg_goals": 2.48,
+        "trend": "⚖️ Estable +2.6%",
+        "perfil": "Mucho talento pero calendario brutal (cada 3 días). Cansancio físico y viajes largos hacen que equipos prioricen orden defensivo. Territorio de Unders.",
+        "under_value": True,
+        "delta": +0.026,
+        "flag": "🇧🇷",
+    },
+    # ── LIGA ARGENTINA — Rey del Under ──
+    "arg.1": {
+        "o25_old": 0.415, "o25_rate": 0.394, "avg_goals": 2.18,
+        "trend": "❄️ Bajando -2.1%",
+        "perfil": "El Rey del Under. Torneo larguísimo, presión enorme de hinchadas, canchas difíciles, filosofía 'meter la pierna'. Ver 3 goles en Argentina es un milagro estadístico.",
+        "under_value": True,
+        "delta": -0.021,
+        "flag": "🇦🇷",
+    },
+    # ── LIGAS SUDAMÉRICA ──
+    "col.1": {
+        "o25_old": 0.480, "o25_rate": 0.495, "avg_goals": 2.59,
+        "trend": "⚖️ Estable +1.5%",
+        "perfil": "Liga colombiana — equilibrada. Partidos físicos en altura afectan el juego.",
+        "under_value": False,
+        "delta": +0.015,
+        "flag": "🇨🇴",
+    },
+    "chi.1": {
+        "o25_old": 0.458, "o25_rate": 0.472, "avg_goals": 2.47,
+        "trend": "⬇️ Baja +1.4%",
+        "perfil": "Liga más defensiva de Sudamérica. Under tiene valor histórico claro.",
+        "under_value": True,
+        "delta": +0.014,
+        "flag": "🇨🇱",
+    },
+    "ecu.1": {
+        "o25_old": 0.472, "o25_rate": 0.488, "avg_goals": 2.55,
+        "trend": "⚖️ Estable +1.6%",
+        "perfil": "Liga ecuatoriana — física, partidos cerrados en altura.",
+        "under_value": True,
+        "delta": +0.016,
+        "flag": "🇪🇨",
+    },
+    # ── CENTROAMÉRICA — defensivas, Under dominante ──
+    "cos.1": {
+        "o25_old": 0.438, "o25_rate": 0.455, "avg_goals": 2.39,
+        "trend": "❄️ Baja +1.7%",
+        "perfil": "Liga Costarricense — defensiva. Alajuelense y Saprissa dominan con pocos goles.",
+        "under_value": True,
+        "delta": +0.017,
+        "flag": "🇨🇷",
+    },
+    "gtm.1": {
+        "o25_old": 0.422, "o25_rate": 0.438, "avg_goals": 2.29,
+        "trend": "❄️ Muy Baja +1.6%",
+        "perfil": "Liga guatemalteca — muy defensiva. Under casi siempre con valor.",
+        "under_value": True,
+        "delta": +0.016,
+        "flag": "🇬🇹",
+    },
+    "hnd.1": {
+        "o25_old": 0.428, "o25_rate": 0.442, "avg_goals": 2.32,
+        "trend": "❄️ Muy Baja +1.4%",
+        "perfil": "Liga hondureña — cerrada y física.",
+        "under_value": True,
+        "delta": +0.014,
+        "flag": "🇭🇳",
+    },
+    "slv.1": {
+        "o25_old": 0.418, "o25_rate": 0.435, "avg_goals": 2.27,
+        "trend": "❄️ Muy Baja +1.7%",
+        "perfil": "Primera División El Salvador — muy defensiva.",
+        "under_value": True,
+        "delta": +0.017,
+        "flag": "🇸🇻",
+    },
+    "pan.1": {
+        "o25_old": 0.410, "o25_rate": 0.428, "avg_goals": 2.23,
+        "trend": "❄️ Muy Baja +1.8%",
+        "perfil": "Liga Panameña — la más defensiva de CONCACAF.",
+        "under_value": True,
+        "delta": +0.018,
+        "flag": "🇵🇦",
+    },
+    # ── UEFA — Champions, Europa, Conference ──
+    "uefa.champions": {
+        "o25_old": 0.545, "o25_rate": 0.582, "avg_goals": 2.98,
+        "trend": "🔥 Alta +3.7%",
+        "perfil": "Nuevo Formato Suizo (2024) generó cruces desiguales potencias vs bombos bajos → más goleadas en fase de liga. Eliminatorias siguen más cerradas.",
+        "under_value": False,
+        "delta": +0.037,
+        "flag": "🇪🇺",
+    },
+    "uefa.cl": {
+        "o25_old": 0.545, "o25_rate": 0.582, "avg_goals": 2.98,
+        "trend": "🔥 Alta +3.7%",
+        "perfil": "Champions League — Formato Suizo 2024. Más goleadas en fase de liga.",
+        "under_value": False,
+        "delta": +0.037,
+        "flag": "🇪🇺",
+    },
+    "uefa.europa": {
+        "o25_old": 0.520, "o25_rate": 0.543, "avg_goals": 2.77,
+        "trend": "⚖️ Estable +2.3%",
+        "perfil": "Europa League — más cerrado que Champions. Equipos priorizan no rotar, juegan a no perder en eliminación directa.",
+        "under_value": False,
+        "delta": +0.023,
+        "flag": "🇪🇺",
+    },
+    "uefa.el": {
+        "o25_old": 0.520, "o25_rate": 0.543, "avg_goals": 2.77,
+        "trend": "⚖️ Estable +2.3%",
+        "perfil": "Europa League — cerrado en fases eliminatorias.",
+        "under_value": False,
+        "delta": +0.023,
+        "flag": "🇪🇺",
+    },
+    "uefa.ecl": {
+        "o25_old": 0.511, "o25_rate": 0.575, "avg_goals": 2.90,
+        "trend": "⬆️ Subiendo +6.4%",
+        "perfil": "Conference League — equipos de ligas exóticas vs media tabla de Inglaterra/Italia. Diferencias de nivel provocan marcadores escandalosos.",
+        "under_value": False,
+        "delta": +0.064,
+        "flag": "🇪🇺",
+    },
+    "concacaf.champions": {
+        "o25_old": 0.518, "o25_rate": 0.560, "avg_goals": 2.82,
+        "trend": "⬆️ Subiendo +4.2%",
+        "perfil": "Expansión del torneo trajo cruces Liga MX/MLS vs defensas semi-amateurs del Caribe. Lluvia de goles en 1ra ronda. Altitud en casa (CDMX, Pachuca) impacta mucho.",
+        "under_value": False,
+        "delta": +0.042,
+        "flag": "🌎",
+    },
+    "concacaf.league": {
+        "o25_old": 0.480, "o25_rate": 0.498, "avg_goals": 2.59,
+        "trend": "⚖️ Estable +1.8%",
+        "perfil": "CONCACAF League — Centroamérica, partidos más cerrados.",
+        "under_value": True,
+        "delta": +0.018,
+        "flag": "🌎",
+    },
+}
+
+def get_league_stats(slug: str) -> dict:
+    """Devuelve estadísticas históricas de la liga. Fallback a valores neutros."""
+    return _LEAGUE_HISTORICAL.get(slug, {
+        "o25_old": 0.500, "o25_rate": 0.510, "avg_goals": 2.65,
+        "trend": "⚖️ Estable", "flag": "🌐",
+        "perfil": "Liga sin datos históricos específicos — usando valores promedio.",
+        "under_value": False, "delta": +0.010,
+    })
+
+def _league_xg_bias(slug: str, raw_o25: float) -> float:
+    """
+    Corrige el xG estimado usando la tasa histórica de Over 2.5 de la liga.
+    Si el modelo dice 55% Over2.5 pero la liga históricamente solo tiene 48%,
+    el modelo se está pasando de optimista → bajamos levemente los xG.
+    
+    Retorna un factor multiplicador (0.88 - 1.12) para ajustar hxg/axg.
+    """
+    stats = get_league_stats(slug)
+    league_rate = stats["o25_rate"]
+    # Diferencia entre lo que predice el modelo y la base histórica
+    delta = raw_o25 - league_rate
+    # Factor de corrección suave: max ±12%
+    correction = 1.0 + (delta * -0.25)  # si el modelo es 10% alto, bajamos 2.5%
+    return max(0.88, min(1.12, correction))
+
+
 
 # Equipos conocidos → su liga real (para copa y competiciones europeas)
 _TEAM_DIVISION: dict = {
@@ -7925,7 +8332,7 @@ def _apply_calibrated_weights(w_base, calibrated):
 
 def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
                        home_id=None, away_id=None,
-                       odd_h=0.0, odd_a=0.0, odd_d=0.0):
+                       odd_h=0.0, odd_a=0.0, odd_d=0.0, slug=""):
     """
     Ensemble mejorado: Dixon-Coles + Poisson BV + Elo + H2H + Mercado (Bayesian).
 
@@ -8073,10 +8480,28 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
             if _s > 0: ph /= _s; pd /= _s; pa /= _s
     except: pass
 
+    # ── Corrección histórica de liga — ajusta Over/Under según base real ──
+    _raw_o25 = 0.5*dc["o25"]+0.5*bvp["o25"]
+    _raw_o35 = 0.5*dc["o35"]+0.5*bvp["o35"]
+    _slug_ens = slug if slug else ""
+    _league_stats_ens = get_league_stats(_slug_ens)
+    _league_o25_rate  = _league_stats_ens["o25_rate"]
+    _league_avg_goals = _league_stats_ens["avg_goals"]
+    # Blend: 80% modelo propio + 20% tasa histórica de la liga
+    _blended_o25 = 0.80 * _raw_o25 + 0.20 * _league_o25_rate
+    # Over 3.5 también ajustado con la misma dirección relativa
+    _direction = _blended_o25 - _raw_o25
+    _blended_o35 = max(0.05, min(0.85, _raw_o35 + _direction * 0.7))
+    # Under también se recalcula
+    _blended_u25 = max(0.10, min(0.90, 1 - _blended_o25))
+    _blended_u35 = max(0.10, min(0.90, 1 - _blended_o35))
+
     return {
         "ph":ph,"pd":pd,"pa":pa,
-        "o15":dc["o15"],"o25":0.5*dc["o25"]+0.5*bvp["o25"],
-        "o35":0.5*dc["o35"]+0.5*bvp["o35"],
+        "o15":dc["o15"],"o25":round(_blended_o25,4),
+        "o35":round(_blended_o35,4),
+        "u25":round(_blended_u25,4),
+        "u35":round(_blended_u35,4),
         "btts":0.5*dc["btts"]+0.5*bvp["btts"],
         "cs_h":dc["cs_h"],"cs_a":dc["cs_a"],
         "hxg":round(hxg,2),"axg":round(axg,2),
@@ -8088,6 +8513,11 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
         "rho_used": round(rho,3),
         "weights": w,
         "model":"Ensemble DC+BVP+Elo+H2H+Mkt (dinámico)",
+        "league_o25_rate": round(_league_o25_rate,3),
+        "league_avg_goals": _league_avg_goals,
+        "league_trend": _league_stats_ens["trend"],
+        "league_perfil": _league_stats_ens["perfil"],
+        "league_under_value": _league_stats_ens.get("under_value",False),
     }
 
 
@@ -9538,7 +9968,7 @@ def escanear_y_enviar(matches):
         axg = _cup_enriched_xg(m, False, hf, af)
         h2h = get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"])
         h2s = h2h_stats(h2h, m["home"], m["away"])
-        mc  = ensemble_football(hxg, axg, h2s, hf, af, m["home_id"], m["away_id"], odd_h=m.get("odd_h",0), odd_a=m.get("odd_a",0), odd_d=m.get("odd_d",0))
+        mc  = ensemble_football(hxg, axg, h2s, hf, af, m["home_id"], m["away_id"], odd_h=m.get("odd_h",0), odd_a=m.get("odd_a",0), odd_d=m.get("odd_d",0), slug=m.get("slug",""))
         dp  = diamond_engine(mc, h2s, hf, af)
         best = _best_market_soccer(m, dp, mc)
         if best and best[3] >= 0.05:  # edge mínimo 5%
@@ -9554,20 +9984,15 @@ def escanear_y_enviar(matches):
     msg  = "🦅 *THE GAMBLERS DEN | ESCÁNER DIARIO* 🦅\n"
     msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} picks_\n\n"
     for p in sorted(picks, key=lambda x:-x["pick_prob"]):
-        msg += f"🚨 *PICK DIAMANTE:* {p['league']}\n"
-        msg += f"⚽ {p['home']} vs {p['away']}\n"
-        msg += f"👉 *{p.get('pick_label','?')}* — {p['pick_prob']*100:.1f}%"
-        if p.get('pick_odd',0)>1: msg += f" @{p['pick_odd']:.2f}"
-        msg += f" | Edge: {p['edge']*100:.1f}%\n"
+        msg += f"🚨 *{p['league']}*\n"
+        msg += f"⚽ *{p['home']}* vs *{p['away']}*\n"
         msg += f"🕒 {p['hora']} CDMX\n"
-        msg += f"👉 *Local gana @{p['odd_h']}*\n"
-        msg += f"📊 Prob: {p['dp']['ph']*100:.1f}%  •  Edge: *{p['edge']*100:.1f}%*\n"
-        # Sharp signal from Ensemble consensus
-        consensus = p["mc"].get("consensus","N/D")
-        msg += f"🔬 Consenso modelos: {consensus}\n"
-        msg += f"💰 Kelly: {p['kelly']:.1f}% bankroll\n"
-        msg += "━━━━━━━━━━━━━━━━━━━\n"
-    msg += "\n_Que la varianza esté a nuestro favor._ 🎲"
+        msg += f"\n🎯 *{p.get('pick_label','?')}* — {p['pick_prob']*100:.1f}%"
+        if p.get('pick_odd',0)>1: msg += f" @{p['pick_odd']:.2f}"
+        msg += f" | Edge {p['edge']*100:.1f}%\n"
+        msg += f"📐 xG proy: {p['mc'].get('hxg','?')} — {p['mc'].get('axg','?')}\n"
+        msg += "━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "_Que la varianza esté a nuestro favor._ 🎲"
     tg_send(msg)
     return len(picks)
 
@@ -9733,34 +10158,45 @@ def render_action_network_nba(home, away, ou_line=0):
                 f"🏥 <b>Lesiones:</b> {inj_html}</div>", unsafe_allow_html=True)
 
 def escanear_nba_y_enviar(games):
-    """Escanea NBA y manda picks O/U con edge > 4% a Telegram."""
+    """Escanea NBA y manda el mejor O/U + mejor ML por probabilidad a Telegram."""
     picks = []
     for g in games:
         if g["state"] != "pre": continue
-        res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
-        best_p  = max(res["p_over"], res["p_under"])
-        is_over = res["p_over"] > res["p_under"]
-        edge    = best_p - 0.5
-        if edge >= 0.04:
-            picks.append({**g, "res": res, "best_p": best_p,
-                          "pick": f"{'Over' if is_over else 'Under'} {res['line']}",
-                          "edge": edge})
+        try:
+            res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+        except:
+            res = {"p_over":0.52,"p_under":0.48,"line":g.get("ou_line",220.5),
+                   "p_h_win":0.55,"proj":220,"net_h":0,"net_a":0}
+        ph = res.get("p_h_win", 0.55); pa = 1 - ph
+        ou_p   = max(res["p_over"], res["p_under"])
+        ou_lbl = f"{'🔥 Over' if res['p_over'] >= res['p_under'] else '❄️ Under'} {res['line']}"
+        ml_p   = max(ph, pa)
+        ml_lbl = f"{'🏠' if ph >= pa else '✈️'} {(g['home'] if ph >= pa else g['away'])[:18]} ML"
+        ml_odd = (g.get("odd_h",0) if ph >= pa else g.get("odd_a",0)) or 1.91
+        if ou_p >= 0.52 or ml_p >= 0.52:
+            picks.append({**g, "res": res,
+                "ou_p": ou_p, "ou_lbl": ou_lbl,
+                "ml_p": ml_p, "ml_lbl": ml_lbl, "ml_odd": ml_odd,
+                "ph": ph, "pa": pa, "best_p": max(ou_p, ml_p)})
     if not picks:
-        tg_send("🏀 *NBA Scanner:* Sin picks O/U con valor hoy.")
+        tg_send("🏀 *NBA Scanner:* Sin partidos con señal hoy.")
         return 0
     msg  = "🏀 *THE GAMBLERS DEN | NBA PICKS* 🏀\n"
-    msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} picks_\n\n"
-    for p in sorted(picks, key=lambda x: -x["edge"]):
-        msg += f"🚨 {p['away']} @ {p['home']}\n"
+    msg += f"_{datetime.now(CDMX).strftime('%d/%m/%Y')} — {len(picks)} juegos_\n\n"
+    for p in sorted(picks, key=lambda x: -x["best_p"]):
+        res_p = p["res"]
+        _oh = p.get("odd_h",0) or 1.91; _oa = p.get("odd_a",0) or 1.91
+        msg += f"🏀 *{p['away']}* @ *{p['home']}*\n"
         msg += f"🕒 {p['hora']} CDMX\n"
-        msg += f"👉 *{p['pick']}* | Proy: {p['res']['proj']} pts\n"
-        msg += f"📊 Prob: {p['best_p']*100:.1f}%  •  Edge: *{p['edge']*100:.1f}%*\n"
-        _an = get_action_network_nba(p["home"], p["away"])
-        if _an.get("over_bets_pct"): msg += f"📊 AN: Over {_an['over_bets_pct']:.0f}% bets · {_an['over_money_pct']:.0f}% money\n"
-        if _an.get("steam_move"): msg += "💨 STEAM MOVE detectado\n"
-        if _an.get("reverse_move"): msg += "🔄 REVERSE LINE MOVEMENT\n"
-        msg += "━━━━━━━━━━━━━━━━━━━\n"
-    msg += "\n_Que la varianza esté a nuestro favor._ 🎲"
+        # Pick principal (mayor prob entre O/U y ML)
+        if p["ou_p"] >= p["ml_p"]:
+            _pick_lbl = p["ou_lbl"]; _pick_p = p["ou_p"]; _pick_odd = "1.91"
+        else:
+            _pick_lbl = p["ml_lbl"]; _pick_p = p["ml_p"]; _pick_odd = f"{p['ml_odd']:.2f}"
+        msg += f"\n🎯 *{_pick_lbl}* — {_pick_p*100:.1f}% @{_pick_odd}\n"
+        msg += f"📐 Proy: *{res_p.get('proj','?')}* pts | Línea: {res_p['line']}\n"
+        msg += "━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "_Que la varianza esté a nuestro favor._ 🎲"
     tg_send(msg)
     return len(picks)
 
@@ -12440,7 +12876,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                                         m["home_id"], m["away_id"],
                                         odd_h=m.get("odd_h",0),
                                         odd_a=m.get("odd_a",0),
-                                        odd_d=m.get("odd_d",0))
+                                        odd_d=m.get("odd_d",0),
+                                        slug=m.get("slug",""))
                 dp  = diamond_engine(mc, h2s, hf, af, match=m)
 
                 # ── Modelo exclusivo KR: Dixon-Coles bivariado ──
@@ -12467,43 +12904,76 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 _of_med_kr = 2.5 <= _xg_total_kr < 3.0
 
                 _home = m.get("home","?"); _away = m.get("away","?")
-                # ── Jerarquía King Rongo: ML > DO > O2.5 > AA solo si los demás son bajos ──
-                _ninguno_kr = max(_ph,_pa) < 0.52 and _do_h < 0.72 and _do_a < 0.72 and _o25 < 0.54
-                _best_ml_kr = max(_ph, _pa)
+                _hn = _home[:14]; _an = _away[:14]
 
-                if _pa >= 0.55 and _pa > _ph:
-                    lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
-                elif _ph >= 0.55:
-                    lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
-                elif _pa >= 0.55:
-                    lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
-                elif _do_h >= 0.76 and _ph >= 0.48:
-                    lbl, prob, odd, mkt = f"🔵 {_home[:14]} o Emp", _do_h, 0, "DO"
-                elif _do_a >= 0.76 and _pa >= 0.43:
-                    lbl, prob, odd, mkt = f"🟣 {_away[:14]} o Emp", _do_a, 0, "DO"
-                elif _muy_of_kr and _o25 >= 0.56:
-                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif _o25 >= 0.54:
-                    lbl, prob, odd, mkt = "⚽ Over 2.5", _o25, 0, "O/U"
-                elif (1-_o25) >= 0.60 and _xg_total_kr < 2.2:
-                    lbl, prob, odd, mkt = "🧱 Under 2.5", 1-_o25, 0, "O/U"
-                elif (1-_o15) >= 0.55 and _xg_total_kr < 1.5:
-                    lbl, prob, odd, mkt = "🧱 Under 1.5", 1-_o15, 0, "O/U"
-                elif _best_ml_kr >= 0.55:
-                    if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
-                    else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
-                elif _ninguno_kr and _eq_kr and _aa >= 0.52:
-                    lbl, prob, odd, mkt = "⚡ Ambos Anotan", _aa, 0, "BTTS"
-                else:
-                    # fallback solo si hay alguien decente
-                    if max(_ph, _pa) < 0.50: continue  # nadie suficientemente bueno
-                    if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
-                    else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
-                    # fallback: siempre ML
-                    if _ph >= _pa: lbl, prob, odd, mkt = f"🏠 {_home} gana", _ph, m.get("odd_h",0), "1X2"
-                    else:          lbl, prob, odd, mkt = f"✈️ {_away} gana", _pa, m.get("odd_a",0), "1X2"
+                # ── King Rongo: variables extendidas desde mc50k ──
+                _gcm_h_kr  = float(mc.get("gcm_h",0) or min(0.95, _ph*1.18+_pd*0.35))
+                _gcm_a_kr  = float(mc.get("gcm_a",0) or min(0.95, _pa*1.18+_pd*0.35))
+                _h_o05_kr  = float(mc.get("h_o05",0)); _h_u05_kr = float(mc.get("h_u05",0))
+                _h_o15_kr  = float(mc.get("h_o15",0)); _h_u15_kr = float(mc.get("h_u15",0))
+                _a_o05_kr  = float(mc.get("a_o05",0)); _a_u05_kr = float(mc.get("a_u05",0))
+                _a_o15_kr  = float(mc.get("a_o15",0)); _a_u15_kr = float(mc.get("a_u15",0))
+                _u25_kr    = 1 - _o25
+                _o35_kr    = float(mc.get("o35",0))
+                _u35_kr    = float(mc.get("u35", max(0, 1-_o35_kr)))
 
-                if prob < 0.50: continue  # solo picks con prob real ≥50%
+                # ── Cheat Sheet de liga: ajustar probs con datos históricos reales ──
+                _kr_slug  = m.get("slug","")
+                _kr_lst   = get_league_stats(_kr_slug)
+                _kr_lo25  = _kr_lst["o25_rate"]
+                _kr_uval  = _kr_lst.get("under_value", False)
+                _kr_delta = _kr_lst.get("delta", 0.0)
+                _kr_goals = _kr_lst.get("avg_goals", 2.65)
+                # Ajuste suave O/U según base histórica (max ±3.5%)
+                _kr_ou_adj = max(-0.035, min(0.035, (_kr_lo25 - 0.51) * 0.22))
+                _o25    = max(0.06, min(0.91, _o25    + _kr_ou_adj))
+                _u25_kr = max(0.06, min(0.91, 1 - _o25))
+                _o35_kr = max(0.04, min(0.78, _o35_kr + _kr_ou_adj * 0.65))
+                _u35_kr = max(0.06, min(0.91, 1 - _o35_kr))
+                if _kr_uval:
+                    _u25_kr = min(0.87, _u25_kr + 0.022)
+                    _o25    = max(0.09, 1 - _u25_kr)
+                if _kr_delta > 0.05:
+                    _o25    = min(0.90, _o25 + 0.012)
+                    _u25_kr = max(0.07, 1 - _o25)
+                elif _kr_delta < -0.02:
+                    _o25    = max(0.07, _o25 - 0.014)
+                    _u25_kr = max(0.07, 1 - _o25)
+                _kr_hist_confirms_over  = _kr_lo25 >= 0.54 and _o25 >= 0.52
+                _kr_hist_confirms_under = _kr_uval and _u25_kr >= 0.50
+
+                # ── Tabla completa de mercados King Rongo — selección por mayor prob ──
+                _kr_all_mkts = [
+                    (f"🏠 {_hn} gana",           _ph,       m.get("odd_h",0), "1X2"),
+                    (f"✈️ {_an} gana",           _pa,       m.get("odd_a",0), "1X2"),
+                    ("🤝 Empate",                 _pd,       m.get("odd_d",0), "1X2"),
+                    (f"🔵 DO {_hn}",             _do_h,     1.30,             "DO"),
+                    (f"🟣 DO {_an}",             _do_a,     1.50,             "DO"),
+                    ("⚽ Over 1.5",              _o15,      1.35,             "OU"),
+                    ("⚽ Over 2.5",              _o25,      1.85,             "OU"),
+                    ("⚽⚽ Over 3.5",            _o35_kr,   2.50,             "OU"),
+                    ("🔒 Under 2.5",            _u25_kr,   2.00,             "OU"),
+                    ("🔒🔒 Under 3.5",          _u35_kr,   1.50,             "OU"),
+                    ("⚡ Ambos Anotan",          _aa,       1.75,             "AA"),
+                    (f"🌓 {_hn} gana c/mitad",  _gcm_h_kr, 1.55,             "GCM"),
+                    (f"🌓 {_an} gana c/mitad",  _gcm_a_kr, 1.65,             "GCM"),
+                    (f"🎯 {_hn} +0.5",          _h_o05_kr, 1.55,             "TG"),
+                    (f"🛡️ {_hn} -0.5",         _h_u05_kr, 2.10,             "TG"),
+                    (f"🎯🎯 {_hn} +1.5",        _h_o15_kr, 2.20,             "TG"),
+                    (f"🛡️ {_hn} -1.5",         _h_u15_kr, 1.65,             "TG"),
+                    (f"🎯 {_an} +0.5",          _a_o05_kr, 1.65,             "TG"),
+                    (f"🛡️ {_an} -0.5",         _a_u05_kr, 2.00,             "TG"),
+                    (f"🎯🎯 {_an} +1.5",        _a_o15_kr, 2.40,             "TG"),
+                    (f"🛡️ {_an} -1.5",         _a_u15_kr, 1.75,             "TG"),
+                ]
+                _kr_all_mkts = [(l,p,o,g) for l,p,o,g in _kr_all_mkts if p >= 0.10]
+                if not _kr_all_mkts: continue
+
+                # Selección: MAYOR PROBABILIDAD
+                _best_kr = max(_kr_all_mkts, key=lambda x: x[1])
+                lbl, prob, odd, mkt = _best_kr[0], _best_kr[1], _best_kr[2], _best_kr[3]
+
+                if prob < 0.40: continue  # umbral mínimo razonable
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -12527,6 +12997,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                               "xG H":       round(hxg,2),
                               "xG A":       round(axg,2)},
                     "hxg":hxg,"axg":axg,
+                    "all_markets": _kr_all_mkts,
                 }
                 # CLV silencioso ajusta score KR
                 try:
@@ -12535,7 +13006,19 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                         m.get("odd_h",0), prob)
                     c["score"] = _kr_score(prob, edge, spread, kelly, contra) + _kr_clv * 0.5
                 except:
-                    c["score"] = _kr_score(prob, edge, spread, kelly, contra)
+                    _base_score = _kr_score(prob, edge, spread, kelly, contra)
+                _bonus_conv = 0.0
+                if "Over" in lbl and _kr_hist_confirms_over:    _bonus_conv += 0.7
+                if "Under" in lbl and _kr_hist_confirms_under:  _bonus_conv += 0.9
+                if "Under" in lbl and _kr_lo25 >= 0.60:         _bonus_conv -= 0.5
+                if "Over"  in lbl and _kr_uval:                 _bonus_conv -= 0.6
+                if "Over"  in lbl and _xg_total_kr >= 2.9:      _bonus_conv += 0.4
+                if "Under" in lbl and _xg_total_kr <= 2.1:      _bonus_conv += 0.5
+                if "Over"  in lbl and _kr_delta > 0.05:         _bonus_conv += 0.3
+                c["score"]       = max(0.0, _base_score + _bonus_conv)
+                c["hist_signal"] = 1 if _kr_hist_confirms_over else (-1 if _kr_hist_confirms_under else 0)
+                c["league_o25"]  = round(_kr_lo25*100,1)
+                c["league_uval"] = _kr_uval
                 # 📊 POSICIÓN EN TABLA → impacta probabilidad
                 try:
                     _slug_kr = m.get("slug", "")
@@ -12612,20 +13095,32 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     pace_note = ""
 
                 mkts= [
-                    (f"🔥 Over {line}",   p_over_kr,  0,               "O/U"),
-                    (f"❄️  Under {line}",  p_under_kr, 0,               "O/U"),
-                    (f"🏠 {g['home']}",    p_h,        g.get("odd_h",0),"ML"),
-                    (f"✈️  {g['away']}",    p_a,        g.get("odd_a",0),"ML"),
+                    (f"🔥 Over {line}",    p_over_kr,  1.91,                          "O/U"),
+                    (f"❄️ Under {line}",   p_under_kr, 1.91,                          "O/U"),
+                    (f"🏠 {g['home'][:16]}", p_h,      g.get("odd_h",0) or 1.91,     "ML"),
+                    (f"✈️ {g['away'][:16]}", p_a,      g.get("odd_a",0) or 1.91,     "ML"),
                 ]
-                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.50]
+                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.43]
                 if not mkts: continue
-                best = max(mkts, key=lambda x: _kr_edge(x[1],x[2]) if x[2]>1 else x[1]-0.48)
+                best = max(mkts, key=lambda x: x[1])
                 lbl,prob,odd,mkt = best
+                _kr_companion = max(
+                    [x for x in mkts if x[3] != mkt],
+                    key=lambda x: x[1], default=None)
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 spread = round((1-abs(p_over_kr-p_under_kr))*50, 1)
                 contra = abs(p_over_kr-p_under_kr) < 0.08
                 ce,cl,cc = _kr_conf(prob, edge, spread)
+                _kr_nba_all = [
+                    (f"🔥 Over {line}",    p_over_kr,  1.91,             "O/U"),
+                    (f"❄️ Under {line}",   p_under_kr, 1.91,             "O/U"),
+                    (f"🏠 {g['home'][:16]}", p_h,      g.get("odd_h",0) or 1.91, "ML"),
+                    (f"✈️ {g['away'][:16]}", p_a,      g.get("odd_a",0) or 1.91, "ML"),
+                ]
+                _kr_nba_all = [(l,p,o,t) for l,p,o,t in _kr_nba_all if p >= 0.10]
+                _kr_comp_str = (f"{_kr_companion[0]} ({_kr_companion[1]*100:.0f}%)"
+                                if _kr_companion else "")
                 c = {
                     "deporte":"🏀 NBA","sport":"nba",
                     "label":f"{g['away']} @ {g['home']}",
@@ -12640,6 +13135,10 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                               "Over%":   round(p_over_kr*100,1),
                               "Under%":  round(p_under_kr*100,1),
                               "ML Away": round(p_a*100,1)},
+                    "all_markets": _kr_nba_all,
+                    "companion": _kr_comp_str,
+                    "p_over": p_over_kr, "p_under": p_under_kr,
+                    "p_h": p_h, "p_a": p_a, "line": line,
                 }
                 c["score"] = _kr_score(prob, edge, spread, kelly, contra)
                 # 🌙 SmallDays NBA
@@ -13115,6 +13614,14 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
     edge_c   = "#00ff88" if edge >= 0 else "#ff4444"
     units    = round(kelly / 100 * 10, 1)
     meter_w  = min(int(prob * 100), 100)
+    # Pick acompañante (NBA: ML + O/U lado a lado)
+    _comp     = el_pick.get("companion", "")
+    _sport    = el_pick.get("sport","")
+    _mkt_type = el_pick.get("mkt_type","")
+    # Señal del cheat sheet de liga
+    _hist_sig  = el_pick.get("hist_signal", 0)
+    _league_o25= el_pick.get("league_o25", 0)
+    _league_uv = el_pick.get("league_uval", False)
 
     # ── 1. PICK PRINCIPAL — siempre visible primero ──
     st.markdown(f"""
@@ -13176,6 +13683,47 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
 
 </div>
 """, unsafe_allow_html=True)
+
+    # ── Companion pick NBA: siempre mostrar ML al lado del O/U ──
+    if _comp and _sport == "nba":
+        _comp_color = "#00ccff" if "ML" in _comp else "#00ff88"
+        _comp_icon  = "🏀" if "ML" in _comp else ("🔥" if "Over" in _comp else "❄️")
+        st.markdown(
+            f"<div style='display:flex;align-items:center;gap:8px;background:#050e14;"
+            f"border:1px solid {_comp_color}44;border-radius:6px;padding:7px 12px;margin-bottom:5px'>"
+            f"<span style='font-size:0.72rem;color:{_comp_color};font-weight:700;letter-spacing:.07em'>"
+            f"TAMBIÉN CONSIDERAR</span>"
+            f"<span style='flex:1;text-align:center;font-size:1.0rem;font-weight:700;color:{_comp_color}'>"
+            f"{_comp_icon} {_comp}</span>"
+            f"</div>", unsafe_allow_html=True)
+    _kr_mkts_ui = el_pick.get("all_markets", [])
+    if _kr_mkts_ui:
+        _GROUP_COLOR_KR = {"1X2":"#00ccff","DO":"#7c00ff","OU":"#00ff88","AA":"#FFD700","GCM":"#ff6600","TG":"#ff44aa"}
+        _GROUP_ICON_KR  = {"1X2":"⚽","DO":"🔵","OU":"📊","AA":"⚡","GCM":"🌓","TG":"🎯"}
+        _mkts_sorted_kr = sorted(_kr_mkts_ui, key=lambda x:-x[1])
+        def _pcol_kr(p): return "#00ff88" if p>=0.75 else ("#FFD700" if p>=0.62 else ("#ff6600" if p>=0.50 else ("#ff4444" if p>=0.38 else "#666")))
+        _rows_kr = ""
+        for i, (ml, mp, mo, mg) in enumerate(_mkts_sorted_kr):
+            _gc = _GROUP_COLOR_KR.get(mg,"#888"); _gi = _GROUP_ICON_KR.get(mg,"•"); _pc2 = _pcol_kr(mp)
+            _star = "✦ " if i==0 else ""; _bg = "#140a00" if i==0 else ("#0d0d0d" if i%2==0 else "#111")
+            _rows_kr += (
+                f"<div style='display:flex;align-items:center;gap:8px;padding:5px 8px;"
+                f"background:{_bg};border-radius:5px;margin-bottom:2px;"
+                f"border-left:3px solid {_gc if i==0 else _gc+'44'}'>"
+                f"<span style='font-size:0.85rem;min-width:18px'>{_gi}</span>"
+                f"<div style='flex:1;min-width:0'>"
+                f"<div style='font-size:0.8rem;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_star}{ml}</div>"
+                f"<div style='height:3px;background:#1a1a1a;border-radius:2px;margin-top:2px'><div style='width:{int(mp*100)}%;height:3px;background:{_pc2};border-radius:2px'></div></div>"
+                f"</div>"
+                f"<span style='font-size:0.98rem;font-weight:900;color:{_pc2};min-width:40px;text-align:right'>{mp*100:.1f}%</span>"
+                f"</div>"
+            )
+        st.markdown(
+            f"<div style='background:#0d0900;border:1px solid #FFD70022;border-radius:8px;padding:10px 10px 6px;margin:8px 0 4px'>"
+            f"<div style='font-size:0.7rem;color:#4e4030;letter-spacing:.09em;font-weight:700;margin-bottom:6px'>📊 TODOS LOS MERCADOS — ordenados por probabilidad</div>"
+            + _rows_kr +
+            f"</div>",
+            unsafe_allow_html=True)
 
     # ── 2. MODELOS — pills separadas ──
     models = el_pick.get("models", {})
@@ -14089,21 +14637,50 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
                 ph = min(0.92, ph + tbl.get("delta_h",0))
                 pa = min(0.92, pa + tbl.get("delta_a",0))
             except: pass
-            # Todos los mercados candidatos
+            # ── Papi: variables extendidas desde mc ──
+            try:
+                mc_p = mc if "h_o05" in mc else mc50k(hxg if "hxg" in dir() else 1.2, axg if "axg" in dir() else 1.0)
+            except:
+                mc_p = {}
+            _hn_p = m.get("home","?")[:14]; _an_p = m.get("away","?")[:14]
+            _pd_p = pd; _do_h_p = min(0.95, ph+pd); _do_a_p = min(0.95, pa+pd)
+            _o35_p  = float(mc_p.get("o35",0) or 0)
+            _u25_p  = 1 - o25; _u35_p = float(mc_p.get("u35", max(0,1-_o35_p)))
+            _gcm_h_p = float(mc_p.get("gcm_h",0) or min(0.95, ph*1.18+pd*0.35))
+            _gcm_a_p = float(mc_p.get("gcm_a",0) or min(0.95, pa*1.18+pd*0.35))
+            _h_o05_p = float(mc_p.get("h_o05",0)); _h_u05_p = float(mc_p.get("h_u05",0))
+            _h_o15_p = float(mc_p.get("h_o15",0)); _h_u15_p = float(mc_p.get("h_u15",0))
+            _a_o05_p = float(mc_p.get("a_o05",0)); _a_u05_p = float(mc_p.get("a_u05",0))
+            _a_o15_p = float(mc_p.get("a_o15",0)); _a_u15_p = float(mc_p.get("a_u15",0))
+
+            # Todos los mercados candidatos — selección por mayor probabilidad
             for bl, bp, bo in [
-                (f"{m.get('home','?')} Gana",        ph,             m.get("odd_h",0)),
-                (f"{m.get('away','?')} Gana",        pa,             m.get("odd_a",0)),
-                (f"Over 2.5",                         o25,            1.90),
-                (f"Over 1.5",                         o15,            1.55),
-                (f"Under 2.5",                        1-o25,          1.90),
-                (f"Under 1.5",                        1-o15,          1.55),
-                (f"{m.get('home','?')} o Empate",    min(0.95,ph+pd),1.40),
-                (f"{m.get('away','?')} o Empate",    min(0.95,pa+pd),1.40),
+                (f"{_hn_p} Gana",                ph,          m.get("odd_h",0)),
+                (f"{_an_p} Gana",                pa,          m.get("odd_a",0)),
+                ("🤝 Empate",                     _pd_p,       m.get("odd_d",0)),
+                (f"Over 2.5",                     o25,         1.85),
+                (f"Over 1.5",                     o15,         1.35),
+                (f"Over 3.5",                     _o35_p,      2.50),
+                (f"Under 2.5",                    _u25_p,      2.00),
+                (f"Under 3.5",                    _u35_p,      1.50),
+                (f"{_hn_p} o Empate",            _do_h_p,     1.30),
+                (f"{_an_p} o Empate",            _do_a_p,     1.50),
+                (f"🌓 {_hn_p} gana c/mitad",     _gcm_h_p,    1.55),
+                (f"🌓 {_an_p} gana c/mitad",     _gcm_a_p,    1.65),
+                (f"🎯 {_hn_p} +0.5 goles",       _h_o05_p,    1.55),
+                (f"🛡️ {_hn_p} -0.5 (sin gol)",  _h_u05_p,    2.10),
+                (f"🎯🎯 {_hn_p} +1.5 goles",     _h_o15_p,    2.20),
+                (f"🛡️ {_hn_p} -1.5 (0-1 gol)", _h_u15_p,    1.65),
+                (f"🎯 {_an_p} +0.5 goles",       _a_o05_p,    1.65),
+                (f"🛡️ {_an_p} -0.5 (sin gol)",  _a_u05_p,    2.00),
+                (f"🎯🎯 {_an_p} +1.5 goles",     _a_o15_p,    2.40),
+                (f"🛡️ {_an_p} -1.5 (0-1 gol)", _a_u15_p,    1.75),
             ]:
-                if bp < 0.35: continue
+                if bp < 0.25: continue
                 if bo <= 1.0: bo = max(1.25, round(1/max(bp,0.01)*0.88, 2))
                 edge = bp - (1/bo if bo > 1 else 0.55)
-                score = bp*10 + max(0,edge)*30 + (0.5 if "Gana" in bl else 0)
+                # Score = probabilidad pura — mayor prob gana siempre
+                score = bp * 100
                 cands.append({"pick":bl,"prob":bp,"cuota":round(bo,2),
                     "partido":f"{m.get('home','?')} vs {m.get('away','?')}",
                     "deporte":"futbol","sport":"futbol","liga":m.get("league",""),
@@ -14119,30 +14696,39 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
                 nr = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",220.5))
             except:
                 nr = {"p_over":0.52,"p_under":0.48,"line":g.get("ou_line",220.5),"p_h_win":0.55}
-            # O/U
-            bp  = max(nr["p_over"], nr["p_under"])
-            bl  = (f"Over {nr['line']}" if nr["p_over"]>=nr["p_under"] else f"Under {nr['line']}")
-            bo  = 1.91
-            edge = bp - (1/bo)
-            score = bp*10 + max(0,edge)*30
-            cands.append({"pick":bl,"prob":bp,"cuota":bo,
-                "partido":f"{g.get('away','?')} @ {g.get('home','?')}",
-                "deporte":"nba","sport":"nba","liga":"NBA",
-                "hora":g.get("hora",""),"home":g.get("home",""),"away":g.get("away",""),
-                "fecha":g.get("fecha",""),"edge":round(edge,4),"score":score})
-            # ML
-            ph_n = nr.get("p_h_win",0.55); pa_n = 1-ph_n
-            bp_m = max(ph_n, pa_n)
-            bl_m = (f"{g.get('home','?')} ML" if ph_n>=pa_n else f"{g.get('away','?')} ML")
-            bo_m = g.get("odd_h",0) if ph_n>=pa_n else g.get("odd_a",0)
-            if bo_m <= 1.0: bo_m = max(1.30, round(1/max(bp_m,0.01)*0.88,2))
-            edge_m = bp_m - (1/bo_m)
-            score_m = bp_m*10 + max(0,edge_m)*30
-            cands.append({"pick":bl_m,"prob":bp_m,"cuota":round(bo_m,2),
-                "partido":f"{g.get('away','?')} @ {g.get('home','?')}",
-                "deporte":"nba","sport":"nba","liga":"NBA",
-                "hora":g.get("hora",""),"home":g.get("home",""),"away":g.get("away",""),
-                "fecha":g.get("fecha",""),"edge":round(edge_m,4),"score":score_m})
+            ph_n   = nr.get("p_h_win",0.55); pa_n = 1-ph_n
+            line_n = nr.get("line", g.get("ou_line",220.5))
+            # Todos los mercados NBA
+            _nba_papi = [
+                (f"🔥 Over {line_n}",            nr["p_over"],  1.91,                          "O/U"),
+                (f"❄️ Under {line_n}",           nr["p_under"], 1.91,                          "O/U"),
+                (f"🏠 {g.get('home','?')[:16]} ML", ph_n,       g.get("odd_h",0) or 1.91,     "ML"),
+                (f"✈️ {g.get('away','?')[:16]} ML", pa_n,       g.get("odd_a",0) or 1.91,     "ML"),
+            ]
+            # Pick acompañante = mejor del tipo contrario
+            _best_papi  = max(_nba_papi, key=lambda x: x[1])
+            _comp_papi  = max([x for x in _nba_papi if x[3] != _best_papi[3]], key=lambda x: x[1])
+            _comp_str_p = f"{_comp_papi[0]} ({_comp_papi[1]*100:.0f}%)"
+            for bl, bp, bo, _btype in _nba_papi:
+                if bp < 0.40: continue
+                if bo <= 1.0: bo = max(1.30, round(1/max(bp,0.01)*0.88,2))
+                edge  = bp - (1/bo if bo > 1 else 0.52)
+                # Score = probabilidad pura + convergencia O/U + ML
+                score = bp * 100
+                try:
+                    _proj = nr.get("proj", 0)
+                    if "Over" in bl and _proj >= line_n * 1.02:  score += 4.0
+                    if "Under" in bl and _proj <= line_n * 0.98: score += 4.0
+                except: pass
+                cands.append({"pick":bl,"prob":bp,"cuota":round(bo,2),
+                    "partido":f"{g.get('away','?')} @ {g.get('home','?')}",
+                    "deporte":"nba","sport":"nba","liga":"NBA",
+                    "hora":g.get("hora",""),"home":g.get("home",""),"away":g.get("away",""),
+                    "fecha":g.get("fecha",""),"edge":round(edge,4),"score":score,
+                    "mkt_type":_btype, "companion":_comp_str_p,
+                    "p_over":nr["p_over"],"p_under":nr["p_under"],
+                    "p_h":ph_n,"p_a":pa_n,"line":line_n,
+                })
         except: continue
 
     # ── Tenis ────────────────────────────────────────────────────────────
@@ -14535,6 +15121,22 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
               stake ${stake:,.0f}</span>
           </div>
         """, unsafe_allow_html=True)
+
+        # ── Companion pick NBA (ML al lado del O/U) ──
+        _paji_comp  = saved.get("companion","")
+        _paji_sport = saved.get("sport","") or saved.get("deporte","")
+        _paji_lo25  = saved.get("league_o25", 0)
+        if _paji_comp and "nba" in str(_paji_sport).lower():
+            _cc2 = "#00ccff" if "ML" in _paji_comp else "#00ff88"
+            st.markdown(
+                f"<div style='background:#050e14;border:1px solid {_cc2}44;border-radius:6px;"
+                f"padding:7px 14px;margin:4px 0;display:flex;align-items:center;gap:8px'>"
+                f"<span style='font-size:0.7rem;color:{_cc2};font-weight:700;letter-spacing:.07em'>"
+                f"TAMBIÉN CONSIDERAR</span>"
+                f"<span style='flex:1;text-align:center;font-size:1.02rem;font-weight:700;color:{_cc2}'>"
+                f"🏀 {_paji_comp}</span>"
+                f"</div>", unsafe_allow_html=True)
+        
 
         # Panel de consenso
         if panel:
@@ -15814,7 +16416,7 @@ if deporte == "futbol":
                 _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0, slug=_am.get("slug","")) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
                 _am_mc  = ensemble_football(_am_hxg, _am_axg, {}, _am_hf, _am_af,
                             _am.get("home_id",""), _am.get("away_id",""),
-                            odd_h=_am.get("odd_h",0), odd_a=_am.get("odd_a",0), odd_d=_am.get("odd_d",0))
+                            odd_h=_am.get("odd_h",0), odd_a=_am.get("odd_a",0), odd_d=_am.get("odd_d",0), slug=_am.get("slug",""))
                 _am_dp  = diamond_engine(_am_mc, {}, _am_hf, _am_af)
                 # Misma jerarquía exacta que la cartelera
                 _am_all = [
@@ -17150,7 +17752,7 @@ if st.session_state["view"] == "cartelera":
                     _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                     _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
-                    _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
+                    _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0),slug=_m.get("slug",""))
                     # Under 4.5: 1 - P(O4.5). Usamos P(O3.5) como proxy — si O3.5 es bajo, U4.5 es alto
                     _p_o35 = _mc.get("o35", max(0, _mc.get("o25",0.5) - 0.18))
                     _p_u45 = max(0, 1.0 - _p_o35)
@@ -17176,7 +17778,7 @@ if st.session_state["view"] == "cartelera":
                     _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                     _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                     _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],
-                                             odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0))
+                                             odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0),slug=_m.get("slug",""))
                     _dp  = diamond_engine(_mc,_h2s,_hf,_af)
                     _ph  = _dp["ph"]; _pa = _dp["pa"]; _pd = _dp.get("pd",max(0,1-_ph-_pa))
                     _o25 = _mc["o25"]; _aa = _mc["btts"]
@@ -17248,7 +17850,7 @@ if st.session_state["view"] == "cartelera":
                             _af = get_form(_m["away_id"],_m["slug"]) or []
                             _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
                             _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
-                            _mc  = ensemble_football(_hxg,_axg,{},_hf,_af,_m["home_id"],_m["away_id"])
+                            _mc  = ensemble_football(_hxg,_axg,{},_hf,_af,_m["home_id"],_m["away_id"],slug=_m.get("slug",""))
                             _dp  = diamond_engine(_mc,{},_hf,_af)
                             _bm  = max([(_dp["ph"],f"🏠 {_m['home']}"),(_dp["pa"],f"✈️ {_m['away']}"),(_mc["o25"],"⚽ Over 2.5")],key=lambda x:x[0])
                             if _bm[0] >= 0.52:
@@ -17535,7 +18137,7 @@ else:
         except: pass
 
         mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"],
-                    odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0))
+                    odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0), slug=g.get("slug",""))
 
         # ── En vivo: Poisson condicional si hay marcador ──
         _is_live = g.get("state") == "in"
@@ -17701,84 +18303,79 @@ else:
             f"<span style='color:#00ff88'>{g['home'][:14]}: {src_h}</span>"
             f"<span style='color:#00ff88'>{g['away'][:14]}: {src_a}</span></div>",unsafe_allow_html=True)
 
-        # ── JUGADA DIAMANTE — jerarquía correcta ML > DO > O2.5 > AA ──
-        _all_markets = [
-            (f"🏠 {g['home'][:16]} gana",      dp["ph"],  g.get("odd_h",0)),
-            ("🤝 Empate",                        dp["pd"],  g.get("odd_d",0)),
-            (f"✈️ {g['away'][:16]} gana",        dp["pa"],  g.get("odd_a",0)),
-            ("⚽ Over 2.5",                       mc["o25"],  0),
-            ("⚽ Over 3.5",                       mc["o35"],  0),
-            ("⚡ Ambos Anotan (AA)",              mc["btts"], 0),
-        ]
-        def _mkt_edge(t):
-            lbl, prob, odd = t
-            return (prob - 1/odd) if odd > 1 else (prob - 0.50)
-
-        # Jerarquía: ML > DO > O2.5 > AA
-        # Si hay cuotas reales, el ML con mejor edge siempre gana
-        _ph_d = dp["ph"]; _pa_d = dp["pa"]; _pd_d = dp.get("pd", max(0,1-_ph_d-_pa_d))
-        _o25_d = mc["o25"]; _aa_d = mc["btts"]
+        # ── JUGADA DIAMANTE — mercados completos ──
+        # ── Variables de mercado completas ──
+        _ph_d = dp["ph"]; _pa_d = dp["pa"]; _pd_d = dp.get("pd", max(0,1-dp["ph"]-dp["pa"]))
+        _o25_d = mc["o25"]; _aa_d = mc["btts"]; _o35_d = float(mc.get("o35",0))
+        _u25_d = 1 - _o25_d; _u35_d = float(mc.get("u35", 1-_o35_d))
         _do_h_d = min(0.95, _ph_d+_pd_d); _do_a_d = min(0.95, _pa_d+_pd_d)
-        _xg_tot_d = hxg + axg
-        _best_ml   = max(_ph_d, _pa_d)  # siempre hay un mejor ML
-        _fav_ml_lbl = f"🏠 {g['home'][:16]} gana" if _ph_d >= _pa_d else f"✈️ {g['away'][:16]} gana"
-        _fav_ml_p   = _ph_d if _ph_d >= _pa_d else _pa_d
+        _gcm_h  = float(mc.get("gcm_h",0) or min(0.95, _ph_d*1.18+_pd_d*0.35))
+        _gcm_a  = float(mc.get("gcm_a",0) or min(0.95, _pa_d*1.18+_pd_d*0.35))
+        _h_o05  = float(mc.get("h_o05",0)); _h_u05 = float(mc.get("h_u05",0))
+        _h_o15  = float(mc.get("h_o15",0)); _h_u15 = float(mc.get("h_u15",0))
+        _a_o05  = float(mc.get("a_o05",0)); _a_u05 = float(mc.get("a_u05",0))
+        _a_o15  = float(mc.get("a_o15",0)); _a_u15 = float(mc.get("a_u15",0))
+        _hn = g["home"][:15]; _an = g["away"][:15]
+        _o15_d  = float(mc.get("o15",0))
+
+        # ── Tabla completa de mercados (label, prob, odd_ref, grupo) ──
+        _all_markets_full = [
+            (f"🏠 {_hn} gana",             _ph_d,   g.get("odd_h",0), "1X2"),
+            ("🤝 Empate",                   _pd_d,   g.get("odd_d",0), "1X2"),
+            (f"✈️ {_an} gana",             _pa_d,   g.get("odd_a",0), "1X2"),
+            (f"🔵 DO {_hn}",               _do_h_d, 1.30,             "DO"),
+            (f"🟣 DO {_an}",               _do_a_d, 1.50,             "DO"),
+            ("⚽ Over 1.5",                 _o15_d,  1.35,             "OU"),
+            ("⚽ Over 2.5",                 _o25_d,  1.85,             "OU"),
+            ("⚽⚽ Over 3.5",               _o35_d,  2.50,             "OU"),
+            ("🔒 Under 2.5",               _u25_d,  2.00,             "OU"),
+            ("🔒🔒 Under 3.5",             _u35_d,  1.50,             "OU"),
+            ("⚡ Ambos Anotan",             _aa_d,   1.75,             "AA"),
+            (f"🌓 {_hn} gana c/mitad",     _gcm_h,  1.55,             "GCM"),
+            (f"🌓 {_an} gana c/mitad",     _gcm_a,  1.65,             "GCM"),
+            (f"🎯 {_hn} +0.5 goles",       _h_o05,  1.55,             "TG"),
+            (f"🛡️ {_hn} -0.5 (sin gol)",  _h_u05,  2.10,             "TG"),
+            (f"🎯🎯 {_hn} +1.5 goles",     _h_o15,  2.20,             "TG"),
+            (f"🛡️ {_hn} -1.5 (0-1 gol)", _h_u15,  1.65,             "TG"),
+            (f"🎯 {_an} +0.5 goles",       _a_o05,  1.65,             "TG"),
+            (f"🛡️ {_an} -0.5 (sin gol)",  _a_u05,  2.00,             "TG"),
+            (f"🎯🎯 {_an} +1.5 goles",     _a_o15,  2.40,             "TG"),
+            (f"🛡️ {_an} -1.5 (0-1 gol)", _a_u15,  1.75,             "TG"),
+        ]
+        _all_markets_full = [(l,p,o,gr) for l,p,o,gr in _all_markets_full if p >= 0.08]
+        _all_markets = [(l,p,o) for l,p,o,gr in _all_markets_full]
+
+        # ── Pick principal = MAYOR PROBABILIDAD ──
+        _fav_ml_lbl = f"🏠 {_hn} gana" if _ph_d >= _pa_d else f"✈️ {_an} gana"
+        _fav_ml_p   = max(_ph_d, _pa_d)
         _fav_ml_odd = g.get("odd_h",0) if _ph_d >= _pa_d else g.get("odd_a",0)
-        _ninguno_d = _best_ml < 0.50 and _do_h_d < 0.70 and _do_a_d < 0.70 and _o25_d < 0.52
-        _eq_d = abs(hxg - axg) < 0.55
+        main_mkt = max(_all_markets_full, key=lambda x: x[1])
+        main_lbl, main_prob, main_odd, _ = main_mkt
 
-        # Con cuotas reales: comparar edge ML vs O2.5
-        _odd_h = g.get("odd_h",0); _odd_a = g.get("odd_a",0)
-        _has_odds = _odd_h > 1 and _odd_a > 1
-        _edge_ml_h = (_ph_d - 1/_odd_h) if _odd_h > 1 else (_ph_d - 0.50)
-        _edge_ml_a = (_pa_d - 1/_odd_a) if _odd_a > 1 else (_pa_d - 0.50)
-        _best_ml_edge = max(_edge_ml_h, _edge_ml_a)
-
-        # ── EV-based pick selection (same logic as _villar_auto_pick) ──
-        def _ev_c(prob, odd): return prob * (odd - 1) - (1 - prob) if odd > 1 else prob - 0.5
-        _ev_h2  = _ev_c(_ph_d, _odd_h) if _odd_h > 1 else (_ph_d - 0.55)
-        _ev_a2  = _ev_c(_pa_d, g.get("odd_a",0)) if g.get("odd_a",0) > 1 else (_pa_d - 0.55)
-        _ev_o25c= _ev_c(_o25_d, 1.90)
-        _ev_aac = _ev_c(_aa_d, 1.80)
-        _min_ev2 = 0.01
-        _cands2 = []
-        if _ev_h2 > _min_ev2:
-            _cands2.append((f"🏠 {g['home'][:16]} gana", _ph_d, _odd_h, _ev_h2))
-        if _ev_a2 > _min_ev2:
-            _cands2.append((f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0), _ev_a2))
-        _u25_d2  = 1 - _o25_d
-        _ev_o25c = _ev_c(_o25_d, 1.85)
-        if _ev_o25c > _min_ev2:
-            _cands2.append(("⚽ Over 2.5", _o25_d, 0, _ev_o25c))
-        _ev_u25c = _ev_c(_u25_d2, 2.00)
-        if _ev_u25c > _min_ev2:
-            _cands2.append(("🔒 Under 2.5", _u25_d2, 0, _ev_u25c))
-        _ev_aac = _ev_c(_aa_d, 1.75)
-        if _ev_aac > _min_ev2:
-            _cands2.append(("⚡ Ambos Anotan", _aa_d, 0, _ev_aac))
-        _ev_dch = _ev_c(_do_h_d, 1.35)
-        if _ev_dch > _min_ev2: _cands2.append((f"🔵 {g['home'][:14]} o Emp", _do_h_d, 0, _ev_dch))
-        _ev_dca = _ev_c(_do_a_d, 1.35)
-        if _ev_dca > _min_ev2: _cands2.append((f"🟣 {g['away'][:14]} o Emp", _do_a_d, 0, _ev_dca))
-        if _cands2:
-            _best2 = max(_cands2, key=lambda x: x[3])
-            main_mkt = (_best2[0], _best2[1], _best2[2])
-        else:
-            main_mkt = (f"⚠️ {_fav_ml_lbl} (sin valor)", _fav_ml_p, _fav_ml_odd)
-
-        main_lbl, main_prob, main_odd = main_mkt
-
-        # Badges de todos los mercados ordenados por prob — incluye ML
-        _mkt_sorted = sorted(_all_markets, key=lambda x:-x[1])
-        top3 = _mkt_sorted[:4]  # mostrar top 4 en la card
-
-        mkt_badges = "".join(
-            f"<div class='mbox' style='flex:1;min-width:90px'>"
-            f"<div class='mval' style='color:{'#FFD700' if i==0 else ('#7c00ff' if i==1 else '#555')};font-size:{1.1 if i==0 else 0.9}rem'>"
-            f"{v*100:.1f}%{'  ✦' if i==0 else ''}</div>"
-            f"<div class='mlbl' style='font-size:0.975rem'>{l[:20]}</div></div>"
-            for i,(l,v,_) in enumerate(top3)
-        )
+        # ── Tabla elegante de mercados ordenada por prob ──
+        _GROUP_COLOR = {"1X2":"#00ccff","DO":"#7c00ff","OU":"#00ff88","AA":"#FFD700","GCM":"#ff6600","TG":"#ff44aa"}
+        _GROUP_ICON  = {"1X2":"⚽","DO":"🔵","OU":"📊","AA":"⚡","GCM":"🌓","TG":"🎯"}
+        _mkt_full_sorted = sorted(_all_markets_full, key=lambda x:-x[1])
+        top3 = [(l,v,o) for l,v,o,gr in _mkt_full_sorted[:4]]
+        def _pbar(p, c): return f"<div style='height:3px;background:#1a1a1a;border-radius:2px;margin-top:2px'><div style='width:{int(p*100)}%;height:3px;background:{c};border-radius:2px'></div></div>"
+        def _pcol(p): return "#00ff88" if p>=0.75 else ("#FFD700" if p>=0.62 else ("#ff6600" if p>=0.50 else ("#ff4444" if p>=0.38 else "#666")))
+        _mkt_rows = ""
+        for i, (ml, mp, mo, mg) in enumerate(_mkt_full_sorted):
+            _gc = _GROUP_COLOR.get(mg,"#888"); _gi = _GROUP_ICON.get(mg,"•"); _pc2 = _pcol(mp)
+            _star = "✦ " if i==0 else ""; _bg = "#1a0d00" if i==0 else ("#0d0d0d" if i%2==0 else "#111")
+            _mkt_rows += (
+                f"<div style='display:flex;align-items:center;gap:8px;padding:5px 8px;"
+                f"background:{_bg};border-radius:5px;margin-bottom:2px;"
+                f"border-left:3px solid {_gc if i==0 else _gc+'44'}'>"
+                f"<span style='font-size:0.85rem;min-width:18px'>{_gi}</span>"
+                f"<div style='flex:1;min-width:0'>"
+                f"<div style='font-size:0.8rem;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_star}{ml}</div>"
+                f"{_pbar(mp, _pc2)}"
+                f"</div>"
+                f"<span style='font-size:0.98rem;font-weight:900;color:{_pc2};min-width:40px;text-align:right'>{mp*100:.1f}%</span>"
+                f"</div>"
+            )
+        mkt_badges = _mkt_rows
 
         # Compact diamond hero
         _conf_color_d = "#FFD700" if "DIAMANTE" in dp.get("conf","") else ("#00ff88" if "ALTA" in dp.get("conf","") else "#aaa")
@@ -17808,7 +18405,11 @@ else:
                 for lbl, v in [("🏠", dh), ("🤝", dd), ("✈️", da)]
             ]))(_dh2, _dd2, _da2, _mx3)
             + f"</div>"
-            f"<div style='font-size:1.0rem;color:#4e4030;margin-top:8px'>xG: {hxg:.2f}–{axg:.2f} · {mc.get('consensus','')}</div>"
+            f"<div style='margin-top:11px'>"
+            f"<div style='font-size:0.7rem;color:#4e4030;letter-spacing:.09em;font-weight:700;margin-bottom:5px'>📊 TODOS LOS MERCADOS — ordenados por probabilidad</div>"
+            + mkt_badges +
+            f"</div>"
+            f"<div style='font-size:0.78rem;color:#4e4030;margin-top:8px'>xG: {hxg:.2f}–{axg:.2f} · {mc.get('consensus','')}</div>"
             f"</div>",
             unsafe_allow_html=True)
 
@@ -17960,6 +18561,8 @@ else:
             g["home"], g["away"],
             best_market=main_lbl, best_prob=main_prob, best_odd=main_odd)
         st.markdown(v_html, unsafe_allow_html=True)
+
+        
 
         # ── DATOS COMPACTOS: Mercados + Stats + Forma ──
         # Fila 1: ML + Totales en 2 cols
