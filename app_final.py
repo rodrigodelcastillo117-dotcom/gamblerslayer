@@ -16321,31 +16321,9 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     _auto = _kr_should_auto_scan()
     if _auto and not st.session_state.get("_king_scanned"):
         do_scan = True
-    # NO forzar scan automático — si no hay datos, mostrar estado "listo para escanear"
-    # El usuario ve el botón y lo presiona cuando quiera
-
-    # ══════════════════════════════════════════════════════
-    # SCAN + RESULTADOS
-    # ══════════════════════════════════════════════════════
-    if do_scan:
-        st.session_state["_stay_king"] = True
-    # Si no hay datos y el usuario no presionó scan → mostrar estado de espera
-    if not do_scan and not st.session_state.get("_king_scanned"):
-        st.markdown("""
-<div style='background:linear-gradient(145deg,#0d0028,#001208);border:2px solid #FFD70044;
-border-radius:14px;padding:32px 20px;text-align:center;margin:16px 0'>
-  <div style='font-size:3rem;margin-bottom:8px'>👑</div>
-  <div style='font-family:Oswald;font-size:1.4rem;color:#FFD700;letter-spacing:.15em;margin-bottom:8px'>
-    KING RONGO LISTO
-  </div>
-  <div style='color:#5a4a2e;font-size:1.05rem;margin-bottom:20px'>
-    Presiona el botón de arriba para escanear ⚽ Fútbol · 🏀 NBA · 🎾 Tenis<br>
-    y obtener EL pick del día con mayor edge real
-  </div>
-  <div style='color:#3a2a1e;font-size:0.9rem'>
-    Scans automáticos: 08:00 · 14:00 · 22:00 CDMX &nbsp;|&nbsp; próximo: {_next_scan}
-  </div>
-</div>""".format(_next_scan=_next_scan), unsafe_allow_html=True)
+    # Si aun no hay cache, forzar scan
+    if not st.session_state.get("_king_scanned") and not do_scan:
+        do_scan = True
 
     if do_scan or st.session_state.get("_king_scanned"):
 
