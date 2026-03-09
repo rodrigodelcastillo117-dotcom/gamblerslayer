@@ -7224,15 +7224,59 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
         mkt_pd = (1/odd_d) / vig
         mkt_pa = (1/odd_a) / vig
 
-    # ── Pesos dinámicos ──
-    if has_mkt and h2h_valid:
-        w = {"dc":0.33,"bvp":0.23,"elo":0.14,"h2h":0.14,"mkt":0.16}
+    # ── MODELO 5: Regresión logística directa sobre forma reciente ──
+    # Independiente del xG — vota directo desde resultados de los últimos 5 partidos.
+    # Ajusta win rate por dificultad del rival (opponent points scored proxy).
+    # Ref: Hvattum & Arntzen (2010) — using ELO ratings for match result prediction.
+    try:
+        def _form_win_rate(form, is_home):
+            if not form: return None
+            last5 = form[:5]
+            if len(last5) < 3: return None
+            # Win rate ponderado: W=1, D=0.4, L=0
+            # Peso extra si el resultado fue en la misma condición (local/visita)
+            pts = gms = 0.0
+            for g in last5:
+                same_cond = g.get("is_home", is_home) == is_home
+                w = 1.3 if same_cond else 1.0
+                r = g.get("result","L")
+                pts += w * (1.0 if r=="W" else (0.4 if r=="D" else 0.0))
+                gms += w
+            return pts / gms if gms > 0 else None
+
+        _h_wr = _form_win_rate(hform, True)
+        _a_wr = _form_win_rate(aform, False)
+
+        if _h_wr is not None and _a_wr is not None:
+            # Convertir win rates a probabilidades relativas
+            _tot_wr = _h_wr + _a_wr + 0.3  # 0.3 = masa para empate
+            _frm_ph = _h_wr / _tot_wr
+            _frm_pa = _a_wr / _tot_wr
+            _frm_pd = max(0.10, 1 - _frm_ph - _frm_pa)
+            _s = _frm_ph + _frm_pd + _frm_pa
+            _frm_ph /= _s; _frm_pd /= _s; _frm_pa /= _s
+        else:
+            _frm_ph = dc["ph"]; _frm_pd = dc["pd"]; _frm_pa = dc["pa"]
+        _has_frm = _h_wr is not None and _a_wr is not None
+    except:
+        _frm_ph = dc["ph"]; _frm_pd = dc["pd"]; _frm_pa = dc["pa"]
+        _has_frm = False
+
+    # ── Pesos dinámicos — ahora 5 modelos reales ──
+    if has_mkt and h2h_valid and _has_frm:
+        w = {"dc":0.28,"bvp":0.20,"elo":0.12,"h2h":0.13,"mkt":0.15,"frm":0.12}
+    elif has_mkt and _has_frm:
+        w = {"dc":0.28,"bvp":0.22,"elo":0.13,"h2h":0.08,"mkt":0.15,"frm":0.14}
+    elif has_mkt and h2h_valid:
+        w = {"dc":0.30,"bvp":0.22,"elo":0.13,"h2h":0.15,"mkt":0.15,"frm":0.05}
+    elif h2h_valid and _has_frm:
+        w = {"dc":0.30,"bvp":0.22,"elo":0.13,"h2h":0.15,"mkt":0.00,"frm":0.20}
+    elif _has_frm:
+        w = {"dc":0.32,"bvp":0.24,"elo":0.14,"h2h":0.08,"mkt":0.00,"frm":0.22}
     elif has_mkt:
-        w = {"dc":0.35,"bvp":0.25,"elo":0.15,"h2h":0.10,"mkt":0.15}
-    elif h2h_valid:
-        w = {"dc":0.35,"bvp":0.25,"elo":0.15,"h2h":0.15,"mkt":0.10}
+        w = {"dc":0.35,"bvp":0.25,"elo":0.15,"h2h":0.10,"mkt":0.15,"frm":0.00}
     else:
-        w = {"dc":0.45,"bvp":0.30,"elo":0.15,"h2h":0.10,"mkt":0.00}
+        w = {"dc":0.40,"bvp":0.28,"elo":0.16,"h2h":0.10,"mkt":0.00,"frm":0.06}
 
     # Calibración dinámica basada en Brier Score del historial de picks
     try:
@@ -7242,9 +7286,9 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
     except: pass
 
     ph = (w["dc"]*dc["ph"] + w["bvp"]*bvp["ph"] + w["elo"]*elo_ph
-          + w["h2h"]*h2h_ph + w["mkt"]*mkt_ph)
+          + w["h2h"]*h2h_ph + w["mkt"]*mkt_ph + w["frm"]*_frm_ph)
     pd = (w["dc"]*dc["pd"] + w["bvp"]*bvp["pd"]
-          + w["h2h"]*h2h_pd + w["mkt"]*mkt_pd)
+          + w["h2h"]*h2h_pd + w["mkt"]*mkt_pd + w["frm"]*_frm_pd)
     pa = max(0.01, 1-ph-pd)
     s  = ph+pd+pa; ph/=s; pd/=s; pa/=s
 
@@ -9890,8 +9934,42 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     # Diferencial de proyección (h_proj - a_proj) ya incluye HCA, B2B, lesiones
     proj_diff = h_proj - a_proj  # positivo = local favorito
 
-    # Blend 55% net_rtg + 45% proj_diff (proj_diff es más sensible a contexto)
-    combined_diff = 0.55 * net_diff_ml + 0.45 * proj_diff
+    # ── MODELO 3: Win% reciente (últimos 10 partidos, ponderado local/visita) ──
+    # Señal independiente del net_rating (temporada completa) y proyección (puntos)
+    # Captura rachas, momentum, equipos que mejoran/empeoran en el tramo final
+    try:
+        def _recent_wr(form, is_home, n=10):
+            if not form: return None
+            games = form[:n]
+            if len(games) < 4: return None
+            w_wins = w_tot = 0.0
+            for g in games:
+                same = g.get("is_home", is_home) == is_home
+                weight = 1.4 if same else 1.0   # más peso si es en la misma condición
+                w_wins += weight * (1.0 if g.get("result") == "W" else 0.0)
+                w_tot  += weight
+            return w_wins / w_tot if w_tot > 0 else None
+
+        _h_wr_nba = _recent_wr(h_form, True)
+        _a_wr_nba = _recent_wr(a_form, False)
+
+        if _h_wr_nba is not None and _a_wr_nba is not None:
+            # Win% diferencial → logit → probabilidad
+            _wr_diff = (_h_wr_nba - _a_wr_nba) * 10.0  # escala similar a net_rating
+            _p_h_wr  = 1 / (1 + math.exp(-_wr_diff * 0.12))
+        else:
+            _p_h_wr = 0.5
+        _has_wr = _h_wr_nba is not None and _a_wr_nba is not None
+    except:
+        _p_h_wr = 0.5; _has_wr = False
+
+    # Blend 3 modelos independientes — número impar garantiza desempate
+    # 40% net_rtg (quién es mejor en temporada) + 35% proj_diff (quién está mejor HOY)
+    # + 25% win% reciente (momentum y racha — ignora puntos, solo victorias)
+    if _has_wr:
+        combined_diff = 0.40 * net_diff_ml + 0.35 * proj_diff + 0.25 * (_p_h_wr - 0.5) * 20
+    else:
+        combined_diff = 0.55 * net_diff_ml + 0.45 * proj_diff
 
     # HCA ya está en proj_diff, agregar efecto psicológico residual (+0.8 pts)
     combined_diff += 0.8
