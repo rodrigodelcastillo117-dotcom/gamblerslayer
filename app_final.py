@@ -12422,7 +12422,7 @@ def _kr_calibrate(prob,sport,brain):
 # Todas 100% Claude Haiku | TTL 1800s (30 min) | Autonomas
 # ==============================================================================
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_fatiga(home, away, sport, fecha):
     """
     1. INDICE DE FATIGA REAL — uno de los mas poderosos.
@@ -12439,7 +12439,7 @@ def _ultra_fatiga(home, away, sport, fecha):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("fatiga_h",0.0); d.setdefault("fatiga_a",0.0); d.setdefault("alerta","")
@@ -12447,7 +12447,7 @@ def _ultra_fatiga(home, away, sport, fecha):
     except: pass
     return {"fatiga_h":0.0,"fatiga_a":0.0,"descripcion":"sin datos","alerta":""}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_matchup(home, away, sport):
     """
     2. MATCHUP ESTILO VS ESTILO — algunos estilos siempre pierden contra otros.
@@ -12465,14 +12465,14 @@ def _ultra_matchup(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja",0.0); d.setdefault("matchup",""); return d
     except: pass
     return {"ventaja":0.0,"estilo_h":"?","estilo_a":"?","matchup":"sin datos","favorece":"neutro"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_forma_real(home, away, sport):
     """
     3. FORMA REAL (estadisticas, no resultados).
@@ -12490,14 +12490,14 @@ def _ultra_forma_real(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":500,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("forma_h",0.0); d.setdefault("forma_a",0.0); return d
     except: pass
     return {"forma_h":0.0,"forma_a":0.0,"stat_clave_h":"","stat_clave_a":"","tendencia":""}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_ventaja_fisica(home, away, sport):
     """
     4. VENTAJA FISICA.
@@ -12514,14 +12514,14 @@ def _ultra_ventaja_fisica(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja_fisica",0.0); return d
     except: pass
     return {"ventaja_fisica":0.0,"favorece":"neutro","descripcion":"sin datos"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_localia(home, away, sport, liga):
     """
     5. LOCALIA PROFUNDA — no solo 'juega en casa'.
@@ -12538,14 +12538,14 @@ def _ultra_localia(home, away, sport, liga):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("bonus_local",0.0); return d
     except: pass
     return {"bonus_local":0.05,"wr_local_est":"50%","descripcion":"ventaja estandar de localia"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
     """
     6. MOTIVACION COMPETITIVA — una de las variables mas fuertes.
@@ -12565,14 +12565,14 @@ def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("motivacion_h",0.0); d.setdefault("motivacion_a",0.0); return d
     except: pass
     return {"motivacion_h":0.0,"motivacion_a":0.0,"situacion":"sin datos","urgencia":"baja"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_consistencia(home, away, sport):
     """
     7+10. INDICE DE CONSISTENCIA (desviacion estandar de rendimiento).
@@ -12590,14 +12590,14 @@ def _ultra_consistencia(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("consist_h",0.5); d.setdefault("consist_a",0.5); return d
     except: pass
     return {"consist_h":0.5,"consist_a":0.5,"volatilidad_h":"media","volatilidad_a":"media","confiable":"ambos"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_presion(home, away, sport):
     """
     1+7(KR). EFICIENCIA BAJO PRESION + DESCANSO MENTAL.
@@ -12615,14 +12615,14 @@ def _ultra_presion(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("presion_h",0.0); d.setdefault("presion_a",0.0); return d
     except: pass
     return {"presion_h":0.0,"presion_a":0.0,"clutch_h":"regular","clutch_a":"regular","estado_mental":"neutro"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_ritmo_juego(home, away, sport):
     """
     9+8(KR). RITMO DE JUEGO + EFICIENCIA EN TRANSICION.
@@ -12640,14 +12640,14 @@ def _ultra_ritmo_juego(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ritmo_delta",0.0); return d
     except: pass
     return {"ritmo_delta":0.0,"ritmo_h":"medio","ritmo_a":"medio","favorece":"neutro","descripcion":"sin datos"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_dependencia_estrella(home, away, sport):
     """
     7(KR). INDICE DE DEPENDENCIA DE ESTRELLA.
@@ -12665,14 +12665,14 @@ def _ultra_dependencia_estrella(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("dep_h",0.0); d.setdefault("dep_a",0.0); return d
     except: pass
     return {"dep_h":0.0,"dep_a":0.0,"estrella_h":None,"estrella_a":None,"riesgo":"bajo"}
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_adaptabilidad(home, away, sport):
     """
     6(KR). ADAPTABILIDAD TACTICA + EFICIENCIA DEL ENTRENADOR.
@@ -12690,7 +12690,7 @@ def _ultra_adaptabilidad(home, away, sport):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
                   "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=7)
+                  "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("adapt_h",0.0); d.setdefault("adapt_a",0.0); return d
@@ -12699,7 +12699,7 @@ def _ultra_adaptabilidad(home, away, sport):
 
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _ultra_rival_similar(home: str, away: str, sport: str) -> dict:
     """
     8. RENDIMIENTO CONTRA RIVALES SIMILARES.
@@ -12750,7 +12750,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
         try: results[key] = fn(*args)
         except: results[key] = {}
 
-    with _cf.ThreadPoolExecutor(max_workers=12) as ex:
+    with _cf.ThreadPoolExecutor(max_workers=8) as ex:
         ex.submit(_run, _ultra_fatiga,            "fatiga",    home, away, sport, fecha)
         ex.submit(_run, _ultra_matchup,           "matchup",   home, away, sport)
         ex.submit(_run, _ultra_forma_real,        "forma",     home, away, sport)
@@ -12856,7 +12856,7 @@ def _kr_situacional(home,away,sport,liga,hora):
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "messages":[{"role":"user","content":prompt}]},timeout=7)
+                  "messages":[{"role":"user","content":prompt}]},timeout=5)
         if r.status_code==200:
             txt=r.json()["content"][0]["text"].strip()
             txt=re.sub(r"```json|```","",txt).strip()
@@ -13637,7 +13637,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
     _brain_kr = _kr_brain_load()
     _elo_kr   = _kr_elo_load()
     _ph_t = tuple({"pick":p.get("pick",""),"result":"gano" if p.get("result") in ("ok","✅","gano") else "perdio"} for p in pick_history[-50:])
-    for _c in candidates:
+    for _c in candidates[:15]:  # solo enriquecer top 15 — resto usa score base
         try:
             _c["score"] = _kr_god_score(_c, _brain_kr, _elo_kr, _ph_t)
             _ev_c       = _kr_ev(_c.get("prob",0.5), _c.get("odd",0))
@@ -14475,7 +14475,7 @@ def _kr_filter_by_date(matches, target_date):
 # KR GOD MODE — Funciones adicionales (Transición + Entrenador)
 # ══════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _kr_transicion(home: str, away: str, sport: str) -> dict:
     """
     Índice de eficiencia en transición:
@@ -14503,7 +14503,7 @@ def _kr_transicion(home: str, away: str, sport: str) -> dict:
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
                   "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=7)
         if _r.status_code == 200:
             _txt = _r.json()["content"][0]["text"].strip()
             _txt = _txt.replace("```json","").replace("```","").strip()
@@ -14517,7 +14517,7 @@ def _kr_transicion(home: str, away: str, sport: str) -> dict:
             "score": 5, "factor": "bajo", "razon": "sin datos de transición"}
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _kr_entrenador(home: str, away: str, sport: str, liga: str = "") -> dict:
     """
     Eficiencia de decisiones del entrenador:
@@ -14545,7 +14545,7 @@ def _kr_entrenador(home: str, away: str, sport: str, liga: str = "") -> dict:
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
                   "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=7)
         if _r.status_code == 200:
             _txt = _r.json()["content"][0]["text"].strip()
             _txt = _txt.replace("```json","").replace("```","").strip()
@@ -14675,7 +14675,7 @@ def _sd_tennis_news(player: str) -> str:
         return ""
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def _small_days_analyze(home: str, away: str, sport: str,
                          fecha: str,
                          home_id: str = "", away_id: str = "",
