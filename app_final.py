@@ -3960,27 +3960,49 @@ def _villar_auto_pick(partido_db):
             _edge_ml_a = (_pa_d - 1/_odd_a) if _odd_a > 1 else (_pa_d - 0.50)
             _best_ml_edge = max(_edge_ml_h, _edge_ml_a)
 
-            # Misma jerarquía exacta que la cartelera (main_mkt)
-            if _pa_d > _ph_d and (_pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03)):
-                main_lbl, main_prob, main_odd = f"✈️ {away} gana", _pa_d, odd_a
-            elif _ph_d >= 0.55 or (_has_odds and _edge_ml_h >= 0.03):
-                main_lbl, main_prob, main_odd = f"🏠 {home} gana", _ph_d, odd_h
-            elif _pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03):
-                main_lbl, main_prob, main_odd = f"✈️ {away} gana", _pa_d, odd_a
-            elif _do_h_d >= 0.76 and _ph_d >= 0.48:
-                main_lbl, main_prob, main_odd = f"🔵 {home[:14]} o Emp", _do_h_d, 0
-            elif _do_a_d >= 0.76 and _pa_d >= 0.43:
-                main_lbl, main_prob, main_odd = f"🟣 {away[:14]} o Emp", _do_a_d, 0
-            elif _xg_tot_d >= 2.6 and _o25_d >= 0.54:
-                main_lbl, main_prob, main_odd = "⚽ Over 2.5", _o25_d, 0
-            elif _best_ml >= 0.46:
-                main_lbl, main_prob, main_odd = _fav_ml_lbl, _fav_ml_p, _fav_ml_odd
-            elif _o25_d >= 0.52:
-                main_lbl, main_prob, main_odd = "⚽ Over 2.5", _o25_d, 0
-            elif _ninguno_d and _eq_d and _aa_d >= 0.52:
-                main_lbl, main_prob, main_odd = "⚡ Ambos Anotan (AA)", _aa_d, 0
-            else:
-                main_lbl, main_prob, main_odd = _fav_ml_lbl, _fav_ml_p, _fav_ml_odd
+        # ── Selección por EV real — solo picks con valor esperado positivo ──
+        def _ev(prob, odd): return prob * (odd - 1) - (1 - prob) if odd > 1 else prob - 0.5
+        _ev_h   = _ev(_ph_d, odd_h) if odd_h > 1 else (_ph_d - 0.55)
+        _ev_a   = _ev(_pa_d, odd_a) if odd_a > 1 else (_pa_d - 0.55)
+        _ev_o25 = _ev(_o25_d, 1.90) if not odd_h else _ev(_o25_d, 1.90)  # cuota típica O2.5
+        _ev_aa  = _ev(_aa_d,  1.80)
+
+        # Mínimos para considerar un pick válido:
+        # ML: EV > 0 Y prob >= 0.52 (evita favoritos cortos con EV negativo)
+        # O/U: prob >= 0.58 (mercado más eficiente)
+        # DC (doble chance): prob >= 0.72 (cuota ~1.35, necesita prob alta)
+        _min_ev = 0.01  # EV mínimo 1%
+
+        main_lbl = main_prob = main_odd = None
+
+        # Candidatos con EV positivo
+        _candidates = []
+        if _ph_d >= 0.52 and _ev_h > _min_ev:
+            _candidates.append((f"🏠 {home} gana", _ph_d, odd_h, _ev_h))
+        if _pa_d >= 0.52 and _ev_a > _min_ev:
+            _candidates.append((f"✈️ {away} gana", _pa_d, odd_a, _ev_a))
+        if _o25_d >= 0.58 and _ev_o25 > _min_ev:
+            _candidates.append(("⚽ Over 2.5", _o25_d, 0, _ev_o25))
+        if _aa_d >= 0.58 and _ev_aa > _min_ev:
+            _candidates.append(("⚡ Ambos Anotan", _aa_d, 0, _ev_aa))
+        if _do_h_d >= 0.75 and _ph_d >= 0.50:
+            _ev_dc = _ev(_do_h_d, 1.35)
+            if _ev_dc > _min_ev:
+                _candidates.append((f"🔵 {home[:14]} o Emp", _do_h_d, 0, _ev_dc))
+        if _do_a_d >= 0.75 and _pa_d >= 0.45:
+            _ev_dc2 = _ev(_do_a_d, 1.35)
+            if _ev_dc2 > _min_ev:
+                _candidates.append((f"🟣 {away[:14]} o Emp", _do_a_d, 0, _ev_dc2))
+
+        if _candidates:
+            # Elegir el pick con mayor EV
+            _best = max(_candidates, key=lambda x: x[3])
+            main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
+        else:
+            # Sin EV positivo — marcar como SIN VALOR
+            main_lbl  = f"⚠️ {_fav_ml_lbl} (sin valor)"
+            main_prob = _fav_ml_p
+            main_odd  = _fav_ml_odd
 
             ml_pick = {
                 "pick": f"🏠 {home} gana" if _ph_d >= _pa_d else f"✈️ {away} gana",
@@ -4148,6 +4170,7 @@ def render_resultados_tab():
         try:
             _apk2 = _villar_auto_pick(_fp)
             if not _apk2: continue
+            if "sin valor" in str(_apk2.get("pick","")).lower(): continue
             _vd2,_,_ = _villar_match_pick_to_result(_apk2, _fp)
             if "GANÓ"  in _vd2: _pre_ok[_sp]   = _pre_ok.get(_sp,0)+1
             elif "FALLÓ" in _vd2: _pre_fail[_sp] = _pre_fail.get(_sp,0)+1
@@ -16075,29 +16098,33 @@ else:
         _edge_ml_a = (_pa_d - 1/_odd_a) if _odd_a > 1 else (_pa_d - 0.50)
         _best_ml_edge = max(_edge_ml_h, _edge_ml_a)
 
-        if _pa_d > _ph_d and (_pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03)):
-            # Visitante es favorito — mostrar ML visitante
-            main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
-        elif _ph_d >= 0.55 or (_has_odds and _edge_ml_h >= 0.03):
-            main_mkt = (f"🏠 {g['home'][:16]} gana", _ph_d, _odd_h)
-        elif _pa_d >= 0.55 or (_has_odds and _edge_ml_a >= 0.03):
-            main_mkt = (f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0))
-        elif _do_h_d >= 0.76 and _ph_d >= 0.48:
-            main_mkt = (f"🔵 {g['home'][:14]} o Emp", _do_h_d, 0)
-        elif _do_a_d >= 0.76 and _pa_d >= 0.43:
-            main_mkt = (f"🟣 {g['away'][:14]} o Emp", _do_a_d, 0)
-        elif _xg_tot_d >= 2.6 and _o25_d >= 0.54:
-            main_mkt = ("⚽ Over 2.5", _o25_d, 0)
-        elif _best_ml >= 0.46:
-            # Siempre mostrar ML si es el más probable — aunque sea parejo
-            main_mkt = (_fav_ml_lbl, _fav_ml_p, _fav_ml_odd)
-        elif _o25_d >= 0.52:
-            main_mkt = ("⚽ Over 2.5", _o25_d, 0)
-        elif _ninguno_d and _eq_d and _aa_d >= 0.52:
-            main_mkt = ("⚡ Ambos Anotan (AA)", _aa_d, 0)
+        # ── EV-based pick selection (same logic as _villar_auto_pick) ──
+        def _ev_c(prob, odd): return prob * (odd - 1) - (1 - prob) if odd > 1 else prob - 0.5
+        _ev_h2  = _ev_c(_ph_d, _odd_h) if _odd_h > 1 else (_ph_d - 0.55)
+        _ev_a2  = _ev_c(_pa_d, g.get("odd_a",0)) if g.get("odd_a",0) > 1 else (_pa_d - 0.55)
+        _ev_o25c= _ev_c(_o25_d, 1.90)
+        _ev_aac = _ev_c(_aa_d, 1.80)
+        _min_ev2 = 0.01
+        _cands2 = []
+        if _ph_d >= 0.52 and _ev_h2 > _min_ev2:
+            _cands2.append((f"🏠 {g['home'][:16]} gana", _ph_d, _odd_h, _ev_h2))
+        if _pa_d >= 0.52 and _ev_a2 > _min_ev2:
+            _cands2.append((f"✈️ {g['away'][:16]} gana", _pa_d, g.get("odd_a",0), _ev_a2))
+        if _o25_d >= 0.58 and _ev_o25c > _min_ev2:
+            _cands2.append(("⚽ Over 2.5", _o25_d, 0, _ev_o25c))
+        if _aa_d >= 0.58 and _ev_aac > _min_ev2:
+            _cands2.append(("⚡ Ambos Anotan", _aa_d, 0, _ev_aac))
+        if _do_h_d >= 0.75 and _ph_d >= 0.50:
+            _ev_dch = _ev_c(_do_h_d, 1.35)
+            if _ev_dch > _min_ev2: _cands2.append((f"🔵 {g['home'][:14]} o Emp", _do_h_d, 0, _ev_dch))
+        if _do_a_d >= 0.75 and _pa_d >= 0.45:
+            _ev_dca = _ev_c(_do_a_d, 1.35)
+            if _ev_dca > _min_ev2: _cands2.append((f"🟣 {g['away'][:14]} o Emp", _do_a_d, 0, _ev_dca))
+        if _cands2:
+            _best2 = max(_cands2, key=lambda x: x[3])
+            main_mkt = (_best2[0], _best2[1], _best2[2])
         else:
-            # Fallback absoluto: siempre el mejor ML
-            main_mkt = (_fav_ml_lbl, _fav_ml_p, _fav_ml_odd)
+            main_mkt = (f"⚠️ {_fav_ml_lbl} (sin valor)", _fav_ml_p, _fav_ml_odd)
 
         main_lbl, main_prob, main_odd = main_mkt
 
