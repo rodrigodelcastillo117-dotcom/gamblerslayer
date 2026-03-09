@@ -15105,15 +15105,18 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     import math as _pm
     import concurrent.futures as _cf_ajb
 
-    # ── Pre-calentar get_form en paralelo para todos los partidos ──
+    # Pre-calentamiento en background — no bloquea el render del tab
     try:
         _ajb_pw_args = [(m.get("home_id",""), m.get("slug","")) for m in (matches_fut or [])[:20] if m.get("home_id")]
         _ajb_pw_args += [(m.get("away_id",""), m.get("slug","")) for m in (matches_fut or [])[:20] if m.get("away_id")]
         def _ajb_pw(a):
             try: get_form(a[0], a[1])
             except: pass
-        with _cf_ajb.ThreadPoolExecutor(max_workers=20) as _ex_pw:
-            list(_ex_pw.map(_ajb_pw, _ajb_pw_args, timeout=12))
+        def _ajb_warm():
+            with _cf_ajb.ThreadPoolExecutor(max_workers=20) as _ex_pw:
+                list(_ex_pw.map(_ajb_pw, _ajb_pw_args, timeout=10))
+        import threading as _thr_ajb
+        _thr_ajb.Thread(target=_ajb_warm, daemon=True).start()
     except: pass
 
     # ── Fútbol ──────────────────────────────────────────────────────────
@@ -18422,8 +18425,10 @@ if st.session_state["view"] == "cartelera":
                                                         st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
-            with st.spinner("Calculando TRILAY..."):
-                trilay_picks = compute_trilay(all_matches or matches)
+            if st.session_state.get("_trilay_loaded") or st.button("🎰 Calcular TRILAY", key="load_trilay_fut", type="primary"):
+                st.session_state["_trilay_loaded"] = True
+                with st.spinner("Calculando TRILAY..."):
+                    trilay_picks = compute_trilay(all_matches or matches)
             if not trilay_picks:
                 st.info("No hay suficientes partidos con edge para armar TRILAY hoy.")
             else:
@@ -18440,7 +18445,11 @@ if st.session_state["view"] == "cartelera":
                 st.markdown("</div>", unsafe_allow_html=True)
         with tab3:
             st.markdown("<div class='shdr'>🦆 PATO — Under 4.5 Seguros</div>", unsafe_allow_html=True)
-            _pato_matches = _ventana_22h(all_matches or matches)
+            if st.session_state.get("_pato_loaded") or st.button("🦆 Calcular PATO", key="load_pato_fut", type="primary"):
+                st.session_state["_pato_loaded"] = True
+                _pato_matches = _ventana_22h(all_matches or matches)
+            else:
+                _pato_matches = []
             pato_picks = []
             for _m in _pato_matches:
                 try:
@@ -18466,7 +18475,11 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.markdown("<div class='shdr'>🎯 Picks del Día — Fútbol</div>", unsafe_allow_html=True)
             fut_picks = []
-            _picks_src = [m for m in (all_matches or []) if m.get("state") == "pre"]
+            if st.session_state.get("_futpicks_loaded") or st.button("🎯 Calcular Picks", key="load_picks_fut", type="primary"):
+                st.session_state["_futpicks_loaded"] = True
+                _picks_src = [m for m in (all_matches or []) if m.get("state") == "pre"]
+            else:
+                _picks_src = []
             for _m in _picks_src[:40]:
                 try:
                     _hf  = get_form(_m["home_id"],_m["slug"]) or []
