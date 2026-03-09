@@ -16140,8 +16140,11 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     # ══════════════════════════════════════════════════════
     # BANKROLL PANEL — siempre visible
     # ══════════════════════════════════════════════════════
-    bk = _king_rongo_bankroll_advice(pick_history)
-    _kr_render_bankroll(bk)
+    try:
+        bk = _king_rongo_bankroll_advice(pick_history)
+        _kr_render_bankroll(bk)
+    except Exception as _bk_err:
+        st.caption(f"⚠️ Bankroll panel error: {_bk_err}")
     try:
         _bg=_kr_brain_load()
         _gt=_bg.get("wins",0)+_bg.get("losses",0)
@@ -16163,68 +16166,84 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     except: pass
 
     # ══════════════════════════════════════════════════════
-    # 👑 AUDITORÍA KING RONGO — solo sus propios picks
-    # ══════════════════════════════════════════════════════
-    _kr_picks = [p for p in pick_history if str(p.get("pick","")).startswith("👑")]
-    _kr_win  = sum(1 for p in _kr_picks if p.get("result") == "✅")
-    _kr_loss = sum(1 for p in _kr_picks if p.get("result") == "❌")
-    _kr_pend = sum(1 for p in _kr_picks if p.get("result") == "⏳")
-    _kr_tot  = _kr_win + _kr_loss
-    _kr_pct  = round(_kr_win / _kr_tot * 100) if _kr_tot > 0 else 0
-    _kr_bar_c = "#FFD700" if _kr_pct >= 60 else ("#00ff88" if _kr_pct >= 50 else ("#FFD700" if _kr_pct >= 45 else "#ff4444"))
+    try:
+        # 👑 AUDITORÍA KING RONGO — solo sus propios picks
+        # ══════════════════════════════════════════════════════
+        _kr_picks = [p for p in pick_history if str(p.get("pick","")).startswith("👑")]
+        _kr_win  = sum(1 for p in _kr_picks if p.get("result") == "✅")
+        _kr_loss = sum(1 for p in _kr_picks if p.get("result") == "❌")
+        _kr_pend = sum(1 for p in _kr_picks if p.get("result") == "⏳")
+        _kr_tot  = _kr_win + _kr_loss
+        _kr_pct  = round(_kr_win / _kr_tot * 100) if _kr_tot > 0 else 0
+        _kr_bar_c = "#FFD700" if _kr_pct >= 60 else ("#00ff88" if _kr_pct >= 50 else ("#FFD700" if _kr_pct >= 45 else "#ff4444"))
 
-    # También auditar automáticamente contra results_db (igual que Villar)
-    _rdb = get_results_db()
-    _rdb_partidos = _rdb.get("partidos", [])
-    _kr_auto_ok = 0; _kr_auto_fail = 0
-    for _kp in _kr_picks:
-        if _kp.get("result") in ("✅","❌"): continue  # ya calificado manualmente
-        _res = _villar_find_result(_kp, _rdb_partidos)
-        if _res:
-            _vd2, _, _ = _villar_match_pick_to_result(_kp, _res)
-            if   "GANÓ"  in _vd2: _kr_auto_ok   += 1
-            elif "FALLÓ" in _vd2: _kr_auto_fail += 1
+        # También auditar automáticamente contra results_db (igual que Villar)
+        try:
+            import concurrent.futures as _cf_rdb
+            with _cf_rdb.ThreadPoolExecutor(max_workers=1) as _rx:
+                _rdb_f = _rx.submit(get_results_db)
+                try:
+                    _rdb = _rdb_f.result(timeout=3)
+                    _rdb_partidos = _rdb.get("partidos", [])
+                except:
+                    _rdb_partidos = []
+        except:
+            _rdb_partidos = []
+        _kr_auto_ok = 0; _kr_auto_fail = 0
+        for _kp in _kr_picks:
+            if _kp.get("result") in ("✅","❌"): continue  # ya calificado manualmente
+            try:
+                _res = _villar_find_result(_kp, _rdb_partidos)
+                if _res:
+                    _vd2, _, _ = _villar_match_pick_to_result(_kp, _res)
+                    if   "GANÓ"  in _vd2: _kr_auto_ok   += 1
+                    elif "FALLÓ" in _vd2: _kr_auto_fail += 1
+            except: pass
 
-    _kr_total_ok   = _kr_win + _kr_auto_ok
-    _kr_total_fail = _kr_loss + _kr_auto_fail
-    _kr_total_all  = _kr_total_ok + _kr_total_fail
-    _kr_total_pct  = round(_kr_total_ok / _kr_total_all * 100) if _kr_total_all > 0 else 0
-    _kr_bc2 = "#FFD700" if _kr_total_pct >= 60 else ("#00ff88" if _kr_total_pct >= 55 else ("#FFD700" if _kr_total_pct >= 45 else "#ff4444"))
+        _kr_total_ok   = _kr_win + _kr_auto_ok
+        _kr_total_fail = _kr_loss + _kr_auto_fail
+        _kr_total_all  = _kr_total_ok + _kr_total_fail
+        _kr_total_pct  = round(_kr_total_ok / _kr_total_all * 100) if _kr_total_all > 0 else 0
+        _kr_bc2 = "#FFD700" if _kr_total_pct >= 60 else ("#00ff88" if _kr_total_pct >= 55 else ("#FFD700" if _kr_total_pct >= 45 else "#ff4444"))
 
-    if _kr_total_all > 0 or _kr_pend > 0:
-        st.markdown(
-            f"<div style='background:linear-gradient(135deg,#100020,#0a1500);"
-            f"border:2px solid #FFD70066;border-radius:7px;padding:7px 9px;margin-bottom:5px'>"
-            f"<div style='font-size:1.02rem;font-weight:700;color:#FFD700;"
-            f"letter-spacing:.12em;margin-bottom:10px'>👑 KING RONGO — AUDITORÍA DE SUS PICKS</div>"
-            f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
-            f"<div style='text-align:center;background:#00ff8810;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.5rem;font-weight:900;color:#00ff88'>{_kr_total_ok}</div>"
-            f"<div style='font-size:1.02rem;color:#555'>✅ Ganados</div></div>"
-            f"<div style='text-align:center;background:#ff444410;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.5rem;font-weight:900;color:#ff4444'>{_kr_total_fail}</div>"
-            f"<div style='font-size:1.02rem;color:#555'>❌ Fallados</div></div>"
-            f"<div style='text-align:center;background:{_kr_bc2}18;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.5rem;font-weight:900;color:{_kr_bc2}'>{_kr_total_pct}%</div>"
-            f"<div style='font-size:1.02rem;color:#555'>Acierto</div></div>"
-            f"<div style='text-align:center;background:#FFD70010;border-radius:10px;padding:8px 4px'>"
-            f"<div style='font-size:1.5rem;font-weight:900;color:#FFD700'>{_kr_pend}</div>"
-            f"<div style='font-size:1.02rem;color:#555'>⏳ Pendientes</div></div>"
-            f"</div>"
-            f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:6px;height:4px;overflow:hidden'>"
-            f"<div style='width:{_kr_total_pct}%;height:100%;"
-            f"background:linear-gradient(90deg,#FFD700,#ff9500);border-radius:6px'></div></div>"
-            f"<div style='font-size:0.975rem;color:#5a4a2e;margin-top:6px;text-align:right'>"
-            f"{_kr_total_all} picks auditados · {_kr_pend} pendientes de resultado</div>"
-            f"</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(
-            f"<div style='background:#0a0a20;border:1px solid #FFD70033;border-radius:12px;"
-            f"padding:6px 8px;margin-bottom:5px;text-align:center'>"
-            f"<div style='font-size:1.05rem;color:#FFD700;font-weight:700;margin-bottom:4px'>"
-            f"👑 AUDITORÍA KING RONGO</div>"
-            f"<div style='color:#6b5a3a;font-size:1.2rem'>Guarda picks de KR para ver tu historial de aciertos</div>"
-            f"</div>", unsafe_allow_html=True)
+        if _kr_total_all > 0 or _kr_pend > 0:
+            st.markdown(
+                f"<div style='background:linear-gradient(135deg,#100020,#0a1500);"
+                f"border:2px solid #FFD70066;border-radius:7px;padding:7px 9px;margin-bottom:5px'>"
+                f"<div style='font-size:1.02rem;font-weight:700;color:#FFD700;"
+                f"letter-spacing:.12em;margin-bottom:10px'>👑 KING RONGO — AUDITORÍA DE SUS PICKS</div>"
+                f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px'>"
+                f"<div style='text-align:center;background:#00ff8810;border-radius:10px;padding:8px 4px'>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:#00ff88'>{_kr_total_ok}</div>"
+                f"<div style='font-size:1.02rem;color:#555'>✅ Ganados</div></div>"
+                f"<div style='text-align:center;background:#ff444410;border-radius:10px;padding:8px 4px'>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:#ff4444'>{_kr_total_fail}</div>"
+                f"<div style='font-size:1.02rem;color:#555'>❌ Fallados</div></div>"
+                f"<div style='text-align:center;background:{_kr_bc2}18;border-radius:10px;padding:8px 4px'>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:{_kr_bc2}'>{_kr_total_pct}%</div>"
+                f"<div style='font-size:1.02rem;color:#555'>Acierto</div></div>"
+                f"<div style='text-align:center;background:#FFD70010;border-radius:10px;padding:8px 4px'>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:#FFD700'>{_kr_pend}</div>"
+                f"<div style='font-size:1.02rem;color:#555'>⏳ Pendientes</div></div>"
+                f"</div>"
+                f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:6px;height:4px;overflow:hidden'>"
+                f"<div style='width:{_kr_total_pct}%;height:100%;"
+                f"background:linear-gradient(90deg,#FFD700,#ff9500);border-radius:6px'></div></div>"
+                f"<div style='font-size:0.975rem;color:#5a4a2e;margin-top:6px;text-align:right'>"
+                f"{_kr_total_all} picks auditados · {_kr_pend} pendientes de resultado</div>"
+                f"</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f"<div style='background:#0a0a20;border:1px solid #FFD70033;border-radius:12px;"
+                f"padding:6px 8px;margin-bottom:5px;text-align:center'>"
+                f"<div style='font-size:1.05rem;color:#FFD700;font-weight:700;margin-bottom:4px'>"
+                f"👑 AUDITORÍA KING RONGO</div>"
+                f"<div style='color:#6b5a3a;font-size:1.2rem'>Guarda picks de KR para ver tu historial de aciertos</div>"
+                f"</div>", unsafe_allow_html=True)
+
+
+    except Exception as _aud_err:
+        st.caption(f"⚠️ Auditoría error: {_aud_err}")
 
     # ══════════════════════════════════════════════════════
     # SINCRONIZAR cache de disco → session_state (al cargar)
@@ -17870,22 +17889,7 @@ if st.session_state["view"] == "cartelera":
                        st.session_state.get("_ajb_cache_nba") or [])
             _kr_ten = (st.session_state.get("_kr_cache_ten") or
                        st.session_state.get("_ajb_cache_ten") or [])
-            # Fetch en paralelo solo lo que falte
-            if not _kr_fut or not _kr_nba or not _kr_ten:
-                import concurrent.futures as _cf_kr_tab
-                with _cf_kr_tab.ThreadPoolExecutor(max_workers=3) as _kx:
-                    _kf = _kx.submit(get_cartelera)       if not _kr_fut else None
-                    _kn = _kx.submit(get_nba_cartelera)   if not _kr_nba else None
-                    _kt = _kx.submit(get_tennis_cartelera) if not _kr_ten else None
-                    try:
-                        if _kf: _kr_fut = _kf.result(timeout=10) or []
-                        if _kn: _kr_nba = _kn.result(timeout=10) or []
-                        if _kt: _kr_ten = _kt.result(timeout=10) or []
-                    except: pass
-            # Guardar en ambos namespaces
-            if _kr_fut: st.session_state["_kr_cache_fut"] = st.session_state["_ajb_cache_fut"] = _kr_fut
-            if _kr_nba: st.session_state["_kr_cache_nba"] = st.session_state["_ajb_cache_nba"] = _kr_nba
-            if _kr_ten: st.session_state["_kr_cache_ten"] = st.session_state["_ajb_cache_ten"] = _kr_ten
+            # render_king_rongo siempre — usa cache existente, sin fetch bloqueante
             render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
     # ─── TENIS ───────────────────────────────────────────
@@ -18117,22 +18121,7 @@ if st.session_state["view"] == "cartelera":
                        st.session_state.get("_ajb_cache_nba") or [])
             _kr_ten = (st.session_state.get("_kr_cache_ten") or
                        st.session_state.get("_ajb_cache_ten") or [])
-            # Fetch en paralelo solo lo que falte
-            if not _kr_fut or not _kr_nba or not _kr_ten:
-                import concurrent.futures as _cf_kr_tab
-                with _cf_kr_tab.ThreadPoolExecutor(max_workers=3) as _kx:
-                    _kf = _kx.submit(get_cartelera)       if not _kr_fut else None
-                    _kn = _kx.submit(get_nba_cartelera)   if not _kr_nba else None
-                    _kt = _kx.submit(get_tennis_cartelera) if not _kr_ten else None
-                    try:
-                        if _kf: _kr_fut = _kf.result(timeout=10) or []
-                        if _kn: _kr_nba = _kn.result(timeout=10) or []
-                        if _kt: _kr_ten = _kt.result(timeout=10) or []
-                    except: pass
-            # Guardar en ambos namespaces
-            if _kr_fut: st.session_state["_kr_cache_fut"] = st.session_state["_ajb_cache_fut"] = _kr_fut
-            if _kr_nba: st.session_state["_kr_cache_nba"] = st.session_state["_ajb_cache_nba"] = _kr_nba
-            if _kr_ten: st.session_state["_kr_cache_ten"] = st.session_state["_ajb_cache_ten"] = _kr_ten
+            # render_king_rongo siempre — usa cache existente, sin fetch bloqueante
             render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
     # ─── FÚTBOL ──────────────────────────────────────────
@@ -18635,22 +18624,7 @@ if st.session_state["view"] == "cartelera":
                        st.session_state.get("_ajb_cache_nba") or [])
             _kr_ten = (st.session_state.get("_kr_cache_ten") or
                        st.session_state.get("_ajb_cache_ten") or [])
-            # Fetch en paralelo solo lo que falte
-            if not _kr_fut or not _kr_nba or not _kr_ten:
-                import concurrent.futures as _cf_kr_tab
-                with _cf_kr_tab.ThreadPoolExecutor(max_workers=3) as _kx:
-                    _kf = _kx.submit(get_cartelera)       if not _kr_fut else None
-                    _kn = _kx.submit(get_nba_cartelera)   if not _kr_nba else None
-                    _kt = _kx.submit(get_tennis_cartelera) if not _kr_ten else None
-                    try:
-                        if _kf: _kr_fut = _kf.result(timeout=10) or []
-                        if _kn: _kr_nba = _kn.result(timeout=10) or []
-                        if _kt: _kr_ten = _kt.result(timeout=10) or []
-                    except: pass
-            # Guardar en ambos namespaces
-            if _kr_fut: st.session_state["_kr_cache_fut"] = st.session_state["_ajb_cache_fut"] = _kr_fut
-            if _kr_nba: st.session_state["_kr_cache_nba"] = st.session_state["_ajb_cache_nba"] = _kr_nba
-            if _kr_ten: st.session_state["_kr_cache_ten"] = st.session_state["_ajb_cache_ten"] = _kr_ten
+            # render_king_rongo siempre — usa cache existente, sin fetch bloqueante
             render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
 else:
