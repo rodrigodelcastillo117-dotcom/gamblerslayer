@@ -17765,17 +17765,6 @@ if st.session_state["view"] == "cartelera":
                                     )
                                     st.markdown(nba_verdict_html, unsafe_allow_html=True)
 
-        # ── PRE-MATCH INTELLIGENCE BOT — NBA ──
-        _nba_ou = g.get("ou_line",220)
-        adj_nba, _was_adj_nba = render_prematch_bot(
-            sport="nba", home=g["home"], away=g["away"],
-            league_slug="nba", league_name="NBA",
-            model_result={"ph":0.5,"pa":0.5,"proj":_nba_ou},
-            ou_line=_nba_ou,
-            hora_partido=g.get("hora","")
-        )
-        # ── ACTION NETWORK NBA ──
-        render_action_network_nba(g["home"], g["away"], g.get("ou_line",0))
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick NBA del día:")
