@@ -12731,24 +12731,20 @@ def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
         return {"delta_h":0.0,"delta_a":0.0,"score_ultra":5.0,"flags":[],"context_str":"","raw":{}}
     try:
         prompt = (
-            f"Partido: {home} vs {away} | {sport} | {liga} | {fecha}\n"
-            f"{('Tabla: '+tabla_ctx) if tabla_ctx else ''}\n"
-            f"Analiza estos factores para el LOCAL ({home}). Valores float en rango indicado.\n"
-            f"SOLO JSON sin backticks:\n"
-            f'{{"fatiga_h":-0.15_a_0.0,"fatiga_a":-0.15_a_0.0,'
-            f'"forma_h":-0.10_a_+0.10,"forma_a":-0.10_a_+0.10,'
-            f'"motivacion_h":-0.08_a_+0.08,"motivacion_a":-0.08_a_+0.08,'
-            f'"matchup_ventaja":-0.08_a_+0.08,'
-            f'"presion_h":-0.06_a_+0.06,'
-            f'"localia_bonus":0.0_a_+0.06,'
-            f'"rival_h":-0.06_a_+0.06,"rival_a":-0.06_a_+0.06,'
-            f'"fisica_ventaja":-0.05_a_+0.05,'
-            f'"flags":["max 3 alertas criticas o array vacio"]}}'
+            f"Partido: {home} vs {away} | {sport} | {liga}\n"
+            f"{('Tabla: '+tabla_ctx+'\n') if tabla_ctx else ''}"
+            f"Responde SOLO JSON valido sin backticks con estos campos float:\n"
+            f'{{"fatiga_h":0.0,"fatiga_a":0.0,"forma_h":0.0,"forma_a":0.0,'
+            f'"motivacion_h":0.0,"motivacion_a":0.0,"matchup_ventaja":0.0,'
+            f'"presion_h":0.0,"localia_bonus":0.0,"rival_h":0.0,"rival_a":0.0,'
+            f'"fisica_ventaja":0.0,"flags":[]}}'
+            f"\nfatiga: -0.15 a 0. forma/motivacion: -0.10 a +0.10. resto: -0.08 a +0.08. "
+            f"flags: max 2 alertas importantes como strings."
         )
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":200,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":250,
                   "messages":[{"role":"user","content":prompt}]}, timeout=6)
         if r.status_code == 200:
             txt = re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip()
@@ -12847,16 +12843,18 @@ def _kr_analisis_combinado(home: str, away: str, sport: str, liga: str, hora: st
                 "coach_h":0.0,"coach_a":0.0,"coach_score":5}
     try:
         prompt = (
-            f"Partido: {home} vs {away} | {sport} | {liga} | {hora}\n"
-            f"Responde SOLO este JSON sin backticks, sin texto extra:\n"
-            f'{{"sit_factor":-0.10_a_+0.10,"sit_ctx":"max 12 palabras","sit_urgencia":"alta|media|baja",'
-            f'"trans_h":-0.05_a_+0.05,"trans_a":-0.05_a_+0.05,"trans_score":0_a_10,'
-            f'"coach_h":-0.04_a_+0.04,"coach_a":-0.04_a_+0.04,"coach_score":0_a_10}}'
+            f"Partido: {home} vs {away} | {sport} | {liga}\n"
+            f"Responde SOLO JSON valido, sin texto extra, sin backticks:\n"
+            f'{{"sit_factor":0.0,"sit_ctx":"breve","sit_urgencia":"baja",'
+            f'"trans_h":0.0,"trans_a":0.0,"trans_score":5,'
+            f'"coach_h":0.0,"coach_a":0.0,"coach_score":5}}'
+            f"\nSustituye los valores segun tu analisis. sit_factor entre -0.10 y +0.10. "
+            f"trans_h/a entre -0.05 y +0.05. coach_h/a entre -0.04 y +0.04. scores de 0 a 10."
         )
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":120,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":180,
                   "messages":[{"role":"user","content":prompt}]}, timeout=6)
         if r.status_code == 200:
             txt = re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip()
@@ -14432,8 +14430,8 @@ def _kr_sync_session_from_cache():
             last_dt = datetime.strptime(ts, "%Y-%m-%d %H:%M")
             last_dt = CDMX.localize(last_dt) if last_dt.tzinfo is None else last_dt.astimezone(CDMX)
             age_h = (datetime.now(CDMX) - last_dt).total_seconds() / 3600
-            if age_h > 8:
-                return  # muy viejo
+            if age_h > 20:
+                return  # muy viejo (más de 20h)
         except: pass
     # Cargar a session_state
     st.session_state["_king_el_pick"]  = cache.get("el_pick")
@@ -16153,18 +16151,33 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         st.rerun()
 
     # ══════════════════════════════════════════════════════
-    # AUTO-SCAN: marcar en session y dejar que el if de abajo lo tome
+    # CACHE-FIRST: si hay cache de hoy, cargar sin re-escanear
     # ══════════════════════════════════════════════════════
+    if not st.session_state.get("_king_scanned"):
+        try:
+            _cached = _kr_load_cache()
+            _cached_date = _cached.get("target_date","")
+            _cached_ts   = _cached.get("scan_ts","")
+            _today_kr    = datetime.now(CDMX).strftime("%Y-%m-%d")
+            if _cached.get("el_pick") and _cached_date == _today_kr:
+                # Cache de hoy existe → cargar en session, NO escanear
+                st.session_state["_king_el_pick"]  = _cached["el_pick"]
+                st.session_state["_king_contras"]  = _cached.get("contradicciones", [])
+                st.session_state["_king_todos"]    = _cached.get("todos", [])
+                st.session_state["_king_top3"]     = _cached.get("top3", [])
+                st.session_state["_king_scanned"]  = True
+                st.session_state["_king_ts"]       = _cached.get("hora_scan","")
+                st.session_state["_king_target"]   = _cached_date
+                if _cached_ts:
+                    st.session_state["_kr_scan_ts"] = _cached_ts
+        except: pass
+
+    # AUTO-SCAN: solo si no hay datos válidos en session
     _auto = _kr_should_auto_scan()
     if _auto and not st.session_state.get("_king_scanned"):
         do_scan = True
-    # Solo forzar scan si no hay resultado en cache (primera visita del día)
-    # Evitar re-escanear en cada rerun/navegación
-    _kr_cache_age = (datetime.now(CDMX) - datetime.fromisoformat(
-        st.session_state.get("_kr_scan_ts", "2000-01-01T00:00:00")
-        .replace("Z","")
-    )).total_seconds() if st.session_state.get("_kr_scan_ts") else 99999
-    if not st.session_state.get("_king_scanned") and not do_scan and _kr_cache_age > 3600:
+    # Forzar scan si no hay resultado Y no hay cache de hoy
+    if not st.session_state.get("_king_scanned") and not do_scan:
         do_scan = True
 
     # ══════════════════════════════════════════════════════
