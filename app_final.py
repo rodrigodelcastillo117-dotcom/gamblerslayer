@@ -622,7 +622,7 @@ _NBA_STATS_H = {
     "x-nba-stats-token":  "true",
 }
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=28800, show_spinner=False)
 def _nba_stats_team_advanced(nba_stats_id: str) -> dict:
     """
     Advanced stats del equipo desde stats.nba.com.
@@ -666,7 +666,7 @@ def _nba_stats_team_advanced(nba_stats_id: str) -> dict:
     except: return default
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=28800, show_spinner=False)
 def _nba_stats_last_n(nba_stats_id: str, n: int = 5) -> dict:
     """
     Stats de los últimos N partidos desde stats.nba.com.
@@ -11001,7 +11001,7 @@ def get_nba_cartelera():
     games = _sort_cartelera(games, _now2.strftime("%Y-%m-%d"), int(_now2.strftime("%H")))
     return games
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=28800, show_spinner=False)
 def get_nba_team_stats(team_id):
     """
     Extrae stats avanzadas de ESPN NBA:
@@ -11031,7 +11031,7 @@ def get_nba_team_stats(team_id):
     return stats
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def get_nba_recent_form(team_id, n_games=10):
     """
     Últimos N partidos NBA — detecta racha, back-to-back fatigue,
@@ -13484,9 +13484,10 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
 
                     if _kr_state != 'in' and _elapsed_kr > 600: continue   # pre >10min pasados
             except: pass
-            # King Rongo analiza todos los juegos del día
+            # King Rongo analiza todos los juegos del día (usa cache si existe)
             try:
-                res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                res = (st.session_state.get("_nba_model_cache",{}).get(g.get("id",""))
+                       or nba_ou_model(g["home_id"], g["away_id"], g["ou_line"]))
                 p_h_base = res.get("p_h_win", 0.55); p_a_base = 1-p_h_base
                 line= res["line"]
 
@@ -16658,6 +16659,25 @@ if st.session_state["view"] == "cartelera":
                     meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
                     return f"🏀 {dias[d.weekday()]} {d.day} {meses[d.month]}"
                 except: return f
+            # ── Pre-computar modelos NBA en paralelo (1 vez por sesión) ──
+            _all_nba_gs = [g for gs in nba_por_fecha.values() for g in gs if g["state"] != "post"]
+            if _all_nba_gs and not st.session_state.get("_nba_model_cache"):
+                try:
+                    import concurrent.futures as _cf_nba
+                    def _run_nba_model(g):
+                        try: return g["id"], nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                        except: return g["id"], None
+                    with _cf_nba.ThreadPoolExecutor(max_workers=min(len(_all_nba_gs), 8)) as _nx:
+                        _nba_futs = {_nx.submit(_run_nba_model, g): g for g in _all_nba_gs}
+                        _nba_cache = {}
+                        for _nf in _cf_nba.as_completed(_nba_futs, timeout=15):
+                            try:
+                                _gid, _res = _nf.result()
+                                if _res: _nba_cache[_gid] = _res
+                            except: pass
+                    st.session_state["_nba_model_cache"] = _nba_cache
+                except: pass
+
             for fi, fecha in enumerate(sorted(nba_por_fecha.keys())):
                 gs = nba_por_fecha[fecha]
                 with st.expander(f"{fecha_label_nba(fecha)}  ·  {len(gs)} juegos", expanded=(fi==0)):
@@ -16689,17 +16709,16 @@ if st.session_state["view"] == "cartelera":
                                 _nba_br = st.session_state.get("_diamond_bridge",{}).get(g.get("id",""))
                                 _nba_pl = _nba_br.get("pick","") if _nba_br else ""
                                 _nba_pp = _nba_br.get("prob",0)  if _nba_br else 0
-                                # Pre-partido: si no hay bridge, calcular con modelo
+                                # Pre-partido: usar cache pre-computado (paralelo, no bloquea)
                                 if not _nba_pl:
-                                    try:
-                                        _nba_res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                                    _nba_res = st.session_state.get("_nba_model_cache", {}).get(g.get("id",""))
+                                    if _nba_res:
                                         if _nba_res["p_over"] >= 0.53:
                                             _nba_pl = f"Over {_nba_res['line']}"
                                             _nba_pp = _nba_res["p_over"]
                                         elif _nba_res["p_under"] >= 0.53:
                                             _nba_pl = f"Under {_nba_res['line']}"
                                             _nba_pp = _nba_res["p_under"]
-                                    except: pass
                                 # En vivo: recalcular con ritmo real del partido
                                 if live:
                                     try:
@@ -16873,7 +16892,8 @@ if st.session_state["view"] == "cartelera":
                     _nba_cands = []
                     for _g in _ven_nba[:20]:
                         try:
-                            _r = nba_ou_model(_g["home_id"],_g["away_id"],_g["ou_line"])
+                            _r = (st.session_state.get("_nba_model_cache",{}).get(_g.get("id",""))
+                                  or nba_ou_model(_g["home_id"],_g["away_id"],_g["ou_line"]))
                             _bp = max(_r["p_over"],_r["p_under"])
                             _bm = f"🔥 Over {_r['line']}" if _r["p_over"]>_r["p_under"] else f"❄️ Under {_r['line']}"
                             if _bp >= 0.55:
@@ -16908,7 +16928,8 @@ if st.session_state["view"] == "cartelera":
                     for g in nba_games[:20]:
                         if g["state"]!="pre": continue
                         try:
-                            res = nba_ou_model(g["home_id"],g["away_id"],g["ou_line"])
+                            res = (st.session_state.get("_nba_model_cache",{}).get(g.get("id",""))
+                                   or nba_ou_model(g["home_id"],g["away_id"],g["ou_line"]))
                             best_p = max(res["p_over"],res["p_under"])
                             best_m = f"🔥 Over {res['line']}" if res["p_over"]>res["p_under"] else f"❄️ Under {res['line']}"
                             if best_p-0.5 > 0.04:
@@ -16950,7 +16971,8 @@ if st.session_state["view"] == "cartelera":
                     _prev = []
                     for _g in nba_games[:15]:
                         if _g["state"]!="pre": continue
-                        _r = nba_ou_model(_g["home_id"],_g["away_id"],_g["ou_line"])
+                        _r = (st.session_state.get("_nba_model_cache",{}).get(_g.get("id",""))
+                          or nba_ou_model(_g["home_id"],_g["away_id"],_g["ou_line"]))
                         _bp = max(_r["p_over"],_r["p_under"])
                         if _bp-0.5 >= 0.04:
                             _pick = f"{'🔥 Over' if _r['p_over']>_r['p_under'] else '❄️ Under'} {_r['line']}"
