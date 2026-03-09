@@ -16163,6 +16163,8 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     # ══════════════════════════════════════════════════════
     # SCAN + RESULTADOS
     # ══════════════════════════════════════════════════════
+    if do_scan:
+        st.session_state["_stay_king"] = True
     if do_scan or st.session_state.get("_king_scanned"):
 
         if do_scan:
@@ -17294,6 +17296,9 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
+        if st.session_state.pop("_stay_king", False):
+            _js_king = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=10)t[9].click();},250);</script>"
+            st.markdown(_js_king, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             st.markdown("<div class='shdr'>🏀 NBA — Over / Under · ML</div>", unsafe_allow_html=True)
@@ -17677,6 +17682,9 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
+        if st.session_state.pop("_stay_king", False):
+            _js_king = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=10)t[9].click();},250);</script>"
+            st.markdown(_js_king, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             # ── TENNIS CARTELERA — 2 columnas, separado por ATP / WTA ──
@@ -17916,6 +17924,9 @@ if st.session_state["view"] == "cartelera":
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
+        if st.session_state.pop("_stay_king", False):
+            _js_king = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=10)t[9].click();},250);</script>"
+            st.markdown(_js_king, unsafe_allow_html=True)
         tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab_papi,tab_king = st.tabs(["📅 Cartelera","🎰 TRILAY","🦆 PATO","🎯 Picks","🤖 Bot","📋 Historial","🎓 Califica tu Pick","📊 Resultados","💰 AJB","👑 King Rongo"])
         with tab1:
             _shdr_c1, _shdr_c2 = st.columns([5,1])
