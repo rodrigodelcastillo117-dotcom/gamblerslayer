@@ -12288,7 +12288,7 @@ RESPONDE SOLO JSON:
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-sonnet-4-20250514","max_tokens":800,
-                  "messages":[{"role":"user","content":prompt}]},timeout=20)
+                  "messages":[{"role":"user","content":prompt}]},timeout=12)
         if r.status_code!=200: return None
         raw = r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
         if "{" in raw: raw=raw[raw.find("{"):raw.rfind("}")+1]
@@ -12403,12 +12403,32 @@ def _kr_rtm(prob,sport,liga,brain):
         return round(max(-0.06,min(0.04,(sum(hist)/len(hist)-0.58)*0.35)),4)
     except: return 0.0
 
-def _kr_calibrate(prob,sport,brain):
+def _kr_calibrate(prob,sport,brain,mkt=None):
+    """Calibra prob con historial real. Combina bucket_hist + mkt_hist."""
     try:
+        # Calibración por bucket prob × sport
         bucket=str(round(round(prob*10)/10,1))
         hist=brain.get("bucket_hist",{}).get(sport+bucket,[])[-20:]
-        if len(hist)<8: return prob
-        return round(max(0.10,min(0.92,0.70*prob+0.30*sum(hist)/len(hist))),4)
+        cal_bucket = round(max(0.10,min(0.92,0.70*prob+0.30*sum(hist)/len(hist))),4) if len(hist)>=8 else prob
+
+        if not mkt:
+            return cal_bucket
+
+        # Ajuste adicional por mercado
+        mkt_h  = brain.get("mkt_hist",{}).get(mkt,[])[-30:]
+        mkt_sp = brain.get("mkt_sport_hist",{}).get(f"{sport}_{mkt}",[])[-20:]
+
+        # Tasa de acierto histórica del mercado (prioriza mkt×sport si hay datos)
+        if len(mkt_sp) >= 6:
+            mkt_acc = sum(mkt_sp)/len(mkt_sp)
+        elif len(mkt_h) >= 8:
+            mkt_acc = sum(mkt_h)/len(mkt_h)
+        else:
+            return cal_bucket  # sin historial suficiente, no ajustar
+
+        # Ajuste suave: si el mercado tiene buen historial, boost leve; si malo, penalizar
+        mkt_factor = (mkt_acc - 0.50) * 0.25   # ±0.125 máximo
+        return round(max(0.10, min(0.92, cal_bucket + mkt_factor)), 4)
     except: return prob
 
 
@@ -12953,18 +12973,8 @@ def _kr_god_score(c,brain,elo_r,ph_tuple):
             elif _pos_gap >= 3:  s += _tbl_dlt * 1.0
         except: pass
 
-        # ── Capa Psicológica + Táctica avanzada: transición + entrenador ──
-        try:
-            _trans = _kr_transicion(home, away, sport)
-            _delta_trans = float(_trans.get("trans_h", 0.0)) * 0.55
-            s += _delta_trans
-        except: pass
-
-        try:
-            _coach = _kr_entrenador(home, away, sport, liga)
-            _delta_coach = float(_coach.get("coach_h", 0.0)) * 0.60
-            s += _delta_coach
-        except: pass
+        # Transición y entrenador se aplican en _enrich_candidate vía _kr_analisis_combinado
+        # (removidos de aquí para evitar llamadas Claude secuenciales por candidato)
 
         # ── ELO bonus ──
         try:
@@ -12995,6 +13005,16 @@ def _kr_learn(pick,resultado):
     key=sport+bucket; brain["bucket_hist"].setdefault(key,[])
     brain["bucket_hist"][key].append(1 if won else 0)
     brain["bucket_hist"][key]=brain["bucket_hist"][key][-40:]
+    # ── Historial por mercado (mkt_type) ──
+    mkt=pick.get("mkt_type","1X2")
+    brain.setdefault("mkt_hist",{}).setdefault(mkt,[])
+    brain["mkt_hist"][mkt].append(1 if won else 0)
+    brain["mkt_hist"][mkt]=brain["mkt_hist"][mkt][-60:]
+    # ── Historial mkt × sport combinado ──
+    mkt_sport_key = f"{sport}_{mkt}"
+    brain.setdefault("mkt_sport_hist",{}).setdefault(mkt_sport_key,[])
+    brain["mkt_sport_hist"][mkt_sport_key].append(1 if won else 0)
+    brain["mkt_sport_hist"][mkt_sport_key]=brain["mkt_sport_hist"][mkt_sport_key][-40:]
     _kr_brain_save(brain)
     try:
         label=pick.get("label",""); home=label.split(" vs ")[0].split(" @ ")[-1].strip()
@@ -13177,7 +13197,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
 
     # ── ⚽ FÚTBOL ─────────────────────────────────────────────────────────
     try:
-        for m in (matches_fut or [])[:20]:
+        for m in (matches_fut or [])[:12]:
             # KR: solo partidos desde ahora (no pasados)
             _kr_state = m.get('state','pre')
             if _kr_state == 'post': continue
@@ -13400,17 +13420,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                             elif _tbl["delta_a"] > 0.05 and lbl == "visitante":
                                 c["score"] = min(10.0, c["score"] + 0.8)
                 except: pass
-                # 🌙 SmallDays — análisis 5 fuentes, ajuste silencioso
-                try:
-                    _sd_fut = _small_days_analyze(
-                        _home, _away, "futbol",
-                        m.get("fecha", ""), m.get("home_id",""),
-                        m.get("away_id",""), m.get("slug",""))
-                    _sd_delta = float(_sd_fut.get("delta_h", 0.0))
-                    if abs(_sd_delta) > 0.005:
-                        c["prob"] = max(0.10, min(0.92, c["prob"] + _sd_delta * 0.4))
-                        c["sd_flags"] = _sd_fut.get("flags", [])
-                except: pass
+                # SmallDays se aplica en enrichment (solo top 8) para no bloquear el scan
+                c.setdefault("sd_flags", [])
                 candidates.append(c)
             except Exception as _e_fut:
                 continue  # partido fallido, continuar con el siguiente
@@ -13419,7 +13430,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
 
     # ── 🏀 NBA ────────────────────────────────────────────────────────────
     try:
-        for g in (nba_games or [])[:20]:
+        for g in (nba_games or [])[:12]:
             # KR: solo partidos desde ahora (no pasados)
             _kr_state = g.get('state','pre')
             if _kr_state == 'post': continue
@@ -13457,63 +13468,60 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     p_over_kr = res["p_over"]; p_under_kr = res["p_under"]
                     pace_note = ""
 
-                mkts= [
-                    (f"🔥 Over {line}",    p_over_kr,  1.91,                          "O/U"),
-                    (f"❄️ Under {line}",   p_under_kr, 1.91,                          "O/U"),
-                    (f"🏠 {g['home'][:16]}", p_h,      g.get("odd_h",0) or 1.91,     "ML"),
-                    (f"✈️ {g['away'][:16]}", p_a,      g.get("odd_a",0) or 1.91,     "ML"),
-                ]
-                mkts = [(l,p,o,t) for l,p,o,t in mkts if p >= 0.43]
-                if not mkts: continue
-                best = max(mkts, key=lambda x: x[1])
-                lbl,prob,odd,mkt = best
-                _kr_companion = max(
-                    [x for x in mkts if x[3] != mkt],
-                    key=lambda x: x[1], default=None)
-                edge   = _kr_edge(prob, odd)
-                kelly  = _kr_kelly(prob, odd)
-                spread = round((1-abs(p_over_kr-p_under_kr))*50, 1)
-                contra = abs(p_over_kr-p_under_kr) < 0.08
-                ce,cl,cc = _kr_conf(prob, edge, spread)
+                # ── Todos los mercados disponibles ──
                 _kr_nba_all = [
-                    (f"🔥 Over {line}",    p_over_kr,  1.91,             "O/U"),
-                    (f"❄️ Under {line}",   p_under_kr, 1.91,             "O/U"),
-                    (f"🏠 {g['home'][:16]}", p_h,      g.get("odd_h",0) or 1.91, "ML"),
-                    (f"✈️ {g['away'][:16]}", p_a,      g.get("odd_a",0) or 1.91, "ML"),
+                    (f"🔥 Over {line}",      p_over_kr,  1.91,                          "O/U"),
+                    (f"❄️ Under {line}",     p_under_kr, 1.91,                          "O/U"),
+                    (f"🏠 {g['home'][:16]}", p_h,        g.get("odd_h",0) or 1.91,     "ML"),
+                    (f"✈️ {g['away'][:16]}", p_a,        g.get("odd_a",0) or 1.91,     "ML"),
                 ]
                 _kr_nba_all = [(l,p,o,t) for l,p,o,t in _kr_nba_all if p >= 0.10]
-                _kr_comp_str = (f"{_kr_companion[0]} ({_kr_companion[1]*100:.0f}%)"
-                                if _kr_companion else "")
-                c = {
-                    "deporte":"🏀 NBA","sport":"nba",
-                    "label":f"{g['away']} @ {g['home']}",
-                    "liga":"NBA","hora":g.get("hora",""),
-                    "pick":lbl,"prob":prob,"odd":odd,"edge":edge,
-                    "kelly_pct":kelly,"mkt_type":mkt,
-                    "contradiccion":contra,"model_spread":spread,
-                    "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
-                    "reasoning":f"Proy {res['proj']} pts · {pace_note} · NetRtg {res.get('net_h',0):+.1f}/{res.get('net_a',0):+.1f}",
-                    "match":g,
-                    "models":{"👑 Pyth%":round(p_h*100,1),
-                              "Over%":   round(p_over_kr*100,1),
-                              "Under%":  round(p_under_kr*100,1),
-                              "ML Away": round(p_a*100,1)},
-                    "all_markets": _kr_nba_all,
-                    "companion": _kr_comp_str,
-                    "p_over": p_over_kr, "p_under": p_under_kr,
-                    "p_h": p_h, "p_a": p_a, "line": line,
-                }
-                c["score"] = _kr_score(prob, edge, spread, kelly, contra)
-                # 🌙 SmallDays NBA
-                try:
-                    _sd_nba = _small_days_analyze(
-                        g.get('away',''), g.get('home',''), 'nba',
-                        g.get('fecha',''), g.get('away_id',''), g.get('home_id',''), '')
-                    _sd_d = float(_sd_nba.get('delta_h', 0.0))
-                    if abs(_sd_d) > 0.005:
-                        c['prob'] = max(0.10, min(0.92, c['prob'] + _sd_d * 0.35))
-                except: pass
-                candidates.append(c)
+                spread = round((1-abs(p_over_kr-p_under_kr))*50, 1)
+                contra = abs(p_over_kr-p_under_kr) < 0.08
+
+                # ── Generar DOS candidatos independientes: mejor O/U + mejor ML ──
+                _nba_ou_opts = [(l,p,o,t) for l,p,o,t in _kr_nba_all if t=="O/U" and p>=0.43]
+                _nba_ml_opts = [(l,p,o,t) for l,p,o,t in _kr_nba_all if t=="ML"  and p>=0.43]
+                _nba_picks = []
+                if _nba_ou_opts:
+                    _nba_picks.append(max(_nba_ou_opts, key=lambda x: x[1]))
+                if _nba_ml_opts:
+                    _nba_picks.append(max(_nba_ml_opts, key=lambda x: x[1]))
+                if not _nba_picks: continue
+
+                for lbl, prob, odd, mkt in _nba_picks:
+                    edge  = _kr_edge(prob, odd)
+                    kelly = _kr_kelly(prob, odd)
+                    ce,cl,cc = _kr_conf(prob, edge, spread)
+                    # El companion muestra el "otro" mercado para contexto
+                    _other_t = "ML" if mkt=="O/U" else "O/U"
+                    _other_opts = [(l2,p2,o2,t2) for l2,p2,o2,t2 in _kr_nba_all if t2==_other_t]
+                    _kr_comp_str = ""
+                    if _other_opts:
+                        _best_other = max(_other_opts, key=lambda x: x[1])
+                        _kr_comp_str = f"{_best_other[0]} ({_best_other[1]*100:.0f}%)"
+                    c = {
+                        "deporte":"🏀 NBA","sport":"nba",
+                        "label":f"{g['away']} @ {g['home']}",
+                        "liga":"NBA","hora":g.get("hora",""),
+                        "pick":lbl,"prob":prob,"odd":odd,"edge":edge,
+                        "kelly_pct":kelly,"mkt_type":mkt,
+                        "contradiccion":contra,"model_spread":spread,
+                        "conf_emoji":ce,"conf_label":cl,"conf_color":cc,
+                        "reasoning":f"Proy {res['proj']} pts · {pace_note} · NetRtg {res.get('net_h',0):+.1f}/{res.get('net_a',0):+.1f}",
+                        "match":g,
+                        "models":{"👑 Pyth%":round(p_h*100,1),
+                                  "Over%":   round(p_over_kr*100,1),
+                                  "Under%":  round(p_under_kr*100,1),
+                                  "ML H%":   round(p_h*100,1)},
+                        "all_markets": _kr_nba_all,
+                        "companion": _kr_comp_str,
+                        "p_over": p_over_kr, "p_under": p_under_kr,
+                        "p_h": p_h, "p_a": p_a, "line": line,
+                    }
+                    c["score"] = _kr_score(prob, edge, spread, kelly, contra)
+                    # SmallDays se aplica en enrichment (solo top 8)
+                    candidates.append(c)
             except: continue
     except: pass
 
@@ -13524,15 +13532,15 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
              "Rome":"clay","Cincinnati":"hard","Toronto":"hard",
              "Halle":"grass","Queen":"grass","Dubai":"hard","Doha":"hard"}
     try:
-        for m in (ten_matches or [])[:45]:
+        for m in (ten_matches or [])[:15]:
             # KR: solo partidos desde ahora (no pasados)
-            _kr_state = t.get('state','pre')
+            _kr_state = m.get('state','pre')
             if _kr_state == 'post': continue
             try:
                 from datetime import datetime as _dt_kr
                 import pytz as _pz_kr
                 _now_kr = _dt_kr.now(_pz_kr.timezone('America/Mexico_City'))
-                _hora_kr = t.get('hora','') or ''
+                _hora_kr = m.get('hora','') or ''
                 if ':' in _hora_kr:
                     _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
                     _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
@@ -13667,12 +13675,25 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     _c["prob"] = max(0.10, min(0.92, _c["prob"] + _comb.get("coach_h",0)*0.60))
                 except:
                     _c.setdefault("sit_ctx",""); _c.setdefault("trans_score",5); _c.setdefault("coach_score",5)
+            # SmallDays — solo para top candidates (ya paralelo, corre aquí una vez)
+            try:
+                _sport_c = _c.get("sport","futbol")
+                _match_c = _c.get("match", {})
+                _sd = _small_days_analyze(
+                    _home_c, _away_c, _sport_c,
+                    _match_c.get("fecha",""), _match_c.get("home_id",""),
+                    _match_c.get("away_id",""), _c.get("liga",""))
+                _sd_d = float(_sd.get("delta_h", 0.0))
+                if abs(_sd_d) > 0.005:
+                    _c["prob"] = max(0.10, min(0.92, _c["prob"] + _sd_d * 0.4))
+                    _c["sd_flags"] = _sd.get("flags", [])
+            except: pass
         except: pass
         return _c
 
     # Enriquecer todos los candidatos en paralelo (hasta 15 simultáneos)
     with _cf_kr.ThreadPoolExecutor(max_workers=15) as _pool_kr:
-        _futs = {_pool_kr.submit(_enrich_candidate, _c): _c for _c in candidates[:15]}
+        _futs = {_pool_kr.submit(_enrich_candidate, _c): _c for _c in candidates[:8]}
         for _fut in _cf_kr.as_completed(_futs, timeout=20):
             try: _fut.result()
             except: pass
@@ -13979,7 +14000,7 @@ def _kr_render_bankroll(bk):
     )
 
 
-def _kr_render_pick_card(el_pick, bk, narracion=""):
+def _kr_render_pick_card(el_pick, bk, narracion="", brain=None):
     """La card principal del pick del día — RONGO PICK supremo."""
     prob  = el_pick.get("prob", 0)
     edge  = el_pick.get("edge", 0)
@@ -14063,18 +14084,66 @@ def _kr_render_pick_card(el_pick, bk, narracion=""):
 </div>
 """, unsafe_allow_html=True)
 
-    # ── Companion pick NBA: siempre mostrar ML al lado del O/U ──
-    if _comp and _sport == "nba":
-        _comp_color = "#00ccff" if "ML" in _comp else "#00ff88"
-        _comp_icon  = "🏀" if "ML" in _comp else ("🔥" if "Over" in _comp else "❄️")
-        st.markdown(
-            f"<div style='display:flex;align-items:center;gap:8px;background:#050e14;"
-            f"border:1px solid {_comp_color}44;border-radius:6px;padding:7px 12px;margin-bottom:5px'>"
-            f"<span style='font-size:0.72rem;color:{_comp_color};font-weight:700;letter-spacing:.07em'>"
-            f"TAMBIÉN CONSIDERAR</span>"
-            f"<span style='flex:1;text-align:center;font-size:1.0rem;font-weight:700;color:{_comp_color}'>"
-            f"{_comp_icon} {_comp}</span>"
-            f"</div>", unsafe_allow_html=True)
+    # ── Mercado: historial de acierto ──
+    if brain:
+        _mkt_t = el_pick.get("mkt_type","")
+        _sp_t  = el_pick.get("sport","futbol")
+        _mkt_h_sp = brain.get("mkt_sport_hist",{}).get(f"{_sp_t}_{_mkt_t}",[])[-20:]
+        _mkt_h_gl = brain.get("mkt_hist",{}).get(_mkt_t,[])[-30:]
+        _mkt_h = _mkt_h_sp if len(_mkt_h_sp)>=5 else _mkt_h_gl
+        if len(_mkt_h) >= 4:
+            _mkt_wr = sum(_mkt_h)/len(_mkt_h)*100
+            _mkt_c  = "#00ff88" if _mkt_wr>=60 else ("#FFD700" if _mkt_wr>=50 else "#ff4444")
+            _mkt_lbl = {"1X2":"1X2","DO":"Doble Oportunidad","OU":"Over/Under",
+                        "AA":"Ambos Anotan","GCM":"Gana c/Mitad","TG":"Total Goles",
+                        "TG_HOT":"Equipo Caliente","ML":"Money Line"}.get(_mkt_t, _mkt_t)
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:10px;background:#050a05;"
+                f"border:1px solid {_mkt_c}44;border-radius:6px;padding:6px 12px;margin-bottom:5px'>"
+                f"<span style='font-size:0.7rem;color:#555;font-weight:700;letter-spacing:.07em'>HISTORIAL MERCADO</span>"
+                f"<span style='flex:1;font-size:0.95rem;color:#aaa'>{_mkt_lbl}</span>"
+                f"<span style='font-size:1.12rem;font-weight:900;color:{_mkt_c}'>{_mkt_wr:.0f}%</span>"
+                f"<span style='font-size:0.78rem;color:#444'>({len(_mkt_h)} picks)</span>"
+                f"</div>", unsafe_allow_html=True)
+
+    # ── NBA: mostrar O/U y ML como dos pills separadas y visibles ──
+    if _sport == "nba":
+        _all_mkts = el_pick.get("all_markets", [])
+        _ou_best  = max([(l,p,o,t) for l,p,o,t in _all_mkts if t=="O/U"], key=lambda x: x[1], default=None)
+        _ml_best  = max([(l,p,o,t) for l,p,o,t in _all_mkts if t=="ML"],  key=lambda x: x[1], default=None)
+        if _ou_best and _ml_best:
+            _ou_c  = "#00ff88" if "Over" in _ou_best[0] else "#00ccff"
+            _ml_c  = "#ff9500"
+            _ou_act = _mkt_type == "O/U"
+            _ml_act = _mkt_type == "ML"
+            st.markdown(
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px'>"
+                # O/U pill
+                f"<div style='background:{'#0a1a0a' if _ou_act else '#0a0a0a'};"
+                f"border:2px solid {_ou_c if _ou_act else _ou_c+'33'};"
+                f"border-radius:8px;padding:8px 10px;text-align:center;position:relative'>"
+                + (f"<div style='position:absolute;top:-8px;left:50%;transform:translateX(-50%);"
+                   f"background:{_ou_c};color:#000;font-size:0.65rem;font-weight:900;"
+                   f"padding:1px 8px;border-radius:4px;letter-spacing:.08em'>PICK ACTIVO</div>"
+                   if _ou_act else "") +
+                f"<div style='font-size:0.7rem;color:#555;font-weight:700;letter-spacing:.07em'>OVER/UNDER</div>"
+                f"<div style='font-size:1.05rem;font-weight:900;color:{_ou_c}'>{_ou_best[0]}</div>"
+                f"<div style='font-size:0.95rem;color:{_ou_c}88'>{_ou_best[1]*100:.1f}%</div>"
+                f"</div>"
+                # ML pill
+                f"<div style='background:{'#1a0a00' if _ml_act else '#0a0a0a'};"
+                f"border:2px solid {_ml_c if _ml_act else _ml_c+'33'};"
+                f"border-radius:8px;padding:8px 10px;text-align:center;position:relative'>"
+                + (f"<div style='position:absolute;top:-8px;left:50%;transform:translateX(-50%);"
+                   f"background:{_ml_c};color:#000;font-size:0.65rem;font-weight:900;"
+                   f"padding:1px 8px;border-radius:4px;letter-spacing:.08em'>PICK ACTIVO</div>"
+                   if _ml_act else "") +
+                f"<div style='font-size:0.7rem;color:#555;font-weight:700;letter-spacing:.07em'>MONEY LINE</div>"
+                f"<div style='font-size:1.05rem;font-weight:900;color:{_ml_c}'>{_ml_best[0]}</div>"
+                f"<div style='font-size:0.95rem;color:{_ml_c}88'>{_ml_best[1]*100:.1f}%</div>"
+                f"</div>"
+                f"</div>",
+                unsafe_allow_html=True)
     _kr_mkts_ui = el_pick.get("all_markets", [])
     if _kr_mkts_ui:
         _GROUP_COLOR_KR = {"1X2":"#00ccff","DO":"#7c00ff","OU":"#00ff88","AA":"#FFD700","GCM":"#ff6600","TG":"#ff44aa"}
@@ -14195,6 +14264,20 @@ def _kr_render_parlay(parlay):
     )
 
 
+def _kr_mkt_acc_badge(c, brain):
+    """Returns HTML string with mkt accuracy badge for tabla rows."""
+    if not brain: return ""
+    try:
+        mkt=c.get("mkt_type",""); sport=c.get("sport","futbol")
+        mkt_h=brain.get("mkt_sport_hist",{}).get(f"{sport}_{mkt}",[])[-20:]
+        if len(mkt_h)<4: mkt_h=brain.get("mkt_hist",{}).get(mkt,[])[-30:]
+        if len(mkt_h)<4: return ""
+        wr=sum(mkt_h)/len(mkt_h)*100
+        col="#00ff88" if wr>=60 else ("#FFD700" if wr>=50 else "#ff6644")
+        return (f"<div style='font-size:0.75rem;color:{col};font-weight:700'>"
+                f"Mkt {mkt}: {wr:.0f}% ({len(mkt_h)}p)</div>")
+    except: return ""
+
 def _kr_render_table(todos, el_pick):
     """Ranking completo de todos los picks del día."""
     st.markdown(
@@ -14202,6 +14285,7 @@ def _kr_render_table(todos, el_pick):
         "text-transform:uppercase;margin:5px 0 8px'>📊 Ranking completo — todos los picks del día</div>",
         unsafe_allow_html=True
     )
+    _bk_brain = _kr_brain_load()
     for i,c in enumerate(todos[:20]):
         is_king = el_pick and c["label"]==el_pick["label"]
         cc      = c.get("conf_color","#555")
@@ -14692,21 +14776,32 @@ def _small_days_analyze(home: str, away: str, sport: str,
         "raw_summary": "", "score_h": 0.0, "score_a": 0.0,
     }
     try:
-        # ── Fetch paralelo 3 fuentes ──
+        # ── Fetch REALMENTE paralelo: todas las fuentes simultáneas ──
+        import concurrent.futures as _cf_sd
         _espn_h = _espn_a = _google_h = _google_a = _ten_h = _ten_a = ""
-
-        if sport in ("futbol", "nba") and home_id:
-            _espn_h = _sd_espn_injuries(home_id, slug, sport)
-        if sport in ("futbol", "nba") and away_id:
-            _espn_a = _sd_espn_injuries(away_id, slug, sport)
-
         _sport_q = {"futbol":"fútbol","nba":"NBA","tenis":"tenis"}.get(sport, sport)
-        _google_h = _sd_google_news(f"{home} {_sport_q} lesion injury noticias")
-        _google_a = _sd_google_news(f"{away} {_sport_q} lesion injury noticias")
 
-        if sport == "tenis":
-            _ten_h = _sd_tennis_news(home)
-            _ten_a = _sd_tennis_news(away)
+        with _cf_sd.ThreadPoolExecutor(max_workers=6) as _exsd:
+            _futs_sd = {}
+            if sport in ("futbol", "nba") and home_id:
+                _futs_sd["espn_h"] = _exsd.submit(_sd_espn_injuries, home_id, slug, sport)
+            if sport in ("futbol", "nba") and away_id:
+                _futs_sd["espn_a"] = _exsd.submit(_sd_espn_injuries, away_id, slug, sport)
+            _futs_sd["google_h"] = _exsd.submit(_sd_google_news, f"{home} {_sport_q} lesion injury noticias")
+            _futs_sd["google_a"] = _exsd.submit(_sd_google_news, f"{away} {_sport_q} lesion injury noticias")
+            if sport == "tenis":
+                _futs_sd["ten_h"] = _exsd.submit(_sd_tennis_news, home)
+                _futs_sd["ten_a"] = _exsd.submit(_sd_tennis_news, away)
+            for _k, _fut in _futs_sd.items():
+                try:
+                    val = _fut.result(timeout=5)
+                    if _k == "espn_h":   _espn_h   = val
+                    elif _k == "espn_a": _espn_a   = val
+                    elif _k == "google_h": _google_h = val
+                    elif _k == "google_a": _google_a = val
+                    elif _k == "ten_h":  _ten_h    = val
+                    elif _k == "ten_a":  _ten_a    = val
+                except: pass
 
         _all_info = []
         if _espn_h:   _all_info.append(f"ESPN LOCAL ({home}): {_espn_h}")
@@ -16249,17 +16344,23 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     _ten_target = _kr_filter_by_date(_ten, _target_date)
                     if not _ten_target: _ten_target = _ten
 
-                    # ── Pre-calentar cache de get_form en paralelo ──
-                    _kr_status.update(label="🔥 Pre-calentando datos de forma...")
+                    # ── Pre-calentar get_form + h2h en paralelo ──
+                    _kr_status.update(label="🔥 Pre-calentando datos...")
                     try:
                         import concurrent.futures as _cf_pw
-                        def _pw(args): 
+                        def _pw_form(args): 
                             try: get_form(args[0], args[1])
+                            except: pass
+                        def _pw_h2h(args):
+                            try: get_h2h(args[0],args[1],args[2],args[3],args[4])
                             except: pass
                         _pw_args = [(m.get("home_id",""), m.get("slug","")) for m in _mf_target if m.get("home_id")]
                         _pw_args += [(m.get("away_id",""), m.get("slug","")) for m in _mf_target if m.get("away_id")]
-                        with _cf_pw.ThreadPoolExecutor(max_workers=20) as _pwex:
-                            list(_pwex.map(_pw, _pw_args, timeout=15))
+                        _pw_h2h_args = [(m.get("home_id",""),m.get("away_id",""),m.get("slug",""),
+                                         m.get("home","?"),m.get("away","?")) for m in _mf_target]
+                        with _cf_pw.ThreadPoolExecutor(max_workers=30) as _pwex:
+                            list(_pwex.map(_pw_form, _pw_args, timeout=5))
+                            list(_pwex.map(_pw_h2h,  _pw_h2h_args, timeout=5))
                     except: pass
 
                     _kr_status.update(label=f"🧠 Analizando {len(_mf_target)} fútbol · {len(_nbg_target)} NBA · {len(_ten_target)} tenis...")
@@ -16438,7 +16539,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         # ── EL PICK DEL DÍA ──
         if el_pick:
             # Mostrar pick primero — sin esperar API
-            _kr_render_pick_card(el_pick, bk, "")
+            _kr_render_pick_card(el_pick, bk, "", brain=_kr_brain_load())
             # GOD EV panel
             try:
                 _gev  = el_pick.get("ev_pct",0)
@@ -16907,6 +17008,32 @@ if _king_pick:
 matches     = []
 nba_games   = []
 ten_matches = []
+
+# ── PRE-CARGA KR: cargar las 3 carteleras en cache si KR aún no las tiene ──
+# Garantiza que KR funcione independientemente del tab activo
+_kr_preload_key = "_kr_preload_done"
+if not st.session_state.get(_kr_preload_key):
+    import concurrent.futures as _cf_preload
+    def _preload_fut():
+        try: return get_cartelera()
+        except: return []
+    def _preload_nba():
+        try: return get_nba_cartelera()
+        except: return []
+    def _preload_ten():
+        try: return get_tennis_cartelera()
+        except: return []
+    with _cf_preload.ThreadPoolExecutor(max_workers=3) as _px:
+        _pf = _px.submit(_preload_fut)
+        _pn = _px.submit(_preload_nba)
+        _pt = _px.submit(_preload_ten)
+        try: st.session_state["_kr_cache_fut"] = st.session_state.get("_kr_cache_fut") or _pf.result(timeout=12) or []
+        except: pass
+        try: st.session_state["_kr_cache_nba"] = st.session_state.get("_kr_cache_nba") or _pn.result(timeout=12) or []
+        except: pass
+        try: st.session_state["_kr_cache_ten"] = st.session_state.get("_kr_cache_ten") or _pt.result(timeout=12) or []
+        except: pass
+    st.session_state[_kr_preload_key] = True
 
 # ── AUTO-SYNC resultados — cada 10 min + detección por hora ──
 _auto_sync_key = "last_auto_sync"
