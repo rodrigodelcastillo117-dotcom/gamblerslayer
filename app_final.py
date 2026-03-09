@@ -13638,7 +13638,11 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
     _brain_kr = _kr_brain_load()
     _elo_kr   = _kr_elo_load()
     _ph_t = tuple({"pick":p.get("pick",""),"result":"gano" if p.get("result") in ("ok","✅","gano") else "perdio"} for p in pick_history[-50:])
-    for _c in candidates[:15]:  # solo enriquecer top 15 — resto usa score base
+    # ── Enriquecimiento PARALELO: todos los candidatos simultáneamente ──
+    import concurrent.futures as _cf_kr
+
+    def _enrich_candidate(_c):
+        """Enriquece un candidato con ultra+transicion+entrenador en paralelo interno."""
         try:
             _c["score"] = _kr_god_score(_c, _brain_kr, _elo_kr, _ph_t)
             _ev_c       = _kr_ev(_c.get("prob",0.5), _c.get("odd",0))
@@ -13652,36 +13656,44 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             _c["prob"]    = max(0.10,min(0.92,_c["prob"]+_sf*0.35))
             _c["sit_ctx"] = _sit.get("ctx","")
             if abs(_sf)>=0.05: _c["score"]=min(10.0,_c["score"]+abs(_sf)*4.0)
-            # Ultra Intelligence (10 variables avanzadas)
-            try:
-                _ui = _ultra_intel_full(
+            # Lanzar ultra + transicion + entrenador en paralelo para este candidato
+            with _cf_kr.ThreadPoolExecutor(max_workers=3) as _ex3:
+                _fut_ui = _ex3.submit(_ultra_intel_full,
                     _home_c, _away_c,
                     _c.get("sport","futbol"), _c.get("liga",""), _c.get("hora",""),
-                    tabla_ctx=_c.get("tabla_desc","")  # posición+GD
-                )
-                _c["prob"]        = max(0.10,min(0.92,_c["prob"]+_ui["delta_h"]*0.40))
-                _c["ultra_score"] = _ui["score_ultra"]
-                _c["ultra_ctx"]   = _ui["context_str"]
-                _c["ultra_flags"] = _ui["flags"]
-                if _ui["score_ultra"]>=7.0: _c["score"]=min(10.0,_c["score"]+0.6)
-                elif _ui["score_ultra"]<=3.0: _c["score"]=max(0.0,_c["score"]-0.8)
-            except: _c.setdefault("ultra_flags",[])
-
-            # ── Capa Táctica avanzada: transición + entrenador ──
-            try:
-                _tr = _kr_transicion(_home_c, _away_c, _c.get("sport","futbol"))
-                _c["trans_score"] = float(_tr.get("score",5))
-                _c["trans_delta"] = float(_tr.get("trans_h",0))
-                _c["prob"] = max(0.10, min(0.92, _c["prob"] + _tr.get("trans_h",0)*0.55))
-            except: _c.setdefault("trans_score", 5)
-
-            try:
-                _en = _kr_entrenador(_home_c, _away_c, _c.get("sport","futbol"), _c.get("liga",""))
-                _c["coach_score"] = float(_en.get("score",5))
-                _c["coach_delta"] = float(_en.get("coach_h",0))
-                _c["prob"] = max(0.10, min(0.92, _c["prob"] + _en.get("coach_h",0)*0.60))
-            except: _c.setdefault("coach_score", 5)
+                    _c.get("tabla_desc",""))
+                _fut_tr = _ex3.submit(_kr_transicion, _home_c, _away_c, _c.get("sport","futbol"))
+                _fut_en = _ex3.submit(_kr_entrenador, _home_c, _away_c, _c.get("sport","futbol"), _c.get("liga",""))
+                try:
+                    _ui = _fut_ui.result(timeout=10)
+                    _c["prob"]        = max(0.10,min(0.92,_c["prob"]+_ui["delta_h"]*0.40))
+                    _c["ultra_score"] = _ui["score_ultra"]
+                    _c["ultra_ctx"]   = _ui["context_str"]
+                    _c["ultra_flags"] = _ui["flags"]
+                    if _ui["score_ultra"]>=7.0: _c["score"]=min(10.0,_c["score"]+0.6)
+                    elif _ui["score_ultra"]<=3.0: _c["score"]=max(0.0,_c["score"]-0.8)
+                except: _c.setdefault("ultra_flags",[])
+                try:
+                    _tr = _fut_tr.result(timeout=8)
+                    _c["trans_score"] = float(_tr.get("score",5))
+                    _c["trans_delta"] = float(_tr.get("trans_h",0))
+                    _c["prob"] = max(0.10, min(0.92, _c["prob"] + _tr.get("trans_h",0)*0.55))
+                except: _c.setdefault("trans_score", 5)
+                try:
+                    _en = _fut_en.result(timeout=8)
+                    _c["coach_score"] = float(_en.get("score",5))
+                    _c["coach_delta"] = float(_en.get("coach_h",0))
+                    _c["prob"] = max(0.10, min(0.92, _c["prob"] + _en.get("coach_h",0)*0.60))
+                except: _c.setdefault("coach_score", 5)
         except: pass
+        return _c
+
+    # Enriquecer todos los candidatos en paralelo (hasta 15 simultáneos)
+    with _cf_kr.ThreadPoolExecutor(max_workers=15) as _pool_kr:
+        _futs = {_pool_kr.submit(_enrich_candidate, _c): _c for _c in candidates[:15]}
+        for _fut in _cf_kr.as_completed(_futs, timeout=20):
+            try: _fut.result()
+            except: pass
     candidates.sort(key=lambda x: -x.get("score",0))
     contras = [c for c in candidates if c.get("contradiccion")]
 
@@ -15014,6 +15026,18 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     if not state.get("activo",True): return None
     cands = []
     import math as _pm
+    import concurrent.futures as _cf_ajb
+
+    # ── Pre-calentar get_form en paralelo para todos los partidos ──
+    try:
+        _ajb_pw_args = [(m.get("home_id",""), m.get("slug","")) for m in (matches_fut or [])[:20] if m.get("home_id")]
+        _ajb_pw_args += [(m.get("away_id",""), m.get("slug","")) for m in (matches_fut or [])[:20] if m.get("away_id")]
+        def _ajb_pw(a):
+            try: get_form(a[0], a[1])
+            except: pass
+        with _cf_ajb.ThreadPoolExecutor(max_workers=20) as _ex_pw:
+            list(_ex_pw.map(_ajb_pw, _ajb_pw_args, timeout=12))
+    except: pass
 
     # ── Fútbol ──────────────────────────────────────────────────────────
     for m in (matches_fut or [])[:20]:
@@ -16234,6 +16258,19 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     _ten = ten_matches or []
                     _ten_target = _kr_filter_by_date(_ten, _target_date)
                     if not _ten_target: _ten_target = _ten
+
+                    # ── Pre-calentar cache de get_form en paralelo ──
+                    _kr_status.update(label="🔥 Pre-calentando datos de forma...")
+                    try:
+                        import concurrent.futures as _cf_pw
+                        def _pw(args): 
+                            try: get_form(args[0], args[1])
+                            except: pass
+                        _pw_args = [(m.get("home_id",""), m.get("slug","")) for m in _mf_target if m.get("home_id")]
+                        _pw_args += [(m.get("away_id",""), m.get("slug","")) for m in _mf_target if m.get("away_id")]
+                        with _cf_pw.ThreadPoolExecutor(max_workers=20) as _pwex:
+                            list(_pwex.map(_pw, _pw_args, timeout=15))
+                    except: pass
 
                     _kr_status.update(label=f"🧠 Analizando {len(_mf_target)} fútbol · {len(_nbg_target)} NBA · {len(_ten_target)} tenis...")
                     el_pick, contradicciones, todos, top3 = _king_rongo_scan_all(
