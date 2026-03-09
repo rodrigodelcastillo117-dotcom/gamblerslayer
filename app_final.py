@@ -15379,7 +15379,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     return best
 
 
-@st.fragment
+
 def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     """
     💰 PAPI AJB — Reto Escalera $1,500 → $1,000,000 MXN
@@ -15601,7 +15601,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
         st.error("⚠️ Reto pausado — capital insuficiente.")
         if st.button("🔄 Reactivar Reto", type="primary"):
             state.update({"activo": True, "capital": 1500.0, "paso": 1})
-            _papi_save_state(state); st.rerun(scope="fragment")
+            _papi_save_state(state); st.rerun()
         return
 
     today     = _dt.datetime.now().strftime("%Y-%m-%d")
@@ -15703,7 +15703,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
         if st.button("🔄 Reset Reto", use_container_width=True):
             if st.session_state.get("_papi_confirm_reset"):
                 state = {"paso":1,"capital":1500.0,"activo":True,"pick_del_dia":None,"fecha_pick":""}
-                _papi_save_state(state); _papi_save_history([]); st.rerun(scope="fragment")
+                _papi_save_state(state); _papi_save_history([]); st.rerun()
             else:
                 st.session_state["_papi_confirm_reset"] = True
                 st.warning("Presiona de nuevo para confirmar reset")
@@ -15814,7 +15814,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
                 state.update({"capital":nc,"paso":paso+1,"pick_del_dia":None,"fecha_pick":""})
                 _papi_save_state(state); _papi_save_history(history)
                 _papi_telegram(f"✅ PAPI AJB GANÓ Paso {paso}! Capital ${nc:,.0f} (+${gp:,.0f})")
-                st.balloons(); st.rerun(scope="fragment")
+                st.balloons(); st.rerun()
         with b2:
             if st.button("❌ PERDIÓ", use_container_width=True, key="paji_perdio"):
                 nc = max(0, capital - stake)
@@ -15824,7 +15824,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
                 state.update({"capital":nc,"activo":nc>=500,"pick_del_dia":None,"fecha_pick":""})
                 _papi_save_state(state); _papi_save_history(history)
                 _papi_telegram(f"❌ PAPI AJB Perdió Paso {paso}. Capital ${nc:,.0f} (-${stake:,.0f})")
-                st.rerun(scope="fragment")
+                st.rerun()
 
     elif saved_f != today:
         st.info("📅 Nuevo día — busca el pick de hoy.")
