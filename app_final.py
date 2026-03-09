@@ -795,6 +795,88 @@ def get_form(team_id, slug):
     return matches[:15]  # 15 partidos para más contexto
 
 
+
+
+def _clean_sheet_rate(form, is_home=None, n=8):
+    """
+    Racha de clean sheets — predictor directo de U2.5 y AA.
+    form: lista de partidos del equipo (get_form output)
+    is_home: None=todos, True=solo como local, False=solo como visitante
+    Retorna: {rate, streak, n_cs, n_games}
+      rate   = % de partidos sin recibir gol (últimos n)
+      streak = racha activa de clean sheets consecutivos
+      n_cs   = cantidad de clean sheets en últimos n
+    """
+    if not form:
+        return {"rate": 0.0, "streak": 0, "n_cs": 0, "n_games": 0}
+    filtered = [g for g in form[:n] if is_home is None or g.get("is_home") == is_home]
+    if not filtered:
+        filtered = form[:n]  # fallback: todos
+    n_cs = sum(1 for g in filtered if g.get("gc", 1) == 0)
+    # Racha activa (partidos más recientes primero)
+    streak = 0
+    for g in filtered:
+        if g.get("gc", 1) == 0:
+            streak += 1
+        else:
+            break
+    return {
+        "rate":    round(n_cs / len(filtered), 3) if filtered else 0.0,
+        "streak":  streak,
+        "n_cs":    n_cs,
+        "n_games": len(filtered),
+    }
+
+
+def _fixture_congestion(form, n=14):
+    """
+    Congestión de fixture — fatiga real por calendario apretado.
+    Calcula días promedio entre partidos en los últimos n días.
+    form: lista de partidos ordenada por fecha desc (más reciente primero)
+    Retorna: {congestion, days_since_last, matches_in_14d, fatigue_factor}
+      fatigue_factor: multiplicador xG — <1.0 si hay fatiga, 1.0 normal
+    """
+    from datetime import datetime as _dt
+    if not form or len(form) < 2:
+        return {"congestion": False, "days_since_last": 7,
+                "matches_in_14d": 0, "fatigue_factor": 1.0}
+    today = _dt.now().date()
+    dates = []
+    for g in form:
+        try:
+            d = _dt.strptime(g["date"], "%Y-%m-%d").date()
+            dates.append(d)
+        except: continue
+    if not dates:
+        return {"congestion": False, "days_since_last": 7,
+                "matches_in_14d": 0, "fatigue_factor": 1.0}
+
+    days_since_last = (today - dates[0]).days if dates else 7
+
+    # Partidos jugados en últimos 14 días
+    matches_in_14d = sum(1 for d in dates if (today - d).days <= 14)
+
+    # Fatigue factor calibrado:
+    # 0-1 partidos en 14d → factor 1.00 (bien descansado)
+    # 2   partidos en 14d → factor 1.00 (normal)
+    # 3   partidos en 14d → factor 0.97 (leve)
+    # 4   partidos en 14d → factor 0.94 (moderada)
+    # 5+  partidos en 14d → factor 0.90 (severa — Champions + Liga + Copa)
+    fatigue_map = {0: 1.02, 1: 1.01, 2: 1.00, 3: 0.97, 4: 0.94}
+    fatigue_factor = fatigue_map.get(matches_in_14d, 0.90)
+
+    # Si llevan +5 días sin jugar: pequeño boost (bien descansado)
+    if days_since_last >= 6 and matches_in_14d <= 1:
+        fatigue_factor = min(1.04, fatigue_factor + 0.02)
+
+    return {
+        "congestion":      matches_in_14d >= 4,
+        "days_since_last": days_since_last,
+        "matches_in_14d":  matches_in_14d,
+        "fatigue_factor":  round(fatigue_factor, 3),
+    }
+
+
 def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
     """
     xG con decaimiento exponencial — partidos recientes pesan MÁS.
@@ -3820,7 +3902,7 @@ def _villar_auto_pick(partido_db):
             if r1 <= 0: r1 = _resolve_rank(home, _KNOWN_RANKS) or 150
             if r2 <= 0: r2 = _resolve_rank(away, _KNOWN_RANKS) or 150
             # Weibull: p1 = prob de que home (p1) gane
-            tm = tennis_model(r1, r2, o1, o2)
+            tm = tennis_model(r1, r2, o1, o2, p1_name=home, p2_name=away)
             # El modelo elige al favorito por prob — completamente ciego al resultado
             if tm["p1"] >= tm["p2"]:
                 fav, prob = home, tm["p1"]
@@ -9472,10 +9554,11 @@ def get_nba_team_stats(team_id):
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def get_nba_recent_form(team_id, n_games=7):
+def get_nba_recent_form(team_id, n_games=10):
     """
     Últimos N partidos NBA — detecta racha, back-to-back fatigue,
     promedio de puntos reciente (más relevante que promedio de temporada).
+    v2: agrega Q4 pts, días de descanso exactos, ortg/drtg por partido.
     """
     data = eg(f"{NBA_ESPN}/teams/{team_id}/schedule")
     events = data.get("events", [])
@@ -9493,17 +9576,58 @@ def get_nba_recent_form(team_id, n_games=7):
             opp = ac if is_home else hc
             pts_for     = parse_score(my.get("score",0))
             pts_against = parse_score(opp.get("score",0))
+
+            # ── Q4 pts — clutch performance ──
+            q4_for = q4_against = 0
+            try:
+                my_ls  = my.get("linescores", [])
+                opp_ls = opp.get("linescores", [])
+                if len(my_ls) >= 4:
+                    q4_for     = int(float(my_ls[3].get("value", 0) or 0))
+                    q4_against = int(float(opp_ls[3].get("value", 0) or 0)) if len(opp_ls) >= 4 else 0
+            except: pass
+
+            # ── Ortg/Drtg por partido (estimado desde puntos + pace proxy) ──
+            # Usamos 100 posesiones estimadas: ortg = pts_for/poss*100
+            # Posesiones ≈ (pts_for + pts_against) / 2 / 1.08 (factor estimado)
+            try:
+                poss_est = max(80, (pts_for + pts_against) / 2.16)
+                ortg_game = round(pts_for / poss_est * 100, 1)
+                drtg_game = round(pts_against / poss_est * 100, 1)
+            except:
+                ortg_game = drtg_game = 110.0
+
             results.append({
-                "date":    ev.get("date","")[:10],
-                "pts_for": pts_for,
+                "date":        ev.get("date","")[:10],
+                "pts_for":     pts_for,
                 "pts_against": pts_against,
-                "total":   pts_for + pts_against,
-                "won":     pts_for > pts_against,
-                "is_home": is_home,
+                "total":       pts_for + pts_against,
+                "won":         pts_for > pts_against,
+                "result":      "W" if pts_for > pts_against else "L",
+                "is_home":     is_home,
+                "q4_for":      q4_for,
+                "q4_against":  q4_against,
+                "ortg_game":   ortg_game,
+                "drtg_game":   drtg_game,
             })
         except: continue
     results.sort(key=lambda x: x["date"], reverse=True)
-    return results[:n_games]
+    results = results[:n_games]
+
+    # ── Días de descanso exactos (post-sort) ──
+    from datetime import datetime as _dt
+    today = _dt.now().date()
+    for i, g in enumerate(results):
+        try:
+            gd = _dt.strptime(g["date"], "%Y-%m-%d").date()
+            if i == 0:
+                g["days_rest"] = (today - gd).days   # días desde último partido
+            else:
+                prev_d = _dt.strptime(results[i-1]["date"], "%Y-%m-%d").date()
+                g["days_rest"] = (prev_d - gd).days  # días entre partidos
+        except:
+            g["days_rest"] = 2
+    return results
 
 
 
@@ -9512,6 +9636,75 @@ def get_nba_recent_form(team_id, n_games=7):
 # Guarda picks históricos, mide bias real (proj vs real),
 # y ajusta automáticamente nba_ou_model en futuras predicciones.
 # ══════════════════════════════════════════════════════════════
+
+def _nba_exact_rest(form):
+    """
+    Días de descanso exactos hasta el partido de hoy.
+    Más granular que solo detectar back-to-back (0 días).
+    Retorna factor multiplicador de proyección:
+      0 días (B2B)  → 0.935 (-6.5%)
+      1 día         → 0.970 (-3.0%)
+      2 días        → 1.000 (normal)
+      3 días        → 1.010 (+1.0%)
+      4+ días       → 1.018 (+1.8%)  frescos pero pueden estar fríos
+    Ref: Estudio Lamas et al. 2018 — descanso y rendimiento ofensivo NBA
+    """
+    if not form: return {"days": 2, "factor": 1.0}
+    days = form[0].get("days_rest", 2) if form else 2
+    factor_map = {0: 0.935, 1: 0.970, 2: 1.000, 3: 1.010}
+    factor = factor_map.get(days, 1.018 if days >= 4 else 1.000)
+    return {"days": days, "factor": round(factor, 3)}
+
+
+def _nba_rolling_ratings(form, n=5):
+    """
+    Ortg y Drtg de los últimos N partidos — más relevante que la temporada completa.
+    Captura equipos que mejoran/empeoran en el tramo final de temporada.
+    Retorna: {ortg_5, drtg_5, net_5, n_used}
+    """
+    games = [g for g in form[:n] if g.get("ortg_game", 0) > 0]
+    if len(games) < 3:
+        return {"ortg_5": None, "drtg_5": None, "net_5": None, "n_used": 0}
+    # Decay: partidos más recientes pesan más
+    DECAY = 0.88
+    w_ortg = w_drtg = w_tot = 0.0
+    for i, g in enumerate(games):
+        w = DECAY ** i
+        w_ortg += w * g["ortg_game"]
+        w_drtg += w * g["drtg_game"]
+        w_tot  += w
+    ortg = w_ortg / w_tot
+    drtg = w_drtg / w_tot
+    return {
+        "ortg_5": round(ortg, 1),
+        "drtg_5": round(drtg, 1),
+        "net_5":  round(ortg - drtg, 1),
+        "n_used": len(games),
+    }
+
+
+def _nba_clutch_factor(form, n=8):
+    """
+    Rendimiento en 4° cuarto — equipos clutch vs equipos que colapsan.
+    Calcula diferencial Q4 promedio (q4_for - q4_against).
+    NBA promedio Q4: ~28 pts por equipo (≈ 56 total Q4).
+    Retorna factor para ajuste de ML probability:
+      Q4 diff +3.0+ → equipo clutch → +0.03 prob
+      Q4 diff -3.0- → equipo colapsa → -0.03 prob
+    """
+    games = [g for g in form[:n] if g.get("q4_for", 0) > 0]
+    if len(games) < 4:
+        return {"q4_diff": 0.0, "factor": 0.0, "n_used": 0}
+    diffs = [g["q4_for"] - g["q4_against"] for g in games]
+    avg_diff = sum(diffs) / len(diffs)
+    # Factor: cada punto de diferencial Q4 = 0.008 de prob
+    factor = max(-0.04, min(0.04, avg_diff * 0.008))
+    return {
+        "q4_diff":  round(avg_diff, 1),
+        "factor":   round(factor, 4),
+        "n_used":   len(games),
+    }
+
 
 def _nba_calib_load():
     """Carga el historial de calibración NBA."""
@@ -9835,32 +10028,36 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     h_proj = h_recent_ppg + HCA_PTS * 0.5   # local anota más
     a_proj = a_recent_ppg - HCA_PTS * 0.5   # visitante anota menos
 
-    # ── Back-to-back detection ──
-    def played_yesterday(form):
-        if len(form) < 2: return False
-        try:
-            d1 = datetime.strptime(form[0]["date"], "%Y-%m-%d")
-            d2 = datetime.strptime(form[1]["date"], "%Y-%m-%d")
-            return abs((d1-d2).days) <= 1
-        except: return False
-
-    b2b_h = played_yesterday(h_form)
-    b2b_a = played_yesterday(a_form)
+    # ── Descanso exacto (reemplaza back-to-back binario) ──
+    _rest_h = _nba_exact_rest(h_form)
+    _rest_a = _nba_exact_rest(a_form)
+    b2b_h = _rest_h["days"] == 0
+    b2b_a = _rest_a["days"] == 0
+    h_proj = h_proj * _rest_h["factor"]
+    a_proj = a_proj * _rest_a["factor"]
 
     # Net rating adjustment
     net_diff = h_stats["net_rtg"] - a_stats["net_rtg"]
+
+    # ── ortg/drtg últimos 5 — más relevante que temporada completa ──
+    _roll_h = _nba_rolling_ratings(h_form, n=5)
+    _roll_a = _nba_rolling_ratings(a_form, n=5)
+    # Si hay suficientes datos, blend 60% temporada + 40% últimos 5
+    try:
+        if _roll_h["net_5"] is not None and _roll_a["net_5"] is not None:
+            net_diff = 0.60 * net_diff + 0.40 * (_roll_h["net_5"] - _roll_a["net_5"])
+            # Proyección: ajustar por ortg reciente vs temporada
+            _ortg_adj_h = (_roll_h["ortg_5"] - h_stats["ortg"]) * 0.40
+            _ortg_adj_a = (_roll_a["ortg_5"] - a_stats["ortg"]) * 0.40
+            h_proj = h_proj + _ortg_adj_h
+            a_proj = a_proj + _ortg_adj_a
+    except: pass
 
     # Defensive matchup
     try:
         _h_def_adj, _a_def_adj = _nba_defensive_matchup(h_stats, a_stats)
         h_proj = h_proj * _h_def_adj
         a_proj = a_proj * _a_def_adj
-    except: pass
-
-    # Rest days granular
-    try:
-        if not b2b_h: h_proj = h_proj * _nba_rest_days(h_form)
-        if not b2b_a: a_proj = a_proj * _nba_rest_days(a_form)
     except: pass
 
     # Estrellas ausentes
@@ -9875,9 +10072,9 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     except:
         _net_star_spread = 0.0
 
-    # Back-to-back fatigue
-    if b2b_h: h_proj -= 4.0
-    if b2b_a: a_proj -= 3.5
+    # B2B fatigue — ahora manejado por _rest_h factor, este es residual severo
+    if b2b_h: h_proj -= 1.5   # reducido: rest factor ya aplicó -6.5%
+    if b2b_a: a_proj -= 1.2
 
     # ── FIX 3: Foul-rate real del equipo (no árbitros que ESPN no da) ──
     # Equipos con alta tasa de faltas → más FT → más pts → total más alto
@@ -9977,6 +10174,17 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     try: combined_diff += _net_star_spread
     except: pass
 
+    # ── Clutch Q4 — equipos que ganan/pierden partidos cerrados ──
+    try:
+        _clutch_h = _nba_clutch_factor(h_form)
+        _clutch_a = _nba_clutch_factor(a_form)
+        # Diferencial clutch: local clutch vs visita clutch
+        _clutch_net = _clutch_h["factor"] - _clutch_a["factor"]
+        # Convertir a pts equivalentes para el blend (factor 0.04 → ~3.3 pts)
+        combined_diff += _clutch_net * 25.0
+    except:
+        _clutch_h = _clutch_a = {"q4_diff": 0.0, "factor": 0.0, "n_used": 0}
+
     # Escala calibrada: 1 pt diferencial ≈ 3% probabilidad (NBA empirical)
     p_h_win = 1 / (1 + math.exp(-combined_diff * 0.12))
     p_a_win = 1 - p_h_win
@@ -10001,6 +10209,12 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
         "a_recent_ppg": round(a_recent_ppg, 1),
         "pace_delta":   round(pace_delta, 1),
         "foul_adj":     round(foul_adj, 1),
+        "h_days_rest":  _rest_h["days"],
+        "a_days_rest":  _rest_a["days"],
+        "h_net5":       _roll_h.get("net_5"),
+        "a_net5":       _roll_a.get("net_5"),
+        "h_q4_diff":    _clutch_h.get("q4_diff", 0.0),
+        "a_q4_diff":    _clutch_a.get("q4_diff", 0.0),
         "rec":          "OVER 🔥" if p_over>0.54 else ("UNDER ❄️" if p_over<0.46 else "NEUTRAL ⚖️"),
     }
 
@@ -10230,20 +10444,265 @@ def get_tennis_cartelera():
     matches = _sort_cartelera(matches, _now3.strftime("%Y-%m-%d"), int(_now3.strftime("%H")))
     return matches
 
-def tennis_model(rank1, rank2, odd_1=0, odd_2=0, surface="hard"):
-    """Weibull+Markov (Klaassen&Magnus 2001) — mejor que Elo puro para tenis."""
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _tennis_h2h(p1_name: str, p2_name: str) -> dict:
+    """
+    H2H directo entre dos jugadores desde la API de tenis.
+    Retorna: {p1_wins, p2_wins, total, p1_h2h_rate, advantage}
+    La variable más predictiva en tenis después del ranking.
+    Ref: Barnett & Clarke 2005 — H2H como corrector del ranking.
+    """
+    default = {"p1_wins": 0, "p2_wins": 0, "total": 0,
+               "p1_h2h_rate": 0.5, "advantage": 0.0}
+    try:
+        r = requests.get(TENNIS_API, params={
+            "method":   "get_H2H",
+            "APIkey":   TENNIS_API_KEY,
+            "player_1": p1_name,
+            "player_2": p2_name,
+        }, headers=H, timeout=6)
+        if r.status_code != 200: return default
+        data = r.json().get("result", {})
+        matches = data.get("player_1_vs_player_2", [])
+        if not matches: return default
+
+        p1_wins = p2_wins = 0
+        for m in matches[:20]:   # últimos 20 máximo
+            w = m.get("event_winner", "")
+            if not w: continue
+            if p1_name.split()[-1].lower() in w.lower():
+                p1_wins += 1
+            elif p2_name.split()[-1].lower() in w.lower():
+                p2_wins += 1
+
+        total = p1_wins + p2_wins
+        if total < 2: return default   # muy poco historial
+
+        p1_rate = p1_wins / total
+        # Advantage: cuánto ajustar sobre el prior del modelo
+        # 5+ partidos con 70%+ → fuerte ventaja
+        advantage = (p1_rate - 0.5) * min(1.0, total / 8)
+        return {
+            "p1_wins":      p1_wins,
+            "p2_wins":      p2_wins,
+            "total":        total,
+            "p1_h2h_rate":  round(p1_rate, 3),
+            "advantage":    round(advantage, 3),
+        }
+    except:
+        return default
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _tennis_surface_form(player_name: str, surface: str, n: int = 10) -> dict:
+    """
+    Forma reciente del jugador en la superficie específica.
+    Filtra get_last_results por superficie — más relevante que ranking general.
+    Ej: Nadal en arcilla vs Nadal en hierba son distintos jugadores.
+    Retorna: {wins, losses, win_rate, n_games, surface_adj}
+      surface_adj: ajuste de prob basado en rendimiento real en esta superficie
+    """
+    default = {"wins": 0, "losses": 0, "win_rate": 0.5,
+               "n_games": 0, "surface_adj": 0.0}
+    try:
+        r = requests.get(TENNIS_API, params={
+            "method":  "get_last_results",
+            "APIkey":  TENNIS_API_KEY,
+            "player":  player_name,
+            "count":   30,
+        }, headers=H, timeout=6)
+        if r.status_code != 200: return default
+        results = r.json().get("result", [])
+        if not results: return default
+
+        surf_lower = surface.lower()
+        # Mapeo de nombres de superficie
+        surf_aliases = {
+            "hard":  ["hard", "dura", "indoor hard", "outdoor hard"],
+            "clay":  ["clay", "tierra", "arcilla"],
+            "grass": ["grass", "hierba", "césped"],
+        }
+        aliases = surf_aliases.get(surf_lower, [surf_lower])
+
+        wins = losses = 0
+        for m in results:
+            court = m.get("event_surface", m.get("tournament_surface", "")).lower()
+            if not any(a in court for a in aliases):
+                continue   # superficie distinta, skip
+            winner = m.get("event_winner", "")
+            if not winner: continue
+            if player_name.split()[-1].lower() in winner.lower():
+                wins += 1
+            else:
+                losses += 1
+            if wins + losses >= n: break
+
+        total = wins + losses
+        if total < 3: return default
+
+        win_rate = wins / total
+        # Ajuste sobre prior 0.5: rendimiento real en superficie
+        # Con n=3-5: peso 30%, n=6-9: peso 50%, n=10+: peso 70%
+        weight = 0.30 if total < 6 else (0.50 if total < 10 else 0.70)
+        surface_adj = (win_rate - 0.5) * weight
+        return {
+            "wins":        wins,
+            "losses":      losses,
+            "win_rate":    round(win_rate, 3),
+            "n_games":     total,
+            "surface_adj": round(surface_adj, 3),
+        }
+    except:
+        return default
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _tennis_tournament_fatigue(player_name: str, torneo: str) -> dict:
+    """
+    Fatiga del torneo actual — cuántos partidos lleva el jugador esta semana.
+    3+ partidos en 4 días = fatiga real (Grand Slams en 5 sets especialmente).
+    Retorna: {matches_in_tourney, fatigue_factor, days_since_last}
+      fatigue_factor: multiplicador de prob (< 1.0 si fatigado)
+    """
+    default = {"matches_in_tourney": 0, "fatigue_factor": 1.0, "days_since_last": 3}
+    try:
+        r = requests.get(TENNIS_API, params={
+            "method":  "get_last_results",
+            "APIkey":  TENNIS_API_KEY,
+            "player":  player_name,
+            "count":   10,
+        }, headers=H, timeout=5)
+        if r.status_code != 200: return default
+        results = r.json().get("result", [])
+        if not results: return default
+
+        from datetime import datetime as _dt, timedelta as _td
+        today = _dt.now().date()
+        torneo_lower = torneo.lower()[:20]
+
+        # Contar partidos en el mismo torneo en los últimos 10 días
+        matches_in_tourney = 0
+        days_since_last = 3
+        for i, m in enumerate(results):
+            t_name = m.get("tournament_name", "").lower()[:20]
+            fecha_str = m.get("event_date", "")
+            try:
+                fecha = _dt.strptime(fecha_str[:10], "%Y-%m-%d").date()
+                days_ago = (today - fecha).days
+            except:
+                days_ago = 99
+
+            if days_ago > 14: break   # más de 2 semanas, ya no es relevante
+
+            # Mismo torneo o torneo reciente (puede haber cambio de nombre)
+            same_tourney = (torneo_lower in t_name or t_name in torneo_lower
+                           or (len(torneo_lower) > 5 and torneo_lower[:6] in t_name))
+            if same_tourney and days_ago <= 10:
+                matches_in_tourney += 1
+                if i == 0: days_since_last = days_ago
+
+        # Factor de fatiga:
+        # 0-1 partidos en torneo → fresco → 1.00
+        # 2 partidos → normal → 1.00
+        # 3 partidos → leve fatiga → 0.97
+        # 4 partidos → moderada → 0.94  (semis en GS)
+        # 5+ partidos → severa → 0.90   (final en GS)
+        fatigue_map = {0: 1.00, 1: 1.00, 2: 1.00, 3: 0.97, 4: 0.94}
+        fatigue_factor = fatigue_map.get(matches_in_tourney, 0.90)
+
+        return {
+            "matches_in_tourney": matches_in_tourney,
+            "fatigue_factor":     round(fatigue_factor, 3),
+            "days_since_last":    days_since_last,
+        }
+    except:
+        return default
+
+
+def tennis_model(rank1, rank2, odd_1=0, odd_2=0, surface="hard",
+                 p1_name="", p2_name="", torneo=""):
+    """
+    Weibull+Markov (Klaassen&Magnus 2001) — modelo base.
+    v2: blend con H2H directo + forma en superficie + fatiga del torneo.
+    Nuevas señales solo se usan si hay datos suficientes (n mínimo por función).
+    """
     try:
         wm = weibull_match_prob(rank1, rank2, odd_1, odd_2, surface)
         p1, p2 = wm["p1"], wm["p2"]
     except:
-        r1=max(1,rank1); r2=max(1,rank2); ls=math.log(r2)+math.log(r1)
-        p1_rank=math.log(r2)/ls if ls>0 else 0.5
+        r1=max(1,rank1); r2=max(1,rank2); _ls=math.log(r2)+math.log(r1)
+        p1_rank=math.log(r2)/_ls if _ls>0 else 0.5
         p1 = 0.5*p1_rank+0.5*(1/odd_1)/(1/odd_1+1/odd_2) if odd_1>1 and odd_2>1 else p1_rank
         p2 = 1-p1
-    edge_1=round(p1-(1/odd_1),3) if odd_1>1 else 0
-    edge_2=round(p2-(1/odd_2),3) if odd_2>1 else 0
-    conf="💎 DIAMANTE" if max(p1,p2)>0.68 else("🔥 ALTA" if max(p1,p2)>0.58 else "⚡ MEDIA")
-    return {"p1":round(p1,3),"p2":round(p2,3),"edge_1":edge_1,"edge_2":edge_2,"conf":conf}
+
+    # ── H2H directo ──
+    _h2h_adj = 0.0
+    _h2h_data = {}
+    if p1_name and p2_name:
+        try:
+            _h2h_data = _tennis_h2h(p1_name, p2_name)
+            # advantage ya está normalizado por número de partidos
+            # Peso máximo 35% (si H2H tiene 8+ partidos)
+            _h2h_weight = min(0.35, _h2h_data["total"] / 8 * 0.35)
+            _h2h_adj = _h2h_data["advantage"] * _h2h_weight * 2
+        except: pass
+
+    # ── Forma en superficie ──
+    _surf_adj = 0.0
+    _surf1 = _surf2 = {}
+    if p1_name and p2_name:
+        try:
+            _surf1 = _tennis_surface_form(p1_name, surface)
+            _surf2 = _tennis_surface_form(p2_name, surface)
+            # Diferencial de rendimiento en esta superficie
+            _surf_adj = _surf1["surface_adj"] - _surf2["surface_adj"]
+        except: pass
+
+    # ── Fatiga del torneo ──
+    _fat1 = _fat2 = {"fatigue_factor": 1.0, "matches_in_tourney": 0}
+    if p1_name and torneo:
+        try:
+            _fat1 = _tennis_tournament_fatigue(p1_name, torneo)
+            _fat2 = _tennis_tournament_fatigue(p2_name, torneo)
+        except: pass
+
+    # ── Blend final ──
+    # Base: Weibull (ranking + superficie + odds)
+    # Ajustes aditivos independientes sobre p1
+    p1_adj = p1 + _h2h_adj + _surf_adj
+
+    # Fatiga: multiplicar la "ventaja" de cada jugador por su factor
+    # Si p1 está más fatigado que p2 → su ventaja sobre 0.5 se reduce
+    if _fat1["fatigue_factor"] != 1.0 or _fat2["fatigue_factor"] != 1.0:
+        fat_ratio = _fat1["fatigue_factor"] / max(0.85, _fat2["fatigue_factor"])
+        # fat_ratio < 1 → p1 más cansado → acercar a 0.5
+        p1_adj = 0.5 + (p1_adj - 0.5) * fat_ratio
+
+    # Clamp y normalizar
+    p1_final = max(0.05, min(0.95, p1_adj))
+    p2_final = 1 - p1_final
+
+    edge_1 = round(p1_final - (1/odd_1), 3) if odd_1 > 1 else 0
+    edge_2 = round(p2_final - (1/odd_2), 3) if odd_2 > 1 else 0
+    conf = "💎 DIAMANTE" if max(p1_final,p2_final) > 0.68 else (
+           "🔥 ALTA"    if max(p1_final,p2_final) > 0.58 else "⚡ MEDIA")
+
+    return {
+        "p1":           round(p1_final, 3),
+        "p2":           round(p2_final, 3),
+        "p1_base":      round(p1, 3),
+        "edge_1":       edge_1,
+        "edge_2":       edge_2,
+        "conf":         conf,
+        "h2h_adj":      round(_h2h_adj, 3),
+        "surf_adj":     round(_surf_adj, 3),
+        "h2h_total":    _h2h_data.get("total", 0),
+        "fat1":         _fat1.get("matches_in_tourney", 0),
+        "fat2":         _fat2.get("matches_in_tourney", 0),
+        "surf_wr1":     _surf1.get("win_rate", 0.5),
+        "surf_wr2":     _surf2.get("win_rate", 0.5),
+    }
 
 
 def tennis_expert_analysis(p1_name, p2_name, rank1, rank2, odd_1, odd_2,
@@ -12974,7 +13433,9 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
             r1 = t.get("rank1",80); r2 = t.get("rank2",120)
             o1 = t.get("odd_1",0) or 1.75; o2 = t.get("odd_2",0) or 2.10
             try:
-                tr = tennis_model(r1, r2, o1, o2)
+                tr = tennis_model(r1, r2, o1, o2,
+                    p1_name=t.get("p1",""), p2_name=t.get("p2",""),
+                    torneo=t.get("torneo",""))
             except:
                 p1 = 1/o1/(1/o1+1/o2); tr = {"p1":p1,"p2":1-p1}
             bp = max(tr["p1"], tr["p2"])
@@ -14052,7 +14513,8 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                         # Tenis
                         for _tm in (_ten_target or [])[:15]:
                             try:
-                                _tt = tennis_model(_tm.get("rank1",100), _tm.get("rank2",150), _tm.get("odd_1",0), _tm.get("odd_2",0))
+                                _tt = tennis_model(_tm.get("rank1",100), _tm.get("rank2",150), _tm.get("odd_1",0), _tm.get("odd_2",0),
+                    p1_name=_tm.get("p1",""), p2_name=_tm.get("p2",""), torneo=_tm.get("torneo",""))
                                 _tp = max(_tt["p1"],_tt["p2"])
                                 _tfav = _tm.get("p1","?") if _tt["p1"]>=_tt["p2"] else _tm.get("p2","?")
                                 _fallback_cands.append({
@@ -15421,7 +15883,8 @@ if st.session_state["view"] == "cartelera":
                             cols = st.columns(len(pair))
                             for col, m in zip(cols, pair):
                                 with col:
-                                    tm = tennis_model(m["rank1"], m["rank2"], m["odd_1"], m["odd_2"])
+                                    tm = tennis_model(m["rank1"], m["rank2"], m["odd_1"], m["odd_2"],
+                                        p1_name=m.get("p1",""), p2_name=m.get("p2",""), torneo=m.get("torneo",""))
                                     fav   = m["p1"] if tm["p1"]>=tm["p2"] else m["p2"]
                                     fav_p = max(tm["p1"],tm["p2"])
                                     live_badge = " 🔴" if m["state"]=="in" else ""
@@ -15498,7 +15961,8 @@ if st.session_state["view"] == "cartelera":
             ten_cands = []
             for _m in _ven_ten[:20]:
                 try:
-                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0))
+                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0),
+                        p1_name=_m.get("p1",""), p2_name=_m.get("p2",""), torneo=_m.get("torneo",""))
                     _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
                     _p   = max(_tm["p1"],_tm["p2"])
                     if _p >= 0.58:
@@ -15523,7 +15987,8 @@ if st.session_state["view"] == "cartelera":
             for _m in ten_matches[:30]:
                 if _m["state"] != "pre": continue
                 try:
-                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0))
+                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0),
+                        p1_name=_m.get("p1",""), p2_name=_m.get("p2",""), torneo=_m.get("torneo",""))
                     _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
                     _p   = max(_tm["p1"],_tm["p2"])
                     _odd = _m.get("odd_1",0) if _fav==_m["p1"] else _m.get("odd_2",0)
@@ -16105,7 +16570,8 @@ else:
         _odd1  = g.get("odd_h", g.get("odd_1",0))
         _odd2  = g.get("odd_a", g.get("odd_2",0))
 
-        _weib = tennis_model(_rank1, _rank2, _odd1, _odd2, _ten_surface)
+        _weib = tennis_model(_rank1, _rank2, _odd1, _odd2, _ten_surface,
+        p1_name=g.get("home",""), p2_name=g.get("away",""), torneo=_ten_tour)
 
         # Einstein
         _einstein_p1 = None
@@ -16285,6 +16751,25 @@ else:
             _delta_a, _ = _star_xg_adjustment(g["away"], [], "", False, "")
             hxg = max(0.05, hxg + _delta_h)
             axg = max(0.05, axg + _delta_a)
+        except: pass
+
+        # ── Clean sheets — ajusta xG según solidez defensiva real ──
+        try:
+            _cs_h = _clean_sheet_rate(hform, is_home=True)   # defensa local de local
+            _cs_a = _clean_sheet_rate(aform, is_home=False)  # defensa visita de visita
+            # CS rate 0.50+ → rival marca menos; 0.00 → rival marca más
+            _cs_adj_h = 1.0 - (_cs_h["rate"] - 0.25) * 0.32
+            _cs_adj_a = 1.0 - (_cs_a["rate"] - 0.25) * 0.32
+            axg = max(0.05, axg * max(0.75, min(1.20, _cs_adj_h)))
+            hxg = max(0.05, hxg * max(0.75, min(1.20, _cs_adj_a)))
+        except: pass
+
+        # ── Fixture congestion — fatiga por calendario apretado ──
+        try:
+            _fc_h = _fixture_congestion(hform)
+            _fc_a = _fixture_congestion(aform)
+            hxg = max(0.05, hxg * _fc_h["fatigue_factor"])
+            axg = max(0.05, axg * _fc_a["fatigue_factor"])
         except: pass
 
         mc    = ensemble_football(hxg, axg, h2s, hform, aform, g["home_id"], g["away_id"],
