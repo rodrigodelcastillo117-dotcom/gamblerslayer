@@ -582,10 +582,24 @@ TEN_ESPN = "https://site.api.espn.com/apis/site/v2/sports/tennis"
 # ══════════════════════════════════════════════════════════
 # ESPN HELPERS
 # ══════════════════════════════════════════════════════════
+# Cache en memoria para ESPN API — evita llamadas duplicadas en mismo run
+# (get_form y get_h2h llaman al mismo URL, este cache las unifica)
+_eg_cache = {}
 def eg(url, params=None):
+    import time as _time
+    cache_key = url + str(sorted(params.items()) if params else "")
+    cached = _eg_cache.get(cache_key)
+    if cached and (_time.time() - cached[1]) < 120:  # 2 min TTL en memoria
+        return cached[0]
     try:
         r = requests.get(url, headers=H, params=params, timeout=12)
-        return r.json() if r.status_code == 200 else {}
+        result = r.json() if r.status_code == 200 else {}
+        _eg_cache[cache_key] = (result, _time.time())
+        # Limpiar cache si crece demasiado
+        if len(_eg_cache) > 500:
+            oldest = sorted(_eg_cache.items(), key=lambda x: x[1][1])[:100]
+            for k,_ in oldest: del _eg_cache[k]
+        return result
     except: return {}
 
 def parse_score(s):
@@ -946,92 +960,75 @@ def _apifootball_injuries(team_name: str, slug: str) -> list:
     except: return []
 
 
+# Temporadas activas por league_id de API-Football
+_APIF_SEASON_MAP = {
+    307: 2024,  # Saudi Pro League 2024/25
+    188: 2024,  # UAE Pro League 2024/25
+    233: 2024,  # Egyptian Premier League 2024/25
+    98:  2025,  # J1 League 2025
+    292: 2025,  # K League 1 2025
+}
+
+# Ligas sin cobertura ESPN -> fuente API-Football
+_APIF_FALLBACK_SLUGS = {
+    "sau.1": {"id": 307, "name": "Saudi Pro League"},
+    "uae.1": {"id": 188, "name": "UAE Pro League"},
+    "egy.1": {"id": 233, "name": "Egyptian Premier League"},
+    "jpn.1": {"id": 98,  "name": "J1 League"},
+    "kor.1": {"id": 292, "name": "K League 1"},
+}
+
 @st.cache_data(ttl=600, show_spinner=False)
 def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
-    """
-    Fetches fixtures from API-Football for leagues ESPN doesn't cover (Saudi, UAE, etc).
-    Returns matches in the same format as get_cartelera().
-    Uses API-Football /fixtures endpoint — 100 req/day free tier.
-    """
+    """Fixtures de API-Football para ligas sin cobertura ESPN."""
     if not API_FOOTBALL_KEY:
         return []
     try:
-        now   = datetime.now(CDMX)
-        hoy   = now.strftime("%Y-%m-%d")
-        # Fetch next 5 days
-        _from = hoy
-        _to   = (now + timedelta(days=4)).strftime("%Y-%m-%d")
+        now    = datetime.now(CDMX)
+        hoy    = now.strftime("%Y-%m-%d")
+        _to    = (now + timedelta(days=4)).strftime("%Y-%m-%d")
+        season = _APIF_SEASON_MAP.get(league_id, now.year)
         r = requests.get(
             f"{API_FOOTBALL}/fixtures",
             headers={"x-apisports-key": API_FOOTBALL_KEY},
-            params={
-                "league":  league_id,
-                "season":  now.year,  # current season
-                "from":    _from,
-                "to":      _to,
-                "timezone": "America/Mexico_City",
-            },
-            timeout=10
+            params={"league": league_id, "season": season,
+                    "from": hoy, "to": _to, "timezone": "America/Mexico_City"},
+            timeout=12
         )
         if r.status_code != 200:
             return []
-        data = r.json()
-        fixtures = data.get("response", [])
-        matches = []
-        seen = set()
-        for fix in fixtures:
+        matches, seen = [], set()
+        for fix in r.json().get("response", []):
             try:
-                fid      = str(fix["fixture"]["id"])
+                fid = str(fix["fixture"]["id"])
                 if fid in seen: continue
                 seen.add(fid)
-                status   = fix["fixture"]["status"]["short"]  # NS, 1H, HT, 2H, FT, etc
-                # Map API-Football status to ESPN state
-                if status in ("NS", "TBD"):
-                    state = "pre"
-                elif status in ("1H", "HT", "2H", "ET", "BT", "P", "LIVE"):
-                    state = "in"
-                elif status in ("FT", "AET", "PEN", "SUSP", "INT", "PST", "CANC", "ABD", "AWD", "WO"):
-                    state = "post"
-                else:
-                    state = "pre"
-                # Date/time (already in CDMX timezone from API)
-                _dt_str  = fix["fixture"]["date"]  # ISO format
+                st_code = fix["fixture"]["status"]["short"]
+                if st_code in ("NS","TBD"):                              state = "pre"
+                elif st_code in ("1H","HT","2H","ET","BT","P","LIVE"):  state = "in"
+                else:                                                     state = "post"
+                dt_raw = fix["fixture"]["date"]
                 try:
-                    _utc = datetime.strptime(_dt_str[:19], "%Y-%m-%dT%H:%M:%S")
-                    _utc = datetime.strptime(_dt_str[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.UTC)
-
-
-
-
-
+                    import dateutil.parser as _dp
+                    _local = _dp.parse(dt_raw).astimezone(CDMX)
                     hora   = _local.strftime("%H:%M")
                     fecha  = _local.strftime("%Y-%m-%d")
-                except:
-                    hora  = "00:00"
-                    fecha = hoy
-                if fecha < hoy: continue
-                if fecha > (now + timedelta(days=4)).strftime("%Y-%m-%d"): continue
-                home_t = fix["teams"]["home"]
-                away_t = fix["teams"]["away"]
-                home   = home_t.get("name", "?")
-                away   = away_t.get("name", "?")
-                # Use API-Football team IDs prefixed with "apif_" to avoid collision with ESPN IDs
-                home_id = f"apif_{home_t['id']}"
-                away_id = f"apif_{away_t['id']}"
-                # Scores
+                except Exception:
+                    fecha = dt_raw[:10]
+                    hora  = dt_raw[11:16] if len(dt_raw) > 15 else "00:00"
+                if fecha < hoy or fecha > _to: continue
+                home_t  = fix["teams"]["home"]
+                away_t  = fix["teams"]["away"]
                 score_h = fix["goals"]["home"] if fix["goals"]["home"] is not None else -1
                 score_a = fix["goals"]["away"] if fix["goals"]["away"] is not None else -1
-                # Odds (if available in fixture — usually not in free tier, use 0)
-                odd_h = odd_a = odd_d = 0.0
-                minute = 0
-                if state == "in":
-                    minute = fix["fixture"].get("status", {}).get("elapsed", 0) or 0
+                minute  = (fix["fixture"]["status"].get("elapsed") or 0) if state == "in" else 0
+                odd_h = odd_d = odd_a = 0.0
                 matches.append({
                     "id":       fid,
-                    "home":     home,
-                    "away":     away,
-                    "home_id":  home_id,
-                    "away_id":  away_id,
+                    "home":     home_t.get("name","?"),
+                    "away":     away_t.get("name","?"),
+                    "home_id":  f"apif_{home_t['id']}",
+                    "away_id":  f"apif_{away_t['id']}",
                     "home_rec": "0-0-0",
                     "away_rec": "0-0-0",
                     "league":   league_name,
@@ -1039,29 +1036,16 @@ def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
                     "hora":     hora,
                     "fecha":    fecha,
                     "state":    state,
-                    "odd_h":    odd_h,
-                    "odd_a":    odd_a,
-                    "odd_d":    odd_d,
-                    "score_h":  score_h,
-                    "score_a":  score_a,
+                    "odd_h":    odd_h, "odd_a": odd_a, "odd_d": odd_d,
+                    "score_h":  score_h, "score_a": score_a,
                     "minute":   minute,
                     "_source":  "api-football",
                 })
-            except Exception as _e:
+            except Exception:
                 continue
         return matches
-    except Exception as _ex:
+    except Exception:
         return []
-
-# Ligas que ESPN no cubre — fuente API-Football
-_APIF_FALLBACK_SLUGS = {
-    "sau.1": {"id": 307, "name": "Saudi Pro League 🇸🇦"},
-    "uae.1": {"id": 188, "name": "UAE Pro League 🇦🇪"},
-    "egy.1": {"id": 233, "name": "Egyptian Premier League 🇪🇬"},
-    "jpn.1": {"id": 98,  "name": "J1 League 🇯🇵"},
-    "kor.1": {"id": 292, "name": "K League 1 🇰🇷"},
-}
-
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_cartelera():
@@ -1202,9 +1186,10 @@ def get_cartelera():
         except: pass
     # ── Enrich UEFA matches that have no ESPN odds ──
     _UEFA_BULK = {
-        "uefa.champions": "soccer_uefa_champs_league",
-        "uefa.europa":    "soccer_uefa_europa_league",
-        "uefa.europa.conf":"soccer_uefa_europa_conference_league",
+        "uefa.champions":    "soccer_uefa_champs_league",
+        "uefa.europa":       "soccer_uefa_europa_league",
+        "uefa.europa.conf":  "soccer_uefa_europa_conference_league",
+        "sau.1":             "soccer_saudi_professional_league",
     }
     _bulk_cache = {}  # slug → list of odds from API
     _odds_key = ODDS_API_KEY
@@ -1706,7 +1691,7 @@ def get_h2h(home_id, away_id, slug, home_name, away_name):
     h2h.sort(key=lambda x: x["date"], reverse=True)
     return h2h[:10]
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def get_standings(slug):
     """Tabla de posiciones desde ESPN."""
     data = eg(f"{ESPN}/{slug}/standings")
@@ -1730,7 +1715,6 @@ def get_standings(slug):
     return rows
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def _tabla_posicion_delta(home: str, away: str, slug: str) -> dict:
     """
     POSICIÓN EN TABLA como variable de picks.
@@ -1771,54 +1755,87 @@ def _tabla_posicion_delta(home: str, away: str, slug: str) -> dict:
             pos_a = int(ra.get("pos", 0) or 0)
             pts_h = int(rh.get("pts", 0) or 0)
             pts_a = int(ra.get("pts", 0) or 0)
+            # Goles a favor/contra y diferencia de goles
+            gf_h  = float(str(rh.get("gf", 0) or 0).replace("?","0") or 0)
+            gc_h  = float(str(rh.get("gc", 0) or 0).replace("?","0") or 0)
+            gf_a  = float(str(ra.get("gf", 0) or 0).replace("?","0") or 0)
+            gc_a  = float(str(ra.get("gc", 0) or 0).replace("?","0") or 0)
+            gd_h  = float(str(rh.get("dif", 0) or 0).replace("?","0") or 0) or (gf_h - gc_h)
+            gd_a  = float(str(ra.get("dif", 0) or 0).replace("?","0") or 0) or (gf_a - gc_a)
+            pj_h  = max(1, int(str(rh.get("pj", 1) or 1).replace("?","1") or 1))
+            pj_a  = max(1, int(str(ra.get("pj", 1) or 1).replace("?","1") or 1))
         except:
             return _default
 
         if pos_h == 0 or pos_a == 0:
             return _default
 
-        # Número de equipos en liga (para normalizar)
         n_equipos = len(rows) or 20
 
-        # Delta basado en posición (menor pos = mejor = ventaja)
-        # Normalizado: posición 1 = 1.0, posición 20 = 0.0
-        rank_h = 1 - (pos_h - 1) / (n_equipos - 1)
-        rank_a = 1 - (pos_a - 1) / (n_equipos - 1)
-        diff   = rank_h - rank_a  # positivo = local mejor
+        # ── SEÑAL 1: Posición en tabla (normalizada) ──
+        rank_h = 1 - (pos_h - 1) / max(n_equipos - 1, 1)
+        rank_a = 1 - (pos_a - 1) / max(n_equipos - 1, 1)
+        diff   = rank_h - rank_a
+        delta_h = diff * 0.14
 
-        # Base: diferencia de posición → delta prob (max ±0.20)
-        delta_h = diff * 0.16
-        delta_a = -delta_h
-
-        # Bonus por diferencia de puntos (calidad real acumulada)
+        # ── SEÑAL 2: Diferencia de puntos (calidad acumulada) ──
         if pts_h > 0 and pts_a > 0:
             pts_diff_norm = (pts_h - pts_a) / max(pts_h, pts_a, 1)
-            delta_h += pts_diff_norm * 0.06  # hasta ±0.06 adicional por pts
-            delta_a  = -delta_h
+            delta_h += pts_diff_norm * 0.05
+
+        # ── SEÑAL 3: Goal Difference por partido (eficiencia real) ──
+        # GD/partido refleja qué tan dominante es el equipo más allá de la posición
+        gd_per_h = gd_h / pj_h
+        gd_per_a = gd_a / pj_a
+        gd_gap   = gd_per_h - gd_per_a  # positivo = local domina más
+        # Normalizar: GD/partido de ±2.0 → delta ±0.06
+        delta_h += max(-0.07, min(0.07, gd_gap * 0.035))
+
+        # ── SEÑAL 4: Ataque relativo (goles anotados por partido) ──
+        if pj_h > 0 and pj_a > 0:
+            avg_gf_h = gf_h / pj_h
+            avg_gf_a = gf_a / pj_a
+            avg_gc_h = gc_h / pj_h
+            avg_gc_a = gc_a / pj_a
+            # Local que anota mucho + rival que encaja mucho = ventaja ofensiva
+            atk_edge = (avg_gf_h - avg_gf_a) * 0.015  # hasta ±0.04
+            def_edge = (avg_gc_a - avg_gc_h) * 0.015   # rival encaja más = ventaja
+            delta_h += max(-0.04, min(0.04, atk_edge + def_edge))
+
+        delta_a = -delta_h
 
         pos_gap = abs(pos_h - pos_a)
         # Amplificar por magnitud del gap
-        if pos_gap >= 12:
-            delta_h *= 1.6
-            delta_a *= 1.6
-        elif pos_gap >= 8:
-            delta_h *= 1.4
-            delta_a *= 1.4
-        elif pos_gap >= 5:
-            delta_h *= 1.2
-            delta_a *= 1.2
+        if pos_gap >= 12:   delta_h *= 1.60; delta_a *= 1.60
+        elif pos_gap >= 8:  delta_h *= 1.40; delta_a *= 1.40
+        elif pos_gap >= 5:  delta_h *= 1.20; delta_a *= 1.20
 
-        # Cap ±0.20 (antes era ±0.14)
-        delta_h = max(-0.20, min(0.20, delta_h))
-        delta_a = max(-0.20, min(0.20, delta_a))
+        # Cap ±0.25
+        delta_h = max(-0.25, min(0.25, delta_h))
+        delta_a = max(-0.25, min(0.25, delta_a))
 
-        desc = (f"Pos {pos_h}°({pts_h}pts) vs {pos_a}°({pts_a}pts)"
-                f" | Gap {pos_gap} | "
-                f"{'Local favorito tabla' if diff>0.1 else 'Visitante favorito tabla' if diff<-0.1 else 'Nivel similar'}")
+        # GD display
+        gd_h_str = f"{gd_h:+.0f}" if gd_h != 0 else "?"
+        gd_a_str = f"{gd_a:+.0f}" if gd_a != 0 else "?"
+        avg_gf_h_d = round(gf_h/pj_h, 2) if pj_h > 0 else 0
+        avg_gf_a_d = round(gf_a/pj_a, 2) if pj_a > 0 else 0
+        avg_gc_h_d = round(gc_h/pj_h, 2) if pj_h > 0 else 0
+        avg_gc_a_d = round(gc_a/pj_a, 2) if pj_a > 0 else 0
+
+        tendencia = ("Local favorito tabla+GD" if delta_h > 0.08
+                     else "Visitante favorito tabla+GD" if delta_h < -0.08
+                     else "Nivel similar")
+        desc = (f"Pos {pos_h}°({pts_h}pts,GD{gd_h_str}) vs {pos_a}°({pts_a}pts,GD{gd_a_str})"
+                f" | Gap {pos_gap} | ∅goles {avg_gf_h_d}vs{avg_gc_h_d} / {avg_gf_a_d}vs{avg_gc_a_d}"
+                f" | {tendencia}")
 
         return {"delta_h": delta_h, "delta_a": delta_a,
                 "pos_h": pos_h, "pos_a": pos_a,
                 "pts_h": pts_h, "pts_a": pts_a,
+                "gf_h": gf_h, "gc_h": gc_h, "gd_h": gd_h,
+                "gf_a": gf_a, "gc_a": gc_a, "gd_a": gd_a,
+                "avg_gf_h": avg_gf_h_d, "avg_gc_h": avg_gc_h_d,
+                "avg_gf_a": avg_gf_a_d, "avg_gc_a": avg_gc_a_d,
                 "desc": desc, "pos_gap": pos_gap}
     except:
         return _default
@@ -3575,48 +3592,71 @@ def _needs_daily_reset():
 
 def fetch_soccer_results(days_back=10):
     """
-    Reutiliza get_cartelera() para obtener partidos de fútbol.
-    get_cartelera ya tiene todos los campos necesarios y funciona correctamente.
+    Fetch resultados de fútbol día a día desde ESPN (últimos N días + hoy).
+    Consulta cada slug de LIGAS para cada fecha — igual que NBA.
+    IMPORTANTE: no usa get_cartelera() que solo retorna partidos futuros.
     """
-    try:
-        matches = get_cartelera() or []
-    except Exception as _e:
-        return []
-
+    now     = datetime.now(CDMX)
+    cutoff  = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    hoy     = now.strftime("%Y-%m-%d")
     partidos = []
-    cutoff = (datetime.now(CDMX) - timedelta(days=days_back)).strftime("%Y-%m-%d")
-
-    for m in matches:
-        fecha = m.get("fecha", "")
-        if fecha < cutoff:
-            continue
-        state = m.get("state", "")
-        sh = m.get("score_h", -1)
-        sa = m.get("score_a", -1)
-        # Para partidos post: asegurarse que score sea válido
-        if state == "post" and (sh < 0 or sa < 0):
-            sh = 0; sa = 0
-        partidos.append({
-            "id":       m.get("id", ""),
-            "deporte":  "futbol",
-            "liga":     m.get("league", m.get("liga", "")),
-            "slug":     m.get("slug", ""),
-            "home":     m.get("home", ""),
-            "away":     m.get("away", ""),
-            "home_id":  str(m.get("home_id", "")),
-            "away_id":  str(m.get("away_id", "")),
-            "home_rec": m.get("home_rec", "5-5-5"),
-            "away_rec": m.get("away_rec", "5-5-5"),
-            "odd_h":    m.get("odd_h", 0),
-            "odd_d":    m.get("odd_d", 0),
-            "odd_a":    m.get("odd_a", 0),
-            "score_h":  sh,
-            "score_a":  sa,
-            "fecha":    fecha,
-            "state":    state,
-            "hora":     m.get("hora", ""),
-        })
-
+    seen_ids = set()
+    # Slugs prioritarios para resultados (los más activos)
+    _result_slugs = [
+        "esp.1","eng.1","ger.1","ita.1","fra.1","mex.1","usa.1","bra.1",
+        "arg.1","col.1","por.1","ned.1","mex.2","eng.2","ger.2",
+        "uefa.champions","uefa.europa","concacaf.champions",
+        "tur.1","sco.1","bel.1","chi.1","ecu.1",
+    ]
+    for day_offset in range(days_back, -1, -1):
+        d  = now - timedelta(days=day_offset)
+        ds = d.strftime("%Y%m%d")
+        fd = d.strftime("%Y-%m-%d")
+        if fd < cutoff: continue
+        for slug in _result_slugs:
+            try:
+                data = eg(f"{ESPN}/{slug}/scoreboard", {"dates": ds, "limit": 50})
+                for ev in data.get("events", []):
+                    try:
+                        eid   = ev.get("id","")
+                        if eid in seen_ids: continue
+                        comp  = ev["competitions"][0]
+                        state = ev.get("status",{}).get("type",{}).get("state","")
+                        if state != "post": continue  # solo finalizados
+                        comps = comp["competitors"]
+                        hc = next(c for c in comps if c["homeAway"]=="home")
+                        ac = next(c for c in comps if c["homeAway"]=="away")
+                        utc_str = ev.get("date","")
+                        try:
+                            utc_dt = datetime.strptime(utc_str[:19],"%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.UTC)
+                            fecha  = utc_dt.astimezone(CDMX).strftime("%Y-%m-%d")
+                            hora   = utc_dt.astimezone(CDMX).strftime("%H:%M")
+                        except:
+                            fecha = fd; hora = "00:00"
+                        if fecha < cutoff: continue
+                        sh = parse_score(hc.get("score",0))
+                        sa = parse_score(ac.get("score",0))
+                        seen_ids.add(eid)
+                        partidos.append({
+                            "id":       eid,
+                            "deporte":  "futbol",
+                            "liga":     LIGAS.get(slug, slug),
+                            "slug":     slug,
+                            "home":     hc["team"]["displayName"],
+                            "away":     ac["team"]["displayName"],
+                            "home_id":  str(hc["team"]["id"]),
+                            "away_id":  str(ac["team"]["id"]),
+                            "home_rec": "0-0-0",
+                            "away_rec": "0-0-0",
+                            "odd_h":    0, "odd_d": 0, "odd_a": 0,
+                            "score_h":  sh,
+                            "score_a":  sa,
+                            "fecha":    fecha,
+                            "state":    "post",
+                            "hora":     hora,
+                        })
+                    except: continue
+            except: continue
     return partidos
 
 
@@ -4931,6 +4971,7 @@ def _villar_find_result(pk, all_partidos):
     return best if best_score >= 1 else None
 
 
+@st.fragment
 def render_resultados_tab():
     """VILLAR — Auditoría automática pick vs resultado real."""
     from collections import defaultdict
@@ -4962,7 +5003,7 @@ def render_resultados_tab():
         if st.button("🔄 Forzar", use_container_width=True, key="villar_force"):
             st.session_state.pop(_villar_key, None)
             st.session_state.pop("results_db", None)
-            st.rerun()
+            st.rerun(scope="fragment")
 
     db       = get_results_db()
     partidos = db.get("partidos", [])
@@ -5188,7 +5229,7 @@ def render_resultados_tab():
                                 _save_results_db(_db2)
                                 st.session_state["results_db"] = _db2
                                 st.success(f"✅ {len(_tw)} partidos guardados")
-                                st.rerun()
+                                st.rerun(scope="fragment")
                             else:
                                 _api_err2 = st.session_state.get("_tennis_api_error","")
                                 if _api_err2:
@@ -5208,7 +5249,7 @@ def render_resultados_tab():
                         st.session_state.pop("results_last_check", None)
                         update_results_db(force=True)
                         st.session_state["results_db"] = _load_results_db()
-                        st.rerun()
+                        st.rerun(scope="fragment")
 
             # Contadores sport
             ok_sp=0; fail_sp=0
@@ -5221,7 +5262,7 @@ def render_resultados_tab():
             # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
             # NBA/Tenis: hasta 14 días atrás
             _catorce_dias = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
-            _inicio_conteo_tab = (datetime.now(CDMX)-timedelta(days=7)).strftime("%Y-%m-%d")  # últimos 7 días
+            _inicio_conteo_tab = (datetime.now(CDMX)-timedelta(days=30)).strftime("%Y-%m-%d")  # últimos 30 días
             _auto_pk_cache = {}
             _fut_count = 0
             for _fp in finalizados:
@@ -7608,6 +7649,14 @@ def mc50k(hxg, axg, N=10_000):
     rng = np.random.default_rng(42)
     hg  = rng.poisson(max(0.3, hxg), N)
     ag  = rng.poisson(max(0.3, axg), N)
+    # Half-time split ~45% del xG
+    rng2  = np.random.default_rng(43)
+    hg_h1 = rng2.poisson(max(0.15, hxg*0.45), N)
+    ag_h1 = rng2.poisson(max(0.15, axg*0.45), N)
+    hg_h2 = np.clip(hg - hg_h1, 0, None)
+    ag_h2 = np.clip(ag - ag_h1, 0, None)
+    _gcm_h = float(((hg_h1>ag_h1)|(hg_h2>ag_h2)).mean())
+    _gcm_a = float(((ag_h1>hg_h1)|(ag_h2>hg_h2)).mean())
     return {
         "ph":   float((hg>ag).mean()),  "pd":  float((hg==ag).mean()),
         "pa":   float((ag>hg).mean()),  "o15": float(((hg+ag)>1).mean()),
@@ -7615,6 +7664,23 @@ def mc50k(hxg, axg, N=10_000):
         "btts": float(((hg>0)&(ag>0)).mean()),
         "cs_h": float((ag==0).mean()),  "cs_a": float((hg==0).mean()),
         "hxg":  round(hxg,2),           "axg":  round(axg,2),
+        # Mercados individuales de equipo
+        "h_o05": round(float((hg>=1).mean()), 4),
+        "h_u05": round(float((hg==0).mean()), 4),
+        "h_o15": round(float((hg>=2).mean()), 4),
+        "h_u15": round(float((hg<=1).mean()), 4),
+        "a_o05": round(float((ag>=1).mean()), 4),
+        "a_u05": round(float((ag==0).mean()), 4),
+        "a_o15": round(float((ag>=2).mean()), 4),
+        "a_u15": round(float((ag<=1).mean()), 4),
+        # Gana cualquier mitad (simulado)
+        "gcm_h": round(_gcm_h, 4),
+        "gcm_a": round(_gcm_a, 4),
+        # Equipo fuego: >= 2 goles propios (activo si xG >= 2.2)
+        "h_o15_team": round(float((hg>=2).mean()), 4),
+        "a_o15_team": round(float((ag>=2).mean()), 4),
+        "h_hot": bool(hxg >= 2.2),
+        "a_hot": bool(axg >= 2.2),
     }
 
 def poisson_u45(lh, la):
@@ -10200,7 +10266,7 @@ def _best_market_soccer(m, dp, mc):
     opts.append(("⚡ Ambos Anotan (AA)",    mc["btts"], 0, mc["btts"]-0.52))
     # Ordenar: mayor probabilidad primero (el pick DIAMANTE = max prob con edge+)
     opts.sort(key=lambda x: (-x[1], -x[3]))
-    valid = [o for o in opts if o[3] > 0.0 and o[1] >= 0.55]
+    valid = [o for o in opts if o[3] > 0.0 and o[1] >= 0.52]
     return valid[0] if valid else None
 
 def escanear_y_enviar(matches):
@@ -10216,9 +10282,20 @@ def escanear_y_enviar(matches):
             if not af: af = get_form_domestic(str(m.get("away_id","")), m["slug"])
         hxg = _cup_enriched_xg(m, True,  hf, af)
         axg = _cup_enriched_xg(m, False, hf, af)
+        # ── Tabla+GD ajusta xG antes del ensemble (bot Telegram) ──
+        try:
+            _tbl_bot = _tabla_posicion_delta(m["home"], m["away"], m.get("slug",""))
+            if _tbl_bot.get("pos_h", 0) > 0:
+                _xg_adj_bot = _tbl_bot["delta_h"] * 0.25
+                hxg = max(0.30, hxg + _xg_adj_bot)
+                axg = max(0.30, axg - _xg_adj_bot)
+        except: pass
         h2h = get_h2h(m["home_id"],m["away_id"],m["slug"],m["home"],m["away"])
         h2s = h2h_stats(h2h, m["home"], m["away"])
         mc  = ensemble_football(hxg, axg, h2s, hf, af, m["home_id"], m["away_id"], odd_h=m.get("odd_h",0), odd_a=m.get("odd_a",0), odd_d=m.get("odd_d",0), slug=m.get("slug",""))
+        # Merge mc50k markets (h_o05, h_o15, gcm_h, etc) que ensemble no devuelve
+        _mc50k_extra = mc50k(hxg, axg)
+        mc = {**_mc50k_extra, **mc}  # ensemble wins on overlapping keys (ph/pd/pa/o25)
         dp  = diamond_engine(mc, h2s, hf, af)
         best = _best_market_soccer(m, dp, mc)
         if best and best[3] >= 0.05:  # edge mínimo 5%
@@ -10228,7 +10305,7 @@ def escanear_y_enviar(matches):
                           "pick_label":best[0],"pick_prob":best[1],"pick_odd":best[2]})
 
     if not picks:
-        tg_send("🛡️ *Escáner Diario:* No hay picks con Edge > 8% hoy. Mantén el dinero en la bolsa.")
+        tg_send("🛡️ *Escáner Diario:* No hay picks con Edge ≥ 5% hoy. Mantén el dinero en la bolsa.")
         return 0
 
     msg  = "🦅 *THE GAMBLERS DEN | ESCÁNER DIARIO* 🦅\n"
@@ -10241,6 +10318,14 @@ def escanear_y_enviar(matches):
         if p.get('pick_odd',0)>1: msg += f" @{p['pick_odd']:.2f}"
         msg += f" | Edge {p['edge']*100:.1f}%\n"
         msg += f"📐 xG proy: {p['mc'].get('hxg','?')} — {p['mc'].get('axg','?')}\n"
+        # Tabla+GD en Telegram
+        try:
+            _bot_tbl = _tabla_posicion_delta(p["home"], p["away"], p.get("slug",""))
+            if _bot_tbl.get("pos_h",0) > 0:
+                _bth=_bot_tbl.get("pos_h",0); _bta=_bot_tbl.get("pos_a",0)
+                _bgdh=_bot_tbl.get("gd_h",0); _bgda=_bot_tbl.get("gd_a",0)
+                msg += f"📊 Tabla: #{_bth} (GD{_bgdh:+.0f}) vs #{_bta} (GD{_bgda:+.0f})\n"
+        except: pass
         msg += "━━━━━━━━━━━━━━━━━━━\n\n"
     msg += "_Que la varianza esté a nuestro favor._ 🎲"
     tg_send(msg)
@@ -11800,13 +11885,33 @@ def get_tennis_cartelera():
                            any(x in ev_status for x in _retired_keywords))
                 is_walkover = any(x in ev_status for x in ["retired","ret.","walkover","w/o","withdraw"])
                 t_state = "post" if is_post else ("in" if is_live else "pre")
+                # Sanity check: si el partido dice "pre" pero la hora ya pasó > 3h, marcar post
+                if t_state == "pre" and fecha == datetime.now(CDMX).strftime("%Y-%m-%d"):
+                    try:
+                        _ph, _pm = int(hora.split(":")[0]), int(hora.split(":")[1])
+                        _now_cdmx_min = datetime.now(CDMX).hour*60 + datetime.now(CDMX).minute
+                        if (_ph*60+_pm) < _now_cdmx_min - 180:  # más de 3h atrás
+                            t_state = "post"  # marcar como finalizado
+                    except: pass
                 # Score for tennis
                 sc1 = str(ev.get("event_first_player_result",""))
                 sc2 = str(ev.get("event_second_player_result",""))
                 # Si hay retiro, el ganador = quien tiene más sets (o sc1 si ambos 0)
                 # Marcamos con retiro para mostrar en UI
-                p1_name = ev.get("event_first_player","?")
-                p2_name = ev.get("event_second_player","?")
+                p1_name = ev.get("event_first_player","?").strip()
+                p2_name = ev.get("event_second_player","?").strip()
+                # Clean "vs" artifacts: if name contains " vs " split it
+                if " vs " in p1_name:
+                    _parts = p1_name.split(" vs ", 1)
+                    p1_name = _parts[0].strip()
+                    if p2_name in ("?", "") and len(_parts) > 1:
+                        p2_name = _parts[1].strip()
+                # Normalize: "Last, First" → "First Last"
+                for _pv, _pn in [(p1_name, "p1"), (p2_name, "p2")]:
+                    if "," in _pv:
+                        _parts2 = _pv.split(",", 1)
+                        if _pn == "p1": p1_name = f"{_parts2[1].strip()} {_parts2[0].strip()}"
+                        else: p2_name = f"{_parts2[1].strip()} {_parts2[0].strip()}"
                 # Try to get real rank from API event fields first
                 r1_api = ev.get("event_first_player_ranking") or ev.get("player1_rank") or 0
                 r2_api = ev.get("event_second_player_ranking") or ev.get("player2_rank") or 0
@@ -13120,6 +13225,15 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                       if hf else _cup_enriched_xg(m, True,  hf, af)
                 axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug) \
                       if af else _cup_enriched_xg(m, False, hf, af)
+                # ── Ajuste xG por tabla+GD ANTES del ensemble ──
+                _tbl_pre_kr = {}
+                try:
+                    if slug: _tbl_pre_kr = _tabla_posicion_delta(m.get("home",""), m.get("away",""), slug)
+                except: pass
+                if _tbl_pre_kr.get("pos_h", 0) > 0:
+                    _xg_tbl_adj = _tbl_pre_kr["delta_h"] * 0.25
+                    hxg = max(0.30, hxg + _xg_tbl_adj)
+                    axg = max(0.30, axg - _xg_tbl_adj)
                 h2h = get_h2h(home_id, away_id, slug, m.get("home","?"), m.get("away","?"))
                 h2s = h2h_stats(h2h, m.get("home","?"), m.get("away","?"))
                 mc  = ensemble_football(hxg, axg, h2s, hf, af,
@@ -13199,7 +13313,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     ("🤝 Empate",                 _pd,       m.get("odd_d",0), "1X2"),
                     (f"🔵 DO {_hn}",             _do_h,     1.30,             "DO"),
                     (f"🟣 DO {_an}",             _do_a,     1.50,             "DO"),
-                    ("⚽ Over 1.5",              _o15,      1.35,             "OU"),
+                    ("⚽ Over 1.5 Total",         _o15,      1.35,             "OU"),
+                *([(f"🔥 {_hn} +1.5 goles", float(mc.get("h_o15_team",0)), 2.10, "TG_HOT")] if mc.get("h_hot") else []),
+                *([(f"🔥 {_an} +1.5 goles", float(mc.get("a_o15_team",0)), 2.30, "TG_HOT")] if mc.get("a_hot") else []),
                     ("⚽ Over 2.5",              _o25,      1.85,             "OU"),
                     ("⚽⚽ Over 3.5",            _o35_kr,   2.50,             "OU"),
                     ("🔒 Under 2.5",            _u25_kr,   2.00,             "OU"),
@@ -13220,7 +13336,14 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 if not _kr_all_mkts: continue
 
                 # Selección: MAYOR PROBABILIDAD
-                _best_kr = max(_kr_all_mkts, key=lambda x: x[1])
+                # Selección por EV (prob*odd-1), prob mínima 40%
+                _kr_valid = [(l,p,o,mk) for l,p,o,mk in _kr_all_mkts if p>0.01 and o>1.0]
+                if not _kr_valid: _kr_valid = _kr_all_mkts
+                _kr_ev_ok = [(l,p,o,mk) for l,p,o,mk in _kr_valid if p>=0.40]
+                if _kr_ev_ok:
+                    _best_kr = max(_kr_ev_ok, key=lambda x: x[1]*x[2]-1)
+                else:
+                    _best_kr = max(_kr_valid, key=lambda x: x[1])
                 lbl, prob, odd, mkt = _best_kr[0], _best_kr[1], _best_kr[2], _best_kr[3]
 
                 if prob < 0.40: continue  # umbral mínimo razonable
@@ -13273,14 +13396,22 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 try:
                     _slug_kr = m.get("slug", "")
                     if _slug_kr:
-                        _tbl = _tabla_posicion_delta(_home, _away, _slug_kr)
-                        if _tbl.get("pos_h", 0) > 0:  # siempre aplicar
+                        _tbl = _tbl_pre_kr if _tbl_pre_kr.get("pos_h",0)>0 else _tabla_posicion_delta(_home, _away, _slug_kr)
+                        if _tbl.get("pos_h", 0) > 0:
                             _tbl_w_kr = 1.0 if _tbl.get('pos_gap',0)>=8 else (0.90 if _tbl.get('pos_gap',0)>=4 else 0.70)
                             c["prob"] = max(0.10, min(0.92, c["prob"] + _tbl["delta_h"] * _tbl_w_kr))
                             c["tabla_desc"] = _tbl["desc"]
                             c["tabla_delta"] = _tbl["delta_h"]
-                            c["pos_h"] = _tbl["pos_h"]
-                            c["pos_a"] = _tbl["pos_a"]
+                            c["pos_h"]    = _tbl["pos_h"]
+                            c["pos_a"]    = _tbl["pos_a"]
+                            c["pts_h"]    = _tbl.get("pts_h", 0)
+                            c["pts_a"]    = _tbl.get("pts_a", 0)
+                            c["gd_h"]     = _tbl.get("gd_h", 0)
+                            c["gd_a"]     = _tbl.get("gd_a", 0)
+                            c["avg_gf_h"] = _tbl.get("avg_gf_h", 0)
+                            c["avg_gc_h"] = _tbl.get("avg_gc_h", 0)
+                            c["avg_gf_a"] = _tbl.get("avg_gf_a", 0)
+                            c["avg_gc_a"] = _tbl.get("avg_gc_a", 0)
                             # Boost score si la tabla confirma el pick
                             if _tbl["delta_h"] > 0.05 and lbl == "local":
                                 c["score"] = min(10.0, c["score"] + 0.8)
@@ -13524,7 +13655,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             try:
                 _ui = _ultra_intel_full(
                     _home_c, _away_c,
-                    _c.get("sport","futbol"), _c.get("liga",""), _c.get("hora","")
+                    _c.get("sport","futbol"), _c.get("liga",""), _c.get("hora",""),
+                    tabla_ctx=_c.get("tabla_desc","")  # posición+GD
                 )
                 _c["prob"]        = max(0.10,min(0.92,_c["prob"]+_ui["delta_h"]*0.40))
                 _c["ultra_score"] = _ui["score_ultra"]
@@ -13731,7 +13863,9 @@ def _kr_ia_narracion(el_pick, bk, todos):
             f"Ultra Score: {el_pick.get('ultra_score',5.0):.1f}/10\n"
             + (("Ultra flags: " + " | ".join(el_pick.get("ultra_flags",[])) + "\n") if el_pick.get("ultra_flags") else "")
             + "\n"
-            f"Narra. Eres el rey del universo."
+            + (f"Tabla: {el_pick.get('tabla_desc','')}\n" if el_pick.get('tabla_desc') else "")
+            + (f"Local #{el_pick.get('pos_h',0)} GD{el_pick.get('gd_h',0):+.0f} vs Visita #{el_pick.get('pos_a',0)} GD{el_pick.get('gd_a',0):+.0f}\n" if el_pick.get('pos_h',0)>0 else "")
+            + "Narra. Eres el rey del universo. Si hay brecha de tabla grande, menciona la posicion."
             + (f"\n\nDATO EN VIVO: {el_pick.get('live_ctx','')}" if el_pick.get('live_ctx') else "")
         )
         r = requests.post(
@@ -14764,6 +14898,10 @@ def _papi_bot_consensus(candidato: dict) -> dict:
                 "Reglas: stake 20%, cuota 1.30-1.80, prob >45%.",
                 'Responde SOLO JSON: {"veredicto":"verde|amarillo|rojo","score_final":0-10,"mensaje":"max 12 palabras"}',
             ]
+            # Tabla+GD al panel de Haiku
+            if candidato.get('pos_h', 0) > 0:
+                panel_lines.append(f"Tabla: {candidato.get('tabla_desc','N/D')}")
+                panel_lines.append(f"Pos: Local #{candidato.get('pos_h',0)} GD{candidato.get('gd_h',0):+.0f} vs Visita #{candidato.get('pos_a',0)} GD{candidato.get('gd_a',0):+.0f}")
             panel_ctx = "\n".join(panel_lines)
             _r3 = requests.post(
                 "https://api.anthropic.com/v1/messages",
@@ -14873,6 +15011,15 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
             except: hf, af = [], []
             hxg = xg_weighted(hf, True)  if hf else 1.20
             axg = xg_weighted(af, False) if af else 1.00
+            # ── Tabla+GD ajusta xG ANTES de mc50k (afecta todos los mercados) ──
+            _tbl_ajb = {}
+            try:
+                _tbl_ajb = _tabla_posicion_delta(m["home"], m["away"], m.get("slug",""))
+                if _tbl_ajb.get("pos_h", 0) > 0:
+                    _xg_adj_ajb = _tbl_ajb["delta_h"] * 0.25
+                    hxg = max(0.30, hxg + _xg_adj_ajb)
+                    axg = max(0.30, axg - _xg_adj_ajb)
+            except: pass
             try:
                 mc  = mc50k(hxg, axg)
                 ph, pd, pa = mc["ph"], mc.get("pd",0.25), mc["pa"]
@@ -14909,7 +15056,9 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
                 (f"{_an_p} Gana",                pa,          m.get("odd_a",0)),
                 ("🤝 Empate",                     _pd_p,       m.get("odd_d",0)),
                 (f"Over 2.5",                     o25,         1.85),
-                (f"Over 1.5",                     o15,         1.35),
+                (f"Over 1.5 Total",               o15,         1.35),
+                *( [(f"🔥 {_hn_p} +1.5 goles", float(mc_p.get("h_o15_team",0) or 0), 2.10)] if mc_p.get("h_hot") else [] ),
+                *( [(f"🔥 {_an_p} +1.5 goles", float(mc_p.get("a_o15_team",0) or 0), 2.30)] if mc_p.get("a_hot") else [] ),
                 (f"Over 3.5",                     _o35_p,      2.50),
                 (f"Under 2.5",                    _u25_p,      2.00),
                 (f"Under 3.5",                    _u35_p,      1.50),
@@ -14935,7 +15084,13 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
                     "partido":f"{m.get('home','?')} vs {m.get('away','?')}",
                     "deporte":"futbol","sport":"futbol","liga":m.get("league",""),
                     "hora":m.get("hora",""),"home":m.get("home",""),"away":m.get("away",""),
-                    "fecha":m.get("fecha",""),"edge":round(edge,4),"score":score})
+                    "fecha":m.get("fecha",""),"edge":round(edge,4),"score":score,
+                    "pos_h":_tbl_ajb.get("pos_h",0),"pos_a":_tbl_ajb.get("pos_a",0),
+                    "pts_h":_tbl_ajb.get("pts_h",0),"pts_a":_tbl_ajb.get("pts_a",0),
+                    "gd_h":_tbl_ajb.get("gd_h",0),"gd_a":_tbl_ajb.get("gd_a",0),
+                    "avg_gf_h":_tbl_ajb.get("avg_gf_h",0),"avg_gc_h":_tbl_ajb.get("avg_gc_h",0),
+                    "avg_gf_a":_tbl_ajb.get("avg_gf_a",0),"avg_gc_a":_tbl_ajb.get("avg_gc_a",0),
+                    "tabla_desc":_tbl_ajb.get("desc","")})
         except: continue
 
     # ── NBA ──────────────────────────────────────────────────────────────
@@ -15049,6 +15204,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     return best
 
 
+@st.fragment
 def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     """
     💰 PAPI AJB — Reto Escalera $1,500 → $1,000,000 MXN
@@ -15256,7 +15412,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
         st.error("⚠️ Reto pausado — capital insuficiente.")
         if st.button("🔄 Reactivar Reto", type="primary"):
             state.update({"activo": True, "capital": 1500.0, "paso": 1})
-            _papi_save_state(state); st.rerun()
+            _papi_save_state(state); st.rerun(scope="fragment")
         return
 
     today     = _dt.datetime.now().strftime("%Y-%m-%d")
@@ -15338,7 +15494,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
         if st.button("🔄 Reset Reto", use_container_width=True):
             if st.session_state.get("_papi_confirm_reset"):
                 state = {"paso":1,"capital":1500.0,"activo":True,"pick_del_dia":None,"fecha_pick":""}
-                _papi_save_state(state); _papi_save_history([]); st.rerun()
+                _papi_save_state(state); _papi_save_history([]); st.rerun(scope="fragment")
             else:
                 st.session_state["_papi_confirm_reset"] = True
                 st.warning("Presiona de nuevo para confirmar reset")
@@ -15372,6 +15528,39 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
           </div>
         """, unsafe_allow_html=True)
 
+        # ── Tabla + GD display (fútbol only) ──
+        if saved.get('deporte','') == 'futbol' and saved.get('pos_h',0) > 0:
+            _ajb_pos_h = saved.get('pos_h',0); _ajb_pos_a = saved.get('pos_a',0)
+            _ajb_pts_h = saved.get('pts_h',0); _ajb_pts_a = saved.get('pts_a',0)
+            _ajb_gd_h  = saved.get('gd_h',0);  _ajb_gd_a  = saved.get('gd_a',0)
+            _ajb_gfh   = saved.get('avg_gf_h',0); _ajb_gch = saved.get('avg_gc_h',0)
+            _ajb_gfa   = saved.get('avg_gf_a',0); _ajb_gca = saved.get('avg_gc_a',0)
+            _ajb_gd_hs = f'{_ajb_gd_h:+.0f}' if _ajb_gd_h!=0 else '?'
+            _ajb_gd_as = f'{_ajb_gd_a:+.0f}' if _ajb_gd_a!=0 else '?'
+            _ajb_c_h   = '#00ff88' if _ajb_pos_h < _ajb_pos_a else '#ff9500'
+            _ajb_c_a   = '#00ff88' if _ajb_pos_a < _ajb_pos_h else '#ff9500'
+            _ajb_gdc_h = '#00ff88' if _ajb_gd_h>0 else ('#ff4444' if _ajb_gd_h<0 else '#888')
+            _ajb_gdc_a = '#00ff88' if _ajb_gd_a>0 else ('#ff4444' if _ajb_gd_a<0 else '#888')
+            st.markdown(
+                f"<div style='margin:8px 0;background:#050f07;border:1px solid #00ff8833;"
+                f"border-radius:7px;padding:9px 12px'>"
+                f"<div style='font-size:0.7rem;color:#00ff8866;font-weight:700;letter-spacing:.1em;margin-bottom:6px'>📊 TABLA · POSICIÓN · GOAL DIFF</div>"
+                f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:6px'>"
+                f"<div style='background:#0a140a;border-radius:5px;padding:7px'>"
+                f"<div style='font-size:0.72rem;color:#888'>🏠 {saved.get('home','Local')[:14]}</div>"
+                f"<div style='font-size:1.25rem;font-weight:900;color:{_ajb_c_h}'>#{_ajb_pos_h}</div>"
+                f"<div style='font-size:0.85rem;color:#aaa'>{_ajb_pts_h}pts · GD <span style='color:{_ajb_gdc_h};font-weight:700'>{_ajb_gd_hs}</span></div>"
+                f"<div style='font-size:0.72rem;color:#666'>∅ {_ajb_gfh:.1f}F / {_ajb_gch:.1f}C</div>"
+                f"</div>"
+                f"<div style='background:#0a140a;border-radius:5px;padding:7px'>"
+                f"<div style='font-size:0.72rem;color:#888'>✈️ {saved.get('away','Visita')[:14]}</div>"
+                f"<div style='font-size:1.25rem;font-weight:900;color:{_ajb_c_a}'>#{_ajb_pos_a}</div>"
+                f"<div style='font-size:0.85rem;color:#aaa'>{_ajb_pts_a}pts · GD <span style='color:{_ajb_gdc_a};font-weight:700'>{_ajb_gd_as}</span></div>"
+                f"<div style='font-size:0.72rem;color:#666'>∅ {_ajb_gfa:.1f}F / {_ajb_gca:.1f}C</div>"
+                f"</div></div>"
+                f"<div style='font-size:0.7rem;color:#c9a84c66;margin-top:4px'>Gap: {abs(_ajb_pos_h-_ajb_pos_a)} posiciones</div>"
+                f"</div>",
+                unsafe_allow_html=True)
         # ── Companion pick NBA (ML al lado del O/U) ──
         _paji_comp  = saved.get("companion","")
         _paji_sport = saved.get("sport","") or saved.get("deporte","")
@@ -15416,7 +15605,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
                 state.update({"capital":nc,"paso":paso+1,"pick_del_dia":None,"fecha_pick":""})
                 _papi_save_state(state); _papi_save_history(history)
                 _papi_telegram(f"✅ PAPI AJB GANÓ Paso {paso}! Capital ${nc:,.0f} (+${gp:,.0f})")
-                st.balloons(); st.rerun()
+                st.balloons(); st.rerun(scope="fragment")
         with b2:
             if st.button("❌ PERDIÓ", use_container_width=True, key="paji_perdio"):
                 nc = max(0, capital - stake)
@@ -15426,7 +15615,7 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
                 state.update({"capital":nc,"activo":nc>=500,"pick_del_dia":None,"fecha_pick":""})
                 _papi_save_state(state); _papi_save_history(history)
                 _papi_telegram(f"❌ PAPI AJB Perdió Paso {paso}. Capital ${nc:,.0f} (-${stake:,.0f})")
-                st.rerun()
+                st.rerun(scope="fragment")
 
     elif saved_f != today:
         st.info("📅 Nuevo día — busca el pick de hoy.")
@@ -16262,6 +16451,47 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                         +"<span style='color:"+_co_c+";font-weight:900;font-size:1.2rem'>"+str(round(_co_s,1))+"/10</span></div>"
                         +"</div>"
                     )
+                # ── Tabla + Goal Difference display ──
+                _kr_pos_h   = el_pick.get('pos_h', 0)
+                _kr_pos_a   = el_pick.get('pos_a', 0)
+                _kr_pts_h   = el_pick.get('pts_h', 0)
+                _kr_pts_a   = el_pick.get('pts_a', 0)
+                _kr_gd_h    = el_pick.get('gd_h', 0)
+                _kr_gd_a    = el_pick.get('gd_a', 0)
+                _kr_agf_h   = el_pick.get('avg_gf_h', 0)
+                _kr_agc_h   = el_pick.get('avg_gc_h', 0)
+                _kr_agf_a   = el_pick.get('avg_gf_a', 0)
+                _kr_agc_a   = el_pick.get('avg_gc_a', 0)
+                _kr_tbl_desc= el_pick.get('tabla_desc', '')
+                if _kr_pos_h > 0 and _kr_pos_a > 0:
+                    _gd_h_str = f'{_kr_gd_h:+.0f}' if _kr_gd_h != 0 else '?'
+                    _gd_a_str = f'{_kr_gd_a:+.0f}' if _kr_gd_a != 0 else '?'
+                    _pos_gap_kr= abs(_kr_pos_h - _kr_pos_a)
+                    _pos_c_h  = '#00ff88' if _kr_pos_h < _kr_pos_a else '#ff4444'
+                    _pos_c_a  = '#00ff88' if _kr_pos_a < _kr_pos_h else '#ff4444'
+                    _gd_c_h   = '#00ff88' if _kr_gd_h > 0 else ('#ff4444' if _kr_gd_h < 0 else '#888')
+                    _gd_c_a   = '#00ff88' if _kr_gd_a > 0 else ('#ff4444' if _kr_gd_a < 0 else '#888')
+                    _gparts.append(
+                        "<div style='margin-top:8px;border-top:1px solid #00ff8822;padding-top:8px'>",
+                    )
+                    _gparts.append(
+                        "<div style='font-size:0.75rem;color:#00ff8866;letter-spacing:.1em;font-weight:700;margin-bottom:6px'>📊 TABLA · POSICIÓN · GOAL DIFF</div>"
+                        +"<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px'>"
+                        +f"<div style='background:#050f07;border-radius:6px;padding:8px'>"
+                        +f"<div style='font-size:0.78rem;color:#888'>🏠 Local</div>"
+                        +f"<div style='font-size:1.3rem;font-weight:900;color:{_pos_c_h}'>#{_kr_pos_h}</div>"
+                        +f"<div style='font-size:0.9rem;color:#aaa'>{_kr_pts_h} pts · GD <span style='color:{_gd_c_h};font-weight:700'>{_gd_h_str}</span></div>"
+                        +f"<div style='font-size:0.78rem;color:#666'>∅ {_kr_agf_h:.1f}F/{_kr_agc_h:.1f}C por partido</div>"
+                        +"</div>"
+                        +f"<div style='background:#050f07;border-radius:6px;padding:8px'>"
+                        +f"<div style='font-size:0.78rem;color:#888'>✈️ Visita</div>"
+                        +f"<div style='font-size:1.3rem;font-weight:900;color:{_pos_c_a}'>#{_kr_pos_a}</div>"
+                        +f"<div style='font-size:0.9rem;color:#aaa'>{_kr_pts_a} pts · GD <span style='color:{_gd_c_a};font-weight:700'>{_gd_a_str}</span></div>"
+                        +f"<div style='font-size:0.78rem;color:#666'>∅ {_kr_agf_a:.1f}F/{_kr_agc_a:.1f}C por partido</div>"
+                        +"</div></div>"
+                        +f"<div style='font-size:0.75rem;color:#c9a84c88;margin-top:5px'>Gap: {_pos_gap_kr} posiciones</div>"
+                        +"</div>"
+                    )
                 _gparts.append("</div>")
                 st.markdown("".join(_gparts),unsafe_allow_html=True)
             except: pass
@@ -16641,6 +16871,15 @@ if deporte == "futbol":
         except Exception as _e:
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
+    # ── Auto-actualizar scores en vivo cada 60s ──
+    if any(m.get("state") == "in" for m in all_matches):
+        _lr_key = "live_refresh_global"
+        if datetime.now(CDMX).timestamp() - st.session_state.get(_lr_key, 0) > 60:
+            try:
+                get_cartelera.clear()
+                all_matches = get_cartelera()
+            except: pass
+            st.session_state[_lr_key] = datetime.now(CDMX).timestamp()
     # ── BRIDGE: enviar partidos post a resultados automáticamente ──
     if all_matches:
         try: _cartelera_bridge(all_matches)
@@ -17655,6 +17894,12 @@ if st.session_state["view"] == "cartelera":
 
     # ─── FÚTBOL ──────────────────────────────────────────
     elif deporte == "futbol":
+        # Auto-rerun completo si hay partidos en vivo (cada 60s)
+        if any(m.get("state") == "in" for m in (matches or [])):
+            @st.fragment(run_every=60)
+            def _live_ticker():
+                pass
+            _live_ticker()
         if st.session_state.pop("_stay_ajb", False):
             _js = "<script>setTimeout(()=>{var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(t.length>=9)t[8].click();},250);</script>"
             st.markdown(_js, unsafe_allow_html=True)
@@ -17669,6 +17914,11 @@ if st.session_state["view"] == "cartelera":
                     try: update_results_db(force=True); st.session_state["results_db"] = _load_results_db()
                     except: pass
                     st.rerun()
+            if any(m.get("state") == "in" for m in (matches or [])):
+                st.markdown(
+                    "<div style='font-size:0.78rem;color:#ff6644;text-align:right;"
+                    "margin-top:-8px;margin-bottom:4px'>🔴 En vivo · auto-actualiza ~60s</div>",
+                    unsafe_allow_html=True)
             if not matches:
                 st.info("No hay partidos de fútbol disponibles.")
             else:
@@ -18365,6 +18615,15 @@ else:
         h2h   = get_h2h(g["home_id"],g["away_id"],g["slug"],g["home"],g["away"])
         h2s   = h2h_stats(h2h, g["home"], g["away"])
 
+        # ── Tabla+GD ajusta xG ANTES del ensemble (todos los mercados) ──
+        _tbl_xg_pre = {}
+        try:
+            _tbl_xg_pre = _tabla_posicion_delta(g["home"], g["away"], g.get("slug",""))
+            if _tbl_xg_pre.get("pos_h", 0) > 0:
+                _xg_adj_main = _tbl_xg_pre["delta_h"] * 0.25
+                hxg = max(0.30, hxg + _xg_adj_main)
+                axg = max(0.30, axg - _xg_adj_main)
+        except: pass
         # ── Ajuste jugadores estrella ──
         try:
             _delta_h, _ = _star_xg_adjustment(g["home"], [], "", False, "")
@@ -18766,14 +19025,16 @@ else:
         # 📊 Posición en tabla — PRIMERO para que todas las IAs la usen
         _tbl_soc = {}; _tbl_ctx_str = ""
         try:
-            _tbl_soc = _tabla_posicion_delta(g['home'], g['away'], g.get('slug',''))
+            # Reusar datos pre-calculados si ya existen (evita llamada doble)
+            _tbl_soc = _tbl_xg_pre if _tbl_xg_pre.get("pos_h",0)>0 else _tabla_posicion_delta(g['home'], g['away'], g.get('slug',''))
             if _tbl_soc.get('desc'):
                 _tbl_ctx_str = _tbl_soc['desc']
             if _tbl_soc.get('pos_h', 0) > 0:  # siempre aplicar cuando hay datos
                 _pos_gap = _tbl_soc.get('pos_gap', 0)
                 # Peso dinámico por magnitud del gap:
                 # gap 1-3: 70% | gap 4-7: 90% | gap 8+: 100%
-                _tbl_weight = 1.0 if _pos_gap >= 8 else (0.90 if _pos_gap >= 4 else 0.70)
+                # Peso reducido: xG ya ajustó la señal antes del ensemble
+                _tbl_weight = 0.55 if _pos_gap >= 8 else (0.40 if _pos_gap >= 4 else 0.25)
                 main_prob = max(0.10, min(0.92, main_prob + _tbl_soc['delta_h'] * _tbl_weight))
                 _soc_ctx += f" | Tabla: {_tbl_ctx_str}"
         except: pass
