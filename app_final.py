@@ -16834,6 +16834,11 @@ if "_diamond_bridge" not in st.session_state:
             st.session_state["_diamond_bridge"] = _jb.load(_bf)
     except: st.session_state["_diamond_bridge"] = {}
 
+# ── KING RONGO — Restaurar pick desde disco si no está en sesión ──
+if not st.session_state.get("_king_el_pick"):
+    try: _kr_sync_session_from_cache()
+    except: pass
+
 # ── KING RONGO — Banner de presencia permanente ──
 _king_pick = st.session_state.get("_king_el_pick")
 if _king_pick:
