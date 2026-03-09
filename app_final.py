@@ -7397,7 +7397,7 @@ def _star_nba_adjustment(team_name, injuries_list=None):
     return round(delta_pts, 2), round(delta_spread, 2), detected
 
 
-def mc50k(hxg, axg, N=20_000):
+def mc50k(hxg, axg, N=10_000):
     rng = np.random.default_rng(42)
     hg  = rng.poisson(max(0.3, hxg), N)
     ag  = rng.poisson(max(0.3, axg), N)
