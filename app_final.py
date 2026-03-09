@@ -5974,10 +5974,10 @@ def render_einstein_califica(key_sfx="fut"):
                        horizontal=True, label_visibility="collapsed", key=f"src_{key_sfx}")
     uploaded = None
     if src_opt == "📁 Galería / Archivo":
-        uploaded = st.file_uploader("", type=["png","jpg","jpeg","webp"],
+        uploaded = st.file_uploader("Subir imagen", type=["png","jpg","jpeg","webp"],
                                     label_visibility="collapsed", key=f"up_{key_sfx}")
     else:
-        cam = st.camera_input("", label_visibility="collapsed", key=f"cam_{key_sfx}")
+        cam = st.camera_input("Tomar foto", label_visibility="collapsed", key=f"cam_{key_sfx}")
         if cam: uploaded = cam
         if uploaded: st.session_state["_stay_califica"] = True
 
