@@ -3404,7 +3404,7 @@ def update_results_db(force=False):
             _key = f"{_p1k}_{_p2k}_{_fk}"
             if _key in _seen_ten: continue
             _seen_ten.add(_key)
-        _deduped.append(_p)
+        _deduped.append(_p)  # siempre agregar — fútbol/NBA no se dedupen
     db["partidos"] = _deduped
     db["ultima_actualizacion"] = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
     _save_results_db(db)
@@ -4082,7 +4082,9 @@ def render_resultados_tab():
     _last   = st.session_state.get(_villar_key, 0)
     if _now_ts - _last > 300:  # auto-refresh cada 5 min
         with st.spinner("🤖 Villar auditando resultados..."):
-            update_results_db(force=False)
+            try: __import__("os").remove("/tmp/gamblers_last_update.txt")
+            except: pass
+            update_results_db(force=True)
             st.session_state["results_db"] = _load_results_db()
         st.session_state[_villar_key] = _now_ts
 
@@ -4295,8 +4297,13 @@ def render_resultados_tab():
                     for _bs in _bad_sc[:3]:
                         st.caption(f"  · {_bs.get('home','?')} vs {_bs.get('away','?')} ({_bs.get('fecha','?')}  sh={_bs.get('score_h')})")
                     if st.button(f"🔄 Forzar re-fetch {sport_emoji}", key=f"force_{sport_key}"):
+                        import os as _os
+                        try: _os.remove("/tmp/gamblers_last_update.txt")
+                        except: pass
                         st.session_state.pop("results_db", None)
-                        st.cache_data.clear()
+                        st.session_state.pop("results_last_check", None)
+                        update_results_db(force=True)
+                        st.session_state["results_db"] = _load_results_db()
                         st.rerun()
 
             # Contadores sport
