@@ -16209,7 +16209,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
   </div>
   <div class="kr-bar-wrap"><div class="kr-bar"></div></div>
 </div>
-""", unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
             with st.status("👑 King Rongo escaneando...", expanded=False) as _kr_status:
                 try:
