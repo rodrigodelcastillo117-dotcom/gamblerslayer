@@ -16912,11 +16912,10 @@ if deporte == "futbol":
                 _am_id2  = f"{_am.get('home_id','')}_{_am.get('away_id','')}_{_am.get('fecha','')}"
                 _am_home = _am.get("home","")
                 _am_fecha= _am.get("fecha","")
-                # Ya está en bridge con datos reales → saltar
-                if any(
-                    _bridge.get(k,{}).get("home","").lower() == _am_home.lower() and
-                    _bridge.get(k,{}).get("fecha","") == _am_fecha
-                    for k in [_am_id, _am_id2] if k
+                # Skip si ya está en bridge — análisis manual tiene prioridad
+                _br_ex = _bridge.get(_am_id) or _bridge.get(_am_id2)
+                if _br_ex and (_br_ex.get("src","").startswith("analisis") or
+                    (_br_ex.get("home","").lower()==_am_home.lower() and _br_ex.get("fecha","")==_am_fecha)
                 ): continue
                 # Calcular con datos reales
                 _am_hf  = get_form(_am.get("home_id",""), _am.get("slug","")) or []
@@ -18951,7 +18950,7 @@ else:
             "pick": main_lbl, "prob": main_prob, "odd": main_odd,
             "home": g.get("home",""), "away": g.get("away",""),
             "sport": "futbol", "fecha": g.get("fecha",""),
-            "src": f"💎 Diamante · {main_prob*100:.0f}%",
+            "src": f"analisis · 💎 {main_prob*100:.0f}%",  # autoritativo
             "mkt": "1X2" if "gana" in main_lbl else ("O/U" if "Over" in main_lbl else ("BTTS" if "Ambos" in main_lbl else "DO")),
         }
         st.session_state["_diamond_bridge"][_bridge_key] = _bridge_entry
