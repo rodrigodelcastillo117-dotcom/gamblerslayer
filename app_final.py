@@ -16321,10 +16321,11 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     _auto = _kr_should_auto_scan()
     if _auto and not st.session_state.get("_king_scanned"):
         do_scan = True
-    # Si aun no hay cache, forzar scan
-    if not st.session_state.get("_king_scanned") and not do_scan:
-        do_scan = True
+    # NO forzar — si no hay cache, mostrar botón y esperar al usuario
 
+    if not do_scan and not st.session_state.get("_king_scanned"):
+        st.info("👑 Presiona **ESCANEAR** para que King Rongo analice los partidos de hoy y elija el pick con mayor edge.")
+    
     if do_scan or st.session_state.get("_king_scanned"):
 
         if do_scan:
