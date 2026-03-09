@@ -4580,9 +4580,9 @@ def _villar_match_pick_to_result(pk, partido_db):
         # Gana cualquier mitad (🌓)
         elif "cualquier mitad" in pick_clean or "c/mitad" in pick_clean or "🌓" in pick_clean:
             # Necesitamos scores por mitad — si no hay, usar lógica aproximada
-            sh1 = result.get("score_h1", -1); sa1 = result.get("score_a1", -1)
-            sh2 = result.get("score_h2", sh - (sh1 if sh1 >= 0 else 0))
-            sa2 = result.get("score_a2", sa - (sa1 if sa1 >= 0 else 0))
+            sh1 = partido_db.get("score_h1", -1); sa1 = partido_db.get("score_a1", -1)
+            sh2 = partido_db.get("score_h2", sh - (sh1 if sh1 >= 0 else 0))
+            sa2 = partido_db.get("score_a2", sa - (sa1 if sa1 >= 0 else 0))
             if sh1 >= 0 and sa1 >= 0:
                 if _name_in_pick(home, pick_clean):
                     ok = (sh1 > sa1) or (sh2 > sa2)
@@ -14224,24 +14224,24 @@ def _kr_render_table(todos, el_pick):
         _row_col, _btn_col = st.columns([6,1])
         with _row_col:
             st.markdown(
-            f"<div style='{bg};{bd};border-radius:10px;padding:9px 12px;margin:3px 0;"
-            f"position:relative;overflow:hidden'>",
-            f"<div style='position:absolute;left:0;top:0;bottom:0;width:{score_bar}%;",
-            f"background:{cc}07;pointer-events:none'></div>",
-            f"<div style='display:flex;align-items:center;gap:10px;position:relative'>",
-            f"<div style='font-size:1.275rem;font-weight:900;min-width:24px;color:#333'>{crown}{i+1}</div>",
-            f"<div style='flex:1;min-width:0'>",
-            f"<div style='font-size:0.9rem;color:#5a4a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{flag}{c['deporte']} · {c.get('liga','')[:20]} · {c.get('hora','')}{_tbl_inf}</div>",
-            f"<div style='font-size:1.14rem;color:#4e4030;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{c['label'][:40]}</div>",
-            f"<div style='font-size:1.23rem;font-weight:700;color:{cc}'>{c['pick']}</div>",
-            f"<div style='font-size:0.87rem;color:#2a2a50'>{models_mini}</div>",
-            f"</div>",
-            f"<div style='text-align:right;flex-shrink:0'>",
-            f"<div style='font-size:1.5rem;font-weight:900;color:{cc}'>{c['prob']*100:.1f}%</div>",
-            f"<div style='font-size:0.93rem;color:{ec}'>Edge {c['edge']*100:+.1f}%</div>",
-            f"<div style='font-size:0.9rem;color:#FFD70066'>{'@'+str(round(c['odd'],2)) if c.get('odd',0)>1 else ''}</div>",
-            f"</div></div></div>",
-            unsafe_allow_html=True
+                f"<div style='{bg};{bd};border-radius:10px;padding:9px 12px;margin:3px 0;"
+                f"position:relative;overflow:hidden>"
+                f"<div style='position:absolute;left:0;top:0;bottom:0;width:{score_bar}%;"
+                f"background:{cc}07;pointer-events:none'></div>"
+                f"<div style='display:flex;align-items:center;gap:10px;position:relative'>"
+                f"<div style='font-size:1.275rem;font-weight:900;min-width:24px;color:#333'>{crown}{i+1}</div>"
+                f"<div style='flex:1;min-width:0'>"
+                f"<div style='font-size:0.9rem;color:#5a4a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{flag}{c['deporte']} · {c.get('liga','')[:20]} · {c.get('hora','')}{_tbl_inf}</div>"
+                f"<div style='font-size:1.14rem;color:#4e4030;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{c['label'][:40]}</div>"
+                f"<div style='font-size:1.23rem;font-weight:700;color:{cc}'>{c['pick']}</div>"
+                f"<div style='font-size:0.87rem;color:#2a2a50'>{models_mini}</div>"
+                f"</div>"
+                f"<div style='text-align:right;flex-shrink:0'>"
+                f"<div style='font-size:1.5rem;font-weight:900;color:{cc}'>{c['prob']*100:.1f}%</div>"
+                f"<div style='font-size:0.93rem;color:{ec}'>Edge {c['edge']*100:+.1f}%</div>"
+                f"<div style='font-size:0.9rem;color:#FFD70066'>{'@'+str(round(c['odd'],2)) if c.get('odd',0)>1 else ''}</div>"
+                f"</div></div></div>",
+                unsafe_allow_html=True
             )
         with _btn_col:
             if st.button("💾", key=f"_kr_save_row_{i}", help=f"Guardar: {c['pick']}", use_container_width=True):
