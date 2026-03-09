@@ -3590,7 +3590,7 @@ def _needs_daily_reset():
         except: return False
     return False
 
-def fetch_soccer_results(days_back=10):
+def fetch_soccer_results(days_back=4):
     """
     Fetch resultados de fútbol día a día desde ESPN (últimos N días + hoy).
     Consulta cada slug de LIGAS para cada fecha — igual que NBA.
@@ -4112,8 +4112,8 @@ def update_results_db(force=False):
     db = _load_results_db()
     existing_ids = {p["id"] for p in db["partidos"]}
     # Fetch new data
-    new_soccer  = fetch_soccer_results(10)
-    new_nba     = fetch_nba_results(10)
+    new_soccer  = fetch_soccer_results(4)
+    new_nba     = fetch_nba_results(4)
     # ── Auto-calibración: resolver resultados pendientes ──
     try:
         for _ng in new_nba:
@@ -4122,7 +4122,7 @@ def update_results_db(force=False):
                 if _real_tot > 100:  # score válido de NBA
                     _nba_calib_update_result(_ng["id"], _real_tot)
     except: pass
-    new_tennis  = fetch_tennis_results(10)
+    new_tennis  = fetch_tennis_results(4)
     # Cache tenis en session_state para factores contextuales (fatiga, H2H superficie)
     try: st.session_state["tennis_results_cache"] = new_tennis
     except: pass
@@ -5024,14 +5024,14 @@ def render_resultados_tab():
     else:
         _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
         _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-        _inicio_conteo = (datetime.now(CDMX)-timedelta(days=30)).strftime("%Y-%m-%d")
+        _inicio_conteo = "2026-03-06"  # solo desde 6 marzo 2026
         _fut_c = 0
         for _fp in [p for p in partidos if p.get("state")=="post"]:
             _sp = _fp.get("deporte","")
             _fd = _fp.get("fecha","")
             if _fd < _inicio_conteo: continue
             if _sp == "futbol":
-                if _fut_c >= 30: continue  # cap en 30 para velocidad
+                if _fut_c >= 60: continue  # cap 60 (ventana 4 días)
                 _fut_c += 1
             if _sp == "tenis":
                 _sh2 = _fp.get("score_h", -1)
@@ -5151,7 +5151,7 @@ def render_resultados_tab():
         (rt1,"futbol","⚽"), (rt2,"nba","🏀"), (rt3,"tenis","🎾")
     ]:
         with tab_obj:
-            sport_p     = [p for p in partidos if p.get("deporte")==sport_key]
+            sport_p     = [p for p in partidos if p.get("deporte")==sport_key and p.get("fecha","") >= "2026-03-06"]
             _today_str = datetime.now(CDMX).strftime("%Y-%m-%d")
             _now_hour  = datetime.now(CDMX).hour
             def _resultado_valido(p):
@@ -5261,15 +5261,15 @@ def render_resultados_tab():
             # Pre-calcular auto_picks — corre modelos sobre todos los partidos finalizados
             # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
             # NBA/Tenis: hasta 14 días atrás
-            _catorce_dias = (datetime.now(CDMX)-timedelta(days=14)).strftime("%Y-%m-%d")
-            _inicio_conteo_tab = (datetime.now(CDMX)-timedelta(days=30)).strftime("%Y-%m-%d")  # últimos 30 días
+            _catorce_dias = "2026-03-06"  # alineado con ventana de resultados
+            _inicio_conteo_tab = "2026-03-06"  # solo desde 6 marzo 2026
             _auto_pk_cache = {}
             _fut_count = 0
             for _fp in finalizados:
                 _mid = _fp.get("id","")
                 _fp_sport = _fp.get("deporte","")
                 if _fp_sport == "futbol":
-                    if _fut_count >= 30: continue
+                    if _fut_count >= 60: continue
                     _fut_count += 1
                 _manual = [pk for pk in pick_history if _villar_find_result(pk,[_fp]) is not None]
                 if not _manual:
@@ -14207,7 +14207,7 @@ def _kr_render_table(todos, el_pick):
         "text-transform:uppercase;margin:5px 0 8px'>📊 Ranking completo — todos los picks del día</div>",
         unsafe_allow_html=True
     )
-    for i,c in enumerate(todos[:16]):
+    for i,c in enumerate(todos[:20]):
         is_king = el_pick and c["label"]==el_pick["label"]
         cc      = c.get("conf_color","#555")
         ec      = "#00ff88" if c.get("edge",0)>0.05 else ("#FFD700" if c.get("edge",0)>0 else "#ff4444")
@@ -14217,29 +14217,43 @@ def _kr_render_table(todos, el_pick):
         crown   = "👑 " if is_king else ""
         score_bar = int(c.get("score",0)*10)
         models_mini = " · ".join(f"{k} {v}%" for k,v in list(c.get("models",{}).items())[:2])
-
-        st.markdown(
+        _tbl_inf = ""
+        if c.get("pos_h",0)>0:
+            _gd_h=c.get("gd_h",0); _gd_a=c.get("gd_a",0)
+            _tbl_inf = f" · #{c['pos_h']}(GD{_gd_h:+.0f}) vs #{c['pos_a']}(GD{_gd_a:+.0f})"
+        _row_col, _btn_col = st.columns([6,1])
+        with _row_col:
+            st.markdown(
             f"<div style='{bg};{bd};border-radius:10px;padding:9px 12px;margin:3px 0;"
-            f"position:relative;overflow:hidden'>"
-            f"<div style='position:absolute;left:0;top:0;bottom:0;width:{score_bar}%;"
-            f"background:{cc}07;pointer-events:none'></div>"
-            f"<div style='display:flex;align-items:center;gap:10px;position:relative'>"
-            f"<div style='font-size:1.275rem;font-weight:900;min-width:24px;color:#333'>{crown}{i+1}</div>"
-            f"<div style='flex:1;min-width:0'>"
-            f"<div style='font-size:0.9rem;color:#5a4a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"
-            f"{flag}{c['deporte']} · {c.get('liga','')[:20]} · {c.get('hora','')}</div>"
-            f"<div style='font-size:1.14rem;color:#4e4030;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{c['label']}</div>"
-            f"<div style='font-size:1.23rem;font-weight:700;color:{cc}'>{c['pick']}</div>"
-            f"<div style='font-size:0.87rem;color:#2a2a50'>{models_mini}</div>"
-            f"</div>"
-            f"<div style='text-align:right;flex-shrink:0'>"
-            f"<div style='font-size:1.5rem;font-weight:900;color:{cc}'>{c['prob']*100:.1f}%</div>"
-            f"<div style='font-size:0.93rem;color:{ec}'>Edge {c['edge']*100:+.1f}%</div>"
-            f"<div style='font-size:0.9rem;color:#FFD70066'>{'@'+str(round(c['odd'],2)) if c.get('odd',0)>1 else ''}</div>"
+            f"position:relative;overflow:hidden'>",
+            f"<div style='position:absolute;left:0;top:0;bottom:0;width:{score_bar}%;",
+            f"background:{cc}07;pointer-events:none'></div>",
+            f"<div style='display:flex;align-items:center;gap:10px;position:relative'>",
+            f"<div style='font-size:1.275rem;font-weight:900;min-width:24px;color:#333'>{crown}{i+1}</div>",
+            f"<div style='flex:1;min-width:0'>",
+            f"<div style='font-size:0.9rem;color:#5a4a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{flag}{c['deporte']} · {c.get('liga','')[:20]} · {c.get('hora','')}{_tbl_inf}</div>",
+            f"<div style='font-size:1.14rem;color:#4e4030;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{c['label'][:40]}</div>",
+            f"<div style='font-size:1.23rem;font-weight:700;color:{cc}'>{c['pick']}</div>",
+            f"<div style='font-size:0.87rem;color:#2a2a50'>{models_mini}</div>",
+            f"</div>",
+            f"<div style='text-align:right;flex-shrink:0'>",
+            f"<div style='font-size:1.5rem;font-weight:900;color:{cc}'>{c['prob']*100:.1f}%</div>",
+            f"<div style='font-size:0.93rem;color:{ec}'>Edge {c['edge']*100:+.1f}%</div>",
+            f"<div style='font-size:0.9rem;color:#FFD70066'>{'@'+str(round(c['odd'],2)) if c.get('odd',0)>1 else ''}</div>",
             f"</div></div></div>",
             unsafe_allow_html=True
-        )
-
+            )
+        with _btn_col:
+            if st.button("💾", key=f"_kr_save_row_{i}", help=f"Guardar: {c['pick']}", use_container_width=True):
+                _m_row = c.get("match", {})
+                _fake_row = {
+                    "home":   _m_row.get("home", _m_row.get("p1", c["label"].split(" vs ")[0] if " vs " in c["label"] else c["label"])),
+                    "away":   _m_row.get("away", _m_row.get("p2", c["label"].split(" vs ")[-1] if " vs " in c["label"] else "")),
+                    "league": c.get("liga",""),
+                    "fecha":  _m_row.get("fecha", datetime.now(CDMX).strftime("%Y-%m-%d")),
+                }
+                add_pick(_fake_row, f"👑 {c['pick']}", c["prob"], c.get("odd",0), sport=c.get("sport","futbol"))
+                st.toast(f"✅ Guardado: {c['pick']}")
 
 def _kr_render_contradictions(contras):
     if not contras: return
@@ -16501,10 +16515,10 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                 st.markdown(
                     "<div style='font-size:1.08rem;font-weight:700;color:#FFD700;"
                     "text-transform:uppercase;letter-spacing:.15em;margin:18px 0 8px;"
-                    "text-align:center'>👑 LOS 3 PICKS DEL REY</div>",
+                    "text-align:center'>👑 LOS 5 PICKS DEL REY</div>",
                     unsafe_allow_html=True)
-                _t3_cols = st.columns(min(len(top3), 3))
-                for _t3i, _t3c in enumerate(top3[:3]):
+                _t3_cols = st.columns(min(len(top3), 5))
+                for _t3i, _t3c in enumerate(top3[:5]):
                     with _t3_cols[_t3i]:
                         _t3_prob  = _t3c.get("prob", 0)
                         _t3_edge  = _t3c.get("edge", 0)
@@ -16512,7 +16526,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                         _t3_sport = _t3c.get("deporte","")
                         _t3_cc    = _t3c.get("conf_color","#FFD700")
                         _t3_ce    = _t3c.get("conf_emoji","⚡")
-                        _t3_medal = ["👑","🥇","🥈"][_t3i]
+                        _t3_medal = ["👑","🥇","🥈","🏅","🎖️"][_t3i]
                         _t3_odd_txt = f"@{_t3_odd:.2f}" if _t3_odd > 1 else "S/C"
                         _t3_edge_c  = "#00ff88" if _t3_edge >= 0 else "#ff4444"
                         st.markdown(
@@ -16613,7 +16627,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                 models_txt = " | ".join(f"{k}: {v}%" for k,v in list(el_pick.get("models",{}).items())[:3])
                 # Construir texto del TOP 3
                 _top3_txt = ""
-                for _ti, _tc in enumerate(top3[:3]):
+                for _ti, _tc in enumerate(top3[:5]):
                     _medal = ["👑","🥇","🥈"][_ti]
                     _t_odd = f" @{_tc['odd']:.2f}" if _tc.get('odd',0)>1 else ""
                     _top3_txt += f"{_medal} {_tc['deporte']} · {_tc['label']}{_nl}"
@@ -16632,7 +16646,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     f"{'💰 @' + str(round(el_pick['odd'],2)) if el_pick.get('odd',0)>1 else ''}{_nl}{_nl}"
                     f"🧠 Modelos: {models_txt}{_nl}{_nl}"
                     f"━━━━━━━━━━━━━━━━━━━{_nl}"
-                    f"🎯 *LOS 3 PICKS DEL REY:*{_nl}"
+                    f"🎯 *LOS 5 PICKS DEL REY:*{_nl}"
                     f"{_top3_txt}"
                     f"━━━━━━━━━━━━━━━━━━━{_nl}"
                     f"_{bk['consejo']}_{_nl}"
