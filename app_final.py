@@ -52,6 +52,7 @@ LIGAS = {
     "tur.1":"Süper Lig 🇹🇷","sco.1":"Premiership 🏴󠁧󠁢󠁳󠁣󠁴󠁿",
     "uefa.champions":"Champions League 🏆","uefa.europa":"Europa League 🏆",
     "uefa.europa.conf":"Conference League 🏆",
+    "concacaf.champions":"CONCACAF Champions Cup 🏆🌎",
     "den.1":"Superliga 🇩🇰","nor.1":"Eliteserien 🇳🇴",
     "bel.1":"Pro League 🇧🇪",
     "gre.1":"Super League 🇬🇷",
@@ -86,9 +87,10 @@ _COUNTRY_MAP = {
     "col.1":  ("Colombia","🇨🇴","🌎 América"),
     "chi.1":  ("Chile","🇨🇱","🌎 América"),
     "sau.1":  ("Arabia Saudí","🇸🇦","🌏 Asia / Medio Oriente"),
-    "uefa.champions": ("UEFA Champions","🏆","🏆 Internacional"),
-    "uefa.europa":    ("UEFA Europa","🏆","🏆 Internacional"),
-    "uefa.europa.conf":("UEFA Conference","🏆","🏆 Internacional"),
+    "uefa.champions":     ("UEFA Champions","🏆","🏆 Internacional"),
+    "uefa.europa":        ("UEFA Europa","🏆","🏆 Internacional"),
+    "uefa.europa.conf":   ("UEFA Conference","🏆","🏆 Internacional"),
+    "concacaf.champions": ("CONCACAF Champions","🏆","🏆 Internacional"),
 }
 
 def _slug_from_liga_name(liga_name):
@@ -820,6 +822,7 @@ _APIFOOTBALL_LEAGUE = {
     "bra.1": 71, "arg.1": 128, "col.1": 239, "chi.1": 265,
     "sau.1": 307, "tur.1": 203, "sco.1": 179, "bel.1": 144,
     "uefa.champions": 2, "uefa.europa": 3, "uefa.europa.conf": 848,
+    "concacaf.champions": 4,  # CONCACAF Champions Cup
 }
 
 # ── API-Football Team ID Cache ──
@@ -943,7 +946,7 @@ def _apifootball_injuries(team_name: str, slug: str) -> list:
     except: return []
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_cartelera():
     now   = datetime.now(CDMX)
     # Pedimos hoy + 5 días en UTC para no perder partidos por diferencia horaria
@@ -1104,7 +1107,7 @@ def get_cartelera():
                         break
     return matches
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_form(team_id, slug):
     """
     Últimos 15 partidos desde ESPN schedule.
@@ -1421,7 +1424,7 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
 
     return round(max(0.20, min(4.5, xg_base)), 3)
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def get_h2h(home_id, away_id, slug, home_name, away_name):
     home_id = str(home_id); away_id = str(away_id)
     data    = eg(f"{ESPN}/{slug}/teams/{home_id}/schedule")
@@ -1571,7 +1574,7 @@ except:
     ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 BOOKMAKERS   = ["bet365","pinnacle","unibet","williamhill"]
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_real_odds(home_name, away_name, league_slug):
     """
     Intenta obtener cuotas reales de The Odds API.
@@ -2567,7 +2570,7 @@ def render_fix_detector(sport, home, away, mc, dp, real_odds, game,
             "</div>", unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def ai_investigate_match(sport, home, away, league_slug, league_name,
                           model_ph, model_pd, model_pa,
                           real_odds_summary, fix_score):
@@ -3289,11 +3292,11 @@ def _snap_auto_pick(partido_id, pick_data, state="pre", force=False):
     _save_picks_snap(snap)
 
 def _needs_update():
-    """Returns True if last update was >2 hours ago or never."""
+    """Returns True if last update was >15 minutes ago or never."""
     try:
         with open(LAST_UPDATE_F,"r") as f: last = f.read().strip()
         last_dt = datetime.fromisoformat(last).replace(tzinfo=pytz.UTC)
-        return (datetime.now(pytz.UTC) - last_dt).total_seconds() > 3600
+        return (datetime.now(pytz.UTC) - last_dt).total_seconds() > 900
     except: return True
 
 def _mark_updated():
@@ -3360,6 +3363,7 @@ def fetch_soccer_results(days_back=10):
 
 
 
+@st.cache_data(ttl=900)  # 15min — results don't change every second
 def fetch_nba_results(days_back=10):
     """Fetch last N days of NBA results."""
     partidos = []
@@ -3400,6 +3404,7 @@ def fetch_nba_results(days_back=10):
         except: continue
     return partidos
 
+@st.cache_data(ttl=900)  # 15min cache
 def fetch_tennis_results(days_back=10):
     """
     Trae partidos de tenis finalizados (state=post) de los últimos N días.
@@ -3442,6 +3447,7 @@ def fetch_tennis_results(days_back=10):
                 if not is_post: continue
                 p1 = ev.get("event_first_player","?")
                 p2 = ev.get("event_second_player","?")
+                if str(p2).lower().strip() in ("unknown","tbd","tba","","?","bye","n/a"): continue
                 sc1_raw = str(ev.get("event_first_player_result","0"))
                 sc2_raw = str(ev.get("event_second_player_result","0"))
                 try:  sc1 = max(0, int(sc1_raw))
@@ -3855,6 +3861,12 @@ def update_results_db(force=False):
                 if not db["partidos"][idx].get("rank1") and p.get("rank1"):
                     db["partidos"][idx]["rank1"] = p["rank1"]
                     db["partidos"][idx]["rank2"] = p["rank2"]
+            # Rellenar nombres "unknown"/vacíos también en path exact-id
+            _bad = {"?","","unknown","tbd","tba","n/a","bye"}
+            if db["partidos"][idx].get("home","?").lower() in _bad and p.get("home","").lower() not in _bad:
+                db["partidos"][idx]["home"] = p["home"]; db["partidos"][idx]["p1"] = p.get("p1", p["home"])
+            if db["partidos"][idx].get("away","?").lower() in _bad and p.get("away","").lower() not in _bad:
+                db["partidos"][idx]["away"] = p["away"]; db["partidos"][idx]["p2"] = p.get("p2", p["away"])
         elif fkey in existing_fuzzy:
             idx = existing_fuzzy[fkey]
             if p["state"] == "post":
@@ -3870,11 +3882,12 @@ def update_results_db(force=False):
                 if not db["partidos"][idx].get("rank1") and p.get("rank1"):
                     db["partidos"][idx]["rank1"] = p["rank1"]
                     db["partidos"][idx]["rank2"] = p["rank2"]
-                # Rellenar nombres si venían como "?"
-                if db["partidos"][idx].get("home","?") in ("?","") and p.get("home"):
+                # Rellenar nombres si venían como "?", "" o "unknown"
+                _bad_names = ("?", "", "unknown", "tbd", "tba", "n/a")
+                if db["partidos"][idx].get("home","?").lower() in _bad_names and p.get("home","").lower() not in _bad_names:
                     db["partidos"][idx]["home"] = p["home"]
                     db["partidos"][idx]["p1"]   = p.get("p1", p["home"])
-                if db["partidos"][idx].get("away","?") in ("?","") and p.get("away"):
+                if db["partidos"][idx].get("away","?").lower() in _bad_names and p.get("away","").lower() not in _bad_names:
                     db["partidos"][idx]["away"] = p["away"]
                     db["partidos"][idx]["p2"]   = p.get("p2", p["away"])
         else:
@@ -4282,6 +4295,8 @@ def _villar_auto_pick(partido_db):
     Corre los MODELOS sobre el partido (como si fuera antes de jugarse)
     y devuelve el pick de MAYOR PROBABILIDAD que el modelo hubiera dado.
     NO usa el resultado para elegir — elige por prob, luego audita.
+    IMPORTANTE: para el contador de Villar, siempre devuelve el favorito
+    del modelo (no filtra por EV) — el EV es para apuestas, no para evaluar aciertos.
     """
     sh = partido_db.get("score_h",-1); sa = partido_db.get("score_a",-1)
     if sh < 0: return None
@@ -4456,54 +4471,31 @@ def _villar_auto_pick(partido_db):
         # ML: EV > 0 Y prob >= 0.52 (evita favoritos cortos con EV negativo)
         # O/U: prob >= 0.58 (mercado más eficiente)
         # DC (doble chance): prob >= 0.72 (cuota ~1.35, necesita prob alta)
-        _min_ev = 0.01  # EV mínimo 1% cuando hay odds reales
-
-        main_lbl = main_prob = main_odd = None
-
-        # Candidatos: con EV si hay odds, con umbral de prob si no hay odds
+        # ── Selección del pick para auditoría ──
+        # El contador de Villar evalúa SI EL MODELO ACERTÓ, no si había valor.
+        # Por eso siempre elegimos el outcome de mayor prob del modelo.
+        # EV solo se usa para marcar "(sin valor)" informativamente, no para filtrar.
         _has_real_odds = odd_h > 1 and odd_a > 1
-        _candidates = []
-        if _has_real_odds:
-            # Con odds reales: filtrar por EV
-            if _ev_h > _min_ev:
-                _candidates.append((f"🏠 {home} gana", _ph_d, odd_h, _ev_h))
-            if _ev_a > _min_ev:
-                _candidates.append((f"✈️ {away} gana", _pa_d, odd_a, _ev_a))
-            if _ev_o25 > _min_ev:
-                _candidates.append(("⚽ Over 2.5", _o25_d, 0, _ev_o25))
-            if _ev_u25 > _min_ev:
-                _candidates.append(("🔒 Under 2.5", _u25_d, 0, _ev_u25))
-            if _ev_aa > _min_ev:
-                _candidates.append(("⚡ Ambos Anotan", _aa_d, 0, _ev_aa))
-            _ev_dc = _ev(_do_h_d, 1.35)
-            if _ev_dc > _min_ev:
-                _candidates.append((f"🔵 {home[:14]} DO", _do_h_d, 0, _ev_dc))
-            _ev_dc2 = _ev(_do_a_d, 1.35)
-            if _ev_dc2 > _min_ev:
-                _candidates.append((f"🟣 {away[:14]} DO", _do_a_d, 0, _ev_dc2))
-        else:
-            # Sin odds reales (históricos sin cuotas): filtrar por prob
-            # Usar umbral de prob directo para no sesgar el auditor
-            if _ph_d >= 0.55:
-                _candidates.append((f"🏠 {home} gana", _ph_d, 0, _ph_d - 0.5))
-            elif _pa_d >= 0.55:
-                _candidates.append((f"✈️ {away} gana", _pa_d, 0, _pa_d - 0.5))
-            if _o25_d >= 0.60:
-                _candidates.append(("⚽ Over 2.5", _o25_d, 0, _o25_d - 0.5))
-            if _u25_d >= 0.60:
-                _candidates.append(("🔒 Under 2.5", _u25_d, 0, _u25_d - 0.5))
-            if _aa_d >= 0.60:
-                _candidates.append(("⚡ Ambos Anotan", _aa_d, 0, _aa_d - 0.5))
 
-        if _candidates:
-            # Elegir el pick con mayor EV (o mayor prob si sin odds)
-            _best = max(_candidates, key=lambda x: x[3])
-            main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
-        else:
-            # Sin ventaja clara — marcar como SIN VALOR
-            main_lbl  = f"⚠️ {_fav_ml_lbl} (sin valor)"
-            main_prob = _fav_ml_p
-            main_odd  = _fav_ml_odd
+        # Todos los outcomes con su prob y score de confianza
+        _all_outcomes = [
+            (f"🏠 {home} gana",     _ph_d,  odd_h, _ev_h),
+            (f"✈️ {away} gana",     _pa_d,  odd_a, _ev_a),
+            ("⚽ Over 2.5",          _o25_d, 1.85,  _ev_o25),
+            ("🔒 Under 2.5",         _u25_d, 2.00,  _ev_u25),
+            ("⚡ Ambos Anotan",       _aa_d,  1.75,  _ev_aa),
+        ]
+
+        # El pick es el outcome con mayor probabilidad (modelo puro)
+        _best = max(_all_outcomes, key=lambda x: x[1])
+        main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
+        _best_ev = _best[3]
+
+        # Si tiene EV positivo real → pick limpio; si no → nota informativa
+        _min_ev = 0.01
+        if _has_real_odds and _best_ev < _min_ev:
+            # Marcar sin valor pero IGUAL contar para el auditor
+            main_lbl = main_lbl + " (sin valor)"
 
             ml_pick = {
                 "pick": f"🏠 {home} gana" if _ph_d >= _pa_d else f"✈️ {away} gana",
@@ -4605,17 +4597,15 @@ def render_resultados_tab():
     """VILLAR — Auditoría automática pick vs resultado real."""
     from collections import defaultdict
 
-    # ── AUTO-AUDITORÍA al entrar al tab ──
-    # Villar corre solo, sin que el usuario tenga que picar nada
+    # ── AUTO-AUDITORÍA — respeta throttle de 15 min, no bloquea UI ──
     _villar_key = "villar_last_auto"
     _now_ts = datetime.now(CDMX).timestamp()
     _last   = st.session_state.get(_villar_key, 0)
-    if _now_ts - _last > 300:  # auto-refresh cada 5 min
-        with st.spinner("🤖 Villar auditando resultados..."):
-            try: __import__("os").remove("/tmp/gamblers_last_update.txt")
-            except: pass
-            update_results_db(force=True)
-            st.session_state["results_db"] = _load_results_db()
+    if _now_ts - _last > 900:  # cada 15 min
+        try: __import__("os").remove("/tmp/gamblers_last_update.txt")
+        except: pass
+        update_results_db(force=False)  # respeta throttle, no fuerza
+        st.session_state["results_db"] = _load_results_db()
         st.session_state[_villar_key] = _now_ts
 
     st.markdown("""
@@ -4645,35 +4635,42 @@ def render_resultados_tab():
     for _p in partidos: _dep_counts[_p.get("deporte","?")] = _dep_counts.get(_p.get("deporte","?"),0)+1
     st.caption(f"🗄️ DB total: {len(partidos)} partidos — {_dep_counts}")
 
-    # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
-    _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
-    _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-    _inicio_conteo = (datetime.now(CDMX)-timedelta(days=30)).strftime("%Y-%m-%d")  # últimos 30 días
-    _fut_c = 0
-    for _fp in [p for p in partidos if p.get("state")=="post"]:
-        _sp = _fp.get("deporte","")
-        _fd = _fp.get("fecha","")
-        if _fd < _inicio_conteo:
-            continue
-        if _sp == "futbol":
-            if _fut_c >= 50: continue
-            _fut_c += 1
-        # Tenis: skip si score inválido (0-0 imposible, -1 no disponible)
-        if _sp == "tenis":
-            _sh2 = _fp.get("score_h", -1)
-            _sa2 = _fp.get("score_a", -1)
-            if _sh2 < 0 or _sa2 < 0: continue
-            if _sh2 == 0 and _sa2 == 0: continue
-        _has_manual = any(_villar_find_result(pk,[_fp]) is not None for pk in pick_history)
-        if _has_manual: continue
-        try:
-            _apk2 = _villar_auto_pick(_fp)
-            if not _apk2: continue
-            if "sin valor" in str(_apk2.get("pick","")).lower(): continue
-            _vd2,_,_ = _villar_match_pick_to_result(_apk2, _fp)
-            if "GANÓ"  in _vd2: _pre_ok[_sp]   = _pre_ok.get(_sp,0)+1
-            elif "FALLÓ" in _vd2: _pre_fail[_sp] = _pre_fail.get(_sp,0)+1
-        except: continue
+    # ── Pre-calcular contadores — cacheado en session_state ──
+    # Cache key incluye número de partidos post para invalidar si llegan nuevos
+    _n_post = sum(1 for p in partidos if p.get("state")=="post")
+    _cnt_key = f"villar_counters_{_n_post}"
+    if _cnt_key in st.session_state:
+        _pre_ok   = st.session_state[_cnt_key]["ok"]
+        _pre_fail = st.session_state[_cnt_key]["fail"]
+    else:
+        _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
+        _pre_fail = {"futbol":0,"nba":0,"tenis":0}
+        _inicio_conteo = (datetime.now(CDMX)-timedelta(days=30)).strftime("%Y-%m-%d")
+        _fut_c = 0
+        for _fp in [p for p in partidos if p.get("state")=="post"]:
+            _sp = _fp.get("deporte","")
+            _fd = _fp.get("fecha","")
+            if _fd < _inicio_conteo: continue
+            if _sp == "futbol":
+                if _fut_c >= 30: continue  # cap en 30 para velocidad
+                _fut_c += 1
+            if _sp == "tenis":
+                _sh2 = _fp.get("score_h", -1)
+                _sa2 = _fp.get("score_a", -1)
+                if _sh2 < 0 or _sa2 < 0: continue
+                if _sh2 == 0 and _sa2 == 0: continue
+            _has_manual = any(_villar_find_result(pk,[_fp]) is not None for pk in pick_history)
+            if _has_manual: continue
+            try:
+                _apk2 = _villar_auto_pick(_fp)
+                if not _apk2: continue
+                # No skip "sin valor" — contamos TODOS para medir precisión del modelo
+                _vd2,_,_ = _villar_match_pick_to_result(_apk2, _fp)
+                if "GANÓ"  in _vd2: _pre_ok[_sp]   = _pre_ok.get(_sp,0)+1
+                elif "FALLÓ" in _vd2: _pre_fail[_sp] = _pre_fail.get(_sp,0)+1
+            except: continue
+        # Cache para próximas visitas
+        st.session_state[_cnt_key] = {"ok": _pre_ok, "fail": _pre_fail}
 
     _total_ok   = sum(_pre_ok.values())
     _total_fail = sum(_pre_fail.values())
@@ -7943,7 +7940,7 @@ def _tennis_surface_model(rank1, rank2, surface, odd_1=0, odd_2=0,
     return p1_base
 
 
-def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=50_000):
+def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=20000):
     """
     MODELO 3 — Monte Carlo 50,000 simulaciones (inspirado en Barnett & Clarke 2005)
     Simula cada partido set a set, game a game.
@@ -8397,7 +8394,7 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
     p1_elo   = _tennis_elo_prob(rank1, rank2, odd_1, odd_2, surface, p1_name, p2_name)
     p1_surf  = _tennis_surface_model(rank1, rank2, surface, odd_1, odd_2, p1_name, p2_name, best_of=_best_of)
     base_mc  = (p1_elo + p1_surf) / 2
-    p1_mc    = _tennis_monte_carlo_50k(base_mc, odd_1, odd_2, n=50_000)
+    p1_mc    = _tennis_monte_carlo_50k(base_mc, odd_1, odd_2, n=20000)
     p1_mom   = _tennis_h2h_momentum(rank1, rank2, p1_name, p2_name, odd_1, odd_2, surface)
     p1_srv   = _tennis_serve_dominance(rank1, rank2, p1_name, p2_name, odd_1, odd_2, surface)
 
@@ -9883,7 +9880,7 @@ def compute_pato(matches):
 # ══════════════════════════════════════════════════════════
 # NBA DATA
 # ══════════════════════════════════════════════════════════
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 
 def _sort_cartelera(matches, hoy_str, hora_now):
     """Ordena cartelera: hoy primero, en vivo arriba, oculta pasados si >= 12:00."""
@@ -10557,8 +10554,8 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
 
     # Monte Carlo 50k con sigma por equipo
     rng    = np.random.default_rng(seed=None)
-    h_sims = rng.normal(h_proj, h_sigma, 50_000)
-    a_sims = rng.normal(a_proj, a_sigma, 50_000)
+    h_sims = rng.normal(h_proj, h_sigma, 20_000)
+    a_sims = rng.normal(a_proj, a_sigma, 20_000)
     tots   = h_sims + a_sims
 
     p_over  = float((tots > line).mean())
@@ -10773,7 +10770,7 @@ def _resolve_rank(player_name: str, api_ranks: dict) -> int:
     return 120   # jugador fuera del top conocido — rank conservador
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_tennis_cartelera():
     now  = datetime.now(CDMX)
     hoy  = now.strftime("%Y-%m-%d")
@@ -11800,7 +11797,7 @@ def _kr_situacional(home,away,sport,liga,hora):
     return {"factor":0.0,"ctx":"","favorece":"neutro","urgencia":"baja"}
 
 @st.cache_data(ttl=1800,show_spinner=False)
-def _kr_monte_carlo_god(hxg,axg,h_mom=0.0,a_mom=0.0,n=50000):
+def _kr_monte_carlo_god(hxg,axg,h_mom=0.0,a_mom=0.0,n=20000):
     import random as _rnd; _rnd.seed(42)
     hxg_a=max(0.1,hxg*(1.0+h_mom*0.12)); axg_a=max(0.1,axg*(1.0+a_mom*0.12))
     wh=wa=wd=btts=o25=o35=0
@@ -15854,6 +15851,49 @@ def _live_ctx_str(match, live_stats):
     lines.append(f"⏰ Stats actualizados: {s['fetched_at']}")
     return " | ".join(lines)
 
+
+
+# ══════════════════════════════════════════════════════════
+# AUTO-UPDATER — corre cada 5 min aunque nadie toque la app
+# st.fragment con run_every mantiene vivo el ciclo mientras
+# la app esté abierta en cualquier navegador.
+# ══════════════════════════════════════════════════════════
+@st.fragment(run_every=300)  # cada 5 minutos
+def _auto_results_updater():
+    """
+    Actualiza resultados automáticamente en background.
+    - Llama update_results_db() si han pasado >15 min desde la última vez
+    - Muestra un mini-indicador discreto con la hora de última sync
+    - NO fuerza rerun de toda la app — solo actualiza el fragment
+    """
+    _now_au = datetime.now(CDMX)
+    _last_au = st.session_state.get("_auto_update_last", 0)
+    _now_ts_au = _now_au.timestamp()
+
+    # Actualizar si han pasado 15 min (900s) — más frecuente que el throttle de 60min del servidor
+    if _now_ts_au - _last_au > 900:
+        try:
+            updated = update_results_db(force=False)
+            if updated:
+                st.session_state["results_db"] = _load_results_db()
+                st.session_state["results_last_check"] = _now_ts_au
+            st.session_state["_auto_update_last"] = _now_ts_au
+            st.session_state["_auto_update_time"] = _now_au.strftime("%H:%M")
+            st.session_state["_auto_update_ok"] = True
+        except Exception as _e:
+            st.session_state["_auto_update_ok"] = False
+
+    # Indicador discreto — solo visible, no interactivo
+    _t = st.session_state.get("_auto_update_time", "—")
+    _ok = st.session_state.get("_auto_update_ok", True)
+    _dot = "🟢" if _ok else "🔴"
+    st.markdown(
+        f"<div style='text-align:right;font-size:0.62rem;color:#333;margin-bottom:2px'>"
+        f"{_dot} sync {_t}</div>",
+        unsafe_allow_html=True
+    )
+
+_auto_results_updater()
 
 # ══════════════════════════════════════════════════════════
 # CARTELERA
