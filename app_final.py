@@ -9207,7 +9207,7 @@ def _claude_enrich_context(home: str, away: str, league: str,
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001",
-                  "max_tokens": 500,
+                  "max_tokens": 80,
                                     "messages": [{"role": "user", "content": prompt}]},
             timeout=15)
         _data = _r.json()
@@ -12459,7 +12459,7 @@ def _ultra_matchup(home, away, sport):
              f"\"favorece\":\"local|visita|neutro\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12483,7 +12483,7 @@ def _ultra_forma_real(home, away, sport):
              f"\"tendencia\":\"mejorando|estable|cayendo por equipo\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":500,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12555,7 +12555,7 @@ def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
              f"\"urgencia\":\"critica|alta|media|baja\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12579,7 +12579,7 @@ def _ultra_consistencia(home, away, sport):
              f"\"confiable\":\"local|visita|ambos|ninguno\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12603,7 +12603,7 @@ def _ultra_presion(home, away, sport):
              f"\"estado_mental\":\"descripcion 10 palabras\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12627,7 +12627,7 @@ def _ultra_ritmo_juego(home, away, sport):
              f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12651,7 +12651,7 @@ def _ultra_dependencia_estrella(home, away, sport):
              f"\"riesgo\":\"alto|medio|bajo\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12675,7 +12675,7 @@ def _ultra_adaptabilidad(home, away, sport):
              f"\"ventaja_coach\":\"local|visita|par\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                                     "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
@@ -12724,108 +12724,72 @@ def _ultra_rival_similar(home: str, away: str, sport: str) -> dict:
 
 def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
     """
-    MAESTRO: Corre las 10 Ultra Intelligence en paralelo (ThreadPoolExecutor).
-    Combina todos los deltas en un ajuste neto de probabilidad.
-    Genera contexto rico para TODOS los AIs del sistema.
+    Ultra Intelligence: UNA sola llamada Haiku que reemplaza 12 llamadas paralelas.
     Retorna: {delta_h, delta_a, score_ultra, flags, context_str, raw}
     """
-    import concurrent.futures as _cf
-    results = {}
-    def _run(fn, key, *args):
-        try: results[key] = fn(*args)
-        except: results[key] = {}
-
-    with _cf.ThreadPoolExecutor(max_workers=8) as ex:
-        ex.submit(_run, _ultra_fatiga,            "fatiga",    home, away, sport, fecha)
-        ex.submit(_run, _ultra_matchup,           "matchup",   home, away, sport)
-        ex.submit(_run, _ultra_forma_real,        "forma",     home, away, sport)
-        ex.submit(_run, _ultra_ventaja_fisica,    "fisica",    home, away, sport)
-        ex.submit(_run, _ultra_localia,           "localia",   home, away, sport, liga)
-        ex.submit(_run, _ultra_motivacion,        "motivacion",home, away, sport, liga, tabla_ctx)
-        ex.submit(_run, _ultra_consistencia,      "consist",   home, away, sport)
-        ex.submit(_run, _ultra_presion,           "presion",   home, away, sport)
-        ex.submit(_run, _ultra_ritmo_juego,       "ritmo",     home, away, sport)
-        ex.submit(_run, _ultra_dependencia_estrella,"dep",     home, away, sport)
-        ex.submit(_run, _ultra_adaptabilidad,     "adapt",     home, away, sport)
-        ex.submit(_run, _ultra_rival_similar,     "rival",     home, away, sport)
-
-    fat = results.get("fatiga",{});  mch = results.get("matchup",{})
-    frm = results.get("forma",{});   fis = results.get("fisica",{})
-    loc = results.get("localia",{}); mot = results.get("motivacion",{})
-    cst = results.get("consist",{}); pre = results.get("presion",{})
-    rit = results.get("ritmo",{});   dep = results.get("dep",{})
-    adp = results.get("adapt",{})
-    rvl = results.get("rival",{})
-
-    # Delta neto para equipo LOCAL (home)
-    delta_h = sum([
-        float(fat.get("fatiga_h",0))     * 1.2,   # fatiga pesa mucho
-        float(mch.get("ventaja",0))      * 0.8,   # matchup
-        float(frm.get("forma_h",0))      * 0.9,   # forma real
-        float(fis.get("ventaja_fisica",0))* 0.6,  # ventaja fisica
-        float(loc.get("bonus_local",0))  * 0.7,   # localia
-        float(mot.get("motivacion_h",0)) * 1.1,   # motivacion pesa mucho
-        (float(cst.get("consist_h",0.5))-0.5)*0.4,# consistencia
-        float(pre.get("presion_h",0))    * 0.8,   # presion/clutch
-        float(rit.get("ritmo_delta",0))  * 0.5,   # ritmo
-        float(dep.get("dep_h",0))        * 0.7,   # dependencia estrella
-        float(rvl.get("rival_h",0))      * 0.6,   # rendimiento vs rivales similares
-    ])
-    # Delta neto para equipo VISITANTE (away)
-    delta_a = sum([
-        float(fat.get("fatiga_a",0))     * 1.2,
-        -float(mch.get("ventaja",0))     * 0.8,
-        float(frm.get("forma_a",0))      * 0.9,
-        -float(fis.get("ventaja_fisica",0))* 0.6,
-        float(mot.get("motivacion_a",0)) * 1.1,
-        (float(cst.get("consist_a",0.5))-0.5)*0.4,
-        float(pre.get("presion_a",0))    * 0.8,
-        -float(rit.get("ritmo_delta",0)) * 0.5,
-        float(dep.get("dep_a",0))        * 0.7,
-        float(rvl.get("rival_a",0))      * 0.6,   # rendimiento vs rivales similares
-    ])
-    # Clip
-    delta_h = max(-0.18, min(0.18, delta_h))
-    delta_a = max(-0.18, min(0.18, delta_a))
-
-    # Score ultra 0-10 (qué tan favorable es el conjunto para local)
-    score_ultra = round(5.0 + delta_h * 20, 2)
-    score_ultra = max(0, min(10, score_ultra))
-
-    # Flags consolidados
-    flags = []
-    if abs(float(fat.get("fatiga_h",0))) >= 0.06: flags.append(f"FATIGA {home[:10]}: {fat.get('alerta','critica')}")
-    if abs(float(fat.get("fatiga_a",0))) >= 0.06: flags.append(f"FATIGA {away[:10]}: {fat.get('alerta','critica')}")
-    if abs(float(mch.get("ventaja",0))) >= 0.05:  flags.append(f"MATCHUP: {mch.get('matchup','estilo favorable')}")
-    if mot.get("urgencia") in ("critica","alta"):   flags.append(f"MOTIVACION: {mot.get('situacion','alta urgencia')}")
-    if cst.get("confiable") in ("ninguno",):        flags.append("VOLATILIDAD: ambos equipos inconsistentes")
-    if pre.get("clutch_h") == "malo":               flags.append(f"CLUTCH BAJO: {home[:10]}")
-    if dep.get("riesgo") == "alto":                 flags.append(f"DEP.ESTRELLA: {dep.get('estrella_h') or dep.get('estrella_a','jugador clave')}")
-
-    # Context string para prompts de Claude
-    _tabla_ultra = (f"Tabla:     {tabla_ctx}\n" if tabla_ctx else "")
-    ctx = (
-        f"\n[ULTRA INTELLIGENCE — 10 Variables Avanzadas]\n"
-        + _tabla_ultra
-        + f"Fatiga:    {home[:10]}={fat.get('fatiga_h',0):+.2f} {away[:10]}={fat.get('fatiga_a',0):+.2f} | {fat.get('descripcion','')}\n"
-        f"Matchup:   {mch.get('estilo_h','?')} vs {mch.get('estilo_a','?')} | {mch.get('matchup','')} | delta={mch.get('ventaja',0):+.2f}\n"
-        f"Forma:     {home[:10]}={frm.get('stat_clave_h','')} ({frm.get('forma_h',0):+.2f}) | {away[:10]}={frm.get('stat_clave_a','')} ({frm.get('forma_a',0):+.2f})\n"
-        f"Fisica:    {fis.get('favorece','neutro')} | {fis.get('descripcion','')} | delta={fis.get('ventaja_fisica',0):+.2f}\n"
-        f"Localia:   bonus={loc.get('bonus_local',0):+.2f} | WR casa estimado={loc.get('wr_local_est','?')}\n"
-        f"Motivacion:{home[:10]}={mot.get('motivacion_h',0):+.2f} {away[:10]}={mot.get('motivacion_a',0):+.2f} | {mot.get('situacion','')}\n"
-        f"Consist.:  {home[:10]}={cst.get('consist_h',0.5):.2f} {away[:10]}={cst.get('consist_a',0.5):.2f} | confiable={cst.get('confiable','?')}\n"
-        f"Presion:   clutch_h={pre.get('clutch_h','?')} clutch_a={pre.get('clutch_a','?')} | {pre.get('estado_mental','')}\n"
-        f"Ritmo:     {rit.get('ritmo_h','?')} vs {rit.get('ritmo_a','?')} | favorece={rit.get('favorece','neutro')}\n"
-        f"Dep.Star:  h={dep.get('dep_h',0):.2f} a={dep.get('dep_a',0):.2f} | riesgo={dep.get('riesgo','?')}\n"
-        f"DELTA NET: local={delta_h:+.4f} visita={delta_a:+.4f} | Ultra Score={score_ultra:.1f}/10\n"
-    )
-
-    return {
-        "delta_h": delta_h, "delta_a": delta_a,
-        "score_ultra": score_ultra,
-        "flags": flags, "context_str": ctx,
-        "raw": results,
-    }
+    if not ANTHROPIC_API_KEY:
+        return {"delta_h":0.0,"delta_a":0.0,"score_ultra":5.0,"flags":[],"context_str":"","raw":{}}
+    try:
+        prompt = (
+            f"Partido: {home} vs {away} | {sport} | {liga} | {fecha}\n"
+            f"{('Tabla: '+tabla_ctx) if tabla_ctx else ''}\n"
+            f"Analiza estos factores para el LOCAL ({home}). Valores float en rango indicado.\n"
+            f"SOLO JSON sin backticks:\n"
+            f'{{"fatiga_h":-0.15_a_0.0,"fatiga_a":-0.15_a_0.0,'
+            f'"forma_h":-0.10_a_+0.10,"forma_a":-0.10_a_+0.10,'
+            f'"motivacion_h":-0.08_a_+0.08,"motivacion_a":-0.08_a_+0.08,'
+            f'"matchup_ventaja":-0.08_a_+0.08,'
+            f'"presion_h":-0.06_a_+0.06,'
+            f'"localia_bonus":0.0_a_+0.06,'
+            f'"rival_h":-0.06_a_+0.06,"rival_a":-0.06_a_+0.06,'
+            f'"fisica_ventaja":-0.05_a_+0.05,'
+            f'"flags":["max 3 alertas criticas o array vacio"]}}'
+        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
+                     "content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":200,
+                  "messages":[{"role":"user","content":prompt}]}, timeout=6)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            # Build delta_h combining all signals (same weights as before)
+            delta_h = (
+                float(d.get("fatiga_h",0))      * 1.2 +
+                float(d.get("matchup_ventaja",0))* 0.8 +
+                float(d.get("forma_h",0))        * 0.9 +
+                float(d.get("fisica_ventaja",0)) * 0.6 +
+                float(d.get("localia_bonus",0))  * 0.7 +
+                float(d.get("motivacion_h",0))   * 1.1 +
+                float(d.get("presion_h",0))      * 0.8 +
+                float(d.get("rival_h",0))        * 0.6
+            )
+            delta_a = (
+                float(d.get("fatiga_a",0))       * 1.2 +
+                -float(d.get("matchup_ventaja",0))* 0.8 +
+                float(d.get("forma_a",0))        * 0.9 +
+                -float(d.get("fisica_ventaja",0))* 0.6 +
+                float(d.get("motivacion_a",0))   * 1.1 +
+                float(d.get("rival_a",0))        * 0.6
+            )
+            delta_h = max(-0.18, min(0.18, delta_h))
+            delta_a = max(-0.18, min(0.18, delta_a))
+            score_ultra = round(5.0 + delta_h * 20, 2)
+            _flags = d.get("flags", [])
+            if not isinstance(_flags, list): _flags = []
+            ctx_parts = []
+            if abs(delta_h) >= 0.05: ctx_parts.append(f"delta_h={delta_h:+.3f}")
+            if _flags: ctx_parts.append(" | ".join(_flags))
+            return {
+                "delta_h":    delta_h,
+                "delta_a":    delta_a,
+                "score_ultra": score_ultra,
+                "flags":      _flags,
+                "context_str": " | ".join(ctx_parts),
+                "raw":        d
+            }
+    except: pass
+    return {"delta_h":0.0,"delta_a":0.0,"score_ultra":5.0,"flags":[],"context_str":"","raw":{}}
 
 def _kr_situacional(home,away,sport,liga,hora):
     if not ANTHROPIC_API_KEY: return {"factor":0.0,"ctx":""}
@@ -12840,7 +12804,7 @@ def _kr_situacional(home,away,sport,liga,hora):
         r=requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                   "messages":[{"role":"user","content":prompt}]},timeout=5)
         if r.status_code==200:
             txt=r.json()["content"][0]["text"].strip()
@@ -12871,6 +12835,41 @@ def _kr_monte_carlo_god(hxg,axg,h_mom=0.0,a_mom=0.0,n=10000):
             "o25":round(o25/n,4),"o35":round(o35/n,4),"btts":round(btts/n,4)}
 
 @st.cache_data(ttl=3600,show_spinner=False)
+
+@st.cache_data(ttl=7200, show_spinner=False)
+def _kr_analisis_combinado(home: str, away: str, sport: str, liga: str, hora: str) -> dict:
+    """
+    UNA sola llamada Haiku que reemplaza _kr_situacional + _kr_transicion + _kr_entrenador.
+    3 llamadas → 1 llamada. Misma información, 3× más rápido.
+    """
+    if not ANTHROPIC_API_KEY:
+        return {"factor":0.0,"ctx":"","trans_h":0.0,"trans_a":0.0,"trans_score":5,
+                "coach_h":0.0,"coach_a":0.0,"coach_score":5}
+    try:
+        prompt = (
+            f"Partido: {home} vs {away} | {sport} | {liga} | {hora}\n"
+            f"Responde SOLO este JSON sin backticks, sin texto extra:\n"
+            f'{{"sit_factor":-0.10_a_+0.10,"sit_ctx":"max 12 palabras","sit_urgencia":"alta|media|baja",'
+            f'"trans_h":-0.05_a_+0.05,"trans_a":-0.05_a_+0.05,"trans_score":0_a_10,'
+            f'"coach_h":-0.04_a_+0.04,"coach_a":-0.04_a_+0.04,"coach_score":0_a_10}}'
+        )
+        r = requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
+                     "content-type":"application/json"},
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":120,
+                  "messages":[{"role":"user","content":prompt}]}, timeout=6)
+        if r.status_code == 200:
+            txt = re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip()
+            d = json.loads(txt)
+            d.setdefault("sit_factor",0.0); d.setdefault("sit_ctx","")
+            d.setdefault("trans_h",0.0);   d.setdefault("trans_a",0.0); d.setdefault("trans_score",5)
+            d.setdefault("coach_h",0.0);   d.setdefault("coach_a",0.0); d.setdefault("coach_score",5)
+            return d
+    except: pass
+    return {"sit_factor":0.0,"sit_ctx":"","sit_urgencia":"baja",
+            "trans_h":0.0,"trans_a":0.0,"trans_score":5,
+            "coach_h":0.0,"coach_a":0.0,"coach_score":5}
+
 def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
     if not ANTHROPIC_API_KEY or not top5_t:
         return {"idx":0,"razon":"","confianza":0.5,"alerta":None}
@@ -12890,7 +12889,7 @@ def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
         r=requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
-            json={"model":"claude-sonnet-4-20250514","max_tokens":300,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":150,
                   "system":sys_p,"messages":[{"role":"user","content":usr_p}]},
             timeout=12)
         if r.status_code==200:
@@ -13635,19 +13634,15 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             _c["cuota_justa"] = _ev_c["justa"]
             _home_c = _c.get("label","").split(" vs ")[0].split(" @ ")[-1].strip()
             _away_c = _c.get("label","").split(" vs ")[-1].split(" @ ")[0].strip()
-            _sit = _kr_situacional(_home_c,_away_c,_c.get("sport","futbol"),_c.get("liga",""),_c.get("hora",""))
-            _sf  = float(_sit.get("factor",0.0))
-            _c["prob"]    = max(0.10,min(0.92,_c["prob"]+_sf*0.35))
-            _c["sit_ctx"] = _sit.get("ctx","")
-            if abs(_sf)>=0.05: _c["score"]=min(10.0,_c["score"]+abs(_sf)*4.0)
-            # Lanzar ultra + transicion + entrenador en paralelo para este candidato
-            with _cf_kr.ThreadPoolExecutor(max_workers=3) as _ex3:
-                _fut_ui = _ex3.submit(_ultra_intel_full,
+            # Lanzar ultra + combinado (sit+trans+coach) en paralelo — 2 llamadas en vez de 4
+            with _cf_kr.ThreadPoolExecutor(max_workers=2) as _ex3:
+                _fut_ui  = _ex3.submit(_ultra_intel_full,
                     _home_c, _away_c,
                     _c.get("sport","futbol"), _c.get("liga",""), _c.get("hora",""),
                     _c.get("tabla_desc",""))
-                _fut_tr = _ex3.submit(_kr_transicion, _home_c, _away_c, _c.get("sport","futbol"))
-                _fut_en = _ex3.submit(_kr_entrenador, _home_c, _away_c, _c.get("sport","futbol"), _c.get("liga",""))
+                _fut_comb = _ex3.submit(_kr_analisis_combinado,
+                    _home_c, _away_c,
+                    _c.get("sport","futbol"), _c.get("liga",""), _c.get("hora",""))
                 try:
                     _ui = _fut_ui.result(timeout=10)
                     _c["prob"]        = max(0.10,min(0.92,_c["prob"]+_ui["delta_h"]*0.40))
@@ -13658,17 +13653,22 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     elif _ui["score_ultra"]<=3.0: _c["score"]=max(0.0,_c["score"]-0.8)
                 except: _c.setdefault("ultra_flags",[])
                 try:
-                    _tr = _fut_tr.result(timeout=8)
-                    _c["trans_score"] = float(_tr.get("score",5))
-                    _c["trans_delta"] = float(_tr.get("trans_h",0))
-                    _c["prob"] = max(0.10, min(0.92, _c["prob"] + _tr.get("trans_h",0)*0.55))
-                except: _c.setdefault("trans_score", 5)
-                try:
-                    _en = _fut_en.result(timeout=8)
-                    _c["coach_score"] = float(_en.get("score",5))
-                    _c["coach_delta"] = float(_en.get("coach_h",0))
-                    _c["prob"] = max(0.10, min(0.92, _c["prob"] + _en.get("coach_h",0)*0.60))
-                except: _c.setdefault("coach_score", 5)
+                    _comb = _fut_comb.result(timeout=8)
+                    # Situacional
+                    _sf = float(_comb.get("sit_factor",0.0))
+                    _c["prob"]    = max(0.10,min(0.92,_c["prob"]+_sf*0.35))
+                    _c["sit_ctx"] = _comb.get("sit_ctx","")
+                    if abs(_sf)>=0.05: _c["score"]=min(10.0,_c["score"]+abs(_sf)*4.0)
+                    # Transicion
+                    _c["trans_score"] = float(_comb.get("trans_score",5))
+                    _c["trans_delta"] = float(_comb.get("trans_h",0))
+                    _c["prob"] = max(0.10, min(0.92, _c["prob"] + _comb.get("trans_h",0)*0.55))
+                    # Entrenador
+                    _c["coach_score"] = float(_comb.get("coach_score",5))
+                    _c["coach_delta"] = float(_comb.get("coach_h",0))
+                    _c["prob"] = max(0.10, min(0.92, _c["prob"] + _comb.get("coach_h",0)*0.60))
+                except:
+                    _c.setdefault("sit_ctx",""); _c.setdefault("trans_score",5); _c.setdefault("coach_score",5)
         except: pass
         return _c
 
@@ -13869,9 +13869,9 @@ def _kr_ia_narracion(el_pick, bk, todos):
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
-            json={"model":"claude-opus-4-6","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":200,
                   "messages":[{"role":"user","content":prompt}]},
-            timeout=12
+            timeout=8
         )
         if r.status_code == 200:
             return r.json()["content"][0]["text"].strip()
@@ -14794,7 +14794,7 @@ Si no detectas variables relevantes, pon 0.0 en todo y confidence=baja."""
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001",
-                  "max_tokens": 500,
+                  "max_tokens": 80,
                   "messages": [{"role": "user", "content": _prompt}]},
             timeout=10
         )
@@ -14991,7 +14991,7 @@ def _papi_justificar(pick_lbl,partido,prob,cuota,panel):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
+            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
                   "messages":[{"role":"user","content":p}]},timeout=10)
         if r.status_code==200:
             _jblocks = r.json().get("content",[])
@@ -16609,8 +16609,8 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     st.rerun()
 
             # ── VEREDICTO DE KING RONGO ──
-            with st.expander("💬 Veredicto de King Rongo", expanded=True):
-                with st.spinner("👑 King Rongo analizando..."):
+            with st.expander("💬 Veredicto de King Rongo", expanded=False):
+                with st.spinner("👑 King Rongo narrando..."):
                     _kr_narr = _kr_ia_narracion(el_pick, bk, todos) if todos else ""
                 if _kr_narr:
                     st.markdown(
