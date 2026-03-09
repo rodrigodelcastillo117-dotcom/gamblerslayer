@@ -3306,6 +3306,10 @@ def _cartelera_bridge(matches):
                 for f in ("odd_h","odd_d","odd_a","home_rec","away_rec","hora"):
                     if p.get(f) and not old.get(f): old[f] = p[f]
                 added += 1
+                # Auto-resolver calibración cuando el partido termina
+                if state == "post" and sh >= 0 and sa >= 0:
+                    try: _soc_calib_resolve(mid, sh, sa)
+                    except: pass
         else:
             db["partidos"].append(p)
             existing[mid] = len(db["partidos"]) - 1
@@ -4233,6 +4237,42 @@ def render_resultados_tab():
     # RESULTADOS POR DEPORTE — pick de mayor prob + auditoría
     # ════════════════════════════════════════════════════════
     st.markdown("<div class='shdr'>📊 Resultados + Pick del Modelo Auditado</div>", unsafe_allow_html=True)
+
+    # ── Panel calibración automática fútbol ──
+    try:
+        _sc = _soc_calib_load()
+        _sg = _sc.get("global", {})
+        _sc_n = _sg.get("n", 0)
+        if _sc_n >= 3:
+            _sc_wr   = _sg.get("wr", 0)
+            _sc_bias = _sg.get("bias", 0)
+            _sc_ev   = _sg.get("ev_avg", 0)
+            _sc_adj  = _soc_calib_get_adj()
+            _bc = "#ff4444" if _sc_bias > 0.05 else ("#00ff88" if abs(_sc_bias) <= 0.02 else "#FFD700")
+            _ec = "#00ff88" if _sc_ev > 0 else "#ff4444"
+            st.markdown(
+                f"<div style='background:#060d14;border:1px solid #00ccff33;"
+                f"border-radius:8px;padding:8px 12px;margin-bottom:10px'>"
+                f"<div style='color:#00ccff;font-weight:900;font-size:0.72rem;letter-spacing:.1em;margin-bottom:4px'>"
+                f"⚽ AUTO-CALIBRACIÓN FÚTBOL · {_sc_n} picks resueltos</div>"
+                f"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center'>"
+                f"<div><div style='font-size:1.1rem;font-weight:900;color:#00ff88'>{_sc_wr*100:.1f}%</div>"
+                f"<div style='font-size:0.65rem;color:#555'>Win Rate</div></div>"
+                f"<div><div style='font-size:1.1rem;font-weight:900;color:{_bc}'>{_sc_bias:+.3f}</div>"
+                f"<div style='font-size:0.65rem;color:#555'>Bias prob</div></div>"
+                f"<div><div style='font-size:1.1rem;font-weight:900;color:{_ec}'>{_sc_ev:+.3f}</div>"
+                f"<div style='font-size:0.65rem;color:#555'>EV medio</div></div>"
+                f"<div><div style='font-size:1.1rem;font-weight:900;color:#00ccff'>{_sc_adj:+.2f}</div>"
+                f"<div style='font-size:0.65rem;color:#555'>Ajuste activo</div></div>"
+                f"</div>"
+                + ("".join(
+                    f"<div style='font-size:0.68rem;color:#555;margin-top:4px'>"
+                    f"⚽ {lig}: {v['n']}P · WR {v['wr']*100:.0f}% · bias {v['bias']:+.2f}</div>"
+                    for lig, v in _sc.get("by_liga",{}).items() if v.get("n",0)>=5
+                ) if _sc.get("by_liga") else "")
+                + "</div>",
+                unsafe_allow_html=True)
+    except: pass
 
     rt1,rt2,rt3 = st.tabs(["⚽ Fútbol","🏀 NBA","🎾 Tenis"])
 
@@ -7211,6 +7251,18 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
     std = float(np.std(all_phs))
     consensus = "🟢 ALTO" if std<0.04 else ("🟡 MEDIO" if std<0.08 else "🔴 BAJO")
 
+    # ── Ajuste calibración automática por liga ──
+    try:
+        _calib_adj = _soc_calib_get_adj()
+        if _calib_adj != 0.0:
+            if ph >= pa:
+                ph = max(0.05, min(0.92, ph - _calib_adj))
+            else:
+                pa = max(0.05, min(0.92, pa - _calib_adj))
+            _s = ph + pd + pa
+            if _s > 0: ph /= _s; pd /= _s; pa /= _s
+    except: pass
+
     return {
         "ph":ph,"pd":pd,"pa":pa,
         "o15":dc["o15"],"o25":0.5*dc["o25"]+0.5*bvp["o25"],
@@ -9506,6 +9558,197 @@ def _nba_calib_get_adjustment():
     factor = 0.5 if n < 15 else 0.80
     adj = -bias * factor  # bias positivo = sobreestimo → restar
     return max(-8.0, min(8.0, adj))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SOCCER AUTO-CALIBRATION — aprende de cada pick resuelto
+# Calibra por liga: bias de probabilidad, win-rate real vs esperado,
+# y ajusta xG scale factor para que el modelo converja a la realidad.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _soc_calib_load():
+    try:
+        if os.path.exists(SOC_CALIB_FILE):
+            with open(SOC_CALIB_FILE) as f: return json.load(f)
+    except: pass
+    return {"picks": [], "global": {}, "by_liga": {}, "n": 0, "last_update": ""}
+
+def _soc_calib_save(data):
+    try:
+        with open(SOC_CALIB_FILE, "w") as f: json.dump(data, f)
+    except: pass
+
+def _soc_calib_register(match_id, home, away, liga, slug,
+                         ph, pa, pd, pick_lbl, pick_prob, odd, fecha):
+    """Registra un pick de fútbol antes del partido."""
+    data = _soc_calib_load()
+    ids = {p["match_id"] for p in data["picks"]}
+    if match_id in ids: return
+    data["picks"].append({
+        "match_id": match_id, "home": home, "away": away,
+        "liga": liga, "slug": slug,
+        "ph": round(ph,4), "pa": round(pa,4), "pd": round(pd,4),
+        "pick": pick_lbl, "prob": round(pick_prob,4), "odd": round(odd,2),
+        "fecha": fecha, "score_h": None, "score_a": None,
+        "result": None,   # W | L | D (result of pick)
+        "outcome": None,  # H | A | D (match outcome)
+        "ev_real": None,  # ph*odd_h - 1  (realized EV)
+    })
+    _soc_calib_save(data)
+
+def _soc_calib_resolve(match_id, score_h, score_a):
+    """Llena resultado cuando el partido termina."""
+    data = _soc_calib_load()
+    updated = False
+    for p in data["picks"]:
+        if p["match_id"] == match_id and p["result"] is None:
+            p["score_h"] = score_h
+            p["score_a"] = score_a
+            outcome = "H" if score_h > score_a else ("A" if score_a > score_h else "D")
+            p["outcome"] = outcome
+            lbl = p["pick"].lower()
+            if "gana" in lbl or "home" in lbl or "local" in lbl:
+                if "away" in lbl or "✈" in lbl or "visita" in lbl:
+                    p["result"] = "W" if outcome == "A" else "L"
+                else:
+                    p["result"] = "W" if outcome == "H" else "L"
+            elif "empate" in lbl or "draw" in lbl or "🤝" in lbl:
+                p["result"] = "W" if outcome == "D" else "L"
+            elif "over" in lbl:
+                p["result"] = "W" if (score_h + score_a) > 2.5 else "L"
+            elif "under" in lbl:
+                p["result"] = "W" if (score_h + score_a) < 2.5 else "L"
+            elif "ambos" in lbl or "btts" in lbl:
+                p["result"] = "W" if (score_h > 0 and score_a > 0) else "L"
+            elif "o emp" in lbl or "doble" in lbl:
+                if "✈" in lbl or "away" in lbl:
+                    p["result"] = "W" if outcome in ("A","D") else "L"
+                else:
+                    p["result"] = "W" if outcome in ("H","D") else "L"
+            else:
+                p["result"] = "W" if outcome == "H" else "L"
+            # EV realizado: ganó → odd-1, perdió → -1
+            odd = p.get("odd", 0)
+            if odd > 1:
+                p["ev_real"] = round((odd - 1) if p["result"] == "W" else -1.0, 3)
+            updated = True
+            break
+
+    if updated:
+        _soc_calib_recalc(data)
+        _soc_calib_save(data)
+    return updated
+
+def _soc_calib_recalc(data):
+    """Recalcula bias global y por liga con los picks resueltos."""
+    resolved = [p for p in data["picks"] if p["result"] is not None]
+    if not resolved: return
+
+    # ── Global stats ──
+    last50 = resolved[-50:]
+    wr     = sum(1 for p in last50 if p["result"] == "W") / len(last50)
+    # Brier score: (prob - outcome)^2  lower=better
+    brier  = sum((p["prob"] - (1 if p["result"]=="W" else 0))**2 for p in last50) / len(last50)
+    # Calibration bias: avg(prob_predicha - prob_real)
+    # Si bias > 0 → el modelo sobreestima (genera picks con 60% que ganan al 50%)
+    bias   = sum(p["prob"] for p in last50) / len(last50) - wr
+    ev_avg = sum(p["ev_real"] for p in last50 if p["ev_real"] is not None) / max(1, sum(1 for p in last50 if p["ev_real"] is not None))
+
+    data["global"] = {
+        "n": len(last50), "wr": round(wr, 4),
+        "brier": round(brier, 4), "bias": round(bias, 4),
+        "ev_avg": round(ev_avg, 4),
+        "last_update": datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
+    }
+    data["n"] = len(resolved)
+
+    # ── By liga (mín 5 picks para estadística válida) ──
+    by_liga = {}
+    for p in resolved:
+        lig = p.get("liga","?")
+        by_liga.setdefault(lig, []).append(p)
+
+    data["by_liga"] = {}
+    for lig, picks in by_liga.items():
+        if len(picks) < 3: continue
+        last_lig = picks[-20:]
+        wr_l = sum(1 for p in last_lig if p["result"]=="W") / len(last_lig)
+        bias_l = sum(p["prob"] for p in last_lig)/len(last_lig) - wr_l
+        data["by_liga"][lig] = {
+            "n": len(last_lig), "wr": round(wr_l,4),
+            "bias": round(bias_l,4),
+        }
+
+def _soc_calib_get_adj(liga=None):
+    """
+    Devuelve factor de ajuste de probabilidad para una liga.
+    Si el modelo sobreestima en 8pp en Liga MX → reduce prob predicha un 8pp.
+    Caps: ±12pp, solo aplica si n >= 8 picks resueltos.
+    """
+    data = _soc_calib_load()
+    # Liga específica primero
+    if liga:
+        lig_data = data.get("by_liga", {}).get(liga)
+        if lig_data and lig_data.get("n",0) >= 8:
+            bias = lig_data["bias"]
+            # Corrección gradual: 40% del bias si n<15, 65% si n>=15
+            f = 0.40 if lig_data["n"] < 15 else 0.65
+            return max(-0.12, min(0.12, -bias * f))
+    # Global fallback
+    g = data.get("global", {})
+    if g.get("n",0) >= 10:
+        bias = g.get("bias", 0)
+        f = 0.40 if g["n"] < 20 else 0.65
+        return max(-0.12, min(0.12, -bias * f))
+    return 0.0
+
+def _soc_calib_get_liga_params(slug):
+    """
+    Parámetros especializados por liga basados en historial real.
+    Retorna dict con: xg_scale (multiplicador xG), market_weight (peso cuotas),
+    decay (decaimiento exponencial forma), min_ev (umbral EV mínimo).
+    Empieza con defaults; se ajustan automáticamente según calibración.
+    """
+    # Defaults por tipo de liga
+    LIGA_DEFAULTS = {
+        # Ligas con mercados muy eficientes → más peso al mercado
+        "eng.1": {"xg_scale":1.00, "market_w":0.20, "decay":0.85, "min_ev":0.02},
+        "esp.1": {"xg_scale":1.00, "market_w":0.20, "decay":0.85, "min_ev":0.02},
+        "ger.1": {"xg_scale":1.00, "market_w":0.20, "decay":0.85, "min_ev":0.02},
+        "ita.1": {"xg_scale":1.00, "market_w":0.18, "decay":0.85, "min_ev":0.02},
+        "fra.1": {"xg_scale":1.00, "market_w":0.18, "decay":0.85, "min_ev":0.02},
+        # Ligas LATAM — mercados menos eficientes, más ruido
+        "mex.1": {"xg_scale":0.95, "market_w":0.14, "decay":0.82, "min_ev":0.03},
+        "mex.2": {"xg_scale":0.93, "market_w":0.12, "decay":0.80, "min_ev":0.03},
+        "bra.1": {"xg_scale":0.95, "market_w":0.14, "decay":0.82, "min_ev":0.03},
+        "arg.1": {"xg_scale":0.93, "market_w":0.13, "decay":0.82, "min_ev":0.03},
+        # UEFA — partidos de ida/vuelta, rotación
+        "uefa.champions": {"xg_scale":1.02, "market_w":0.22, "decay":0.88, "min_ev":0.025},
+        "uefa.europa":    {"xg_scale":1.00, "market_w":0.18, "decay":0.86, "min_ev":0.025},
+    }
+    base = LIGA_DEFAULTS.get(slug, {"xg_scale":0.97, "market_w":0.15, "decay":0.83, "min_ev":0.025})
+
+    # Ajuste dinámico: si tenemos calibración de esta liga, afinar market_weight
+    data = _soc_calib_load()
+    lig_cal = data.get("by_liga", {})
+    # Buscar por slug o por nombre de liga
+    for k, v in lig_cal.items():
+        if slug in k or k in slug:
+            if v.get("n",0) >= 10:
+                wr = v.get("wr", 0.5)
+                bias = v.get("bias", 0)
+                # Si win rate < 45% → aumentar min_ev (ser más selectivo)
+                if wr < 0.45:
+                    base["min_ev"] = min(0.06, base["min_ev"] + 0.015)
+                elif wr > 0.58:
+                    base["min_ev"] = max(0.01, base["min_ev"] - 0.005)
+                # Si bias alto → confiar más en mercado
+                if abs(bias) > 0.06:
+                    base["market_w"] = min(0.30, base["market_w"] + 0.05)
+            break
+    return base
+
+
 
 def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     """
@@ -12462,6 +12705,7 @@ def _papi_bot_consensus(candidato: dict) -> dict:
 
 PAPI_FILE             = "/tmp/papi_ajb_state.json"
 NBA_CALIB_FILE        = "/tmp/nba_calibration.json"
+SOC_CALIB_FILE        = "/tmp/soccer_calibration.json"
 PAPI_HISTORY_F = "/tmp/papi_ajb_history.json"
 
 def _papi_load_state():
@@ -14310,6 +14554,15 @@ if deporte == "futbol":
                 if _am_id:  _bridge[_am_id]  = _entry
                 if _am_id2: _bridge[_am_id2] = _entry
                 _bridge_dirty = True
+                # Registrar en calibración automática
+                try:
+                    _soc_calib_register(
+                        _am_id or _am_id2, _am.get("home",""), _am.get("away",""),
+                        _am.get("league",""), _am.get("slug",""),
+                        _ph_d, _pa_d, _pd_d, _lbl, _prob,
+                        _odd if _odd else 0, _am_fecha
+                    )
+                except: pass
             except: continue
         if _bridge_dirty:
             try:
