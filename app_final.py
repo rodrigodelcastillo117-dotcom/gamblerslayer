@@ -2834,87 +2834,52 @@ def _needs_daily_reset():
     return False
 
 def fetch_soccer_results(days_back=10):
-    """Fetch last N days of soccer results from ESPN."""
+    """
+    Reutiliza get_cartelera() para obtener partidos de fútbol.
+    get_cartelera ya tiene todos los campos necesarios y funciona correctamente.
+    """
+    try:
+        matches = get_cartelera() or []
+    except Exception as _e:
+        return []
+
     partidos = []
-    now = datetime.now(CDMX)
-    for day_offset in range(days_back, -1, -1):
-        d = now - timedelta(days=day_offset)
-        ds = d.strftime("%Y%m%d")
-        for slug in list(LIGAS.keys()):  # Todas las ligas
-            try:
-                data = eg(f"{ESPN}/{slug}/scoreboard", {"dates": ds, "limit": 50})
-                for ev in data.get("events",[]):
-                    try:
-                        comp  = ev["competitions"][0]
-                        state = ev.get("status",{}).get("type",{}).get("state","")
-                        comps = comp["competitors"]
-                        hc = next(c for c in comps if c["homeAway"]=="home")
-                        ac = next(c for c in comps if c["homeAway"]=="away")
-                        utc  = datetime.strptime(ev["date"],"%Y-%m-%dT%H:%MZ").replace(tzinfo=pytz.UTC)
-                        fecha = utc.astimezone(CDMX).strftime("%Y-%m-%d")
-                        _odds_ev = comp.get("odds", [])
-                        _odd_h = _odd_d = _odd_a = 0.0
-                        if _odds_ev:
-                            _o = _odds_ev[0]
-                            _odd_h = am2dec(_o.get("homeTeamOdds",{}).get("moneyLine",0))
-                            _odd_a = am2dec(_o.get("awayTeamOdds",{}).get("moneyLine",0))
-                            _odd_d = am2dec(_o.get("drawOdds",{}).get("moneyLine",0))
-                        partidos.append({
-                            "id":ev.get("id",""), "deporte":"futbol",
-                            "liga":LIGAS[slug], "slug":slug,
-                            "home":hc["team"]["displayName"],
-                            "away":ac["team"]["displayName"],
-                            "home_id":str(hc["team"]["id"]),
-                            "away_id":str(ac["team"]["id"]),
-                            "home_rec": get_record(hc),
-                            "away_rec": get_record(ac),
-                            "odd_h": _odd_h, "odd_d": _odd_d, "odd_a": _odd_a,
-                            "score_h":parse_score(hc.get("score",0)) if state=="post" else -1,
-                            "score_a":parse_score(ac.get("score",0)) if state=="post" else -1,
-                            "fecha":fecha, "state":state, "hora":utc.astimezone(CDMX).strftime("%H:%M"),
-                        })
-                    except: continue
-            except: continue
-    # ── Enrich UEFA partidos sin odds desde The Odds API (1 call por competición) ──
-    _UEFA_MAP = {
-        "uefa.champions":    "soccer_uefa_champs_league",
-        "uefa.europa":       "soccer_uefa_europa_league",
-        "uefa.europa.conf":  "soccer_uefa_europa_conference_league",
-    }
-    _bulk = {}
-    _ok = ODDS_API_KEY
-    if _ok:
-        for _m in partidos:
-            if _m.get("slug") in _UEFA_MAP and not _m.get("odd_h"):
-                _sl = _m["slug"]
-                if _sl not in _bulk:
-                    try:
-                        _r = requests.get(
-                            f"https://api.the-odds-api.com/v4/sports/{_UEFA_MAP[_sl]}/odds",
-                            params={"apiKey": _ok, "regions": "eu", "markets": "h2h",
-                                    "oddsFormat": "decimal", "bookmakers": ",".join(BOOKMAKERS)},
-                            timeout=8)
-                        _bulk[_sl] = _r.json() if _r.status_code == 200 else []
-                    except: _bulk[_sl] = []
-                for _g in _bulk.get(_sl, []):
-                    _gh = (_g.get("home_team") or "").lower()
-                    _ga = (_g.get("away_team") or "").lower()
-                    _mh = _m["home"].lower(); _ma = _m["away"].lower()
-                    if _mh[:5] in _gh or _ma[:5] in _ga or _gh[:5] in _mh or _ga[:5] in _ma:
-                        _ph, _pd, _pa = [], [], []
-                        for _bk in _g.get("bookmakers", []):
-                            for _mkt in _bk.get("markets", []):
-                                if _mkt["key"] == "h2h":
-                                    _outs = {o["name"].lower(): o["price"] for o in _mkt["outcomes"]}
-                                    if _outs.get(_gh, 0) > 1: _ph.append(_outs[_gh])
-                                    if _outs.get("draw", 0) > 1: _pd.append(_outs["draw"])
-                                    if _outs.get(_ga, 0) > 1: _pa.append(_outs[_ga])
-                        if _ph and _pa:
-                            _m["odd_h"] = round(sum(_ph)/len(_ph), 2)
-                            _m["odd_d"] = round(sum(_pd)/len(_pd), 2) if _pd else 3.4
-                            _m["odd_a"] = round(sum(_pa)/len(_pa), 2)
-                        break
+    cutoff = (datetime.now(CDMX) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+
+    for m in matches:
+        fecha = m.get("fecha", "")
+        if fecha < cutoff:
+            continue
+        state = m.get("state", "")
+        sh = m.get("score_h", -1)
+        sa = m.get("score_a", -1)
+        # Para partidos post: asegurarse que score sea válido
+        if state == "post" and (sh < 0 or sa < 0):
+            sh = 0; sa = 0
+        partidos.append({
+            "id":       m.get("id", ""),
+            "deporte":  "futbol",
+            "liga":     m.get("league", m.get("liga", "")),
+            "slug":     m.get("slug", ""),
+            "home":     m.get("home", ""),
+            "away":     m.get("away", ""),
+            "home_id":  str(m.get("home_id", "")),
+            "away_id":  str(m.get("away_id", "")),
+            "home_rec": m.get("home_rec", "5-5-5"),
+            "away_rec": m.get("away_rec", "5-5-5"),
+            "odd_h":    m.get("odd_h", 0),
+            "odd_d":    m.get("odd_d", 0),
+            "odd_a":    m.get("odd_a", 0),
+            "score_h":  sh,
+            "score_a":  sa,
+            "fecha":    fecha,
+            "state":    state,
+            "hora":     m.get("hora", ""),
+        })
+
     return partidos
+
+
 
 def fetch_nba_results(days_back=10):
     """Fetch last N days of NBA results."""
@@ -3309,6 +3274,48 @@ def _auto_complete_by_hora(matches_list, sport="futbol"):
     """
     return matches_list  # sin tocar
 
+
+
+def _cartelera_bridge(matches):
+    """Bridge: cartelera → resultados. Detecta partidos post y los guarda automáticamente."""
+    if not matches: return 0
+    db = _load_results_db()
+    existing = {p["id"]: i for i, p in enumerate(db["partidos"])}
+    added = 0
+    for m in matches:
+        mid = m.get("id","")
+        if not mid: continue
+        state = m.get("state","")
+        sh = m.get("score_h",-1)
+        sa = m.get("score_a",-1)
+        p = {
+            "id": mid, "deporte": "futbol",
+            "liga": m.get("league", m.get("liga","")),
+            "slug": m.get("slug",""), "home": m.get("home",""), "away": m.get("away",""),
+            "home_id": str(m.get("home_id","")), "away_id": str(m.get("away_id","")),
+            "home_rec": m.get("home_rec","5-5-5"), "away_rec": m.get("away_rec","5-5-5"),
+            "odd_h": m.get("odd_h",0), "odd_d": m.get("odd_d",0), "odd_a": m.get("odd_a",0),
+            "score_h": sh if state=="post" and sh>=0 else -1,
+            "score_a": sa if state=="post" and sa>=0 else -1,
+            "fecha": m.get("fecha",""), "state": state, "hora": m.get("hora",""),
+        }
+        if mid in existing:
+            old = db["partidos"][existing[mid]]
+            if old.get("state") != state or (state=="post" and sh>=0 and old.get("score_h",-1) != sh):
+                old.update({"state": state, "score_h": p["score_h"], "score_a": p["score_a"]})
+                for f in ("odd_h","odd_d","odd_a","home_rec","away_rec","hora"):
+                    if p.get(f) and not old.get(f): old[f] = p[f]
+                added += 1
+        else:
+            db["partidos"].append(p)
+            existing[mid] = len(db["partidos"]) - 1
+            added += 1
+    if added:
+        db["ultima_actualizacion"] = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
+        _save_results_db(db)
+        try: st.session_state["results_db"] = db
+        except: pass
+    return added
 
 
 def update_results_db(force=False):
@@ -14205,6 +14212,10 @@ if deporte == "futbol":
         except Exception as _e:
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
+    # ── BRIDGE: enviar partidos post a resultados automáticamente ──
+    if all_matches:
+        try: _cartelera_bridge(all_matches)
+        except: pass
 
     # ── AUTO-BRIDGE: calcular Jugada Diamante real para todos los partidos ──
     # Usa get_form + diamond_engine igual que el análisis manual.
