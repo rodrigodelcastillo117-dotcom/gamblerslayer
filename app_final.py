@@ -15333,25 +15333,34 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     _today_fast = _dt.datetime.now().strftime("%Y-%m-%d")
     _pick_hoy   = _state_fast.get("pick_del_dia") and _state_fast.get("fecha_pick","") == _today_fast
     if not _pick_hoy:
-        # Solo cargamos carteleras si no hay pick del día — se necesitan para buscar
+        # Usar cache del preload global — evita re-fetch si ya se cargó al inicio
         if not matches_fut:
-            matches_fut = st.session_state.get("_ajb_cache_fut") or []
+            matches_fut = (st.session_state.get("_ajb_cache_fut") or
+                           st.session_state.get("_kr_cache_fut") or [])
             if not matches_fut:
                 try: matches_fut = get_cartelera() or []
                 except: matches_fut = []
-            if matches_fut: st.session_state["_ajb_cache_fut"] = matches_fut
+            if matches_fut:
+                st.session_state["_ajb_cache_fut"] = matches_fut
+                st.session_state["_kr_cache_fut"]  = matches_fut
         if not nba_games:
-            nba_games = st.session_state.get("_ajb_cache_nba") or []
+            nba_games = (st.session_state.get("_ajb_cache_nba") or
+                         st.session_state.get("_kr_cache_nba") or [])
             if not nba_games:
                 try: nba_games = get_nba_cartelera() or []
                 except: nba_games = []
-            if nba_games: st.session_state["_ajb_cache_nba"] = nba_games
+            if nba_games:
+                st.session_state["_ajb_cache_nba"] = nba_games
+                st.session_state["_kr_cache_nba"]  = nba_games
         if not ten_matches:
-            ten_matches = st.session_state.get("_ajb_cache_ten") or []
+            ten_matches = (st.session_state.get("_ajb_cache_ten") or
+                           st.session_state.get("_kr_cache_ten") or [])
             if not ten_matches:
                 try: ten_matches = get_tennis_cartelera() or []
                 except: ten_matches = []
-            if ten_matches: st.session_state["_ajb_cache_ten"] = ten_matches
+            if ten_matches:
+                st.session_state["_ajb_cache_ten"] = ten_matches
+                st.session_state["_kr_cache_ten"]  = ten_matches
 
     state   = _papi_load_state()
     history = _papi_load_history()
@@ -15546,17 +15555,37 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
         if st.button("🔍 Buscar Pick del Día", type="primary", use_container_width=True):
             st.session_state["_stay_ajb"] = True
             # Forzar carga fresca de datos para todos los deportes
-            with st.spinner("📡 Cargando partidos de todos los deportes..."):
+            with st.spinner("📡 Cargando partidos..."):
                 try:
+                    import concurrent.futures as _cf_ajb
+                    # Usar cache existente (de preload o visita anterior) o fetch en paralelo
                     if not matches_fut:
-                        _fresh_fut = get_cartelera() or []
-                        if _fresh_fut: matches_fut = _fresh_fut; st.session_state["_ajb_cache_fut"] = _fresh_fut
+                        matches_fut = st.session_state.get("_ajb_cache_fut") or st.session_state.get("_kr_cache_fut") or []
                     if not nba_games:
-                        _fresh_nba = get_nba_cartelera() or []
-                        if _fresh_nba: nba_games = _fresh_nba; st.session_state["_ajb_cache_nba"] = _fresh_nba
+                        nba_games = st.session_state.get("_ajb_cache_nba") or st.session_state.get("_kr_cache_nba") or []
                     if not ten_matches:
-                        _fresh_ten = get_tennis_cartelera() or []
-                        if _fresh_ten: ten_matches = _fresh_ten; st.session_state["_ajb_cache_ten"] = _fresh_ten
+                        ten_matches = st.session_state.get("_ajb_cache_ten") or st.session_state.get("_kr_cache_ten") or []
+                    # Fetch en paralelo solo lo que falte
+                    _need = {}
+                    if not matches_fut: _need["fut"] = None
+                    if not nba_games:   _need["nba"] = None
+                    if not ten_matches: _need["ten"] = None
+                    if _need:
+                        with _cf_ajb.ThreadPoolExecutor(max_workers=3) as _ax:
+                            _fmap = {}
+                            if "fut" in _need: _fmap[_ax.submit(get_cartelera)]       = "fut"
+                            if "nba" in _need: _fmap[_ax.submit(get_nba_cartelera)]   = "nba"
+                            if "ten" in _need: _fmap[_ax.submit(get_tennis_cartelera)] = "ten"
+                            for _f in _cf_ajb.as_completed(_fmap, timeout=12):
+                                _k = _fmap[_f]
+                                try:
+                                    _d = _f.result() or []
+                                    if _k == "fut": matches_fut = _d
+                                    elif _k == "nba": nba_games = _d
+                                    elif _k == "ten": ten_matches = _d
+                                    st.session_state[f"_ajb_cache_{_k}"] = _d
+                                    st.session_state[f"_kr_cache_{_k}"]  = _d
+                                except: pass
                 except: pass
             with st.spinner("🧠 Panel de consenso analizando..."):
                 saved = _papi_pick_del_dia(matches_fut, nba_games, ten_matches)
@@ -16228,9 +16257,11 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     # ══════════════════════════════════════════════════════
     c1, c2, c3 = st.columns([3, 1, 1])
     with c1:
+        _already = st.session_state.get("_king_scanned")
         do_scan = st.button(
-            f"👑 ESCANEAR {_target_label.upper()} — ⚽ Fútbol + 🏀 NBA + 🎾 Tenis",
+            f"{'🔄 RE-ESCANEAR' if _already else '👑 ESCANEAR'} {_target_label.upper()} — ⚽ NBA 🎾",
             use_container_width=True, key="king_scan",
+            type="primary" if not _already else "secondary",
             help=f"King Rongo analiza partidos de {_target_label} y elige EL pick con mayor edge real"
         )
     with c2:
@@ -16267,19 +16298,36 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     st.session_state["_kr_scan_ts"] = _cached_ts
         except: pass
 
-    # AUTO-SCAN: solo si no hay datos válidos en session
+    # AUTO-SCAN: solo en horarios programados (08:00, 14:00, 22:00)
     _auto = _kr_should_auto_scan()
     if _auto and not st.session_state.get("_king_scanned"):
         do_scan = True
-    # Forzar scan si no hay resultado Y no hay cache de hoy
-    if not st.session_state.get("_king_scanned") and not do_scan:
-        do_scan = True
+    # NO forzar scan automático — si no hay datos, mostrar estado "listo para escanear"
+    # El usuario ve el botón y lo presiona cuando quiera
 
     # ══════════════════════════════════════════════════════
     # SCAN + RESULTADOS
     # ══════════════════════════════════════════════════════
     if do_scan:
         st.session_state["_stay_king"] = True
+    # Si no hay datos y el usuario no presionó scan → mostrar estado de espera
+    if not do_scan and not st.session_state.get("_king_scanned"):
+        st.markdown("""
+<div style='background:linear-gradient(145deg,#0d0028,#001208);border:2px solid #FFD70044;
+border-radius:14px;padding:32px 20px;text-align:center;margin:16px 0'>
+  <div style='font-size:3rem;margin-bottom:8px'>👑</div>
+  <div style='font-family:Oswald;font-size:1.4rem;color:#FFD700;letter-spacing:.15em;margin-bottom:8px'>
+    KING RONGO LISTO
+  </div>
+  <div style='color:#5a4a2e;font-size:1.05rem;margin-bottom:20px'>
+    Presiona el botón de arriba para escanear ⚽ Fútbol · 🏀 NBA · 🎾 Tenis<br>
+    y obtener EL pick del día con mayor edge real
+  </div>
+  <div style='color:#3a2a1e;font-size:0.9rem'>
+    Scans automáticos: 08:00 · 14:00 · 22:00 CDMX &nbsp;|&nbsp; próximo: {_next_scan}
+  </div>
+</div>""".format(_next_scan=_next_scan), unsafe_allow_html=True)
+
     if do_scan or st.session_state.get("_king_scanned"):
 
         if do_scan:
@@ -17009,30 +17057,21 @@ matches     = []
 nba_games   = []
 ten_matches = []
 
-# ── PRE-CARGA KR: cargar las 3 carteleras en cache si KR aún no las tiene ──
-# Garantiza que KR funcione independientemente del tab activo
+# ── PRE-CARGA GLOBAL: warm up @st.cache_data en paralelo — no bloquea la UI ──
+# Las 3 funciones tienen @st.cache_data — la primera llamada hace HTTP, las demás son instant
+# Lanzamos en background para que el primer tab que se abra ya encuentre el cache caliente
 _kr_preload_key = "_kr_preload_done"
 if not st.session_state.get(_kr_preload_key):
-    import concurrent.futures as _cf_preload
-    def _preload_fut():
-        try: return get_cartelera()
-        except: return []
-    def _preload_nba():
-        try: return get_nba_cartelera()
-        except: return []
-    def _preload_ten():
-        try: return get_tennis_cartelera()
-        except: return []
-    with _cf_preload.ThreadPoolExecutor(max_workers=3) as _px:
-        _pf = _px.submit(_preload_fut)
-        _pn = _px.submit(_preload_nba)
-        _pt = _px.submit(_preload_ten)
-        try: st.session_state["_kr_cache_fut"] = st.session_state.get("_kr_cache_fut") or _pf.result(timeout=12) or []
+    import threading as _thr
+    def _warm_caches():
+        try: get_cartelera()
         except: pass
-        try: st.session_state["_kr_cache_nba"] = st.session_state.get("_kr_cache_nba") or _pn.result(timeout=12) or []
+        try: get_nba_cartelera()
         except: pass
-        try: st.session_state["_kr_cache_ten"] = st.session_state.get("_kr_cache_ten") or _pt.result(timeout=12) or []
+        try: get_tennis_cartelera()
         except: pass
+    _t = _thr.Thread(target=_warm_caches, daemon=True)
+    _t.start()
     st.session_state[_kr_preload_key] = True
 
 # ── AUTO-SYNC resultados — cada 10 min + detección por hora ──
@@ -17824,22 +17863,29 @@ if st.session_state["view"] == "cartelera":
             render_papi_ajb(matches_fut=matches, nba_games=nba_games, ten_matches=ten_matches)
 
         with tab_king:
-            # KR siempre necesita los 3 deportes — cargar lo que falte
-            _kr_fut = matches if matches else st.session_state.get("_kr_cache_fut") or []
-            _kr_nba = nba_games if nba_games else st.session_state.get("_kr_cache_nba") or []
-            _kr_ten = st.session_state.get("_kr_cache_ten") or []
-            if not _kr_ten:
-                try: _kr_ten = get_tennis_cartelera()
-                except: _kr_ten = []
-            if not _kr_nba:
-                try: _kr_nba = get_nba_cartelera()
-                except: _kr_nba = []
-            if not _kr_fut:
-                try: _kr_fut = get_cartelera()
-                except: _kr_fut = []
-            st.session_state["_kr_cache_fut"] = _kr_fut
-            st.session_state["_kr_cache_nba"] = _kr_nba
-            st.session_state["_kr_cache_ten"] = _kr_ten
+            # KR data: usa preload global — fallback _ajb_cache_ — fetch paralelo si nada
+            _kr_fut = (st.session_state.get("_kr_cache_fut") or
+                       st.session_state.get("_ajb_cache_fut") or [])
+            _kr_nba = (st.session_state.get("_kr_cache_nba") or
+                       st.session_state.get("_ajb_cache_nba") or [])
+            _kr_ten = (st.session_state.get("_kr_cache_ten") or
+                       st.session_state.get("_ajb_cache_ten") or [])
+            # Fetch en paralelo solo lo que falte
+            if not _kr_fut or not _kr_nba or not _kr_ten:
+                import concurrent.futures as _cf_kr_tab
+                with _cf_kr_tab.ThreadPoolExecutor(max_workers=3) as _kx:
+                    _kf = _kx.submit(get_cartelera)       if not _kr_fut else None
+                    _kn = _kx.submit(get_nba_cartelera)   if not _kr_nba else None
+                    _kt = _kx.submit(get_tennis_cartelera) if not _kr_ten else None
+                    try:
+                        if _kf: _kr_fut = _kf.result(timeout=10) or []
+                        if _kn: _kr_nba = _kn.result(timeout=10) or []
+                        if _kt: _kr_ten = _kt.result(timeout=10) or []
+                    except: pass
+            # Guardar en ambos namespaces
+            if _kr_fut: st.session_state["_kr_cache_fut"] = st.session_state["_ajb_cache_fut"] = _kr_fut
+            if _kr_nba: st.session_state["_kr_cache_nba"] = st.session_state["_ajb_cache_nba"] = _kr_nba
+            if _kr_ten: st.session_state["_kr_cache_ten"] = st.session_state["_ajb_cache_ten"] = _kr_ten
             render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
     # ─── TENIS ───────────────────────────────────────────
@@ -18064,18 +18110,29 @@ if st.session_state["view"] == "cartelera":
             render_papi_ajb(matches_fut=_ajb_fut, nba_games=_ajb_nba, ten_matches=ten_matches)
 
         with tab_king:
-            _kr_fut = st.session_state.get("_kr_cache_fut") or []
-            _kr_nba = st.session_state.get("_kr_cache_nba") or []
-            _kr_ten = ten_matches if ten_matches else st.session_state.get("_kr_cache_ten") or []
-            if not _kr_fut:
-                try: _kr_fut = get_cartelera()
-                except: _kr_fut = []
-            if not _kr_nba:
-                try: _kr_nba = get_nba_cartelera()
-                except: _kr_nba = []
-            st.session_state["_kr_cache_fut"] = _kr_fut
-            st.session_state["_kr_cache_nba"] = _kr_nba
-            st.session_state["_kr_cache_ten"] = _kr_ten
+            # KR data: usa preload global — fallback _ajb_cache_ — fetch paralelo si nada
+            _kr_fut = (st.session_state.get("_kr_cache_fut") or
+                       st.session_state.get("_ajb_cache_fut") or [])
+            _kr_nba = (st.session_state.get("_kr_cache_nba") or
+                       st.session_state.get("_ajb_cache_nba") or [])
+            _kr_ten = (st.session_state.get("_kr_cache_ten") or
+                       st.session_state.get("_ajb_cache_ten") or [])
+            # Fetch en paralelo solo lo que falte
+            if not _kr_fut or not _kr_nba or not _kr_ten:
+                import concurrent.futures as _cf_kr_tab
+                with _cf_kr_tab.ThreadPoolExecutor(max_workers=3) as _kx:
+                    _kf = _kx.submit(get_cartelera)       if not _kr_fut else None
+                    _kn = _kx.submit(get_nba_cartelera)   if not _kr_nba else None
+                    _kt = _kx.submit(get_tennis_cartelera) if not _kr_ten else None
+                    try:
+                        if _kf: _kr_fut = _kf.result(timeout=10) or []
+                        if _kn: _kr_nba = _kn.result(timeout=10) or []
+                        if _kt: _kr_ten = _kt.result(timeout=10) or []
+                    except: pass
+            # Guardar en ambos namespaces
+            if _kr_fut: st.session_state["_kr_cache_fut"] = st.session_state["_ajb_cache_fut"] = _kr_fut
+            if _kr_nba: st.session_state["_kr_cache_nba"] = st.session_state["_ajb_cache_nba"] = _kr_nba
+            if _kr_ten: st.session_state["_kr_cache_ten"] = st.session_state["_ajb_cache_ten"] = _kr_ten
             render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
     # ─── FÚTBOL ──────────────────────────────────────────
@@ -18571,21 +18628,29 @@ if st.session_state["view"] == "cartelera":
             render_papi_ajb(matches_fut=_ajb_fut, nba_games=nba_games, ten_matches=ten_matches)
 
         with tab_king:
-            _kr_fut = matches if matches else st.session_state.get("_kr_cache_fut") or []
-            _kr_nba = st.session_state.get("_kr_cache_nba") or []
-            _kr_ten = st.session_state.get("_kr_cache_ten") or []
-            if not _kr_nba:
-                try: _kr_nba = get_nba_cartelera()
-                except: _kr_nba = []
-            if not _kr_ten:
-                try: _kr_ten = get_tennis_cartelera()
-                except: _kr_ten = []
-            if not _kr_fut:
-                try: _kr_fut = get_cartelera()
-                except: _kr_fut = []
-            st.session_state["_kr_cache_fut"] = _kr_fut
-            st.session_state["_kr_cache_nba"] = _kr_nba
-            st.session_state["_kr_cache_ten"] = _kr_ten
+            # KR data: usa preload global — fallback _ajb_cache_ — fetch paralelo si nada
+            _kr_fut = (st.session_state.get("_kr_cache_fut") or
+                       st.session_state.get("_ajb_cache_fut") or [])
+            _kr_nba = (st.session_state.get("_kr_cache_nba") or
+                       st.session_state.get("_ajb_cache_nba") or [])
+            _kr_ten = (st.session_state.get("_kr_cache_ten") or
+                       st.session_state.get("_ajb_cache_ten") or [])
+            # Fetch en paralelo solo lo que falte
+            if not _kr_fut or not _kr_nba or not _kr_ten:
+                import concurrent.futures as _cf_kr_tab
+                with _cf_kr_tab.ThreadPoolExecutor(max_workers=3) as _kx:
+                    _kf = _kx.submit(get_cartelera)       if not _kr_fut else None
+                    _kn = _kx.submit(get_nba_cartelera)   if not _kr_nba else None
+                    _kt = _kx.submit(get_tennis_cartelera) if not _kr_ten else None
+                    try:
+                        if _kf: _kr_fut = _kf.result(timeout=10) or []
+                        if _kn: _kr_nba = _kn.result(timeout=10) or []
+                        if _kt: _kr_ten = _kt.result(timeout=10) or []
+                    except: pass
+            # Guardar en ambos namespaces
+            if _kr_fut: st.session_state["_kr_cache_fut"] = st.session_state["_ajb_cache_fut"] = _kr_fut
+            if _kr_nba: st.session_state["_kr_cache_nba"] = st.session_state["_ajb_cache_nba"] = _kr_nba
+            if _kr_ten: st.session_state["_kr_cache_ten"] = st.session_state["_ajb_cache_ten"] = _kr_ten
             render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
 else:
