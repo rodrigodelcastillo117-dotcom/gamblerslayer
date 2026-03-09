@@ -589,7 +589,7 @@ def eg(url, params=None):
     import time as _time
     cache_key = url + str(sorted(params.items()) if params else "")
     cached = _eg_cache.get(cache_key)
-    if cached and (_time.time() - cached[1]) < 120:  # 2 min TTL en memoria
+    if cached and (_time.time() - cached[1]) < 300:  # 5 min TTL en memoria
         return cached[0]
     try:
         r = requests.get(url, headers=H, params=params, timeout=12)
@@ -7864,7 +7864,7 @@ def _badrino_minutes_to_kickoff(hora_str):
         return 999
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def badrino_web_search(sport, home, away, league_name, hora_partido="",
                         rank1=0, rank2=0, ou_line=0, hxg=0, axg=0,
                         model_ph=0.33, model_pd=0.25, model_pa=0.33):
@@ -10945,6 +10945,7 @@ def _sort_cartelera(matches, hoy_str, hora_now):
     matches.sort(key=_key)
     return matches
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_nba_cartelera():
     now = datetime.now(CDMX)
     dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(0,5)]
@@ -12885,7 +12886,7 @@ def _kr_monte_carlo_god(hxg,axg,h_mom=0.0,a_mom=0.0,n=10000):
     return {"ph":round(wh/n,4),"pa":round(wa/n,4),"pd":round(wd/n,4),
             "o25":round(o25/n,4),"o35":round(o35/n,4),"btts":round(btts/n,4)}
 
-@st.cache_data(ttl=600,show_spinner=False)
+@st.cache_data(ttl=3600,show_spinner=False)
 def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
     if not ANTHROPIC_API_KEY or not top5_t:
         return {"idx":0,"razon":"","confianza":0.5,"alerta":None}
@@ -15226,25 +15227,30 @@ def render_papi_ajb(matches_fut=None,nba_games=None,ten_matches=None):
     """
     import datetime as _dt
     import json as _json
-    # Cargar datos frescos si no se pasaron — AJB siempre tiene sus propios datos
-    if not matches_fut:
-        matches_fut = st.session_state.get("_ajb_cache_fut") or []
+    # Cargar datos — solo si no hay pick guardado para hoy (evita fetch en cada render)
+    _state_fast = _papi_load_state()
+    _today_fast = _dt.datetime.now().strftime("%Y-%m-%d")
+    _pick_hoy   = _state_fast.get("pick_del_dia") and _state_fast.get("fecha_pick","") == _today_fast
+    if not _pick_hoy:
+        # Solo cargamos carteleras si no hay pick del día — se necesitan para buscar
         if not matches_fut:
-            try: matches_fut = get_cartelera() or []
-            except: matches_fut = []
-        if matches_fut: st.session_state["_ajb_cache_fut"] = matches_fut
-    if not nba_games:
-        nba_games = st.session_state.get("_ajb_cache_nba") or []
+            matches_fut = st.session_state.get("_ajb_cache_fut") or []
+            if not matches_fut:
+                try: matches_fut = get_cartelera() or []
+                except: matches_fut = []
+            if matches_fut: st.session_state["_ajb_cache_fut"] = matches_fut
         if not nba_games:
-            try: nba_games = get_nba_cartelera() or []
-            except: nba_games = []
-        if nba_games: st.session_state["_ajb_cache_nba"] = nba_games
-    if not ten_matches:
-        ten_matches = st.session_state.get("_ajb_cache_ten") or []
+            nba_games = st.session_state.get("_ajb_cache_nba") or []
+            if not nba_games:
+                try: nba_games = get_nba_cartelera() or []
+                except: nba_games = []
+            if nba_games: st.session_state["_ajb_cache_nba"] = nba_games
         if not ten_matches:
-            try: ten_matches = get_tennis_cartelera() or []
-            except: ten_matches = []
-        if ten_matches: st.session_state["_ajb_cache_ten"] = ten_matches
+            ten_matches = st.session_state.get("_ajb_cache_ten") or []
+            if not ten_matches:
+                try: ten_matches = get_tennis_cartelera() or []
+                except: ten_matches = []
+            if ten_matches: st.session_state["_ajb_cache_ten"] = ten_matches
 
     state   = _papi_load_state()
     history = _papi_load_history()
@@ -16157,7 +16163,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
         st.session_state.get("_kr_scan_ts", "2000-01-01T00:00:00")
         .replace("Z","")
     )).total_seconds() if st.session_state.get("_kr_scan_ts") else 99999
-    if not st.session_state.get("_king_scanned") and not do_scan and _kr_cache_age > 1800:
+    if not st.session_state.get("_king_scanned") and not do_scan and _kr_cache_age > 3600:
         do_scan = True
 
     # ══════════════════════════════════════════════════════
