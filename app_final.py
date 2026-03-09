@@ -18425,6 +18425,7 @@ if st.session_state["view"] == "cartelera":
                                                         st.rerun()
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
+            trilay_picks = []
             if st.session_state.get("_trilay_loaded") or st.button("🎰 Calcular TRILAY", key="load_trilay_fut", type="primary"):
                 st.session_state["_trilay_loaded"] = True
                 with st.spinner("Calculando TRILAY..."):
