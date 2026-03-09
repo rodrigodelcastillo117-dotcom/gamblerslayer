@@ -17076,11 +17076,12 @@ if not st.session_state.get(_kr_preload_key):
 _auto_sync_key = "last_auto_sync"
 _now_ts2 = datetime.now(CDMX).timestamp()
 if _now_ts2 - st.session_state.get(_auto_sync_key, 0) > 600:  # cada 10 min
-    try:
-        update_results_db(force=False)
-        st.session_state["results_db"] = _load_results_db()
-    except: pass
-    st.session_state[_auto_sync_key] = _now_ts2
+    st.session_state[_auto_sync_key] = _now_ts2  # marcar ya — evita doble-fire
+    def _bg_sync2():
+        try: update_results_db(force=False)
+        except: pass
+    import threading as _thr3
+    _thr3.Thread(target=_bg_sync2, daemon=True).start()
 
 if deporte == "futbol":
     with st.spinner("Cargando cartelera..."):
@@ -17454,27 +17455,26 @@ def _live_ctx_str(match, live_stats):
 @st.fragment(run_every=300)  # cada 5 minutos
 def _auto_results_updater():
     """
-    Actualiza resultados automáticamente en background.
-    - Llama update_results_db() si han pasado >15 min desde la última vez
+    Actualiza resultados automáticamente en background thread.
+    - Los fetches HTTP van en un thread separado — nunca bloquean el script runner
     - Muestra un mini-indicador discreto con la hora de última sync
-    - NO fuerza rerun de toda la app — solo actualiza el fragment
     """
     _now_au = datetime.now(CDMX)
     _last_au = st.session_state.get("_auto_update_last", 0)
     _now_ts_au = _now_au.timestamp()
 
-    # Actualizar si han pasado 15 min (900s) — más frecuente que el throttle de 60min del servidor
+    # Lanzar update en background si han pasado 15 min
     if _now_ts_au - _last_au > 900:
-        try:
-            updated = update_results_db(force=False)
-            if updated:
-                st.session_state["results_db"] = _load_results_db()
-                st.session_state["results_last_check"] = _now_ts_au
-            st.session_state["_auto_update_last"] = _now_ts_au
-            st.session_state["_auto_update_time"] = _now_au.strftime("%H:%M")
-            st.session_state["_auto_update_ok"] = True
-        except Exception as _e:
-            st.session_state["_auto_update_ok"] = False
+        st.session_state["_auto_update_last"] = _now_ts_au  # marcar YA para evitar doble-fire
+        def _bg_update():
+            try:
+                update_results_db(force=False)
+            except:
+                pass
+        import threading as _thr2
+        _thr2.Thread(target=_bg_update, daemon=True).start()
+        st.session_state["_auto_update_time"] = _now_au.strftime("%H:%M")
+        st.session_state["_auto_update_ok"] = True
 
     # Indicador discreto — solo visible, no interactivo
     _t = st.session_state.get("_auto_update_time", "—")
