@@ -947,6 +947,123 @@ def _apifootball_injuries(team_name: str, slug: str) -> list:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
+def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
+    """
+    Fetches fixtures from API-Football for leagues ESPN doesn't cover (Saudi, UAE, etc).
+    Returns matches in the same format as get_cartelera().
+    Uses API-Football /fixtures endpoint — 100 req/day free tier.
+    """
+    if not API_FOOTBALL_KEY:
+        return []
+    try:
+        now   = datetime.now(CDMX)
+        hoy   = now.strftime("%Y-%m-%d")
+        # Fetch next 5 days
+        _from = hoy
+        _to   = (now + timedelta(days=4)).strftime("%Y-%m-%d")
+        r = requests.get(
+            f"{API_FOOTBALL}/fixtures",
+            headers={"x-apisports-key": API_FOOTBALL_KEY},
+            params={
+                "league":  league_id,
+                "season":  now.year,  # current season
+                "from":    _from,
+                "to":      _to,
+                "timezone": "America/Mexico_City",
+            },
+            timeout=10
+        )
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        fixtures = data.get("response", [])
+        matches = []
+        seen = set()
+        for fix in fixtures:
+            try:
+                fid      = str(fix["fixture"]["id"])
+                if fid in seen: continue
+                seen.add(fid)
+                status   = fix["fixture"]["status"]["short"]  # NS, 1H, HT, 2H, FT, etc
+                # Map API-Football status to ESPN state
+                if status in ("NS", "TBD"):
+                    state = "pre"
+                elif status in ("1H", "HT", "2H", "ET", "BT", "P", "LIVE"):
+                    state = "in"
+                elif status in ("FT", "AET", "PEN", "SUSP", "INT", "PST", "CANC", "ABD", "AWD", "WO"):
+                    state = "post"
+                else:
+                    state = "pre"
+                # Date/time (already in CDMX timezone from API)
+                _dt_str  = fix["fixture"]["date"]  # ISO format
+                try:
+                    _utc = datetime.strptime(_dt_str[:19], "%Y-%m-%dT%H:%M:%S")
+                    _utc = datetime.strptime(_dt_str[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.UTC)
+
+
+
+
+
+                    hora   = _local.strftime("%H:%M")
+                    fecha  = _local.strftime("%Y-%m-%d")
+                except:
+                    hora  = "00:00"
+                    fecha = hoy
+                if fecha < hoy: continue
+                if fecha > (now + timedelta(days=4)).strftime("%Y-%m-%d"): continue
+                home_t = fix["teams"]["home"]
+                away_t = fix["teams"]["away"]
+                home   = home_t.get("name", "?")
+                away   = away_t.get("name", "?")
+                # Use API-Football team IDs prefixed with "apif_" to avoid collision with ESPN IDs
+                home_id = f"apif_{home_t['id']}"
+                away_id = f"apif_{away_t['id']}"
+                # Scores
+                score_h = fix["goals"]["home"] if fix["goals"]["home"] is not None else -1
+                score_a = fix["goals"]["away"] if fix["goals"]["away"] is not None else -1
+                # Odds (if available in fixture — usually not in free tier, use 0)
+                odd_h = odd_a = odd_d = 0.0
+                minute = 0
+                if state == "in":
+                    minute = fix["fixture"].get("status", {}).get("elapsed", 0) or 0
+                matches.append({
+                    "id":       fid,
+                    "home":     home,
+                    "away":     away,
+                    "home_id":  home_id,
+                    "away_id":  away_id,
+                    "home_rec": "0-0-0",
+                    "away_rec": "0-0-0",
+                    "league":   league_name,
+                    "slug":     slug,
+                    "hora":     hora,
+                    "fecha":    fecha,
+                    "state":    state,
+                    "odd_h":    odd_h,
+                    "odd_a":    odd_a,
+                    "odd_d":    odd_d,
+                    "score_h":  score_h,
+                    "score_a":  score_a,
+                    "minute":   minute,
+                    "_source":  "api-football",
+                })
+            except Exception as _e:
+                continue
+        return matches
+    except Exception as _ex:
+        return []
+
+# Ligas que ESPN no cubre — fuente API-Football
+_APIF_FALLBACK_SLUGS = {
+    "sau.1": {"id": 307, "name": "Saudi Pro League 🇸🇦"},
+    "uae.1": {"id": 188, "name": "UAE Pro League 🇦🇪"},
+    "egy.1": {"id": 233, "name": "Egyptian Premier League 🇪🇬"},
+    "jpn.1": {"id": 98,  "name": "J1 League 🇯🇵"},
+    "kor.1": {"id": 292, "name": "K League 1 🇰🇷"},
+}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
 def get_cartelera():
     now   = datetime.now(CDMX)
     # Pedimos hoy + 5 días en UTC para no perder partidos por diferencia horaria
@@ -954,9 +1071,27 @@ def get_cartelera():
     hoy   = now.strftime("%Y-%m-%d")  # desde hoy CDMX
     matches, seen = [], set()
     _parse_errs = []
+    # Algunos slugs tienen aliases en ESPN
+    _ESPN_SLUG_ALIASES = {
+        "sau.1":  ["sau.1", "sau.roshn"],
+        "den.1":  ["den.1", "den.superliga"],
+        "nor.1":  ["nor.1", "nor.eliteserien"],
+        "gre.1":  ["gre.1", "gre.superleague"],
+        "egy.1":  ["egy.1"],
+        "jpn.1":  ["jpn.1", "jpn.j1"],
+        "kor.1":  ["kor.1", "kor.kleague1"],
+    }
     for slug in LIGAS:
+        _slug_variants = _ESPN_SLUG_ALIASES.get(slug, [slug])
+        # Try each slug variant — use first that returns events
+        _active_sv = _slug_variants[0]
+        for _sv in _slug_variants:
+            _test = eg(f"{ESPN}/{_sv}/scoreboard", {"dates": dates[0], "limit": 5})
+            if _test.get("events"):
+                _active_sv = _sv
+                break
         for ds in dates:
-            data = eg(f"{ESPN}/{slug}/scoreboard", {"dates": ds, "limit": 100})
+            data = eg(f"{ESPN}/{_active_sv}/scoreboard", {"dates": ds, "limit": 100})
             for ev in data.get("events", []):
                 eid = ev.get("id", "")
                 if eid in seen: continue
@@ -1105,15 +1240,87 @@ def get_cartelera():
                             _m["odd_d"] = round(sum(_prices_d)/len(_prices_d), 2) if _prices_d else 3.4
                             _m["odd_a"] = round(sum(_prices_a)/len(_prices_a), 2)
                         break
+    # ── API-Football fallback: ligas que ESPN no cubre ──
+    if API_FOOTBALL_KEY:
+        _espn_slugs_found = {m["slug"] for m in matches}
+        for _af_slug, _af_info in _APIF_FALLBACK_SLUGS.items():
+            # Solo fetch si ESPN no retornó partidos para este slug
+            if _af_slug not in _espn_slugs_found:
+                _af_matches = _apifootball_cartelera(
+                    _af_slug, _af_info["id"], _af_info["name"]
+                )
+                for _afm in _af_matches:
+                    if _afm["id"] not in seen:
+                        seen.add(_afm["id"])
+                        matches.append(_afm)
+
     return matches
+
+@st.cache_data(ttl=3600, show_spinner=False)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_form_apifootball(team_id: str, slug: str) -> list:
+    """Form (últimos 10 partidos) para equipos de API-Football."""
+    if not API_FOOTBALL_KEY:
+        return []
+    try:
+        _real_id = str(team_id).replace("apif_", "")
+        league_id = _APIF_FALLBACK_SLUGS.get(slug, {}).get("id", 0)
+        if not league_id:
+            return []
+        now = datetime.now(CDMX)
+        r = requests.get(
+            f"{API_FOOTBALL}/fixtures",
+            headers={"x-apisports-key": API_FOOTBALL_KEY},
+            params={
+                "team":   _real_id,
+                "league": league_id,
+                "season": now.year,
+                "last":   10,
+                "status": "FT",
+            },
+            timeout=10
+        )
+        if r.status_code != 200:
+            return []
+        form = []
+        for fix in r.json().get("response", []):
+            try:
+                teams  = fix["teams"]
+                goals  = fix["goals"]
+                is_home = teams["home"]["id"] == int(_real_id)
+                pts_for  = goals["home"] if is_home else goals["away"]
+                pts_ag   = goals["away"] if is_home else goals["home"]
+                won = pts_for > pts_ag; lost = pts_for < pts_ag
+                form.append({
+                    "pts_for":  pts_for or 0,
+                    "pts_ag":   pts_ag  or 0,
+                    "won":      won,
+                    "lost":     lost,
+                    "draw":     not won and not lost,
+                    "is_home":  is_home,
+                    "goals_for":   pts_for or 0,
+                    "goals_ag":    pts_ag  or 0,
+                    "xg_for":   0,
+                    "xg_ag":    0,
+                })
+            except:
+                continue
+        return form
+    except:
+        return []
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_form(team_id, slug):
     """
     Últimos 15 partidos desde ESPN schedule.
+    Para equipos de API-Football (IDs apif_XXXX), usa API-Football /fixtures.
     Incluye shooting stats si disponibles (para xG real).
     """
     team_id = str(team_id)
+    # ── API-Football teams (Saudi, UAE, etc) ──
+    if str(team_id).startswith("apif_"):
+        return _get_form_apifootball(team_id, slug)
     data    = eg(f"{ESPN}/{slug}/teams/{team_id}/schedule")
     events  = data.get("events", [])
     matches = []
@@ -11312,8 +11519,8 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
 
     # Monte Carlo 50k con sigma por equipo
     rng    = np.random.default_rng(seed=None)
-    h_sims = rng.normal(h_proj, h_sigma, 20_000)
-    a_sims = rng.normal(a_proj, a_sigma, 20_000)
+    h_sims = rng.normal(h_proj, h_sigma, 10_000)
+    a_sims = rng.normal(a_proj, a_sigma, 10_000)
     tots   = h_sims + a_sims
 
     p_over  = float((tots > line).mean())
