@@ -6162,6 +6162,12 @@ _DIVISION_SLUGS = {
     "hnd.1": ("Liga Honduras",       0.48, 1.05),
     "slv.1": ("Primera El Salvador", 0.46, 1.05),
     "pan.1": ("Liga Panameña",       0.45, 1.05),
+    # ── Asia / Medio Oriente ──
+    "sau.1": ("Saudi Pro League",    0.78, 1.32),
+    "uae.1": ("UAE Pro League",      0.65, 1.22),
+    "egy.1": ("Egyptian Premier",    0.62, 1.20),
+    "jpn.1": ("J1 League",           0.72, 1.28),
+    "kor.1": ("K League 1",          0.68, 1.24),
     # CONCACAF directa
     "concacaf.champions": ("CONCACAF Champions Cup", None, None),
     "concacaf.league":    ("CONCACAF League",        None, None),
@@ -6517,6 +6523,37 @@ _LEAGUE_HISTORICAL: dict = {
         "under_value": True,
         "delta": +0.018,
         "flag": "🌎",
+    },
+    # ── ASIA / MEDIO ORIENTE ──
+    "sau.1": {
+        "o25_old": 0.518, "o25_rate": 0.548, "avg_goals": 2.79,
+        "trend": "⬆️ Subiendo +3.0%",
+        "perfil": "Saudi Pro League — nivel elevado por Ronaldo/Benzema era. Más goles desde 2023, defensas con alta varianza.",
+        "under_value": False, "delta": +0.030, "flag": "🇸🇦",
+    },
+    "uae.1": {
+        "o25_old": 0.490, "o25_rate": 0.515, "avg_goals": 2.62,
+        "trend": "⚖️ Estable +2.5%",
+        "perfil": "UAE Pro League — liga competitiva del Golfo, defensas organizadas.",
+        "under_value": False, "delta": +0.025, "flag": "🇦🇪",
+    },
+    "egy.1": {
+        "o25_old": 0.470, "o25_rate": 0.490, "avg_goals": 2.52,
+        "trend": "⚖️ Estable +2.0%",
+        "perfil": "Egyptian Premier League — ritmo intenso, partidos físicos. Tendencia al Under.",
+        "under_value": True, "delta": +0.020, "flag": "🇪🇬",
+    },
+    "jpn.1": {
+        "o25_old": 0.540, "o25_rate": 0.562, "avg_goals": 2.83,
+        "trend": "⬆️ Subiendo +2.2%",
+        "perfil": "J1 League — fútbol técnico japonés, ritmo alto, goles distribuidos.",
+        "under_value": False, "delta": +0.022, "flag": "🇯🇵",
+    },
+    "kor.1": {
+        "o25_old": 0.525, "o25_rate": 0.545, "avg_goals": 2.75,
+        "trend": "⚖️ Estable +2.0%",
+        "perfil": "K League 1 — competitivo, juego directo. Similar J1 pero más físico.",
+        "under_value": False, "delta": +0.020, "flag": "🇰🇷",
     },
 }
 
@@ -6887,6 +6924,12 @@ def _cup_get_form_in_league(team_id: str, team_name: str) -> dict:
         "hnd": 0.480,  # Honduras
         "slv": 0.460,  # El Salvador
         "pan": 0.450,  # Panamá
+        # ── Medio Oriente ──
+        "sau": 0.780,  # Saudi Pro League
+        "uae": 0.640,  # UAE Pro League
+        "egy": 0.620,  # Egyptian Premier League
+        "jpn": 0.720,  # J1 League
+        "kor": 0.680,  # K League 1
     }
     _country = (div_slug or "")[:3]  # "eng", "esp", "ger"...
     _league_coef = _LEAGUE_COEF.get(_country, 0.780)  # desconocido → penalizar
@@ -7354,7 +7397,7 @@ def _star_nba_adjustment(team_name, injuries_list=None):
     return round(delta_pts, 2), round(delta_spread, 2), detected
 
 
-def mc50k(hxg, axg, N=50_000):
+def mc50k(hxg, axg, N=20_000):
     rng = np.random.default_rng(42)
     hg  = rng.poisson(max(0.3, hxg), N)
     ag  = rng.poisson(max(0.3, axg), N)
@@ -12840,7 +12883,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
 
     # ── ⚽ FÚTBOL ─────────────────────────────────────────────────────────
     try:
-        for m in (matches_fut or [])[:40]:
+        for m in (matches_fut or [])[:20]:
             # KR: solo partidos desde ahora (no pasados)
             _kr_state = m.get('state','pre')
             if _kr_state == 'post': continue
@@ -14613,7 +14656,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
     import math as _pm
 
     # ── Fútbol ──────────────────────────────────────────────────────────
-    for m in (matches_fut or [])[:40]:
+    for m in (matches_fut or [])[:20]:
         if m.get("state","pre") not in ("pre","in"): continue  # incluir en vivo
         try:
             # get_form con fallback — nunca salta el partido por error de red
@@ -14639,7 +14682,7 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
             except: pass
             # ── Papi: variables extendidas desde mc ──
             try:
-                mc_p = mc if "h_o05" in mc else mc50k(hxg if "hxg" in dir() else 1.2, axg if "axg" in dir() else 1.0)
+                mc_p = mc if isinstance(mc, dict) else {}
             except:
                 mc_p = {}
             _hn_p = m.get("home","?")[:14]; _an_p = m.get("away","?")[:14]
@@ -15698,8 +15741,13 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     _auto = _kr_should_auto_scan()
     if _auto and not st.session_state.get("_king_scanned"):
         do_scan = True
-    # Si no hay cache y el usuario no presionó el botón, forzar scan
-    if not st.session_state.get("_king_scanned") and not do_scan:
+    # Solo forzar scan si no hay resultado en cache (primera visita del día)
+    # Evitar re-escanear en cada rerun/navegación
+    _kr_cache_age = (datetime.now(CDMX) - datetime.fromisoformat(
+        st.session_state.get("_kr_scan_ts", "2000-01-01T00:00:00")
+        .replace("Z","")
+    )).total_seconds() if st.session_state.get("_kr_scan_ts") else 99999
+    if not st.session_state.get("_king_scanned") and not do_scan and _kr_cache_age > 1800:
         do_scan = True
 
     # ══════════════════════════════════════════════════════
@@ -15781,6 +15829,7 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     )
                     _ts_now = datetime.now(CDMX).strftime("%H:%M")
                     _ts_full = datetime.now(CDMX).strftime("%Y-%m-%d %H:%M")
+                    st.session_state["_kr_scan_ts"] = datetime.now(CDMX).isoformat()
 
                     # Si no hay candidatos — construir picks directamente de cartelera
                     if not todos:
@@ -17422,7 +17471,7 @@ if st.session_state["view"] == "cartelera":
                 # Todo A→Z dentro de cada nivel
                 from collections import defaultdict as _dd
                 fut_por_fecha = _dd(lambda: _dd(lambda: _dd(lambda: _dd(list))))
-                _FLAGS_STRIP = ["🇪🇸","🇩🇪","🇮🇹","🇫🇷","🇳🇱","🇵🇹","🇲🇽","🇺🇸","🇧🇷","🇦🇷","🇨🇴","🇨🇱","🇸🇦","🇹🇷","🇬🇷","🇩🇰","🇳🇴","🇧🇪","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🏴󠁧󠁢󠁳󠁣󠁴󠁿","🏆"]
+                _FLAGS_STRIP = ["🇪🇸","🇩🇪","🇮🇹","🇫🇷","🇳🇱","🇵🇹","🇲🇽","🇺🇸","🇧🇷","🇦🇷","🇨🇴","🇨🇱","🇸🇦","🇹🇷","🇦🇪","🇪🇬","🇯🇵","🇰🇷","🇬🇷","🇩🇰","🇳🇴","🇧🇪","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🏴󠁧󠁢󠁳󠁣󠁴󠁿","🏆"]
                 for _m in matches:
                     _slug = _m.get("slug", _m.get("league",""))
                     _pais, _bandera, _cont = _country_for_liga(_slug or _m.get("league",""))
