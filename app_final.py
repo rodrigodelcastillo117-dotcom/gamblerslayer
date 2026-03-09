@@ -986,7 +986,7 @@ def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
     try:
         now    = datetime.now(CDMX)
         hoy    = now.strftime("%Y-%m-%d")
-        _to    = (now + timedelta(days=4)).strftime("%Y-%m-%d")
+        _to    = (now + timedelta(days=2)).strftime("%Y-%m-%d")
         season = _APIF_SEASON_MAP.get(league_id, now.year)
         r = requests.get(
             f"{API_FOOTBALL}/fixtures",
@@ -1051,7 +1051,7 @@ def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
 def get_cartelera():
     now   = datetime.now(CDMX)
     # Pedimos hoy + 5 días en UTC para no perder partidos por diferencia horaria
-    dates = [(now + timedelta(days=i)).strftime("%Y%m%d") for i in range(0, 6)]
+    dates = [(now + timedelta(days=i)).strftime("%Y%m%d") for i in range(0, 3)]
     hoy   = now.strftime("%Y-%m-%d")  # desde hoy CDMX
     matches, seen = [], set()
     _parse_errs = []
@@ -1065,18 +1065,37 @@ def get_cartelera():
         "jpn.1":  ["jpn.1", "jpn.j1"],
         "kor.1":  ["kor.1", "kor.kleague1"],
     }
+    # Build all (slug, date) fetch tasks — run in parallel
+    import concurrent.futures as _cf_cart
+    _slug_date_tasks = []
     for slug in LIGAS:
         _slug_variants = _ESPN_SLUG_ALIASES.get(slug, [slug])
-        # Try each slug variant — use first that returns events
-        _active_sv = _slug_variants[0]
-        for _sv in _slug_variants:
-            _test = eg(f"{ESPN}/{_sv}/scoreboard", {"dates": dates[0], "limit": 5})
-            if _test.get("events"):
-                _active_sv = _sv
-                break
         for ds in dates:
-            data = eg(f"{ESPN}/{_active_sv}/scoreboard", {"dates": ds, "limit": 100})
-            for ev in data.get("events", []):
+            _slug_date_tasks.append((slug, _slug_variants, ds))
+
+    def _fetch_slug_date(task):
+        slug, slug_variants, ds = task
+        active_sv = slug_variants[0]
+        # Try first variant that returns data on first date — use cached result
+        for _sv in slug_variants:
+            _t = eg(f"{ESPN}/{_sv}/scoreboard", {"dates": dates[0], "limit": 5})
+            if _t.get("events"):
+                active_sv = _sv
+                break
+        data = eg(f"{ESPN}/{active_sv}/scoreboard", {"dates": ds, "limit": 100})
+        return slug, data
+
+    _all_results = []
+    try:
+        with _cf_cart.ThreadPoolExecutor(max_workers=20) as _cx:
+            _fmap2 = {_cx.submit(_fetch_slug_date, t): t for t in _slug_date_tasks}
+            for _fk in _cf_cart.as_completed(_fmap2, timeout=20):
+                try: _all_results.append(_fk.result())
+                except: pass
+    except: pass
+
+    for slug, data in _all_results:
+        for ev in data.get("events", []):
                 eid = ev.get("id", "")
                 if eid in seen: continue
                 seen.add(eid)
@@ -1092,7 +1111,7 @@ def get_cartelera():
                     # Solo partidos de hoy en adelante en hora CDMX
                     if fecha < hoy: continue
                     # Solo hasta 4 días adelante (dinámico)
-                    if fecha > (now + timedelta(days=4)).strftime("%Y-%m-%d"): continue
+                    if fecha > (now + timedelta(days=2)).strftime("%Y-%m-%d"): continue
                     odd_h = odd_a = odd_d = 0.0
                     try:
                         odds = comp.get("odds", [])
@@ -10944,7 +10963,7 @@ def _sort_cartelera(matches, hoy_str, hora_now):
 @st.cache_data(ttl=120, show_spinner=False)
 def get_nba_cartelera():
     now = datetime.now(CDMX)
-    dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(0,5)]
+    dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(0,3)]
     hoy = now.strftime("%Y-%m-%d")
     games, seen = [], set()
     for ds in dates:
@@ -10963,7 +10982,7 @@ def get_nba_cartelera():
                 fecha = utc.astimezone(CDMX).strftime("%Y-%m-%d")
                 state = ev["status"]["type"]["state"]
                 if fecha < hoy: continue
-                if fecha > (now+timedelta(days=4)).strftime("%Y-%m-%d"): continue
+                if fecha > (now+timedelta(days=2)).strftime("%Y-%m-%d"): continue
                 ou_line = 0.0
                 try:
                     odds = comp.get("odds",[])
@@ -13195,9 +13214,28 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
     """
     candidates = []
 
+    # ── PRE-FETCH get_form en paralelo — evita llamadas secuenciales ──────
+    _fut_slice = [m for m in (matches_fut or [])[:12] if m.get("state","pre") != "post"]
+    _form_cache_kr = {}
+    try:
+        import concurrent.futures as _cf_kr_form
+        _form_args = []
+        for _m in _fut_slice:
+            _hid = _m.get("home_id",""); _aid = _m.get("away_id",""); _sl = _m.get("slug","")
+            if _hid and _sl: _form_args.append((_hid, _sl))
+            if _aid and _sl: _form_args.append((_aid, _sl))
+        _form_args = list(dict.fromkeys(_form_args))  # dedup
+        with _cf_kr_form.ThreadPoolExecutor(max_workers=min(len(_form_args), 20)) as _fx:
+            _ffmap = {_fx.submit(get_form, a[0], a[1]): a for a in _form_args}
+            for _ff in _cf_kr_form.as_completed(_ffmap, timeout=15):
+                _fa = _ffmap[_ff]
+                try: _form_cache_kr[_fa] = _ff.result() or []
+                except: _form_cache_kr[_fa] = []
+    except: pass
+
     # ── ⚽ FÚTBOL ─────────────────────────────────────────────────────────
     try:
-        for m in (matches_fut or [])[:12]:
+        for m in _fut_slice:
             # KR: solo partidos desde ahora (no pasados)
             _kr_state = m.get('state','pre')
             if _kr_state == 'post': continue
@@ -13221,8 +13259,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             try:
                 home_id = m.get("home_id",""); away_id = m.get("away_id",""); slug = m.get("slug","")
                 if not home_id or not slug: continue
-                hf  = get_form(home_id, slug) or []
-                af  = get_form(away_id, slug) or []
+                hf  = _form_cache_kr.get((home_id, slug)) if (home_id, slug) in _form_cache_kr else (get_form(home_id, slug) or [])
+                af  = _form_cache_kr.get((away_id, slug)) if (away_id, slug) in _form_cache_kr else (get_form(away_id, slug) or [])
                 hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug) \
                       if hf else _cup_enriched_xg(m, True,  hf, af)
                 axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug) \
@@ -15119,14 +15157,32 @@ def _papi_pick_del_dia(matches_fut,nba_games,ten_matches):
         _thr_ajb.Thread(target=_ajb_warm, daemon=True).start()
     except: pass
 
+    # ── Pre-fetch get_form en paralelo para todos los partidos ──────────
+    _ajb_fut_slice = [m for m in (matches_fut or [])[:20] if m.get("state","pre") in ("pre","in")]
+    _form_cache_ajb = {}
+    try:
+        import concurrent.futures as _cf_ajb2
+        _ajb_form_args = []
+        for _mf in _ajb_fut_slice:
+            _hid = _mf.get("home_id",""); _aid = _mf.get("away_id",""); _sl = _mf.get("slug","")
+            if _hid and _sl: _ajb_form_args.append((_hid, _sl))
+            if _aid and _sl: _ajb_form_args.append((_aid, _sl))
+        _ajb_form_args = list(dict.fromkeys(_ajb_form_args))
+        with _cf_ajb2.ThreadPoolExecutor(max_workers=min(len(_ajb_form_args), 20)) as _fx2:
+            _ffmap2 = {_fx2.submit(get_form, a[0], a[1]): a for a in _ajb_form_args}
+            for _ff2 in _cf_ajb2.as_completed(_ffmap2, timeout=12):
+                _fa2 = _ffmap2[_ff2]
+                try: _form_cache_ajb[_fa2] = _ff2.result() or []
+                except: _form_cache_ajb[_fa2] = []
+    except: pass
+
     # ── Fútbol ──────────────────────────────────────────────────────────
-    for m in (matches_fut or [])[:20]:
-        if m.get("state","pre") not in ("pre","in"): continue  # incluir en vivo
+    for m in _ajb_fut_slice:
         try:
-            # get_form con fallback — nunca salta el partido por error de red
+            # get_form con fallback — usa cache pre-cargado
             try:
-                hf = get_form(m.get("home_id",""), m.get("slug","")) or []
-                af = get_form(m.get("away_id",""), m.get("slug","")) or []
+                hf = _form_cache_ajb.get((m.get("home_id",""), m.get("slug",""))) or get_form(m.get("home_id",""), m.get("slug","")) or []
+                af = _form_cache_ajb.get((m.get("away_id",""), m.get("slug",""))) or get_form(m.get("away_id",""), m.get("slug","")) or []
             except: hf, af = [], []
             hxg = xg_weighted(hf, True)  if hf else 1.20
             axg = xg_weighted(af, False) if af else 1.00
@@ -16332,6 +16388,37 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
     if do_scan or st.session_state.get("_king_scanned"):
 
         if do_scan:
+            # Ensure we have data before scanning — fetch anything missing
+            import concurrent.futures as _cf_kr_scan
+            _kr_need = {}
+            if not matches_fut: _kr_need["fut"] = None
+            if not nba_games:   _kr_need["nba"] = None
+            if not ten_matches: _kr_need["ten"] = None
+            if _kr_need:
+                try:
+                    with _cf_kr_scan.ThreadPoolExecutor(max_workers=3) as _kx:
+                        _kfmap = {}
+                        if "fut" in _kr_need: _kfmap[_kx.submit(get_cartelera)]        = "fut"
+                        if "nba" in _kr_need: _kfmap[_kx.submit(get_nba_cartelera)]    = "nba"
+                        if "ten" in _kr_need: _kfmap[_kx.submit(get_tennis_cartelera)] = "ten"
+                        for _kf in _cf_kr_scan.as_completed(_kfmap, timeout=20):
+                            _kk = _kfmap[_kf]
+                            try:
+                                _kd = _kf.result() or []
+                                if _kk == "fut":
+                                    matches_fut = _kd
+                                    st.session_state["_kr_cache_fut"]  = _kd
+                                    st.session_state["_ajb_cache_fut"] = _kd
+                                elif _kk == "nba":
+                                    nba_games = _kd
+                                    st.session_state["_kr_cache_nba"]  = _kd
+                                    st.session_state["_ajb_cache_nba"] = _kd
+                                elif _kk == "ten":
+                                    ten_matches = _kd
+                                    st.session_state["_kr_cache_ten"]  = _kd
+                                    st.session_state["_ajb_cache_ten"] = _kd
+                            except: pass
+                except: pass
             # ── CORONA ANIMADA ──
             _crown_slot = st.empty()
             _crown_slot.markdown("""
@@ -17065,11 +17152,23 @@ _kr_preload_key = "_kr_preload_done"
 if not st.session_state.get(_kr_preload_key):
     import threading as _thr
     def _warm_caches():
-        try: get_cartelera()
+        try:
+            _fc = get_cartelera()
+            if _fc:
+                st.session_state["_ajb_cache_fut"] = _fc
+                st.session_state["_kr_cache_fut"]  = _fc
         except: pass
-        try: get_nba_cartelera()
+        try:
+            _nc = get_nba_cartelera()
+            if _nc:
+                st.session_state["_ajb_cache_nba"] = _nc
+                st.session_state["_kr_cache_nba"]  = _nc
         except: pass
-        try: get_tennis_cartelera()
+        try:
+            _tc = get_tennis_cartelera()
+            if _tc:
+                st.session_state["_ajb_cache_ten"] = _tc
+                st.session_state["_kr_cache_ten"]  = _tc
         except: pass
     _t = _thr.Thread(target=_warm_caches, daemon=True)
     _t.start()
@@ -17093,6 +17192,10 @@ if deporte == "futbol":
         except Exception as _e:
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
+    # Cache inmediato para AJB y KR — disponible aunque no se visite tab de cartelera
+    if all_matches:
+        st.session_state["_ajb_cache_fut"] = all_matches
+        st.session_state["_kr_cache_fut"]  = all_matches
     # ── Auto-actualizar scores en vivo cada 60s ──
     if any(m.get("state") == "in" for m in all_matches):
         _lr_key = "live_refresh_global"
@@ -17212,6 +17315,9 @@ elif deporte == "nba":
         except Exception as _e:
             nba_games = []
             st.warning(f"⚠️ Error cargando NBA: {_e}")
+    if nba_games:
+        st.session_state["_ajb_cache_nba"] = nba_games
+        st.session_state["_kr_cache_nba"]  = nba_games
 
 elif deporte == "tenis":
     with st.spinner("Cargando Tenis..."):
@@ -17220,6 +17326,9 @@ elif deporte == "tenis":
         except Exception as _e:
             ten_matches = []
             st.warning(f"⚠️ Error cargando Tenis: {_e}")
+    if ten_matches:
+        st.session_state["_ajb_cache_ten"] = ten_matches
+        st.session_state["_kr_cache_ten"]  = ten_matches
 
 
 def _quick_pick_diamond(pick_lbl: str, pick_prob: float, is_live: bool,
@@ -17739,17 +17848,22 @@ if st.session_state["view"] == "cartelera":
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick NBA del día:")
-            with st.spinner("Calculando TRILAY NBA..."):
-                _ven_nba = _ventana_22h(nba_games or [])
-                _nba_cands = []
-                for _g in _ven_nba[:20]:
-                    _r = nba_ou_model(_g["home_id"],_g["away_id"],_g["ou_line"])
-                    _bp = max(_r["p_over"],_r["p_under"])
-                    _bm = f"🔥 Over {_r['line']}" if _r["p_over"]>_r["p_under"] else f"❄️ Under {_r['line']}"
-                    if _bp >= 0.55:
-                        _nba_cands.append({"teams":f"{_g['away']} @ {_g['home']}","liga":"NBA","hora":_g["hora"],"pick":_bm,"prob":_bp,"sport":"🏀"})
-                _nba_cands.sort(key=lambda x:-x["prob"])
-                _trilay3 = _nba_cands[:3]
+            _trilay3 = []
+            if st.session_state.get("_nba_trilay_loaded") or st.button("🎰 Calcular TRILAY NBA", key="load_nba_trilay", type="primary"):
+                st.session_state["_nba_trilay_loaded"] = True
+                with st.spinner("Calculando TRILAY NBA..."):
+                    _ven_nba = _ventana_22h(nba_games or [])
+                    _nba_cands = []
+                    for _g in _ven_nba[:20]:
+                        try:
+                            _r = nba_ou_model(_g["home_id"],_g["away_id"],_g["ou_line"])
+                            _bp = max(_r["p_over"],_r["p_under"])
+                            _bm = f"🔥 Over {_r['line']}" if _r["p_over"]>_r["p_under"] else f"❄️ Under {_r['line']}"
+                            if _bp >= 0.55:
+                                _nba_cands.append({"teams":f"{_g['away']} @ {_g['home']}","liga":"NBA","hora":_g["hora"],"pick":_bm,"prob":_bp,"sport":"🏀"})
+                        except: pass
+                    _nba_cands.sort(key=lambda x:-x["prob"])
+                    _trilay3 = _nba_cands[:3]
             if len(_trilay3) >= 2:
                 _comb = 1.0
                 for _t in _trilay3: _comb *= _t.get("best_p", _t.get("prob", 0.5))
@@ -17769,40 +17883,45 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.info("Los picks unificados de todos los deportes están en ⚽ Fútbol → 🎯 Picks.")
             st.markdown("<div class='shdr'>🎯 Picks NBA del Día — O/U + ML</div>", unsafe_allow_html=True)
-            with st.spinner("🤖 IA calculando picks NBA..."):
-                nba_picks = []
-                for g in nba_games[:20]:
-                    if g["state"]!="pre": continue
-                    res = nba_ou_model(g["home_id"],g["away_id"],g["ou_line"])
-                    best_p = max(res["p_over"],res["p_under"])
-                    best_m = f"🔥 Over {res['line']}" if res["p_over"]>res["p_under"] else f"❄️ Under {res['line']}"
-                    if best_p-0.5 > 0.04:
-                        conf = "💎 DIAMANTE" if best_p>0.65 else ("🔥 ALTA" if best_p>0.58 else "⚡ MEDIA")
-                        nba_picks.append({"home":g["home"],"away":g["away"],"hora":g["hora"],"pick":best_m,"prob":best_p,"conf":conf,"type":"O/U"})
-                # Add ML picks via AI for top 6 games
-                try:
-                    _top_games = [g for g in nba_games[:6] if g["state"]=="pre"]
-                    if _top_games and ANTHROPIC_API_KEY:
-                        _games_txt = "\n".join([f"{g['away']} @ {g['home']}" for g in _top_games])
-                        _ml_r = requests.post("https://api.anthropic.com/v1/messages",
-                            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-                            json={"model":"claude-sonnet-4-20250514","max_tokens":600,
-                                  "messages":[{"role":"user","content":
-                                    "NBA ML picks experto. Para estos partidos da solo los que tengan valor real (prob >= 58%). Responde SOLO en JSON array: [{teams, ml_pick, prob, razon}]. Partidos:\n" + _games_txt}]},timeout=12)
-                        import json as _j
-                        _ml_raw = _ml_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
-                        _ml_data = _j.loads(_ml_raw)
-                        for _ml in _ml_data:
-                            _p = float(_ml.get("prob",0))/100
-                            if _p >= 0.58:
-                                _conf = "💎 DIAMANTE" if _p>0.65 else ("🔥 ALTA" if _p>0.60 else "⚡ MEDIA")
-                                nba_picks.append({"home":_ml["teams"].split(" @ ")[1] if " @ " in _ml["teams"] else _ml["teams"],
-                                                  "away":_ml["teams"].split(" @ ")[0] if " @ " in _ml["teams"] else "",
-                                                  "hora":"","pick":f"🏆 ML: {_ml['ml_pick']}","prob":_p,
-                                                  "conf":_conf,"type":"ML","razon":_ml.get("razon","")})
-                except: pass
-                nba_picks.sort(key=lambda x:-x["prob"])
-            if not nba_picks: st.info("No hay picks NBA con valor hoy.")
+            nba_picks = []
+            if st.session_state.get("_nba_picks_loaded") or st.button("🎯 Calcular Picks NBA", key="load_nba_picks", type="primary"):
+                st.session_state["_nba_picks_loaded"] = True
+                with st.spinner("🤖 IA calculando picks NBA..."):
+                    nba_picks = []
+                    for g in nba_games[:20]:
+                        if g["state"]!="pre": continue
+                        try:
+                            res = nba_ou_model(g["home_id"],g["away_id"],g["ou_line"])
+                            best_p = max(res["p_over"],res["p_under"])
+                            best_m = f"🔥 Over {res['line']}" if res["p_over"]>res["p_under"] else f"❄️ Under {res['line']}"
+                            if best_p-0.5 > 0.04:
+                                conf = "💎 DIAMANTE" if best_p>0.65 else ("🔥 ALTA" if best_p>0.58 else "⚡ MEDIA")
+                                nba_picks.append({"home":g["home"],"away":g["away"],"hora":g["hora"],"pick":best_m,"prob":best_p,"conf":conf,"type":"O/U"})
+                        except: pass
+                    # Add ML picks via AI for top 6 games
+                    try:
+                        _top_games = [g for g in nba_games[:6] if g["state"]=="pre"]
+                        if _top_games and ANTHROPIC_API_KEY:
+                            _games_txt = "\n".join([f"{g['away']} @ {g['home']}" for g in _top_games])
+                            _ml_r = requests.post("https://api.anthropic.com/v1/messages",
+                                headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
+                                json={"model":"claude-sonnet-4-20250514","max_tokens":600,
+                                      "messages":[{"role":"user","content":
+                                        "NBA ML picks experto. Para estos partidos da solo los que tengan valor real (prob >= 58%). Responde SOLO en JSON array: [{teams, ml_pick, prob, razon}]. Partidos:\n" + _games_txt}]},timeout=12)
+                            import json as _j
+                            _ml_raw = _ml_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
+                            _ml_data = _j.loads(_ml_raw)
+                            for _ml in _ml_data:
+                                _p = float(_ml.get("prob",0))/100
+                                if _p >= 0.58:
+                                    _conf = "💎 DIAMANTE" if _p>0.65 else ("🔥 ALTA" if _p>0.60 else "⚡ MEDIA")
+                                    nba_picks.append({"home":_ml["teams"].split(" @ ")[1] if " @ " in _ml["teams"] else _ml["teams"],
+                                                      "away":_ml["teams"].split(" @ ")[0] if " @ " in _ml["teams"] else "",
+                                                      "hora":"","pick":f"🏆 ML: {_ml['ml_pick']}","prob":_p,
+                                                      "conf":_conf,"type":"ML","razon":_ml.get("razon","")})
+                    except: pass
+                    nba_picks.sort(key=lambda x:-x["prob"])
+            if not nba_picks and st.session_state.get("_nba_picks_loaded"): st.info("No hay picks NBA con valor hoy.")
             for p in nba_picks:
                 cc = "#FFD700" if "DIAMANTE" in p["conf"] else ("#00ff88" if "ALTA" in p["conf"] else "#aaa")
                 tipo_badge = f"<span style='background:#ff444422;color:#ff4444;border-radius:4px;padding:2px 6px;font-size:1.05rem;margin-left:6px'>{p.get('type','')}</span>"
@@ -18012,18 +18131,21 @@ if st.session_state["view"] == "cartelera":
 
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY Tenis</div>", unsafe_allow_html=True)
-            _ven_ten = _ventana_22h(ten_matches or [])
             ten_cands = []
-            for _m in _ven_ten[:20]:
-                try:
-                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0),
-                        p1_name=_m.get("p1",""), p2_name=_m.get("p2",""), torneo=_m.get("torneo",""))
-                    _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
-                    _p   = max(_tm["p1"],_tm["p2"])
-                    if _p >= 0.58:
-                        ten_cands.append({"teams":f"{_m['p1']} vs {_m['p2']}","liga":_m.get("torneo","Tenis"),"hora":_m.get("hora",""),"pick":f"🎾 {_fav}","prob":_p})
-                except: pass
-            ten_cands.sort(key=lambda x:-x["prob"])
+            if st.session_state.get("_ten_trilay_loaded") or st.button("🎰 Calcular TRILAY Tenis", key="load_ten_trilay", type="primary"):
+                st.session_state["_ten_trilay_loaded"] = True
+                with st.spinner("Calculando TRILAY Tenis..."):
+                    _ven_ten = _ventana_22h(ten_matches or [])
+                    for _m in _ven_ten[:20]:
+                        try:
+                            _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0),
+                                p1_name=_m.get("p1",""), p2_name=_m.get("p2",""), torneo=_m.get("torneo",""))
+                            _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
+                            _p   = max(_tm["p1"],_tm["p2"])
+                            if _p >= 0.58:
+                                ten_cands.append({"teams":f"{_m['p1']} vs {_m['p2']}","liga":_m.get("torneo","Tenis"),"hora":_m.get("hora",""),"pick":f"🎾 {_fav}","prob":_p})
+                        except: pass
+                    ten_cands.sort(key=lambda x:-x["prob"])
             if len(ten_cands) >= 2:
                 _comb = 1.0
                 for _t in ten_cands[:3]: _comb *= _t.get("prob", _t.get("best_p", 0.5))
@@ -18039,21 +18161,24 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.markdown("<div class='shdr'>🎯 Picks Tenis del Día</div>", unsafe_allow_html=True)
             ten_picks = []
-            for _m in ten_matches[:30]:
-                if _m["state"] != "pre": continue
-                try:
-                    _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0),
-                        p1_name=_m.get("p1",""), p2_name=_m.get("p2",""), torneo=_m.get("torneo",""))
-                    _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
-                    _p   = max(_tm["p1"],_tm["p2"])
-                    _odd = _m.get("odd_1",0) if _fav==_m["p1"] else _m.get("odd_2",0)
-                    _edge = _p-(1/_odd if _odd>1 else _p)
-                    if _edge > 0.03:
-                        _conf = "💎 DIAMANTE" if _p>0.68 else ("🔥 ALTA" if _p>0.62 else "⚡ MEDIA")
-                        ten_picks.append({"home":_m["p1"],"away":_m["p2"],"hora":_m.get("hora",""),"pick":f"🎾 {_fav} gana","prob":_p,"conf":_conf,"odd":_odd,"edge":_edge})
-                except: pass
-            ten_picks.sort(key=lambda x:-x["prob"])
-            if not ten_picks: st.info("No hay picks tenis con edge positivo hoy.")
+            if st.session_state.get("_ten_picks_loaded") or st.button("🎯 Calcular Picks Tenis", key="load_ten_picks", type="primary"):
+                st.session_state["_ten_picks_loaded"] = True
+                with st.spinner("Calculando picks tenis..."):
+                    for _m in ten_matches[:30]:
+                        if _m["state"] != "pre": continue
+                        try:
+                            _tm = tennis_model(_m["rank1"],_m["rank2"],_m.get("odd_1",0),_m.get("odd_2",0),
+                                p1_name=_m.get("p1",""), p2_name=_m.get("p2",""), torneo=_m.get("torneo",""))
+                            _fav = _m["p1"] if _tm["p1"]>=_tm["p2"] else _m["p2"]
+                            _p   = max(_tm["p1"],_tm["p2"])
+                            _odd = _m.get("odd_1",0) if _fav==_m["p1"] else _m.get("odd_2",0)
+                            _edge = _p-(1/_odd if _odd>1 else _p)
+                            if _edge > 0.03:
+                                _conf = "💎 DIAMANTE" if _p>0.68 else ("🔥 ALTA" if _p>0.62 else "⚡ MEDIA")
+                                ten_picks.append({"home":_m["p1"],"away":_m["p2"],"hora":_m.get("hora",""),"pick":f"🎾 {_fav} gana","prob":_p,"conf":_conf,"odd":_odd,"edge":_edge})
+                        except: pass
+                    ten_picks.sort(key=lambda x:-x["prob"])
+            if not ten_picks and st.session_state.get("_ten_picks_loaded"): st.info("No hay picks tenis con edge positivo hoy.")
             for _pk in ten_picks:
                 _cc = "#FFD700" if "DIAMANTE" in _pk["conf"] else ("#00ff88" if "ALTA" in _pk["conf"] else "#aaa")
                 st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-size:1.17rem;color:#555'>{_pk['home']} vs {_pk['away']} · {_pk['hora']}</div><div style='color:{_cc};font-weight:700'>{_pk['conf']} {_pk['pick']}</div></div><div style='text-align:right'><div style='font-size:1.5rem;font-weight:900;color:{_cc}'>{_pk['prob']*100:.1f}%</div><div style='font-size:0.975rem;color:#555'>Edge {_pk['edge']*100:+.1f}%</div></div></div>", unsafe_allow_html=True)
@@ -18124,7 +18249,10 @@ if st.session_state["view"] == "cartelera":
                 from collections import defaultdict as _dd
                 fut_por_fecha = _dd(lambda: _dd(lambda: _dd(lambda: _dd(list))))
                 _FLAGS_STRIP = ["🇪🇸","🇩🇪","🇮🇹","🇫🇷","🇳🇱","🇵🇹","🇲🇽","🇺🇸","🇧🇷","🇦🇷","🇨🇴","🇨🇱","🇸🇦","🇹🇷","🇦🇪","🇪🇬","🇯🇵","🇰🇷","🇬🇷","🇩🇰","🇳🇴","🇧🇪","🏴󠁧󠁢󠁥󠁮󠁧󠁿","🏴󠁧󠁢󠁳󠁣󠁴󠁿","🏆"]
+                _hoy_disp = datetime.now(CDMX).strftime("%Y-%m-%d")
+                _max_fecha = (datetime.now(CDMX) + timedelta(days=2)).strftime("%Y-%m-%d")
                 for _m in matches:
+                    if _m.get("fecha","") > _max_fecha: continue
                     _slug = _m.get("slug", _m.get("league",""))
                     _pais, _bandera, _cont = _country_for_liga(_slug or _m.get("league",""))
                     _liga_disp = LIGAS.get(_slug, _m.get("league", _slug or ""))
@@ -18446,89 +18574,90 @@ if st.session_state["view"] == "cartelera":
                 st.markdown("</div>", unsafe_allow_html=True)
         with tab3:
             st.markdown("<div class='shdr'>🦆 PATO — Under 4.5 Seguros</div>", unsafe_allow_html=True)
+            pato_picks = []
             if st.session_state.get("_pato_loaded") or st.button("🦆 Calcular PATO", key="load_pato_fut", type="primary"):
                 st.session_state["_pato_loaded"] = True
-                _pato_matches = _ventana_22h(all_matches or matches)
-            else:
-                _pato_matches = []
-            pato_picks = []
-            for _m in _pato_matches:
-                try:
-                    _hf = get_form(_m["home_id"],_m["slug"]) or []
-                    _af = get_form(_m["away_id"],_m["slug"]) or []
-                    _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
-                    _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
-                    _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
-                    _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
-                    _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0),slug=_m.get("slug",""))
-                    # Under 4.5: 1 - P(O4.5). Usamos P(O3.5) como proxy — si O3.5 es bajo, U4.5 es alto
-                    _p_o35 = _mc.get("o35", max(0, _mc.get("o25",0.5) - 0.18))
-                    _p_u45 = max(0, 1.0 - _p_o35)
-                    if _p_u45 >= 0.55:  # umbral bajado a 0.55 para más picks
-                        pato_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),"hora":_m.get("hora",""),"prob":_p_u45})
-                except: pass
-            pato_picks.sort(key=lambda x:-x["prob"])
-            if not pato_picks:
+                with st.spinner("🦆 Analizando partidos Under 4.5..."):
+                    _pato_matches = _ventana_22h(all_matches or matches)
+                    for _m in _pato_matches:
+                        try:
+                            _hf = get_form(_m["home_id"],_m["slug"]) or []
+                            _af = get_form(_m["away_id"],_m["slug"]) or []
+                            _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                            _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
+                            _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
+                            _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
+                            _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0),slug=_m.get("slug",""))
+                            # Under 4.5: 1 - P(O4.5). Usamos P(O3.5) como proxy — si O3.5 es bajo, U4.5 es alto
+                            _p_o35 = _mc.get("o35", max(0, _mc.get("o25",0.5) - 0.18))
+                            _p_u45 = max(0, 1.0 - _p_o35)
+                            if _p_u45 >= 0.55:  # umbral bajado a 0.55 para más picks
+                                pato_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),"hora":_m.get("hora",""),"prob":_p_u45})
+                        except: pass
+                    pato_picks.sort(key=lambda x:-x["prob"])
+            if not pato_picks and st.session_state.get("_pato_loaded"):
                 st.info("🦆 PATO no encontró partidos Under 4.5 seguros hoy (prob < 68%).")
             for _pk in pato_picks:
                 _cc = "#FFD700" if _pk["prob"]>0.75 else "#00ff88"
                 st.markdown(f"<div class='mrow' style='display:flex;justify-content:space-between'><div><div style='font-size:1.17rem;color:#555'>{_pk['liga']} · {_pk['hora']}</div><div style='font-size:1.32rem;font-weight:700'>{_pk['home']} vs {_pk['away']}</div><div style='color:{_cc};font-weight:700'>🦆 Under 4.5 goles</div></div><div style='font-size:1.43rem;font-weight:900;color:{_cc}'>{_pk['prob']*100:.1f}%</div></div>", unsafe_allow_html=True)
         with tab4:
             st.markdown("<div class='shdr'>🎯 Picks del Día — Fútbol</div>", unsafe_allow_html=True)
-            fut_picks = []
+            fut_picks = st.session_state.get("_fut_picks_cache", [])
             if st.session_state.get("_futpicks_loaded") or st.button("🎯 Calcular Picks", key="load_picks_fut", type="primary"):
                 st.session_state["_futpicks_loaded"] = True
-                _picks_src = [m for m in (all_matches or []) if m.get("state") == "pre"]
-            else:
-                _picks_src = []
-            for _m in _picks_src[:40]:
-                try:
-                    _hf  = get_form(_m["home_id"],_m["slug"]) or []
-                    _af  = get_form(_m["away_id"],_m["slug"]) or []
-                    _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m,True,_hf,_af)
-                    _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m,False,_hf,_af)
-                    _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
-                    _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
-                    _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],
-                                             odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0),slug=_m.get("slug",""))
-                    _dp  = diamond_engine(_mc,_h2s,_hf,_af)
-                    _ph  = _dp["ph"]; _pa = _dp["pa"]; _pd = _dp.get("pd",max(0,1-_ph-_pa))
-                    _o25 = _mc["o25"]; _aa = _mc["btts"]
-                    _do_h = min(0.95,_ph+_pd); _do_a = min(0.95,_pa+_pd)
-                    _odd_h = _m.get("odd_h",0); _odd_a = _m.get("odd_a",0)
-                    _fav_lbl = ("🏠 "+_m["home"]) if _ph>=_pa else ("✈️ "+_m["away"])
-                    _fav_p   = max(_ph,_pa)
-                    _fav_odd = _odd_h if _ph>=_pa else _odd_a
-                    def _ev_t(prob,odd): return prob*(odd-1)-(1-prob) if odd>1 else prob-0.5
-                    _hname14 = _m["home"][:14]; _aname14 = _m["away"][:14]
-                    _cands = []
-                    if _ph>=0.52 and _ev_t(_ph,_odd_h)>0.01: _cands.append(("🏠 "+_m["home"],_ph,_odd_h,_ev_t(_ph,_odd_h)))
-                    if _pa>=0.52 and _ev_t(_pa,_odd_a)>0.01: _cands.append(("✈️ "+_m["away"],_pa,_odd_a,_ev_t(_pa,_odd_a)))
-                    if _o25>=0.58 and _ev_t(_o25,1.90)>0.01: _cands.append(("⚽ Over 2.5",_o25,0,_ev_t(_o25,1.90)))
-                    if _aa>=0.58  and _ev_t(_aa,1.80)>0.01:  _cands.append(("⚡ Ambos Anotan",_aa,0,_ev_t(_aa,1.80)))
-                    if _do_h>=0.75 and _ph>=0.50 and _ev_t(_do_h,1.35)>0.01: _cands.append(("🔵 "+_hname14+" o Emp",_do_h,0,_ev_t(_do_h,1.35)))
-                    if _do_a>=0.75 and _pa>=0.45 and _ev_t(_do_a,1.35)>0.01: _cands.append(("🟣 "+_aname14+" o Emp",_do_a,0,_ev_t(_do_a,1.35)))
-                    if _cands:
-                        _bb=max(_cands,key=lambda x:x[3]); _lbl,_p,_odd,_ev=_bb[0],_bb[1],_bb[2],_bb[3]
-                        _sin_valor=False
-                    else:
-                        _lbl="⚠️ "+_fav_lbl; _p=_fav_p; _odd=_fav_odd
-                        _ev=_ev_t(_fav_p,_fav_odd) if _fav_odd>1 else _fav_p-0.5; _sin_valor=True
-                    _danger = abs(_ph-_pa)<0.04
-                    if _sin_valor: _conf="⚠️ SIN VALOR"; _cc_pick="#555"
-                    elif _danger:  _conf="⚡ DANGER";    _cc_pick="#ff9500"
-                    elif _p>0.68:  _conf="💎 DIAMANTE";  _cc_pick="#FFD700"
-                    elif _p>0.62:  _conf="🔥 ALTA";      _cc_pick="#00ff88"
-                    elif _p>0.56:  _conf="⚡ MEDIA";     _cc_pick="#00ccff"
-                    else:          _conf="📊 SEÑAL";     _cc_pick="#aaa"
-                    _edge_str=f"+{_ev*100:.1f}% EV" if _ev>0.01 else ("SIN VALOR" if _sin_valor else f"{_ev*100:.1f}%")
-                    fut_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),
-                        "hora":_m.get("hora",""),"pick":_lbl,"prob":_p,"odd":_odd,"ev":_ev,
-                        "conf":_conf,"cc":_cc_pick,"edge":_edge_str,"sin_valor":_sin_valor,
-                        "danger":_danger,"ph":_ph,"pa":_pa})
-                except: pass
-            fut_picks.sort(key=lambda x:(0 if x.get("sin_valor") else 1, x.get("ev",0)), reverse=True)
-            if not fut_picks:
+                if not fut_picks:
+                    _picks_src = [m for m in (all_matches or []) if m.get("state") == "pre"]
+                    with st.spinner("🎯 Calculando picks con Diamond Engine..."):
+                        fut_picks = []
+                        def _ev_t(prob,odd): return prob*(odd-1)-(1-prob) if odd>1 else prob-0.5
+                        for _m in _picks_src[:40]:
+                            try:
+                                _hf  = get_form(_m["home_id"],_m["slug"]) or []
+                                _af  = get_form(_m["away_id"],_m["slug"]) or []
+                                _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m,True,_hf,_af)
+                                _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m,False,_hf,_af)
+                                _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
+                                _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
+                                _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],
+                                                         odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0),slug=_m.get("slug",""))
+                                _dp  = diamond_engine(_mc,_h2s,_hf,_af)
+                                _ph  = _dp["ph"]; _pa = _dp["pa"]; _pd = _dp.get("pd",max(0,1-_ph-_pa))
+                                _o25 = _mc["o25"]; _aa = _mc["btts"]
+                                _do_h = min(0.95,_ph+_pd); _do_a = min(0.95,_pa+_pd)
+                                _odd_h = _m.get("odd_h",0); _odd_a = _m.get("odd_a",0)
+                                _fav_lbl = ("🏠 "+_m["home"]) if _ph>=_pa else ("✈️ "+_m["away"])
+                                _fav_p   = max(_ph,_pa)
+                                _fav_odd = _odd_h if _ph>=_pa else _odd_a
+                                _hname14 = _m["home"][:14]; _aname14 = _m["away"][:14]
+                                _cands = []
+                                if _ph>=0.52 and _ev_t(_ph,_odd_h)>0.01: _cands.append(("🏠 "+_m["home"],_ph,_odd_h,_ev_t(_ph,_odd_h)))
+                                if _pa>=0.52 and _ev_t(_pa,_odd_a)>0.01: _cands.append(("✈️ "+_m["away"],_pa,_odd_a,_ev_t(_pa,_odd_a)))
+                                if _o25>=0.58 and _ev_t(_o25,1.90)>0.01: _cands.append(("⚽ Over 2.5",_o25,0,_ev_t(_o25,1.90)))
+                                if _aa>=0.58  and _ev_t(_aa,1.80)>0.01:  _cands.append(("⚡ Ambos Anotan",_aa,0,_ev_t(_aa,1.80)))
+                                if _do_h>=0.75 and _ph>=0.50 and _ev_t(_do_h,1.35)>0.01: _cands.append(("🔵 "+_hname14+" o Emp",_do_h,0,_ev_t(_do_h,1.35)))
+                                if _do_a>=0.75 and _pa>=0.45 and _ev_t(_do_a,1.35)>0.01: _cands.append(("🟣 "+_aname14+" o Emp",_do_a,0,_ev_t(_do_a,1.35)))
+                                if _cands:
+                                    _bb=max(_cands,key=lambda x:x[3]); _lbl,_p,_odd,_ev=_bb[0],_bb[1],_bb[2],_bb[3]
+                                    _sin_valor=False
+                                else:
+                                    _lbl="⚠️ "+_fav_lbl; _p=_fav_p; _odd=_fav_odd
+                                    _ev=_ev_t(_fav_p,_fav_odd) if _fav_odd>1 else _fav_p-0.5; _sin_valor=True
+                                _danger = abs(_ph-_pa)<0.04
+                                if _sin_valor: _conf="⚠️ SIN VALOR"; _cc_pick="#555"
+                                elif _danger:  _conf="⚡ DANGER";    _cc_pick="#ff9500"
+                                elif _p>0.68:  _conf="💎 DIAMANTE";  _cc_pick="#FFD700"
+                                elif _p>0.62:  _conf="🔥 ALTA";      _cc_pick="#00ff88"
+                                elif _p>0.56:  _conf="⚡ MEDIA";     _cc_pick="#00ccff"
+                                else:          _conf="📊 SEÑAL";     _cc_pick="#aaa"
+                                _edge_str=f"+{_ev*100:.1f}% EV" if _ev>0.01 else ("SIN VALOR" if _sin_valor else f"{_ev*100:.1f}%")
+                                fut_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),
+                                    "hora":_m.get("hora",""),"pick":_lbl,"prob":_p,"odd":_odd,"ev":_ev,
+                                    "conf":_conf,"cc":_cc_pick,"edge":_edge_str,"sin_valor":_sin_valor,
+                                    "danger":_danger,"ph":_ph,"pa":_pa})
+                            except: pass
+                        fut_picks.sort(key=lambda x:(0 if x.get("sin_valor") else 1, x.get("ev",0)), reverse=True)
+                        st.session_state["_fut_picks_cache"] = fut_picks
+            if not fut_picks and st.session_state.get("_futpicks_loaded"):
                 st.info("Sin partidos de fútbol pre-match disponibles aún.")
             for _pk in fut_picks:
                 _cc=_pk["cc"]
