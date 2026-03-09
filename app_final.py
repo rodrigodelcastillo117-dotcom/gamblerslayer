@@ -25,11 +25,18 @@ try:
     CHAT_ID           = st.secrets["CHAT_ID"]
     ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", "")
     TENNIS_API_KEY    = st.secrets.get("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
+    API_FOOTBALL_KEY  = st.secrets.get("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
 except:
     BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
     CHAT_ID           = os.getenv("CHAT_ID", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     TENNIS_API_KEY    = os.getenv("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
+    API_FOOTBALL_KEY  = os.getenv("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
+
+# ── External API base URLs ──
+NBA_STATS_BASE  = "https://stats.nba.com/stats"   # oficial, sin key
+SPORTSDB_BASE   = "https://www.thesportsdb.com/api/v1/json/3"  # gratis, sin key
+API_FOOTBALL    = "https://v3.api-football.com"                # 100 req/día gratis (portal propio)
 
 LIGAS = {
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -584,6 +591,358 @@ def parse_score(s):
     try: return int(float(s or 0))
     except: return 0
 
+
+# ══════════════════════════════════════════════════════════════════════
+# NBA STATS API — stats.nba.com (oficial, gratis, sin key)
+# Complementa ESPN con: advanced stats, Q1-Q4 splits, últimos N juegos
+# Fallback seguro: si falla → retorna {} y el modelo sigue con ESPN
+# ══════════════════════════════════════════════════════════════════════
+_NBA_STATS_H = {
+    "User-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept":       "application/json, text/plain, */*",
+    "Referer":      "https://www.nba.com/",
+    "Origin":       "https://www.nba.com",
+    "x-nba-stats-origin": "stats",
+    "x-nba-stats-token":  "true",
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _nba_stats_team_advanced(nba_stats_id: str) -> dict:
+    """
+    Advanced stats del equipo desde stats.nba.com.
+    Incluye: TS%, AST%, REB%, PIE, OffRating últimos 5/10/15 juegos.
+    nba_stats_id: ID de stats.nba.com (diferente al ESPN ID)
+    """
+    default = {}
+    if not nba_stats_id: return default
+    try:
+        url = f"{NBA_STATS_BASE}/teamdashboardbygeneralsplits"
+        params = {
+            "TeamID":        nba_stats_id,
+            "Season":        "2024-25",
+            "SeasonType":    "Regular Season",
+            "MeasureType":   "Advanced",
+            "PerMode":       "PerGame",
+            "LastNGames":    0,
+            "DateFrom":      "",
+            "DateTo":        "",
+        }
+        r = requests.get(url, headers=_NBA_STATS_H, params=params, timeout=8)
+        if r.status_code != 200: return default
+        data = r.json()
+        sets = data.get("resultSets", [])
+        if not sets: return default
+        headers = sets[0].get("headers", [])
+        rows    = sets[0].get("rowSet", [])
+        if not rows: return default
+        row = rows[0]
+        d = dict(zip(headers, row))
+        return {
+            "ts_pct":    d.get("TS_PCT", 0),
+            "ast_pct":   d.get("AST_PCT", 0),
+            "reb_pct":   d.get("REB_PCT", 0),
+            "pie":       d.get("PIE", 0),       # Player Impact Estimate
+            "off_rtg":   d.get("OFF_RATING", 0),
+            "def_rtg":   d.get("DEF_RATING", 0),
+            "net_rtg":   d.get("NET_RATING", 0),
+            "pace":      d.get("PACE", 0),
+        }
+    except: return default
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _nba_stats_last_n(nba_stats_id: str, n: int = 5) -> dict:
+    """
+    Stats de los últimos N partidos desde stats.nba.com.
+    Más preciso que calcular desde form de ESPN.
+    """
+    default = {}
+    if not nba_stats_id: return default
+    try:
+        url = f"{NBA_STATS_BASE}/teamdashboardbygeneralsplits"
+        params = {
+            "TeamID":      nba_stats_id,
+            "Season":      "2024-25",
+            "SeasonType":  "Regular Season",
+            "MeasureType": "Base",
+            "PerMode":     "PerGame",
+            "LastNGames":  n,
+        }
+        r = requests.get(url, headers=_NBA_STATS_H, params=params, timeout=8)
+        if r.status_code != 200: return default
+        data = r.json()
+        sets = data.get("resultSets", [])
+        if not sets: return default
+        headers = sets[0].get("headers", [])
+        rows    = sets[0].get("rowSet", [])
+        if not rows: return default
+        row = rows[0]
+        d = dict(zip(headers, row))
+        return {
+            "ppg":       d.get("PTS", 0),
+            "opp_ppg":   d.get("OPP_PTS", 0),
+            "fg_pct":    d.get("FG_PCT", 0),
+            "fg3_pct":   d.get("FG3_PCT", 0),
+            "ft_pct":    d.get("FT_PCT", 0),
+            "reb":       d.get("REB", 0),
+            "ast":       d.get("AST", 0),
+            "tov":       d.get("TOV", 0),
+            "w_pct":     d.get("W_PCT", 0),
+            "n_games":   n,
+        }
+    except: return default
+
+
+# Mapa ESPN team_id → NBA Stats ID
+# Solo equipos activos 2024-25. Se usa para enriquecer nba_ou_model.
+_ESPN_TO_NBASTATS = {
+    "2":  "1610612737",  # Atlanta Hawks
+    "17": "1610612738",  # Boston Celtics
+    "5":  "1610612751",  # Brooklyn Nets
+    "16": "1610612766",  # Charlotte Hornets
+    "4":  "1610612741",  # Chicago Bulls
+    "19": "1610612739",  # Cleveland Cavaliers
+    "8":  "1610612742",  # Dallas Mavericks
+    "7":  "1610612743",  # Denver Nuggets
+    "9":  "1610612765",  # Detroit Pistons
+    "11": "1610612744",  # Golden State Warriors
+    "10": "1610612745",  # Houston Rockets
+    "12": "1610612754",  # Indiana Pacers
+    "13": "1610612746",  # LA Clippers
+    "14": "1610612747",  # LA Lakers
+    "22": "1610612763",  # Memphis Grizzlies
+    "20": "1610612748",  # Miami Heat
+    "21": "1610612749",  # Milwaukee Bucks
+    "23": "1610612750",  # Minnesota Timberwolves
+    "24": "1610612740",  # New Orleans Pelicans
+    "18": "1610612752",  # New York Knicks
+    "25": "1610612760",  # Oklahoma City Thunder
+    "26": "1610612753",  # Orlando Magic
+    "27": "1610612755",  # Philadelphia 76ers
+    "28": "1610612756",  # Phoenix Suns
+    "34": "1610612757",  # Portland Trail Blazers
+    "29": "1610612758",  # Sacramento Kings
+    "30": "1610612759",  # San Antonio Spurs
+    "6":  "1610612761",  # Toronto Raptors
+    "3":  "1610612762",  # Utah Jazz
+    "15": "1610612764",  # Washington Wizards
+}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# THESPORTSDB — gratis, sin key, cubre fútbol + NBA + tenis
+# Usado para: H2H histórico profundo (fútbol), resultados históricos
+# ══════════════════════════════════════════════════════════════════════
+@st.cache_data(ttl=86400, show_spinner=False)
+def _sportsdb_h2h(team1_name: str, team2_name: str) -> list:
+    """
+    Últimos 25 enfrentamientos H2H desde TheSportsDB.
+    Complementa get_h2h (ESPN) con historial más profundo.
+    """
+    try:
+        # TheSportsDB busca por nombre de equipo
+        url = f"{SPORTSDB_BASE}/searchevents.php"
+        r = requests.get(url, params={"e": f"{team1_name} vs {team2_name}"},
+                        headers=H, timeout=8)
+        if r.status_code != 200: return []
+        events = r.json().get("event", []) or []
+        results = []
+        for ev in events[:25]:
+            try:
+                results.append({
+                    "date":   ev.get("dateEvent", ""),
+                    "home":   ev.get("strHomeTeam", ""),
+                    "away":   ev.get("strAwayTeam", ""),
+                    "score_h": int(ev.get("intHomeScore", 0) or 0),
+                    "score_a": int(ev.get("intAwayScore", 0) or 0),
+                    "league": ev.get("strLeague", ""),
+                })
+            except: continue
+        return results
+    except: return []
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _sportsdb_team_last_results(team_name: str, n: int = 15) -> list:
+    """
+    Últimos N resultados de un equipo desde TheSportsDB.
+    Útil para equipos donde ESPN da poco historial.
+    """
+    try:
+        # Buscar team ID primero
+        sr = requests.get(f"{SPORTSDB_BASE}/searchteams.php",
+                         params={"t": team_name}, headers=H, timeout=6)
+        if sr.status_code != 200: return []
+        teams = sr.json().get("teams", []) or []
+        if not teams: return []
+        tid = teams[0].get("idTeam", "")
+        if not tid: return []
+
+        # Últimos eventos del equipo
+        er = requests.get(f"{SPORTSDB_BASE}/eventslast.php",
+                         params={"id": tid}, headers=H, timeout=6)
+        if er.status_code != 200: return []
+        events = er.json().get("results", []) or []
+        results = []
+        for ev in events[:n]:
+            try:
+                sh = int(ev.get("intHomeScore", 0) or 0)
+                sa = int(ev.get("intAwayScore", 0) or 0)
+                is_home = ev.get("strHomeTeam","").lower() in team_name.lower()
+                gf = sh if is_home else sa
+                gc = sa if is_home else sh
+                results.append({
+                    "date":    ev.get("dateEvent", ""),
+                    "gf":      gf,
+                    "gc":      gc,
+                    "result":  "W" if gf>gc else ("D" if gf==gc else "L"),
+                    "is_home": is_home,
+                    "opponent": ev.get("strAwayTeam" if is_home else "strHomeTeam", ""),
+                    "league":  ev.get("strLeague", ""),
+                    "source":  "sportsdb",
+                })
+            except: continue
+        return results
+    except: return []
+
+
+# ══════════════════════════════════════════════════════════════════════
+# API-FOOTBALL (RapidAPI) — 100 req/día gratis
+# Da: xG real, shots, corners, lesiones detalladas
+# Solo se llama si API_FOOTBALL_KEY está configurado
+# ══════════════════════════════════════════════════════════════════════
+
+# Mapa slug ESPN → league_id de API-Football
+_APIFOOTBALL_LEAGUE = {
+    "eng.1": 39, "eng.2": 40, "esp.1": 140, "esp.2": 141,
+    "ger.1": 78, "ger.2": 79, "ita.1": 135, "fra.1": 61,
+    "ned.1": 88, "por.1": 94, "mex.1": 262, "usa.1": 253,
+    "bra.1": 71, "arg.1": 128, "col.1": 239, "chi.1": 265,
+    "sau.1": 307, "tur.1": 203, "sco.1": 179, "bel.1": 144,
+    "uefa.champions": 2, "uefa.europa": 3, "uefa.europa.conf": 848,
+}
+
+# ── API-Football Team ID Cache ──
+# Los IDs de equipos no cambian nunca. Se guardan en disco y duran indefinidamente.
+# Ahorra 1 request por equipo por llamada → de 2 req a 1 req por partido.
+# Con 17 partidos (34 equipos): día 1 = 34 req para poblar caché, día 2+ = 0 req para IDs.
+APIF_ID_CACHE_FILE = "/tmp/apifootball_team_ids.json"
+
+def _apif_id_cache_load() -> dict:
+    try:
+        if os.path.exists(APIF_ID_CACHE_FILE):
+            with open(APIF_ID_CACHE_FILE) as f:
+                return json.load(f)
+    except: pass
+    return {}
+
+def _apif_id_cache_save(data: dict):
+    try:
+        with open(APIF_ID_CACHE_FILE, "w") as f:
+            json.dump(data, f)
+    except: pass
+
+def _apif_get_team_id(team_name: str, league_id: int) -> int:
+    """
+    Retorna el API-Football team ID para un equipo.
+    Primero busca en caché de disco → si no está, hace 1 request y guarda.
+    Clave: "team_name:league_id" — única y estable.
+    """
+    cache = _apif_id_cache_load()
+    cache_key = f"{team_name.lower().strip()}:{league_id}"
+    if cache_key in cache:
+        return cache[cache_key]   # ← 0 requests, respuesta instantánea
+
+    # No está en caché → hacer 1 request
+    try:
+        r = requests.get(f"{API_FOOTBALL}/teams",
+            headers={"x-apisports-key": API_FOOTBALL_KEY},
+            params={"name": team_name, "league": league_id, "season": 2024},
+            timeout=8)
+        if r.status_code != 200: return 0
+        teams = r.json().get("response", [])
+        if not teams: return 0
+        team_id = teams[0]["team"]["id"]
+        # Guardar en caché permanente
+        cache[cache_key] = team_id
+        _apif_id_cache_save(cache)
+        return team_id
+    except: return 0
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _apifootball_team_stats(team_name: str, slug: str) -> dict:
+    """
+    Stats avanzadas de fútbol desde API-Football: xG, shots, corners por partido.
+    Solo se activa si API_FOOTBALL_KEY está configurado.
+    Usa caché de IDs → solo 1 request por llamada (antes eran 2).
+    Retorna {} si no hay key o si la llamada falla → no afecta el modelo.
+    """
+    if not API_FOOTBALL_KEY: return {}
+    league_id = _APIFOOTBALL_LEAGUE.get(slug, 0)
+    if not league_id: return {}
+    try:
+        team_id = _apif_get_team_id(team_name, league_id)
+        if not team_id: return {}
+
+        rs = requests.get(f"{API_FOOTBALL}/teams/statistics",
+            headers={"x-apisports-key": API_FOOTBALL_KEY},
+            params={"team": team_id, "league": league_id, "season": 2024},
+            timeout=8)
+        if rs.status_code != 200: return {}
+        d = rs.json().get("response", {})
+        if not d: return {}
+
+        shots    = d.get("shots", {})
+        fixtures = d.get("fixtures", {})
+        played   = fixtures.get("played", {}).get("total", 1) or 1
+
+        return {
+            "xg_for":      round((d.get("expected_goals", {}).get("for",     {}).get("total", 0) or 0) / played, 2),
+            "xg_against":  round((d.get("expected_goals", {}).get("against", {}).get("total", 0) or 0) / played, 2),
+            "shots_pg":    round(((shots.get("total",     {}).get("total", 0) or 0)) / played, 1),
+            "shots_ot_pg": round(((shots.get("on_target", {}).get("total", 0) or 0)) / played, 1),
+            "corners_pg":  round(((d.get("corners", {}).get("total", {}).get("total", 0) or 0)) / played, 1),
+            "clean_sheets": d.get("clean_sheet", {}).get("total", 0),
+            "source":      "api-football",
+        }
+    except: return {}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _apifootball_injuries(team_name: str, slug: str) -> list:
+    """
+    Lesiones actuales del equipo desde API-Football.
+    Usa caché de IDs → solo 1 request por llamada (antes eran 2).
+    Retorna [] si no hay key o si la llamada falla.
+    """
+    if not API_FOOTBALL_KEY: return []
+    league_id = _APIFOOTBALL_LEAGUE.get(slug, 0)
+    if not league_id: return []
+    try:
+        team_id = _apif_get_team_id(team_name, league_id)
+        if not team_id: return []
+
+        ri = requests.get(f"{API_FOOTBALL}/injuries",
+            headers={"x-apisports-key": API_FOOTBALL_KEY},
+            params={"team": team_id, "league": league_id, "season": 2024},
+            timeout=8)
+        if ri.status_code != 200: return []
+        injuries = ri.json().get("response", [])
+        result = []
+        for inj in injuries[:10]:
+            p = inj.get("player", {})
+            t = inj.get("fixture", {})
+            result.append({
+                "player": p.get("name", ""),
+                "type":   p.get("type", ""),
+                "reason": p.get("reason", ""),
+                "date":   t.get("date", "")[:10],
+            })
+        return result
+    except: return []
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def get_cartelera():
     now   = datetime.now(CDMX)
@@ -792,7 +1151,28 @@ def get_form(team_id, slug):
             })
         except: continue
     matches.sort(key=lambda x: x["date"], reverse=True)
-    return matches[:15]  # 15 partidos para más contexto
+    espn_results = matches[:15]
+
+    # ── TheSportsDB fallback — enriquece si ESPN da < 5 partidos ──
+    if len(espn_results) < 5:
+        try:
+            # Buscar nombre del equipo desde el primer resultado disponible
+            team_name = espn_results[0].get("opponent","") if espn_results else ""
+            if not team_name:
+                # Intentar desde ESPN directamente
+                _td = eg(f"{ESPN}/{slug}/teams/{team_id}")
+                team_name = _td.get("team", {}).get("displayName", "")
+            if team_name:
+                sdb = _sportsdb_team_last_results(team_name, 15)
+                # Merge: añadir solo partidos que ESPN no tiene
+                espn_dates = {m["date"] for m in espn_results}
+                for g in sdb:
+                    if g["date"] not in espn_dates:
+                        espn_results.append(g)
+                espn_results.sort(key=lambda x: x["date"], reverse=True)
+        except: pass
+
+    return espn_results[:15]
 
 
 
@@ -1021,6 +1401,23 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
     if odds_prior > 0.05:
         xg_from_odds = max(0.3, -math.log(max(0.01, 1 - odds_prior)) * 1.8)
         xg_base = 0.80 * xg_base + 0.20 * xg_from_odds
+
+    # ── API-Football xG real — blend si disponible ──
+    # Solo enriquece, nunca reemplaza. Si no hay key o falla → xg_base sin cambio.
+    # xg_for/xg_against son promedios de temporada completa, menor peso que forma reciente
+    if slug and form:
+        try:
+            _team_name = form[0].get("opponent", "")  # proxy para nombre del equipo
+            if not _team_name and len(form) > 1:
+                _team_name = form[1].get("opponent", "")
+            if _team_name:
+                _apif = _apifootball_team_stats(_team_name, slug)
+                if _apif:
+                    _xg_api = _apif.get("xg_for", 0) if is_home else _apif.get("xg_for", 0)
+                    if _xg_api and _xg_api > 0.2:
+                        # 25% API-Football (temporada) + 75% forma reciente (más precisa)
+                        xg_base = 0.75 * xg_base + 0.25 * _xg_api
+        except: pass
 
     return round(max(0.20, min(4.5, xg_base)), 3)
 
@@ -3835,8 +4232,8 @@ def _villar_match_pick_to_result(pk, partido_db):
         # Empate
         elif any(x in pick_clean for x in ["empate","draw","🤝"," x "]):
             ok = draw
-        # Doble Oportunidad — "team o emp" / "o emp" / 1x / x1 / x2
-        elif any(x in pick_clean for x in ["o emp","o empate","1x","x1"," o emp"]):
+        # Doble Oportunidad — soporta " do", "o emp", "1x", "x1", "x2"
+        elif any(x in pick_clean for x in [" do", "o emp","o empate","1x","x1"," o emp","doble"]):
             # DO local: si el nombre del local aparece en el pick → local o empate
             if _name_in_pick(home, pick_clean) or "local" in pick_clean:
                 ok = won_h or draw
@@ -4059,35 +4456,51 @@ def _villar_auto_pick(partido_db):
         # ML: EV > 0 Y prob >= 0.52 (evita favoritos cortos con EV negativo)
         # O/U: prob >= 0.58 (mercado más eficiente)
         # DC (doble chance): prob >= 0.72 (cuota ~1.35, necesita prob alta)
-        _min_ev = 0.01  # EV mínimo 1%
+        _min_ev = 0.01  # EV mínimo 1% cuando hay odds reales
 
         main_lbl = main_prob = main_odd = None
 
-        # Candidatos con EV positivo
+        # Candidatos: con EV si hay odds, con umbral de prob si no hay odds
+        _has_real_odds = odd_h > 1 and odd_a > 1
         _candidates = []
-        if _ev_h > _min_ev:
-            _candidates.append((f"🏠 {home} gana", _ph_d, odd_h, _ev_h))
-        if _ev_a > _min_ev:
-            _candidates.append((f"✈️ {away} gana", _pa_d, odd_a, _ev_a))
-        if _ev_o25 > _min_ev:
-            _candidates.append(("⚽ Over 2.5", _o25_d, 0, _ev_o25))
-        if _ev_u25 > _min_ev:
-            _candidates.append(("🔒 Under 2.5", _u25_d, 0, _ev_u25))
-        if _ev_aa > _min_ev:
-            _candidates.append(("⚡ Ambos Anotan", _aa_d, 0, _ev_aa))
-        _ev_dc = _ev(_do_h_d, 1.35)
-        if _ev_dc > _min_ev:
-            _candidates.append((f"🔵 {home[:14]} DO", _do_h_d, 0, _ev_dc))
-        _ev_dc2 = _ev(_do_a_d, 1.35)
-        if _ev_dc2 > _min_ev:
-            _candidates.append((f"🟣 {away[:14]} DO", _do_a_d, 0, _ev_dc2))
+        if _has_real_odds:
+            # Con odds reales: filtrar por EV
+            if _ev_h > _min_ev:
+                _candidates.append((f"🏠 {home} gana", _ph_d, odd_h, _ev_h))
+            if _ev_a > _min_ev:
+                _candidates.append((f"✈️ {away} gana", _pa_d, odd_a, _ev_a))
+            if _ev_o25 > _min_ev:
+                _candidates.append(("⚽ Over 2.5", _o25_d, 0, _ev_o25))
+            if _ev_u25 > _min_ev:
+                _candidates.append(("🔒 Under 2.5", _u25_d, 0, _ev_u25))
+            if _ev_aa > _min_ev:
+                _candidates.append(("⚡ Ambos Anotan", _aa_d, 0, _ev_aa))
+            _ev_dc = _ev(_do_h_d, 1.35)
+            if _ev_dc > _min_ev:
+                _candidates.append((f"🔵 {home[:14]} DO", _do_h_d, 0, _ev_dc))
+            _ev_dc2 = _ev(_do_a_d, 1.35)
+            if _ev_dc2 > _min_ev:
+                _candidates.append((f"🟣 {away[:14]} DO", _do_a_d, 0, _ev_dc2))
+        else:
+            # Sin odds reales (históricos sin cuotas): filtrar por prob
+            # Usar umbral de prob directo para no sesgar el auditor
+            if _ph_d >= 0.55:
+                _candidates.append((f"🏠 {home} gana", _ph_d, 0, _ph_d - 0.5))
+            elif _pa_d >= 0.55:
+                _candidates.append((f"✈️ {away} gana", _pa_d, 0, _pa_d - 0.5))
+            if _o25_d >= 0.60:
+                _candidates.append(("⚽ Over 2.5", _o25_d, 0, _o25_d - 0.5))
+            if _u25_d >= 0.60:
+                _candidates.append(("🔒 Under 2.5", _u25_d, 0, _u25_d - 0.5))
+            if _aa_d >= 0.60:
+                _candidates.append(("⚡ Ambos Anotan", _aa_d, 0, _aa_d - 0.5))
 
         if _candidates:
-            # Elegir el pick con mayor EV
+            # Elegir el pick con mayor EV (o mayor prob si sin odds)
             _best = max(_candidates, key=lambda x: x[3])
             main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
         else:
-            # Sin EV positivo — marcar como SIN VALOR
+            # Sin ventaja clara — marcar como SIN VALOR
             main_lbl  = f"⚠️ {_fav_ml_lbl} (sin valor)"
             main_prob = _fav_ml_p
             main_odd  = _fav_ml_odd
@@ -4235,18 +4648,16 @@ def render_resultados_tab():
     # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
     _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
     _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-    _inicio_conteo = (datetime.now(CDMX)-timedelta(days=7)).strftime("%Y-%m-%d")  # últimos 7 días
+    _inicio_conteo = (datetime.now(CDMX)-timedelta(days=30)).strftime("%Y-%m-%d")  # últimos 30 días
     _fut_c = 0
     for _fp in [p for p in partidos if p.get("state")=="post"]:
         _sp = _fp.get("deporte","")
         _fd = _fp.get("fecha","")
         if _fd < _inicio_conteo:
-            continue   # ignorar partidos antes del 6 mar
+            continue
         if _sp == "futbol":
-            if _fut_c >= 30: continue
+            if _fut_c >= 50: continue
             _fut_c += 1
-        # Solo contar desde hoy
-        if _fd < _inicio_conteo: continue
         # Tenis: skip si score inválido (0-0 imposible, -1 no disponible)
         if _sp == "tenis":
             _sh2 = _fp.get("score_h", -1)
@@ -4380,8 +4791,12 @@ def render_resultados_tab():
                 # Si es de HOY: exigir score > 0 (al menos 1 gol/set)
                 # Esto previene mostrar 0-0 de partidos que aún no jugaron
                 if p.get("deporte") == "tenis":
-                    # Tenis: al menos 1 set ganado
-                    return (sh + sa) >= 1
+                    # Tenis: state=post es suficiente — la API rara vez devuelve scores de sets.
+                    # Solo rechazar si score es claramente inválido (-1) en días anteriores.
+                    if fecha < _today_str:
+                        return sh >= 0 or True   # días pasados: state=post ya vale
+                    # HOY: aceptar si al menos un jugador tiene sets o simplemente terminó
+                    return True  # state=post garantizado arriba
                 else:
                     # Fútbol/NBA: score válido (puede ser 0-0 legítimo en fútbol)
                     hora = p.get("hora", "")
@@ -10003,6 +10418,34 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     a_stats = get_nba_team_stats(away_id)
     h_form  = get_nba_recent_form(home_id, 10)
     a_form  = get_nba_recent_form(away_id, 10)
+
+    # ── NBA Stats API — enriquecimiento silencioso ──
+    # Si stats.nba.com responde → blend con ESPN. Si no → ESPN solo.
+    try:
+        _nba_id_h = _ESPN_TO_NBASTATS.get(str(home_id), "")
+        _nba_id_a = _ESPN_TO_NBASTATS.get(str(away_id), "")
+        if _nba_id_h:
+            _adv_h = _nba_stats_team_advanced(_nba_id_h)
+            _l5_h  = _nba_stats_last_n(_nba_id_h, 5)
+            # Blend: si NBA Stats da net_rtg → 50/50 con ESPN
+            if _adv_h.get("net_rtg"):
+                h_stats["net_rtg"] = 0.5*h_stats["net_rtg"] + 0.5*_adv_h["net_rtg"]
+                h_stats["ortg"]    = 0.5*h_stats["ortg"]    + 0.5*_adv_h.get("off_rtg", h_stats["ortg"])
+                h_stats["drtg"]    = 0.5*h_stats["drtg"]    + 0.5*_adv_h.get("def_rtg", h_stats["drtg"])
+                h_stats["pace"]    = 0.5*h_stats["pace"]     + 0.5*_adv_h.get("pace", h_stats["pace"])
+            if _l5_h.get("ppg"):
+                h_stats["ppg"] = 0.4*h_stats["ppg"] + 0.6*_l5_h["ppg"]  # últimos 5 pesan más
+        if _nba_id_a:
+            _adv_a = _nba_stats_team_advanced(_nba_id_a)
+            _l5_a  = _nba_stats_last_n(_nba_id_a, 5)
+            if _adv_a.get("net_rtg"):
+                a_stats["net_rtg"] = 0.5*a_stats["net_rtg"] + 0.5*_adv_a["net_rtg"]
+                a_stats["ortg"]    = 0.5*a_stats["ortg"]    + 0.5*_adv_a.get("off_rtg", a_stats["ortg"])
+                a_stats["drtg"]    = 0.5*a_stats["drtg"]    + 0.5*_adv_a.get("def_rtg", a_stats["drtg"])
+                a_stats["pace"]    = 0.5*a_stats["pace"]     + 0.5*_adv_a.get("pace", a_stats["pace"])
+            if _l5_a.get("ppg"):
+                a_stats["ppg"] = 0.4*a_stats["ppg"] + 0.6*_l5_a["ppg"]
+    except: pass
 
     # ── PPG con decay exponencial ──
     DECAY = 0.88
