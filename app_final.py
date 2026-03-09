@@ -8683,7 +8683,7 @@ def _tennis_surface_model(rank1, rank2, surface, odd_1=0, odd_2=0,
     return p1_base
 
 
-def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=20000):
+def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=10000):
     """
     MODELO 3 — Monte Carlo 50,000 simulaciones (inspirado en Barnett & Clarke 2005)
     Simula cada partido set a set, game a game.
@@ -12555,7 +12555,7 @@ def _kr_situacional(home,away,sport,liga,hora):
     return {"factor":0.0,"ctx":"","favorece":"neutro","urgencia":"baja"}
 
 @st.cache_data(ttl=1800,show_spinner=False)
-def _kr_monte_carlo_god(hxg,axg,h_mom=0.0,a_mom=0.0,n=20000):
+def _kr_monte_carlo_god(hxg,axg,h_mom=0.0,a_mom=0.0,n=10000):
     import random as _rnd; _rnd.seed(42)
     hxg_a=max(0.1,hxg*(1.0+h_mom*0.12)); axg_a=max(0.1,axg*(1.0+a_mom*0.12))
     wh=wa=wd=btts=o25=o35=0
