@@ -4109,6 +4109,9 @@ def render_resultados_tab():
     ultima   = db.get("ultima_actualizacion","Nunca")
     pick_history = st.session_state.get("pick_history", [])
     st.caption(f"🕐 Última actualización: {ultima}")
+    _dep_counts = {}
+    for _p in partidos: _dep_counts[_p.get("deporte","?")] = _dep_counts.get(_p.get("deporte","?"),0)+1
+    st.caption(f"🗄️ DB total: {len(partidos)} partidos — {_dep_counts}")
 
     # ── Pre-calcular contadores del modelo sobre TODOS los partidos finalizados ──
     _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
