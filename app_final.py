@@ -17104,92 +17104,81 @@ if deporte == "futbol":
         try: _cartelera_bridge(all_matches)
         except: pass
 
-    # ── AUTO-BRIDGE: calcular Jugada Diamante real para todos los partidos ──
-    # Usa get_form + diamond_engine igual que el análisis manual.
-    # get_form tiene cache 30min — solo es lento la primera vez.
-    # Solo recalcula partidos que no están en el bridge todavía.
-    if all_matches:
-        _bridge = st.session_state.setdefault("_diamond_bridge", {})
-        _bridge_dirty = False
-        for _am in all_matches:
+    # ── AUTO-BRIDGE: calcular Jugada Diamante en background — no bloquea UI ──
+    if all_matches and not st.session_state.get("_bridge_running"):
+        _bridge_snap = dict(st.session_state.get("_diamond_bridge", {}))
+        _matches_snap = list(all_matches)
+        st.session_state["_bridge_running"] = True
+        def _bg_bridge():
             try:
-                _am_id   = _am.get("id","")
-                _am_id2  = f"{_am.get('home_id','')}_{_am.get('away_id','')}_{_am.get('fecha','')}"
-                _am_home = _am.get("home","")
-                _am_fecha= _am.get("fecha","")
-                # Skip si ya está en bridge — análisis manual tiene prioridad
-                _br_ex = _bridge.get(_am_id) or _bridge.get(_am_id2)
-                if _br_ex and (_br_ex.get("src","").startswith("analisis") or
-                    (_br_ex.get("home","").lower()==_am_home.lower() and _br_ex.get("fecha","")==_am_fecha)
-                ): continue
-                # Calcular con datos reales
-                _am_hf  = get_form(_am.get("home_id",""), _am.get("slug","")) or []
-                _am_af  = get_form(_am.get("away_id",""), _am.get("slug","")) or []
-                _am_hxg = xg_weighted(_am_hf, True,  1/_am.get("odd_h",0) if _am.get("odd_h",0)>1 else 0, slug=_am.get("slug","")) if _am_hf else xg_from_record(_am.get("home_rec","5-5-5"), True)
-                _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0, slug=_am.get("slug","")) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
-                _am_mc  = ensemble_football(_am_hxg, _am_axg, {}, _am_hf, _am_af,
-                            _am.get("home_id",""), _am.get("away_id",""),
-                            odd_h=_am.get("odd_h",0), odd_a=_am.get("odd_a",0), odd_d=_am.get("odd_d",0), slug=_am.get("slug",""))
-                _am_dp  = diamond_engine(_am_mc, {}, _am_hf, _am_af)
-                # Misma jerarquía exacta que la cartelera
-                _am_all = [
-                    (f"🏠 {_am['home'][:16]} gana",   _am_dp["ph"], _am.get("odd_h",0)),
-                    (f"✈️ {_am['away'][:16]} gana",   _am_dp["pa"], _am.get("odd_a",0)),
-                    (f"🔵 {_am['home'][:14]} o Emp",  min(0.95,_am_dp["ph"]+_am_dp["pd"]), 0),
-                    (f"🟣 {_am['away'][:14]} o Emp",  min(0.95,_am_dp["pa"]+_am_dp["pd"]), 0),
-                    ("⚽ Over 2.5",                   _am_mc["o25"], 0),
-                    ("⚡ Ambos Anotan (AA)",           _am_mc["btts"], 0),
-                ]
-                _ph_d=_am_dp["ph"]; _pa_d=_am_dp["pa"]; _pd_d=_am_dp["pd"]
-                _o25_d=_am_mc["o25"]; _aa_d=_am_mc["btts"]
-                _do_h_d=min(0.95,_ph_d+_pd_d); _do_a_d=min(0.95,_pa_d+_pd_d)
-                _xg_tot_d=_am_hxg+_am_axg; _best_ml=max(_ph_d,_pa_d)
-                _odd_h=_am.get("odd_h",0); _odd_a=_am.get("odd_a",0)
-                _has_odds=_odd_h>1 and _odd_a>1
-                _edge_h=(_ph_d-1/_odd_h) if _odd_h>1 else (_ph_d-0.50)
-                _edge_a=(_pa_d-1/_odd_a) if _odd_a>1 else (_pa_d-0.50)
-                _fav_lbl = f"🏠 {_am['home'][:16]} gana" if _ph_d>=_pa_d else f"✈️ {_am['away'][:16]} gana"
-                _fav_p   = max(_ph_d,_pa_d)
-                _fav_odd = _odd_h if _ph_d>=_pa_d else _odd_a
-                def _ev_b(prob, odd): return prob*(odd-1)-(1-prob) if odd>1 else prob-0.5
-                _bcands = []
-                if _ev_b(_ph_d,_odd_h)>0.01:           _bcands.append((f"🏠 {_am['home'][:16]} gana",_ph_d,_odd_h,_ev_b(_ph_d,_odd_h)))
-                if _ev_b(_pa_d,_odd_a)>0.01:           _bcands.append((f"✈️ {_am['away'][:16]} gana",_pa_d,_odd_a,_ev_b(_pa_d,_odd_a)))
-                if _ev_b(_o25_d,1.85)>0.01:            _bcands.append(("⚽ Over 2.5",_o25_d,0,_ev_b(_o25_d,1.85)))
-                if _ev_b(1-_o25_d,2.00)>0.01:          _bcands.append(("🔒 Under 2.5",1-_o25_d,0,_ev_b(1-_o25_d,2.00)))
-                if _ev_b(_aa_d,1.75)>0.01:             _bcands.append(("⚡ Ambos Anotan",_aa_d,0,_ev_b(_aa_d,1.75)))
-                if _ev_b(_do_h_d,1.35)>0.01:           _bcands.append((f"🔵 {_am['home'][:14]} o Emp",_do_h_d,0,_ev_b(_do_h_d,1.35)))
-                if _ev_b(_do_a_d,1.35)>0.01:           _bcands.append((f"🟣 {_am['away'][:14]} o Emp",_do_a_d,0,_ev_b(_do_a_d,1.35)))
-                if _bcands:
-                    _bb=max(_bcands,key=lambda x:x[3]); _lbl,_prob,_odd=_bb[0],_bb[1],_bb[2]
-                else:
-                    _lbl=f"⚠️ {_fav_lbl} (sin valor)"; _prob=_fav_p; _odd=_fav_odd
-                _entry = {
-                    "pick":_lbl,"prob":_prob,"odd":_odd,
-                    "home":_am.get("home",""),"away":_am.get("away",""),
-                    "sport":"futbol","fecha":_am_fecha,
-                    "src":f"💎 Diamante · {_prob*100:.0f}%",
-                    "mkt":"1X2" if "gana" in _lbl else ("O/U" if "Over" in _lbl else ("BTTS" if "Ambos" in _lbl else "DO")),
-                }
-                if _am_id:  _bridge[_am_id]  = _entry
-                if _am_id2: _bridge[_am_id2] = _entry
-                _bridge_dirty = True
-                # Registrar en calibración automática
-                try:
-                    _soc_calib_register(
-                        _am_id or _am_id2, _am.get("home",""), _am.get("away",""),
-                        _am.get("league",""), _am.get("slug",""),
-                        _ph_d, _pa_d, _pd_d, _lbl, _prob,
-                        _odd if _odd else 0, _am_fecha
-                    )
-                except: pass
-            except: continue
-        if _bridge_dirty:
-            try:
-                import json as _jb3
-                with open("/tmp/gamblers_diamond_bridge.json","w") as _bf3:
-                    _jb3.dump(_bridge, _bf3)
+                _br = dict(_bridge_snap)
+                _dirty = False
+                for _am in _matches_snap:
+                    try:
+                        _am_id   = _am.get("id","")
+                        _am_id2  = f"{_am.get('home_id','')}_{_am.get('away_id','')}_{_am.get('fecha','')}"
+                        _am_home = _am.get("home","")
+                        _am_fecha= _am.get("fecha","")
+                        _br_ex = _br.get(_am_id) or _br.get(_am_id2)
+                        if _br_ex and (_br_ex.get("src","").startswith("analisis") or
+                            (_br_ex.get("home","").lower()==_am_home.lower() and _br_ex.get("fecha","")==_am_fecha)
+                        ): continue
+                        _am_hf  = get_form(_am.get("home_id",""), _am.get("slug","")) or []
+                        _am_af  = get_form(_am.get("away_id",""), _am.get("slug","")) or []
+                        _am_hxg = xg_weighted(_am_hf, True,  1/_am.get("odd_h",0) if _am.get("odd_h",0)>1 else 0, slug=_am.get("slug","")) if _am_hf else xg_from_record(_am.get("home_rec","5-5-5"), True)
+                        _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0, slug=_am.get("slug","")) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
+                        _am_mc  = ensemble_football(_am_hxg, _am_axg, {}, _am_hf, _am_af,
+                                    _am.get("home_id",""), _am.get("away_id",""),
+                                    odd_h=_am.get("odd_h",0), odd_a=_am.get("odd_a",0), odd_d=_am.get("odd_d",0), slug=_am.get("slug",""))
+                        _am_dp  = diamond_engine(_am_mc, {}, _am_hf, _am_af)
+                        _ph_d=_am_dp["ph"]; _pa_d=_am_dp["pa"]; _pd_d=_am_dp["pd"]
+                        _o25_d=_am_mc["o25"]; _aa_d=_am_mc["btts"]
+                        _do_h_d=min(0.95,_ph_d+_pd_d); _do_a_d=min(0.95,_pa_d+_pd_d)
+                        _odd_h=_am.get("odd_h",0); _odd_a=_am.get("odd_a",0)
+                        _fav_lbl = f"🏠 {_am['home'][:16]} gana" if _ph_d>=_pa_d else f"✈️ {_am['away'][:16]} gana"
+                        _fav_p   = max(_ph_d,_pa_d)
+                        _fav_odd = _odd_h if _ph_d>=_pa_d else _odd_a
+                        def _ev_b(prob, odd): return prob*(odd-1)-(1-prob) if odd>1 else prob-0.5
+                        _bcands = []
+                        if _ev_b(_ph_d,_odd_h)>0.01:  _bcands.append((f"🏠 {_am['home'][:16]} gana",_ph_d,_odd_h,_ev_b(_ph_d,_odd_h)))
+                        if _ev_b(_pa_d,_odd_a)>0.01:  _bcands.append((f"✈️ {_am['away'][:16]} gana",_pa_d,_odd_a,_ev_b(_pa_d,_odd_a)))
+                        if _ev_b(_o25_d,1.85)>0.01:   _bcands.append(("⚽ Over 2.5",_o25_d,0,_ev_b(_o25_d,1.85)))
+                        if _ev_b(1-_o25_d,2.00)>0.01: _bcands.append(("🔒 Under 2.5",1-_o25_d,0,_ev_b(1-_o25_d,2.00)))
+                        if _ev_b(_aa_d,1.75)>0.01:    _bcands.append(("⚡ Ambos Anotan",_aa_d,0,_ev_b(_aa_d,1.75)))
+                        if _ev_b(_do_h_d,1.35)>0.01:  _bcands.append((f"🔵 {_am['home'][:14]} o Emp",_do_h_d,0,_ev_b(_do_h_d,1.35)))
+                        if _ev_b(_do_a_d,1.35)>0.01:  _bcands.append((f"🟣 {_am['away'][:14]} o Emp",_do_a_d,0,_ev_b(_do_a_d,1.35)))
+                        if _bcands:
+                            _bb=max(_bcands,key=lambda x:x[3]); _lbl,_prob,_odd=_bb[0],_bb[1],_bb[2]
+                        else:
+                            _lbl=f"⚠️ {_fav_lbl} (sin valor)"; _prob=_fav_p; _odd=_fav_odd
+                        _entry = {
+                            "pick":_lbl,"prob":_prob,"odd":_odd,
+                            "home":_am.get("home",""),"away":_am.get("away",""),
+                            "sport":"futbol","fecha":_am_fecha,
+                            "src":f"💎 Diamante · {_prob*100:.0f}%",
+                            "mkt":"1X2" if "gana" in _lbl else ("O/U" if "Over" in _lbl else ("BTTS" if "Ambos" in _lbl else "DO")),
+                        }
+                        if _am_id:  _br[_am_id]  = _entry
+                        if _am_id2: _br[_am_id2] = _entry
+                        _dirty = True
+                        try:
+                            _soc_calib_register(
+                                _am_id or _am_id2, _am.get("home",""), _am.get("away",""),
+                                _am.get("league",""), _am.get("slug",""),
+                                _ph_d, _pa_d, _pd_d, _lbl, _prob,
+                                _odd if _odd else 0, _am_fecha
+                            )
+                        except: pass
+                    except: continue
+                if _dirty:
+                    try:
+                        import json as _jb3
+                        with open("/tmp/gamblers_diamond_bridge.json","w") as _bf3:
+                            _jb3.dump(_br, _bf3)
+                    except: pass
             except: pass
+        import threading as _thr_br
+        _thr_br.Thread(target=_bg_bridge, daemon=True).start()
 
     if not all_matches:
         c1, c2 = st.columns([3,1])
