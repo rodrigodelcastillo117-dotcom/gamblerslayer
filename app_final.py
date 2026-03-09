@@ -3912,8 +3912,7 @@ def _fetch_tennis_results_web(desde, hoy):
                 json={
                     "model": "claude-sonnet-4-20250514",
                     "max_tokens": 4000,
-                    "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                    "messages": [{"role": "user", "content": user_msg}],
+                                        "messages": [{"role": "user", "content": user_msg}],
                 },
                 timeout=60,
             )
@@ -7997,8 +7996,7 @@ RESPONDE SOLO EN JSON (sin markdown, sin texto fuera del JSON):
                 "model": "claude-sonnet-4-20250514",
                 "max_tokens": 3000,
                 "system": system_prompt,
-                "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                "messages": [{"role": "user", "content": user_msg}]
+                                "messages": [{"role": "user", "content": user_msg}]
             },
             timeout=60   # web search tarda más
         )
@@ -9210,8 +9208,7 @@ def _claude_enrich_context(home: str, away: str, league: str,
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001",
                   "max_tokens": 500,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]},
+                                    "messages": [{"role": "user", "content": prompt}]},
             timeout=15)
         _data = _r.json()
         # Extract text from response (may have tool_use blocks)
@@ -10628,8 +10625,7 @@ head-to-head, clima, contexto del torneo. SIEMPRE busca antes de responder.
             "model": "claude-sonnet-4-20250514",
             "max_tokens": 600,
             "system": system,
-            "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-            "messages": [{"role": "user", "content": pregunta}]
+                        "messages": [{"role": "user", "content": pregunta}]
         }
         headers = {
             "Content-Type": "application/json",
@@ -12438,9 +12434,8 @@ def _ultra_fatiga(home, away, sport, fecha):
              f"\"descripcion\":\"12 palabras max\",\"alerta\":\"si hay fatiga critica o null\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+            json={"model":"claude-haiku-4-5-20251001","max_tokens": 80,
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("fatiga_h",0.0); d.setdefault("fatiga_a",0.0); d.setdefault("alerta","")
@@ -12465,8 +12460,7 @@ def _ultra_matchup(home, away, sport):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja",0.0); d.setdefault("matchup",""); return d
@@ -12490,8 +12484,7 @@ def _ultra_forma_real(home, away, sport):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":500,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("forma_h",0.0); d.setdefault("forma_a",0.0); return d
@@ -12513,9 +12506,8 @@ def _ultra_ventaja_fisica(home, away, sport):
              f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+            json={"model":"claude-haiku-4-5-20251001","max_tokens": 80,
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja_fisica",0.0); return d
@@ -12537,9 +12529,8 @@ def _ultra_localia(home, away, sport, liga):
              f"\"wr_local_est\":\"% estimado\",\"descripcion\":\"12 palabras max\"}}")
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+            json={"model":"claude-haiku-4-5-20251001","max_tokens": 80,
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("bonus_local",0.0); return d
@@ -12565,8 +12556,7 @@ def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("motivacion_h",0.0); d.setdefault("motivacion_a",0.0); return d
@@ -12590,8 +12580,7 @@ def _ultra_consistencia(home, away, sport):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("consist_h",0.5); d.setdefault("consist_a",0.5); return d
@@ -12615,8 +12604,7 @@ def _ultra_presion(home, away, sport):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("presion_h",0.0); d.setdefault("presion_a",0.0); return d
@@ -12640,8 +12628,7 @@ def _ultra_ritmo_juego(home, away, sport):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ritmo_delta",0.0); return d
@@ -12665,8 +12652,7 @@ def _ultra_dependencia_estrella(home, away, sport):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("dep_h",0.0); d.setdefault("dep_a",0.0); return d
@@ -12690,8 +12676,7 @@ def _ultra_adaptabilidad(home, away, sport):
         r = requests.post("https://api.anthropic.com/v1/messages",
             headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
             json={"model":"claude-haiku-4-5-20251001","max_tokens":400,
-                  "tools":[{"type":"web_search_20250305","name":"web_search"}],
-                  "messages":[{"role":"user","content":p}]},timeout=5)
+                                    "messages":[{"role":"user","content":p}]},timeout=5)
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("adapt_h",0.0); d.setdefault("adapt_a",0.0); return d
@@ -12727,8 +12712,7 @@ def _ultra_rival_similar(home: str, away: str, sport: str) -> dict:
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 160,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": p}]}, timeout=8)
+                                    "messages": [{"role": "user", "content": p}]}, timeout=8)
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -14514,11 +14498,11 @@ def _kr_transicion(home: str, away: str, sport: str) -> dict:
             headers={"x-api-key": ANTHROPIC_API_KEY,
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=7)
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 120,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=5)
         if _r.status_code == 200:
-            _txt = _r.json()["content"][0]["text"].strip()
+            _blocks = _r.json().get("content", [])
+            _txt = next((b["text"] for b in _blocks if b.get("type")=="text"), "")
             _txt = _txt.replace("```json","").replace("```","").strip()
             _d = json.loads(_txt)
             _d.setdefault("trans_h", 0.0)
@@ -14556,11 +14540,11 @@ def _kr_entrenador(home: str, away: str, sport: str, liga: str = "") -> dict:
             headers={"x-api-key": ANTHROPIC_API_KEY,
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=7)
+            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 120,
+                  "messages": [{"role": "user", "content": prompt}]}, timeout=5)
         if _r.status_code == 200:
-            _txt = _r.json()["content"][0]["text"].strip()
+            _blocks = _r.json().get("content", [])
+            _txt = next((b["text"] for b in _blocks if b.get("type")=="text"), "")
             _txt = _txt.replace("```json","").replace("```","").strip()
             _d = json.loads(_txt)
             _d.setdefault("coach_h", 0.0)
@@ -15751,9 +15735,7 @@ def _ia_actuario(home: str, away: str, sport: str,
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -15788,9 +15770,7 @@ def _ia_meteorologo(home: str, away: str, sport: str, fecha: str) -> dict:
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -15825,8 +15805,7 @@ def _ia_h2h(home: str, away: str, sport: str, tabla_ctx: str = "") -> dict:
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -15865,8 +15844,7 @@ def _ia_psicologo(home: str, away: str, sport: str,
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -15905,8 +15883,7 @@ def _ia_trader(home: str, away: str, sport: str,
                      "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
             json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                  "tools": [{"type": "web_search_20250305", "name": "web_search"}],
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
