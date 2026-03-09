@@ -14288,27 +14288,18 @@ if deporte == "futbol":
                 _fav_lbl = f"🏠 {_am['home'][:16]} gana" if _ph_d>=_pa_d else f"✈️ {_am['away'][:16]} gana"
                 _fav_p   = max(_ph_d,_pa_d)
                 _fav_odd = _odd_h if _ph_d>=_pa_d else _odd_a
-                _ninguno = _best_ml<0.52; _eq = abs(_ph_d-_pa_d)<0.05
-                if _pa_d>_ph_d and (_pa_d>=0.55 or (_has_odds and _edge_a>=0.03)):
-                    _lbl,_prob,_odd = f"✈️ {_am['away'][:16]} gana",_pa_d,_odd_a
-                elif _ph_d>=0.55 or (_has_odds and _edge_h>=0.03):
-                    _lbl,_prob,_odd = f"🏠 {_am['home'][:16]} gana",_ph_d,_odd_h
-                elif _pa_d>=0.55 or (_has_odds and _edge_a>=0.03):
-                    _lbl,_prob,_odd = f"✈️ {_am['away'][:16]} gana",_pa_d,_odd_a
-                elif _do_h_d>=0.76 and _ph_d>=0.48:
-                    _lbl,_prob,_odd = f"🔵 {_am['home'][:14]} o Emp",_do_h_d,0
-                elif _do_a_d>=0.76 and _pa_d>=0.43:
-                    _lbl,_prob,_odd = f"🟣 {_am['away'][:14]} o Emp",_do_a_d,0
-                elif _xg_tot_d>=2.6 and _o25_d>=0.54:
-                    _lbl,_prob,_odd = "⚽ Over 2.5",_o25_d,0
-                elif _best_ml>=0.46:
-                    _lbl,_prob,_odd = _fav_lbl,_fav_p,_fav_odd
-                elif _o25_d>=0.52:
-                    _lbl,_prob,_odd = "⚽ Over 2.5",_o25_d,0
-                elif _ninguno and _eq and _aa_d>=0.52:
-                    _lbl,_prob,_odd = "⚡ Ambos Anotan (AA)",_aa_d,0
+                def _ev_b(prob, odd): return prob*(odd-1)-(1-prob) if odd>1 else prob-0.5
+                _bcands = []
+                if _ph_d>=0.52 and _ev_b(_ph_d,_odd_h)>0.01: _bcands.append((f"🏠 {_am['home'][:16]} gana",_ph_d,_odd_h,_ev_b(_ph_d,_odd_h)))
+                if _pa_d>=0.52 and _ev_b(_pa_d,_odd_a)>0.01: _bcands.append((f"✈️ {_am['away'][:16]} gana",_pa_d,_odd_a,_ev_b(_pa_d,_odd_a)))
+                if _o25_d>=0.58 and _ev_b(_o25_d,1.90)>0.01: _bcands.append(("⚽ Over 2.5",_o25_d,0,_ev_b(_o25_d,1.90)))
+                if _aa_d>=0.58  and _ev_b(_aa_d,1.80)>0.01:  _bcands.append(("⚡ Ambos Anotan",_aa_d,0,_ev_b(_aa_d,1.80)))
+                if _do_h_d>=0.75 and _ph_d>=0.50 and _ev_b(_do_h_d,1.35)>0.01: _bcands.append((f"🔵 {_am['home'][:14]} o Emp",_do_h_d,0,_ev_b(_do_h_d,1.35)))
+                if _do_a_d>=0.75 and _pa_d>=0.45 and _ev_b(_do_a_d,1.35)>0.01: _bcands.append((f"🟣 {_am['away'][:14]} o Emp",_do_a_d,0,_ev_b(_do_a_d,1.35)))
+                if _bcands:
+                    _bb=max(_bcands,key=lambda x:x[3]); _lbl,_prob,_odd=_bb[0],_bb[1],_bb[2]
                 else:
-                    _lbl,_prob,_odd = _fav_lbl,_fav_p,_fav_odd
+                    _lbl=f"⚠️ {_fav_lbl} (sin valor)"; _prob=_fav_p; _odd=_fav_odd
                 _entry = {
                     "pick":_lbl,"prob":_prob,"odd":_odd,
                     "home":_am.get("home",""),"away":_am.get("away",""),
@@ -15528,7 +15519,7 @@ if st.session_state["view"] == "cartelera":
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
             with st.spinner("Calculando TRILAY..."):
-                trilay_picks = compute_trilay(matches)
+                trilay_picks = compute_trilay(all_matches or matches)
             if not trilay_picks:
                 st.info("No hay suficientes partidos con edge para armar TRILAY hoy.")
             else:
@@ -15545,7 +15536,7 @@ if st.session_state["view"] == "cartelera":
                 st.markdown("</div>", unsafe_allow_html=True)
         with tab3:
             st.markdown("<div class='shdr'>🦆 PATO — Under 4.5 Seguros</div>", unsafe_allow_html=True)
-            _pato_matches = _ventana_22h(matches)
+            _pato_matches = _ventana_22h(all_matches or matches)
             pato_picks = []
             for _m in _pato_matches:
                 try:
@@ -15571,8 +15562,8 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.markdown("<div class='shdr'>🎯 Picks del Día — Fútbol</div>", unsafe_allow_html=True)
             fut_picks = []
-            for _m in matches[:30]:
-                if _m["state"] != "pre": continue
+            _picks_src = [m for m in (all_matches or []) if m.get("state") == "pre"]
+            for _m in _picks_src[:40]:
                 try:
                     _hf = get_form(_m["home_id"],_m["slug"]) or []
                     _af = get_form(_m["away_id"],_m["slug"]) or []
