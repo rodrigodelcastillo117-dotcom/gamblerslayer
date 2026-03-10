@@ -18255,31 +18255,45 @@ if st.session_state["view"] == "cartelera":
                                     _ten_pl = f"{m['p1']} gana" if tm["p1"]>=tm["p2"] else f"{m['p2']} gana"
                                     _ten_pp = fav_p
                                     _ten_pl2 = ""; _ten_pp2 = 0.0  # se calcula en snap block abajo
-                                    # O/U sets: estimamos prob de 3 sets desde diferencia de ranking
+                                    # O/U juegos totales — Gemini busca la línea real del matchup específico
                                     _ten_ou_p   = 0.0
                                     _ten_ou_lbl = ""
                                     try:
-                                        _r1t_ = m.get("rank1") or 150
-                                        _r2t_ = m.get("rank2") or 150
-                                        # Diferencia de ranking → distancia → prob 3 sets
-                                        # Si hay gran diferencia → más probable 2-0 (Under 2.5)
-                                        _rdiff = abs((_r1t_ or 150) - (_r2t_ or 150))
-                                        if _rdiff > 80:
-                                            _p3s = 0.35   # favorito claro → 2-0 probable
-                                        elif _rdiff > 40:
-                                            _p3s = 0.45
+                                        _p1n = m.get("p1",""); _p2n = m.get("p2","")
+                                        _torn = m.get("torneo","") or m.get("tour","")
+                                        # Buscar línea y pick en cache de sesión para no repetir llamada
+                                        _ten_ou_cache_key = f"_ten_ou_{m.get('id','')}"
+                                        _ten_ou_cached = st.session_state.get(_ten_ou_cache_key)
+                                        if _ten_ou_cached:
+                                            _ten_ou_lbl = _ten_ou_cached.get("lbl","")
+                                            _ten_ou_p   = _ten_ou_cached.get("prob",0.0)
                                         else:
-                                            _p3s = 0.58   # parejo → más chance de 3 sets
-                                        # También usar probs del modelo: si muy parejo → 3 sets más probable
-                                        _pdiff_m = abs(tm["p1"] - tm["p2"])
-                                        if _pdiff_m < 0.08:
-                                            _p3s = max(_p3s, 0.60)
-                                        if _p3s >= 0.50:
-                                            _ten_ou_lbl = f"🎾 Over 2.5 sets"
-                                            _ten_ou_p   = _p3s
-                                        else:
-                                            _ten_ou_lbl = f"🎾 Under 2.5 sets"
-                                            _ten_ou_p   = 1.0 - _p3s
+                                            _ten_ou_prompt = (
+                                                f"Tennis match TODAY: {_p1n} vs {_p2n} at {_torn}.\n"
+                                                f"Rankings: #{m.get('rank1',999)} vs #{m.get('rank2',999)}.\n"
+                                                f"Search for the real bookmaker Over/Under total games line for this match. "
+                                                f"Context: most ATP/WTA matches sit at 21.5 games. "
+                                                f"Big aggressive hitters (Sinner, Alcaraz, Medvedev, Zverev, Djokovic) often see lines of 18.5-19.5 because they close sets fast. "
+                                                f"Baseline ralliers (Tsitsipas, Rublev, Musetti) trend toward 21.5-22.5. "
+                                                f"If you find a real bookmaker line for this match, use it. Otherwise estimate from playing styles and surface.\n"
+                                                f"Then give your Over/Under pick based on matchup, surface, and recent form.\n"
+                                                f"Respond ONLY valid JSON, no markdown: "
+                                                f'{{"line": 21.5, "pick": "Over", "prob": 0.61, "reason": "one sentence"}}'
+                                            )
+                                            _ten_ou_res = _gemini_json(
+                                                _ten_ou_prompt,
+                                                system="You are a tennis totals betting expert. Always respond with valid JSON only.",
+                                                use_search=True,
+                                                max_tokens=200
+                                            )
+                                            if _ten_ou_res and "line" in _ten_ou_res and "pick" in _ten_ou_res:
+                                                _gl = float(_ten_ou_res.get("line", 21.5))
+                                                _gpick = str(_ten_ou_res.get("pick","Over"))
+                                                _gprob = float(_ten_ou_res.get("prob", 0.55))
+                                                _gprob = max(0.40, min(0.85, _gprob))
+                                                _ten_ou_lbl = f"🎾 {_gpick} {_gl:.1f} juegos"
+                                                _ten_ou_p   = _gprob
+                                                st.session_state[_ten_ou_cache_key] = {"lbl": _ten_ou_lbl, "prob": _ten_ou_p}
                                     except: pass
                                     # Snap pre-partido a disco para Villar: ML principal + O/U sets
                                     if not _ten_live and _ten_pl:
@@ -18289,7 +18303,7 @@ if st.session_state["view"] == "cartelera":
                                                 "home": m.get("p1",""), "away": m.get("p2",""),
                                                 "sport": "tenis", "fecha": m.get("fecha",""),
                                                 "src": "🤖 Modelo Tenis", "mkt": "ML",
-                                                "pick2": _ten_ou_lbl, "pick2_prob": _ten_ou_p, "pick2_mkt": "O/U sets"
+                                                "pick2": _ten_ou_lbl, "pick2_prob": _ten_ou_p, "pick2_mkt": "O/U juegos"
                                             }, state="pre")
                                         except: pass
                                     if _ten_live:
@@ -18338,7 +18352,7 @@ if st.session_state["view"] == "cartelera":
                                                 f"padding-top:4px;display:flex;align-items:center;gap:6px'>"
                                                 f"<span style='font-size:0.9rem'>2️⃣</span>"
                                                 f"<div style='flex:1;min-width:0'>"
-                                                f"<div style='font-size:0.58rem;color:{_tou_c};font-weight:900;letter-spacing:.1em'>O/U SETS</div>"
+                                                f"<div style='font-size:0.58rem;color:{_tou_c};font-weight:900;letter-spacing:.1em'>O/U JUEGOS</div>"
                                                 f"<div style='font-size:0.85rem;font-weight:700;color:#fff;"
                                                 f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_ten_pl2}</div>"
                                                 f"</div>"
@@ -18741,6 +18755,8 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
+                                                        _pick2_lbl_c  = (_br.get("pick2","") if _br else "") or None
+                                                        _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or 0.0
                                                         # UEFA: si pick1 es de goles o no hay pick2, recalcular
                                                         _is_uefa_m = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
                                                         _goles_kw  = ("Over","Under","Ambos","AA")
