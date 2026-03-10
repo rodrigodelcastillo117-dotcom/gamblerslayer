@@ -4759,12 +4759,30 @@ def _villar_auto_pick(partido_db):
             home_rec = partido_db.get("home_rec","5-5-5")
             away_rec = partido_db.get("away_rec","5-5-5")
 
-            hf  = get_form(home_id, slug) if home_id and slug else []
-            af  = get_form(away_id, slug) if home_id and slug else []
-            # Para UEFA/CONCACAF: si ESPN no devuelve historial en CL, usar form doméstica
+            # Para UEFA/CONCACAF: usar get_form_domestic directamente (cross-liga)
+            # ESPN no soporta schedule por equipo con slug de competición europea
             if slug in _UEFA_CUP_SLUGS:
-                if not hf and home_id: hf = get_form_domestic(home_id, slug)
-                if not af and away_id: af = get_form_domestic(away_id, slug)
+                hf = get_form_domestic(home_id, slug) if home_id else []
+                af = get_form_domestic(away_id, slug) if away_id else []
+                # Enriquecer con últimos partidos UEFA del equipo si están disponibles
+                _hf_ucl = get_form(home_id, slug) if home_id else []
+                _af_ucl = get_form(away_id, slug) if away_id else []
+                # Mezclar: priorizar doméstica (más partidos) + añadir UCL recientes
+                if _hf_ucl:
+                    _hf_dates = {g["date"] for g in hf}
+                    for g in _hf_ucl:
+                        if g["date"] not in _hf_dates: hf.append(g)
+                    hf.sort(key=lambda x: x["date"], reverse=True)
+                    hf = hf[:15]
+                if _af_ucl:
+                    _af_dates = {g["date"] for g in af}
+                    for g in _af_ucl:
+                        if g["date"] not in _af_dates: af.append(g)
+                    af.sort(key=lambda x: x["date"], reverse=True)
+                    af = af[:15]
+            else:
+                hf  = get_form(home_id, slug) if home_id and slug else []
+                af  = get_form(away_id, slug) if home_id and slug else []
 
             # ── xG fallback: si no hay historial, usar odds como prior principal ──
             def _xg_from_odds(odd_h, odd_a, odd_d, is_home):
@@ -6764,6 +6782,51 @@ _LEAGUE_HISTORICAL: dict = {
         "perfil": "K League 1 — competitivo, juego directo. Similar J1 pero más físico.",
         "under_value": False, "delta": +0.020, "flag": "🇰🇷",
     },
+
+    # ══════════════════════════════════════════════════════════════════
+    # COMPETICIONES UEFA — Fuente: UEFA.com / FBRef / Transfermarkt 2019-2026
+    # ══════════════════════════════════════════════════════════════════
+    "uefa.champions": {
+        "o25_old": 0.542, "o25_rate": 0.568, "avg_goals": 2.92,
+        "trend": "⬆️ Subiendo +2.6%",
+        "perfil": "Champions League — mayor competición de clubes del mundo. Juego abierto entre élites, muchos partidos de ida/vuelta con presión de gol. Fase de grupos ~3.0 goles/partido, eliminatorias ~2.7. Over 2.5 sólido en grupos, más cerrado en KO.",
+        "under_value": False, "delta": +0.026, "flag": "🏆",
+        # Ponderación para xG: liga de referencia = blend de las mejores ligas europeas
+        "ref_league_coef": 0.985,  # promedio ponderado PL(1.0)+Bundesliga(0.97)+LaLiga(0.96)+SerieA(0.94)
+        "avg_goals_home": 1.62,    # goles local promedio por partido
+        "avg_goals_away": 1.30,    # goles visitante promedio por partido
+    },
+    "uefa.europa": {
+        "o25_old": 0.518, "o25_rate": 0.541, "avg_goals": 2.78,
+        "trend": "⚖️ Estable +2.3%",
+        "perfil": "Europa League — mezcla de equipos top de ligas medianas + subcampeones de ligas grandes. Más varianza que UCL. Fases de grupos muy abiertas (~2.9), KO más estratégico (~2.5).",
+        "under_value": False, "delta": +0.023, "flag": "🏆",
+        "ref_league_coef": 0.920,
+        "avg_goals_home": 1.54,
+        "avg_goals_away": 1.24,
+    },
+    "uefa.europa.conf": {
+        "o25_old": 0.505, "o25_rate": 0.528, "avg_goals": 2.68,
+        "trend": "⚖️ Estable +2.3%",
+        "perfil": "Conference League — ligas medianas-bajas + equipos que no clasificaron para UEFA. Partidos más cerrados, Over 2.5 moderado. Valor en mercados alternativos (BTTS, AH).",
+        "under_value": True, "delta": +0.023, "flag": "🏆",
+        "ref_league_coef": 0.850,
+        "avg_goals_home": 1.48,
+        "avg_goals_away": 1.20,
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    # CONCACAF — Fuente: Concacaf.com / FBRef / Transfermarkt 2019-2026
+    # ══════════════════════════════════════════════════════════════════
+    "concacaf.champions": {
+        "o25_old": 0.498, "o25_rate": 0.512, "avg_goals": 2.61,
+        "trend": "⚖️ Estable +1.4%",
+        "perfil": "CONCACAF Champions Cup — dominio histórico de Liga MX (7 de 10 últimas ediciones). Partidos ida/vuelta muy tácticos. Ventaja de altitud para equipos MX en casa (CDMX/GDL/MTY). Under tiene valor en partidos de visita MX en Estados Unidos.",
+        "under_value": True, "delta": +0.014, "flag": "🌎",
+        "ref_league_coef": 0.820,  # promedio Liga MX (dom.) + MLS
+        "avg_goals_home": 1.48,
+        "avg_goals_away": 1.13,
+    },
 }
 
 def get_league_stats(slug: str) -> dict:
@@ -7206,25 +7269,51 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             _tnam2 = _hnam if is_home else _anam
             _dom = _cup_get_form_in_league(_tid2, _tnam2)
             _form_mine = _dom.get("form", [])
-        # Factor de calidad por liga doméstica
-        def _qlf(tname):
+        # Factor de calidad por liga doméstica — con fallback por país vía form
+        def _qlf(tname, form_list=None):
             n = (tname or "").lower().strip()
+            # 1. Lookup directo en _TEAM_DIVISION
             ds = next((sl for k,sl in _TEAM_DIVISION.items() if k in n or n in k), None)
+            # 2. Si no encontró, inferir país desde los partidos de forma (ligas que jugó)
+            if not ds and form_list:
+                for _fg in form_list[:5]:
+                    _lg = (_fg.get("league","") or "").lower()
+                    for _prefix in ("eng","esp","ger","ita","fra","por","ned","bel","tur","sco",
+                                    "mex","usa","bra","arg","col","chi","sau","uae","egy","jpn","kor",
+                                    "den","nor","gre"):
+                        if _prefix in _lg:
+                            ds = _prefix + ".1"; break
+                    if ds: break
             if not ds: return 0.75
             lc = _LEAGUE_COEF.get(ds[:3], 0.70)
             df = (_DIVISION_SLUGS.get(ds, ("?",0.80,1.30))[1] or 0.80)
             return round(lc * df, 4)
-        _my_qf  = _qlf(_hnam if is_home else _anam)
-        _opp_qf = _qlf(_anam if is_home else _hnam)
+        _my_qf  = _qlf(_hnam if is_home else _anam, hf if is_home else af)
+        _opp_qf = _qlf(_anam if is_home else _hnam, af if is_home else hf)
+        # Cheat sheet de la competición como anchor de xG
+        _cs_data   = get_league_stats(slug)
+        _cs_home   = _cs_data.get("avg_goals_home", 1.55 if slug in _concacaf_slugs else 1.62)
+        _cs_away   = _cs_data.get("avg_goals_away", 1.13 if slug in _concacaf_slugs else 1.30)
+        _cs_anchor = _cs_home if is_home else _cs_away  # prior de goles histórico del torneo
+        _cs_coef   = _cs_data.get("ref_league_coef", 0.90)  # calidad promedio de la competición
+
         if _form_mine:
             _xg_dom = xg_weighted(_form_mine, is_home, odds_prior=0)
             _qratio = min(1.20, max(0.72, _my_qf / max(_opp_qf, 0.40)))
-            _xg_base = round(_xg_dom * _qratio, 3)
+            _xg_form = round(_xg_dom * _qratio, 3)
+            # Blend: 60% forma real del equipo + 25% anchor de torneo + 15% diferencia de calidad
+            _quality_adj = (_my_qf / max(_cs_coef, 0.5)) - 1.0  # +/- diferencia vs la media del torneo
+            _xg_base = round(
+                0.60 * _xg_form
+                + 0.25 * _cs_anchor
+                + 0.15 * (_cs_anchor * (1 + _quality_adj)),
+                3
+            )
         else:
-            if slug in _concacaf_slugs:
-                _xg_base = (1.55 if is_home else 1.35) * _my_qf / 0.82
-            else:
-                _xg_base = (1.40 if is_home else 1.15) * _my_qf
+            # Sin forma: usar anchor del torneo ajustado por calidad del equipo
+            _quality_adj = (_my_qf / max(_cs_coef, 0.5)) - 1.0
+            _xg_base = round(_cs_anchor * (1 + _quality_adj * 0.6), 3)
+            _xg_base = max(0.35, _xg_base)
         # Altitud para equipos MX en casa (CONCACAF)
         if slug in _concacaf_slugs and is_home:
             _hl = (_hnam or "").lower()
@@ -8763,8 +8852,12 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
     _league_stats_ens = get_league_stats(_slug_ens)
     _league_o25_rate  = _league_stats_ens["o25_rate"]
     _league_avg_goals = _league_stats_ens["avg_goals"]
-    # Blend: 80% modelo propio + 20% tasa histórica de la liga
-    _blended_o25 = 0.80 * _raw_o25 + 0.20 * _league_o25_rate
+    # Para UEFA/CONCACAF: más peso a la cheat sheet (menos forma histórica confiable)
+    _intl_slugs_ens = {"uefa.champions","uefa.europa","uefa.europa.conf",
+                       "concacaf.champions","concacaf.league"}
+    _w_hist = 0.35 if _slug_ens in _intl_slugs_ens else 0.20
+    # Blend: (1-w_hist) modelo propio + w_hist tasa histórica de la competición
+    _blended_o25 = (1 - _w_hist) * _raw_o25 + _w_hist * _league_o25_rate
     # Over 3.5 también ajustado con la misma dirección relativa
     _direction = _blended_o25 - _raw_o25
     _blended_o35 = max(0.05, min(0.85, _raw_o35 + _direction * 0.7))
@@ -10234,11 +10327,19 @@ def escanear_y_enviar(matches):
     picks = []
     for m in matches:
         if m["state"] != "pre": continue
-        hf  = get_form(m["home_id"], m["slug"])
-        af  = get_form(m["away_id"], m["slug"])
-        if m.get("slug","") in _UEFA_CUP_SLUGS:
-            if not hf: hf = get_form_domestic(str(m.get("home_id","")), m["slug"])
-            if not af: af = get_form_domestic(str(m.get("away_id","")), m["slug"])
+        _msl = m.get("slug","")
+        if _msl in _UEFA_CUP_SLUGS:
+            hf = get_form_domestic(str(m.get("home_id","")), _msl)
+            af = get_form_domestic(str(m.get("away_id","")), _msl)
+            for _ug, _ulist in [(get_form(m["home_id"], _msl), hf), (get_form(m["away_id"], _msl), af)]:
+                _ud = {g["date"] for g in _ulist}
+                for g in _ug:
+                    if g["date"] not in _ud: _ulist.append(g)
+                _ulist.sort(key=lambda x: x["date"], reverse=True)
+            hf = hf[:15]; af = af[:15]
+        else:
+            hf  = get_form(m["home_id"], m["slug"])
+            af  = get_form(m["away_id"], m["slug"])
         hxg = _cup_enriched_xg(m, True,  hf, af)
         axg = _cup_enriched_xg(m, False, hf, af)
         # ── Tabla+GD ajusta xG antes del ensemble (bot Telegram) ──
@@ -10814,11 +10915,19 @@ def compute_trilay(matches):
     cands_ml, cands_o25, cands_aa = [], [], []
     for m in hoy_matches[:40]:
         try:
-            hf  = get_form(m["home_id"],m["slug"])
-            af  = get_form(m["away_id"],m["slug"])
-            if m.get("slug","") in _UEFA_CUP_SLUGS:
-                if not hf: hf = get_form_domestic(str(m.get("home_id","")), m["slug"])
-                if not af: af = get_form_domestic(str(m.get("away_id","")), m["slug"])
+            _msl = m.get("slug","")
+            if _msl in _UEFA_CUP_SLUGS:
+                hf = get_form_domestic(str(m.get("home_id","")), _msl)
+                af = get_form_domestic(str(m.get("away_id","")), _msl)
+                for _ug, _ulist in [(get_form(m["home_id"], _msl), hf), (get_form(m["away_id"], _msl), af)]:
+                    _ud = {g["date"] for g in _ulist}
+                    for g in _ug:
+                        if g["date"] not in _ud: _ulist.append(g)
+                    _ulist.sort(key=lambda x: x["date"], reverse=True)
+                hf = hf[:15]; af = af[:15]
+            else:
+                hf  = get_form(m["home_id"],m["slug"])
+                af  = get_form(m["away_id"],m["slug"])
             hxg = _cup_enriched_xg(m, True,  hf, af)
             axg = _cup_enriched_xg(m, False, hf, af)
             mc  = mc50k(hxg,axg)
@@ -10870,11 +10979,19 @@ def compute_trilay(matches):
 def compute_pato(matches):
     cands=[]
     for m in matches[:80]:
-        hf  = get_form(m["home_id"],m["slug"])
-        af  = get_form(m["away_id"],m["slug"])
-        if m.get("slug","") in _UEFA_CUP_SLUGS:
-            if not hf: hf = get_form_domestic(str(m.get("home_id","")), m["slug"])
-            if not af: af = get_form_domestic(str(m.get("away_id","")), m["slug"])
+        _msl = m.get("slug","")
+        if _msl in _UEFA_CUP_SLUGS:
+            hf = get_form_domestic(str(m.get("home_id","")), _msl)
+            af = get_form_domestic(str(m.get("away_id","")), _msl)
+            for _ug, _ulist in [(get_form(m["home_id"], _msl), hf), (get_form(m["away_id"], _msl), af)]:
+                _ud = {g["date"] for g in _ulist}
+                for g in _ug:
+                    if g["date"] not in _ud: _ulist.append(g)
+                _ulist.sort(key=lambda x: x["date"], reverse=True)
+            hf = hf[:15]; af = af[:15]
+        else:
+            hf  = get_form(m["home_id"],m["slug"])
+            af  = get_form(m["away_id"],m["slug"])
         hxg = _cup_enriched_xg(m, True,  hf, af) if not hf else max(0.2,avg([r["gf"] for r in hf]))
         axg = _cup_enriched_xg(m, False, hf, af) if not af else max(0.2,avg([r["gf"] for r in af]))
         u45 = poisson_u45(hxg,axg)*100
@@ -13202,8 +13319,20 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             try:
                 home_id = m.get("home_id",""); away_id = m.get("away_id",""); slug = m.get("slug","")
                 if not home_id or not slug: continue
-                hf  = _form_cache_kr.get((home_id, slug)) if (home_id, slug) in _form_cache_kr else (get_form(home_id, slug) or [])
-                af  = _form_cache_kr.get((away_id, slug)) if (away_id, slug) in _form_cache_kr else (get_form(away_id, slug) or [])
+                if slug in _UEFA_CUP_SLUGS:
+                    hf = _form_cache_kr.get((home_id, slug)) or get_form_domestic(home_id, slug) or []
+                    af = _form_cache_kr.get((away_id, slug)) or get_form_domestic(away_id, slug) or []
+                    # Añadir resultados UEFA si existen
+                    for _ug, _ulist, _uid in [(get_form(home_id, slug), hf, home_id),
+                                               (get_form(away_id, slug), af, away_id)]:
+                        _ud = {g["date"] for g in _ulist}
+                        for g in _ug:
+                            if g["date"] not in _ud: _ulist.append(g)
+                        _ulist.sort(key=lambda x: x["date"], reverse=True)
+                    hf = hf[:15]; af = af[:15]
+                else:
+                    hf = _form_cache_kr.get((home_id, slug)) if (home_id, slug) in _form_cache_kr else (get_form(home_id, slug) or [])
+                    af = _form_cache_kr.get((away_id, slug)) if (away_id, slug) in _form_cache_kr else (get_form(away_id, slug) or [])
                 hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug) \
                       if hf else _cup_enriched_xg(m, True,  hf, af)
                 axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug) \
