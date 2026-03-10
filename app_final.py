@@ -16625,18 +16625,82 @@ if st.session_state["view"] == "cartelera":
             for fi, fecha in enumerate(sorted(nba_por_fecha.keys())):
                 gs = nba_por_fecha[fecha]
                 with st.expander(f"{fecha_label_nba(fecha)}  ·  {len(gs)} juegos", expanded=(fi==0)):
-                    # ── Finalizados — clickeables con score real ──
-                    for g in [x for x in gs if x["state"]=="post"]:
-                        sh=g.get("score_h",-1); sa=g.get("score_a",-1)
-                        sf=f"{sh}–{sa} pts" if sh>=0 else "FT"
-                        won_h=sh>sa; hc="#00ff88" if won_h else "#aaa"; ac="#00ff88" if sa>sh else "#aaa"
-                        won_lbl = g["home"] if won_h else g["away"]
-                        if st.button(
-                            f"✅ {g['away']} @ {g['home']}  ·  {sf}  · 🏆 {won_lbl}",
-                            key=f"nba_post_{g['id']}", use_container_width=True):
-                            st.session_state["sel"]  = {**g, "_sport":"nba"}
-                            st.session_state["view"] = "analisis"
-                            st.rerun()
+                    # ── Finalizados — card con pick del snapshot ──
+                    _snap_nba = _load_picks_snap()
+                    _post_nba = [x for x in gs if x["state"]=="post"]
+                    for _ni in range(0, len(_post_nba), 2):
+                        _npair = _post_nba[_ni:_ni+2]
+                        _ncols = st.columns(len(_npair))
+                        for _ncol, g in zip(_ncols, _npair):
+                          with _ncol:
+                            sh=g.get("score_h",-1); sa=g.get("score_a",-1)
+                            sf=f"{sh}–{sa}" if sh>=0 else "FT"
+                            won_h=sh>sa
+                            won_lbl = g["home"] if won_h else g["away"]
+                            _hcn = "#00ff88" if won_h else "#aaa"
+                            _acn = "#00ff88" if sa>sh else "#aaa"
+                            # Pick del snapshot
+                            _gid = g.get("id","")
+                            _spkn = _snap_nba.get(_gid)
+                            if not _spkn:
+                                _phn = (g.get("home","") or "").lower().strip()
+                                _pfn = g.get("fecha","")
+                                for _svn in _snap_nba.values():
+                                    if (_svn.get("fecha","") == _pfn and _phn and
+                                            (_svn.get("home","") or "").lower().strip() == _phn):
+                                        _spkn = _svn; break
+                            # Si no hay snap guardado, generar ML pick ahora
+                            if not _spkn:
+                                try:
+                                    _nr = st.session_state.get("_nba_model_cache",{}).get(_gid)
+                                    if not _nr: _nr = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",220))
+                                    if _nr:
+                                        _ml_p = _nr["p_h_win"] if _nr["p_h_win"] >= 0.5 else _nr["p_a_win"]
+                                        _ml_lbl = f"🏀 {g['home']} gana ML" if _nr["p_h_win"]>=0.5 else f"🏀 {g['away']} gana ML"
+                                        _ou_p = _nr["p_over"] if _nr["p_over"]>=0.53 else (_nr["p_under"] if _nr["p_under"]>=0.53 else 0)
+                                        _ou_lbl = (f"🔥 Over {_nr['line']:.0f}" if _nr["p_over"]>=0.53 else
+                                                   (f"❄️ Under {_nr['line']:.0f}" if _nr["p_under"]>=0.53 else ""))
+                                        _best_lbl = _ou_lbl if _ou_p > _ml_p and _ou_lbl else _ml_lbl
+                                        _best_p   = _ou_p   if _ou_p > _ml_p and _ou_lbl else _ml_p
+                                        _spkn = {"pick":_best_lbl,"prob":_best_p,"sport":"nba",
+                                                 "home":g.get("home",""),"away":g.get("away",""),
+                                                 "src":"🤖 Modelo NBA","mkt":"auto",
+                                                 "fecha":g.get("fecha","")}
+                                        _snap_auto_pick(_gid, _spkn, state="post", force=False)
+                                except: pass
+                            _pick_html_n = ""
+                            if _spkn:
+                                _ppn = _spkn.get("prob",0); _ppnd = _ppn*100 if _ppn<=1 else _ppn
+                                _plbn = _spkn.get("pick","")
+                                try: _vdn, _vcn, _ = _villar_match_pick_to_result(_spkn, g)
+                                except: _vdn, _vcn = "⏳", "#555"
+                                _icon = "✅" if "GANÓ" in _vdn else ("❌" if "FALLÓ" in _vdn else "⏳")
+                                _bgpn = "#00ff8812" if _icon=="✅" else ("#ff444412" if _icon=="❌" else "#1a1a3a")
+                                _pick_html_n = (
+                                    f"<div style='border-top:1px solid #1a2a3a;margin-top:5px;padding-top:4px;"
+                                    f"background:{_bgpn};border-radius:5px;padding:4px 6px;"
+                                    f"display:flex;align-items:center;gap:5px'>"
+                                    f"<span>{_icon}</span>"
+                                    f"<div style='flex:1;min-width:0'>"
+                                    f"<div style='font-size:0.78rem;font-weight:900;color:{_vcn};"
+                                    f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_plbn}</div>"
+                                    f"<div style='font-size:0.68rem;color:#555'>🤖 {_ppnd:.0f}%</div>"
+                                    f"</div></div>"
+                                )
+                            st.markdown(
+                                f"<div style='background:#040a0d;border:1px solid #1a2a3a;"
+                                f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
+                                f"<div style='font-size:0.75rem;color:#555;font-weight:700'>FT · {sf}</div>"
+                                f"<div style='font-size:0.975rem;color:{_hcn};font-weight:700'>{g['home']}</div>"
+                                f"<div style='font-size:0.825rem;color:#555;margin:1px 0'>vs</div>"
+                                f"<div style='font-size:0.975rem;color:{_acn};font-weight:700'>{g['away']}</div>"
+                                f"<div style='font-size:0.8rem;color:#FFD700;margin-top:2px'>🏆 {won_lbl}</div>"
+                                f"{_pick_html_n}</div>",
+                                unsafe_allow_html=True)
+                            if st.button("📊", key=f"nba_post_{_gid}", help=f"Analizar {g['home']} vs {g['away']}", use_container_width=True):
+                                st.session_state["sel"]  = {**g, "_sport":"nba"}
+                                st.session_state["view"] = "analisis"
+                                st.rerun()
 
                     # ── Pre/live en 2 COLUMNAS ──
                     active_gs = [x for x in gs if x["state"]!="post"]
@@ -17012,26 +17076,77 @@ if st.session_state["view"] == "cartelera":
                         fin_ms  = [m for m in ms if m["state"]=="post"]
                         pre_ms  = [m for m in ms if m["state"]!="post"]
 
-                        # Finalizados — clickeables con score sets real
-                        for m in fin_ms:
-                            sc1r = m.get("score_p1",""); sc2r = m.get("score_p2","")
-                            sc = f"{sc1r}–{sc2r}" if sc1r else "FT"
-                            won_n = m["p1"] if (sc1r and sc2r and sc1r > sc2r) else m["p2"]
-                            if st.button(
-                                f"✅ {m['p1']} vs {m['p2']}  ·  Sets {sc}  · 🏆 {won_n}",
-                                key=f"ten_post_{m['id']}", use_container_width=True):
-                                # convert tennis match to sel format for detail view
-                                sel_m = {**m,
-                                    "home": m["p1"], "away": m["p2"],
-                                    "home_id": m["id"]+"_p1", "away_id": m["id"]+"_p2",
-                                    "league": m.get("torneo", m.get("tour","Tenis")),
-                                    "slug": "tennis", "home_rec":"", "away_rec":"",
-                                    "odd_h": m.get("odd_1",0), "odd_a": m.get("odd_2",0),
-                                    "odd_d": 0, "_sport": "tennis",
-                                }
-                                st.session_state["sel"]  = sel_m
-                                st.session_state["view"] = "analisis"
-                                st.rerun()
+                        # Finalizados — card con pick del snapshot
+                        _snap_ten = _load_picks_snap()
+                        for _ti2 in range(0, len(fin_ms), 2):
+                            _tpair = fin_ms[_ti2:_ti2+2]
+                            _tcols = st.columns(len(_tpair))
+                            for _tcol, m in zip(_tcols, _tpair):
+                              with _tcol:
+                                sc1r = m.get("score_p1",""); sc2r = m.get("score_p2","")
+                                sc = f"{sc1r}–{sc2r}" if sc1r else "FT"
+                                # Ganador por sets (comparar como int si es posible)
+                                try: _won_p1 = int(sc1r) > int(sc2r)
+                                except: _won_p1 = sc1r > sc2r if sc1r and sc2r else False
+                                won_n = m["p1"] if _won_p1 else m["p2"]
+                                _hct = "#00ff88" if _won_p1 else "#aaa"
+                                _act = "#00ff88" if not _won_p1 else "#aaa"
+                                # Pick del snapshot
+                                _tid = m.get("id","")
+                                _spkt = _snap_ten.get(_tid)
+                                if not _spkt:
+                                    _p1t = (m.get("p1","") or "").lower().strip()
+                                    _pft = m.get("fecha","")
+                                    for _svt in _snap_ten.values():
+                                        if (_svt.get("fecha","") == _pft and _p1t and
+                                                (_svt.get("home","") or "").lower().strip() == _p1t):
+                                            _spkt = _svt; break
+                                _pick_html_t = ""
+                                if _spkt:
+                                    _ppt = _spkt.get("prob",0); _pptd = _ppt*100 if _ppt<=1 else _ppt
+                                    _plbt = _spkt.get("pick","")
+                                    # Crear partido compatible con _villar_match_pick_to_result
+                                    _m_compat = {**m, "home": m.get("p1",""), "away": m.get("p2",""),
+                                                 "score_h": m.get("score_h", int(sc1r) if sc1r and sc1r.isdigit() else -1),
+                                                 "score_a": m.get("score_a", int(sc2r) if sc2r and sc2r.isdigit() else -1),
+                                                 "deporte":"tenis"}
+                                    try: _vdt, _vct, _ = _villar_match_pick_to_result(_spkt, _m_compat)
+                                    except: _vdt, _vct = "⏳", "#555"
+                                    _icot = "✅" if "GANÓ" in _vdt else ("❌" if "FALLÓ" in _vdt else "⏳")
+                                    _bgpt = "#00ff8812" if _icot=="✅" else ("#ff444412" if _icot=="❌" else "#1a1a3a")
+                                    _pick_html_t = (
+                                        f"<div style='border-top:1px solid #1a2a1a;margin-top:5px;padding-top:4px;"
+                                        f"background:{_bgpt};border-radius:5px;padding:4px 6px;"
+                                        f"display:flex;align-items:center;gap:5px'>"
+                                        f"<span>{_icot}</span>"
+                                        f"<div style='flex:1;min-width:0'>"
+                                        f"<div style='font-size:0.78rem;font-weight:900;color:{_vct};"
+                                        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_plbt}</div>"
+                                        f"<div style='font-size:0.68rem;color:#555'>🤖 {_pptd:.0f}%</div>"
+                                        f"</div></div>"
+                                    )
+                                st.markdown(
+                                    f"<div style='background:#040d06;border:1px solid #1a2a1a;"
+                                    f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
+                                    f"<div style='font-size:0.75rem;color:#555;font-weight:700'>FT · Sets {sc}</div>"
+                                    f"<div style='font-size:0.975rem;color:{_hct};font-weight:700'>{m['p1']}</div>"
+                                    f"<div style='font-size:0.825rem;color:#555;margin:1px 0'>vs</div>"
+                                    f"<div style='font-size:0.975rem;color:{_act};font-weight:700'>{m['p2']}</div>"
+                                    f"<div style='font-size:0.8rem;color:#FFD700;margin-top:2px'>🏆 {won_n}</div>"
+                                    f"{_pick_html_t}</div>",
+                                    unsafe_allow_html=True)
+                                if st.button("📊", key=f"ten_post_{_tid}", help=f"Analizar {m['p1']} vs {m['p2']}", use_container_width=True):
+                                    sel_m = {**m,
+                                        "home": m["p1"], "away": m["p2"],
+                                        "home_id": m["id"]+"_p1", "away_id": m["id"]+"_p2",
+                                        "league": m.get("torneo", m.get("tour","Tenis")),
+                                        "slug": "tennis", "home_rec":"", "away_rec":"",
+                                        "odd_h": m.get("odd_1",0), "odd_a": m.get("odd_2",0),
+                                        "odd_d": 0, "_sport": "tennis",
+                                    }
+                                    st.session_state["sel"]  = sel_m
+                                    st.session_state["view"] = "analisis"
+                                    st.rerun()
 
                         # Pre/live in 2-column grid
                         # We render them as pairs into 2 st.columns
@@ -17281,15 +17396,69 @@ if st.session_state["view"] == "cartelera":
                                     with st.expander(f"{_live_badge}{_liga_clean}  {_count_str}", expanded=_n_live>0):
                                       _post_ms = [m for m in _lms if m["state"]=="post"]
                                       _pre_ms  = [m for m in _lms if m["state"]!="post"]
-                                      for _m in _post_ms:
-                                          _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
-                                          _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
-                                          _res = "Empate" if _sh==_sa else (_m["home"] if _sh>_sa else _m["away"])
-                                          if st.button(f"✅ {_m['home']} vs {_m['away']}  ·  {_sf}  · 🏆 {_res}",
-                                                       key=f"fut_post_{_m.get('id',_m['home'][:4]+_m['away'][:4]+_sf)}", use_container_width=True):
-                                              st.session_state["sel"]  = {**_m, "_sport":"futbol"}
-                                              st.session_state["view"] = "analisis"
-                                              st.rerun()
+                                      _snap_fut = _load_picks_snap()
+                                      for _pi2 in range(0, len(_post_ms), 2):
+                                          _pair2 = _post_ms[_pi2:_pi2+2]
+                                          _cols2 = st.columns(len(_pair2))
+                                          for _col2, _m in zip(_cols2, _pair2):
+                                            with _col2:
+                                              _sh=_m.get("score_h",-1); _sa=_m.get("score_a",-1)
+                                              _sf=f"{_sh}–{_sa}" if _sh>=0 else "FT"
+                                              _won_h2 = _sh > _sa; _draw2 = _sh == _sa
+                                              _res_lbl = "Empate" if _draw2 else (_m["home"] if _won_h2 else _m["away"])
+                                              _res_ico = "🤝" if _draw2 else "🏆"
+                                              # Pick del snapshot
+                                              _mid2 = _m.get("id","")
+                                              _spk2 = _snap_fut.get(_mid2)
+                                              if not _spk2:
+                                                  _ph2 = (_m.get("home","") or "").lower().strip()
+                                                  _pf2 = _m.get("fecha","")
+                                                  for _sv2 in _snap_fut.values():
+                                                      if (_sv2.get("fecha","") == _pf2 and _ph2 and
+                                                              (_sv2.get("home","") or "").lower().strip() == _ph2):
+                                                          _spk2 = _sv2; break
+                                              # Auditar pick
+                                              _pick_html2 = ""
+                                              if _spk2:
+                                                  _pp2 = _spk2.get("prob", 0)
+                                                  _pp2d = _pp2*100 if _pp2 <= 1 else _pp2
+                                                  _plbl2 = _spk2.get("pick","")
+                                                  # Resultado del pick
+                                                  try:
+                                                      _vd_p, _vc_p, _ = _villar_match_pick_to_result(_spk2, _m)
+                                                  except: _vd_p, _vc_p = "⏳ Pendiente", "#555"
+                                                  _ico_p = "✅" if "GANÓ" in _vd_p else ("❌" if "FALLÓ" in _vd_p else "⏳")
+                                                  _bg_p  = "#00ff8812" if _ico_p=="✅" else ("#ff444412" if _ico_p=="❌" else "#1a1a3a")
+                                                  _bd_p  = _vc_p if _ico_p in ("✅","❌") else "#333"
+                                                  _pick_html2 = (
+                                                      f"<div style='border-top:1px solid #2a2010;margin-top:5px;padding-top:4px;"
+                                                      f"background:{_bg_p};border-radius:5px;padding:4px 6px;"
+                                                      f"display:flex;align-items:center;gap:5px'>"
+                                                      f"<span style='font-size:1rem'>{_ico_p}</span>"
+                                                      f"<div style='flex:1;min-width:0'>"
+                                                      f"<div style='font-size:0.78rem;font-weight:900;color:{_vc_p};"
+                                                      f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_plbl2}</div>"
+                                                      f"<div style='font-size:0.68rem;color:#555'>🤖 {_pp2d:.0f}%</div>"
+                                                      f"</div></div>"
+                                                  )
+                                              _hc2 = "#00ff88" if _won_h2 else ("#FFD700" if _draw2 else "#aaa")
+                                              _ac2 = "#00ff88" if not _won_h2 and not _draw2 else ("#FFD700" if _draw2 else "#aaa")
+                                              st.markdown(
+                                                  f"<div style='background:#0d0900;border:1px solid #2a2010;"
+                                                  f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
+                                                  f"<div style='font-size:0.75rem;color:#555;font-weight:700'>FT</div>"
+                                                  f"<div style='font-size:0.975rem;color:{_hc2};font-weight:700;"
+                                                  f"line-height:1.3;word-break:break-word'>{_m['home']}</div>"
+                                                  f"<div style='font-size:0.825rem;color:#555;margin:1px 0'>"
+                                                  f"{_sf} · {_res_ico} {_res_lbl}</div>"
+                                                  f"<div style='font-size:0.975rem;color:{_ac2};font-weight:700;"
+                                                  f"line-height:1.3;word-break:break-word'>{_m['away']}</div>"
+                                                  f"{_pick_html2}</div>",
+                                                  unsafe_allow_html=True)
+                                              if st.button("📊", key=f"fut_post_{_mid2}", help=f"Analizar {_m['home']} vs {_m['away']}", use_container_width=True):
+                                                  st.session_state["sel"]  = {**_m, "_sport":"futbol"}
+                                                  st.session_state["view"] = "analisis"
+                                                  st.rerun()
                                       for _pi in range(0, len(_pre_ms), 2):
                                           _pair = _pre_ms[_pi:_pi+2]
                                           _cols = st.columns(len(_pair))
