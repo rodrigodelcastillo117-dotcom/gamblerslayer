@@ -2089,17 +2089,17 @@ _LEAGUE_ODDS_DEFAULTS: dict = {
     "chi.1":  {"odd_o15_api":1.29,"odd_u15_api":3.52,"odd_o25_api":1.92,"odd_u25_api":1.92,
                "odd_o35_api":2.84,"odd_u35_api":1.40,"odd_btts_yes_api":1.82,"odd_btts_no_api":1.94},
     # ── UEFA Champions League — alta calidad, bajo scoring ──
-    "uefa.champions":   {"odd_o15_api":1.27,"odd_u15_api":3.65,"odd_o25_api":1.85,"odd_u25_api":1.99,
-                         "odd_o35_api":2.68,"odd_u35_api":1.46,"odd_btts_yes_api":1.76,"odd_btts_no_api":2.00},
+    "uefa.champions":   {"odd_o15_api":1.21,"odd_u15_api":4.20,"odd_o25_api":1.69,"odd_u25_api":2.15,
+                         "odd_o35_api":2.15,"odd_u35_api":1.64,"odd_btts_yes_api":1.66,"odd_btts_no_api":2.10},
     # ── UEFA Europa League ──
-    "uefa.europa":      {"odd_o15_api":1.26,"odd_u15_api":3.72,"odd_o25_api":1.87,"odd_u25_api":1.97,
-                         "odd_o35_api":2.72,"odd_u35_api":1.44,"odd_btts_yes_api":1.78,"odd_btts_no_api":1.98},
+    "uefa.europa":      {"odd_o15_api":1.23,"odd_u15_api":4.00,"odd_o25_api":1.79,"odd_u25_api":2.06,
+                         "odd_o35_api":2.45,"odd_u35_api":1.54,"odd_btts_yes_api":1.72,"odd_btts_no_api":2.04},
     # ── UEFA Conference League ──
-    "uefa.europa.conf": {"odd_o15_api":1.25,"odd_u15_api":3.80,"odd_o25_api":1.89,"odd_u25_api":1.95,
-                         "odd_o35_api":2.76,"odd_u35_api":1.43,"odd_btts_yes_api":1.79,"odd_btts_no_api":1.97},
+    "uefa.europa.conf": {"odd_o15_api":1.25,"odd_u15_api":3.85,"odd_o25_api":1.86,"odd_u25_api":1.98,
+                         "odd_o35_api":2.62,"odd_u35_api":1.48,"odd_btts_yes_api":1.78,"odd_btts_no_api":1.98},
     # ── CONCACAF Champions Cup ──
-    "concacaf.champions":{"odd_o15_api":1.28,"odd_u15_api":3.60,"odd_o25_api":1.91,"odd_u25_api":1.93,
-                          "odd_o35_api":2.80,"odd_u35_api":1.41,"odd_btts_yes_api":1.80,"odd_btts_no_api":1.96},
+    "concacaf.champions":{"odd_o15_api":1.24,"odd_u15_api":3.90,"odd_o25_api":1.83,"odd_u25_api":2.01,
+                          "odd_o35_api":2.55,"odd_u35_api":1.51,"odd_btts_yes_api":1.75,"odd_btts_no_api":2.01},
     # ── FA Cup / Copa del Rey / DFB Pokal ──
     "eng.fa":  {"odd_o15_api":1.26,"odd_u15_api":3.72,"odd_o25_api":1.88,"odd_u25_api":1.96,
                 "odd_o35_api":2.74,"odd_u35_api":1.43,"odd_btts_yes_api":1.78,"odd_btts_no_api":1.98},
@@ -4103,22 +4103,29 @@ def _snap_auto_pick(partido_id, pick_data, state="pre", force=False):
     force=False: no sobreescribe partidos ya terminados (comportamiento por defecto)."""
     if not partido_id or not pick_data: return
     snap = _load_picks_snap()
-    # Sin force: no tocar partidos que ya empezaron/terminaron
-    if not force and partido_id in snap and state in ("in", "post"):
-        return
+    # Sin force: no sobreescribir jamás un pick ya guardado (pre-partido congelado)
+    if not force and partido_id in snap:
+        existing = snap[partido_id]
+        # Si el pick fue guardado pre-partido (frozen) o el partido ya empezó → proteger
+        if existing.get("frozen") or state in ("in", "post"):
+            return
     snap[partido_id] = {
-        "pick":      pick_data.get("pick",""),
-        "prob":      pick_data.get("prob",0),
-        "mkt":       pick_data.get("mkt", pick_data.get("src","🤖 Modelo")),
-        "odd":       pick_data.get("odd",0),
-        "src":       pick_data.get("src","🤖 Modelo"),
-        "all_picks": pick_data.get("all_picks", []),
-        "home":      pick_data.get("home",""),
-        "away":      pick_data.get("away",""),
-        "sport":     pick_data.get("sport","futbol"),
-        "fecha":     pick_data.get("fecha",""),
-        "fecha_gen": datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
-        "frozen":    state in ("in","post"),
+        "pick":       pick_data.get("pick",""),
+        "prob":       pick_data.get("prob",0),
+        "mkt":        pick_data.get("mkt", pick_data.get("src","🤖 Modelo")),
+        "odd":        pick_data.get("odd",0),
+        "src":        pick_data.get("src","🤖 Modelo"),
+        "all_picks":  pick_data.get("all_picks", []),
+        "home":       pick_data.get("home",""),
+        "away":       pick_data.get("away",""),
+        "sport":      pick_data.get("sport","futbol"),
+        "fecha":      pick_data.get("fecha",""),
+        "fecha_gen":  datetime.now(CDMX).strftime("%Y-%m-%d %H:%M"),
+        "frozen":     state in ("in","post"),
+        # 2° pick (O/U para NBA/tenis, 2° mercado UEFA para fútbol)
+        "pick2":      pick_data.get("pick2",""),
+        "pick2_prob": pick_data.get("pick2_prob",0),
+        "pick2_mkt":  pick_data.get("pick2_mkt",""),
     }
     _save_picks_snap(snap)
 
@@ -4259,7 +4266,7 @@ def fetch_nba_results(days_back=10):
     return partidos
 
 @st.cache_data(ttl=900)  # 15min cache
-def fetch_tennis_results(days_back=10):
+def fetch_tennis_results(days_back=14):
     """
     Trae partidos de tenis finalizados (state=post) de los últimos N días.
     Usa dos fuentes: TENNIS_API histórico + get_tennis_cartelera state=post del día.
@@ -4308,9 +4315,11 @@ def fetch_tennis_results(days_back=10):
                 except: sc1 = 0
                 try:  sc2 = max(0, int(sc2_raw))
                 except: sc2 = 0
-                eid = f"ten_{ev.get('event_key','')}"
-                if eid in seen_ids: continue
-                seen_ids.add(eid)
+                # ID idéntico al que usa get_tennis_cartelera → snap coincide con resultado
+                eid = str(ev.get("event_key",""))
+                eid_alt = f"ten_{eid}"  # alias legacy
+                if eid in seen_ids or eid_alt in seen_ids: continue
+                seen_ids.add(eid); seen_ids.add(eid_alt)
                 results.append({
                     "id": eid, "deporte":"tenis",
                     "home":p1, "away":p2, "p1":p1, "p2":p2,
@@ -4327,9 +4336,12 @@ def fetch_tennis_results(days_back=10):
         cartelera_ten = get_tennis_cartelera()
         for m in cartelera_ten:
             if m.get("state") != "post": continue
-            eid = f"ten_live_{m.get('id','')}"
-            if eid in seen_ids: continue
-            seen_ids.add(eid)
+            # Usar mismo ID que cartelera para que snap coincida
+            _raw_tid = str(m.get("id",""))
+            eid = _raw_tid  # igual que cartelera
+            eid_alt = f"ten_live_{_raw_tid}"
+            if eid in seen_ids or eid_alt in seen_ids: continue
+            seen_ids.add(eid); seen_ids.add(eid_alt)
             sc1 = m.get("score_p1", m.get("score_h", 0))
             sc2 = m.get("score_p2", m.get("score_a", 0))
             try: sc1 = max(0, int(str(sc1)))
@@ -4405,6 +4417,47 @@ def fetch_tennis_results(days_back=10):
         {"p1":"Jasmine Paolini",    "p2":"Anastasia Potapova",          "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
         {"p1":"Emma Raducanu",      "p2":"Anastasia Zakharova",         "sh":2,"sa":0,"t":"WTA","f":"2026-03-06"},
         {"p1":"Alexandra Eala",     "p2":"Dayana Yastremska",           "sh":2,"sa":1,"t":"WTA","f":"2026-03-06"},
+        # ── Marzo 7, 2026 — ATP R64 (1ª ronda main draw) ──
+        {"p1":"Nuno Borges",         "p2":"Aleksandar Kovacevic",        "sh":2,"sa":0,"t":"ATP","f":"2026-03-07"},
+        {"p1":"Juan Manuel Cerundolo","p2":"Rinky Hijikata",             "sh":2,"sa":1,"t":"ATP","f":"2026-03-07"},
+        {"p1":"Grigor Dimitrov",     "p2":"Vit Kopriva",                 "sh":2,"sa":0,"t":"ATP","f":"2026-03-07"},
+        {"p1":"Jacob Fearnley",      "p2":"Sebastian Korda",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-07"},
+        {"p1":"Alex Michelsen",      "p2":"Mackenzie McDonald",          "sh":2,"sa":0,"t":"ATP","f":"2026-03-07"},
+        {"p1":"Kamil Majchrzak",     "p2":"Luca Van Assche",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-07"},
+        # WTA Mar 7 — R64/R32 primeras rondas
+        {"p1":"Leylah Fernandez",    "p2":"Katerina Siniakova",          "sh":2,"sa":0,"t":"WTA","f":"2026-03-07"},
+        {"p1":"Qinwen Zheng",        "p2":"Antonia Ruzic",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-07"},
+        {"p1":"Donna Vekic",         "p2":"Jessica Pegula",              "sh":2,"sa":1,"t":"WTA","f":"2026-03-07"},
+        {"p1":"Madison Keys",        "p2":"Diane Parry",                 "sh":2,"sa":0,"t":"WTA","f":"2026-03-07"},
+        {"p1":"Marta Kostyuk",       "p2":"Taylor Townsend",             "sh":2,"sa":0,"t":"WTA","f":"2026-03-07"},
+        {"p1":"Elina Svitolina",     "p2":"Laura Siegemund",             "sh":2,"sa":0,"t":"WTA","f":"2026-03-07"},
+        # ── Marzo 8, 2026 — ATP R32 (confirmado atptour.com) ──
+        {"p1":"Learner Tien",        "p2":"Ben Shelton",                 "sh":2,"sa":1,"t":"ATP","f":"2026-03-08"},
+        {"p1":"Jannik Sinner",       "p2":"Denis Shapovalov",            "sh":2,"sa":0,"t":"ATP","f":"2026-03-08"},
+        {"p1":"Alexander Zverev",    "p2":"Jiri Lehecka",                "sh":2,"sa":1,"t":"ATP","f":"2026-03-08"},
+        {"p1":"Felix Auger-Aliassime","p2":"Gabriel Diallo",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-08"},
+        {"p1":"Alejandro Davidovich Fokina","p2":"Zachary Svajda",       "sh":2,"sa":0,"t":"ATP","f":"2026-03-08"},
+        {"p1":"Frances Tiafoe",      "p2":"Jenson Brooksby",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-08"},
+        {"p1":"Joao Fonseca",        "p2":"Adam Walton",                 "sh":2,"sa":0,"t":"ATP","f":"2026-03-08"},
+        {"p1":"Arthur Fils",         "p2":"Brandon Nakashima",           "sh":2,"sa":0,"t":"ATP","f":"2026-03-08"},
+        # WTA Mar 8 — R32 (flashscore/livesport)
+        {"p1":"Aryna Sabalenka",     "p2":"Jaqueline Cristian",         "sh":2,"sa":0,"t":"WTA","f":"2026-03-08"},
+        {"p1":"Jasmine Paolini",     "p2":"Ajla Tomljanovic",            "sh":2,"sa":0,"t":"WTA","f":"2026-03-08"},
+        {"p1":"Naomi Osaka",         "p2":"Camila Osorio",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-08"},
+        {"p1":"Amanda Anisimova",    "p2":"Emma Raducanu",               "sh":2,"sa":0,"t":"WTA","f":"2026-03-08"},
+        {"p1":"Clara Tauson",        "p2":"Talia Gibson",                "sh":2,"sa":0,"t":"WTA","f":"2026-03-08"},
+        {"p1":"Linda Noskova",       "p2":"Sorana Cirstea",              "sh":2,"sa":0,"t":"WTA","f":"2026-03-08"},
+        # ── Marzo 9, 2026 — ATP R16 (flashscore activo: R16 en progreso) ──
+        {"p1":"Carlos Alcaraz",      "p2":"Arthur Rinderknech",          "sh":2,"sa":0,"t":"ATP","f":"2026-03-09"},
+        {"p1":"Novak Djokovic",      "p2":"Aleksandar Kovacevic",        "sh":2,"sa":0,"t":"ATP","f":"2026-03-09"},
+        {"p1":"Alex de Minaur",      "p2":"Grigor Dimitrov",             "sh":2,"sa":0,"t":"ATP","f":"2026-03-09"},
+        # ── Marzo 10, 2026 — ATP R16 (hoy, flashscore: partidos anunciados) ──
+        {"p1":"Arthur Fils",         "p2":"Felix Auger-Aliassime",       "sh":0,"sa":0,"t":"ATP","f":"2026-03-10"},
+        {"p1":"Frances Tiafoe",      "p2":"Alexander Zverev",            "sh":0,"sa":0,"t":"ATP","f":"2026-03-10"},
+        {"p1":"Learner Tien",        "p2":"Alejandro Davidovich Fokina", "sh":0,"sa":0,"t":"ATP","f":"2026-03-10"},
+        # WTA Mar 10 — R16 anunciados (flashscore)
+        {"p1":"Aryna Sabalenka",     "p2":"Naomi Osaka",                 "sh":0,"sa":0,"t":"WTA","f":"2026-03-10"},
+        {"p1":"Talia Gibson",        "p2":"Jasmine Paolini",             "sh":0,"sa":0,"t":"WTA","f":"2026-03-10"},
     ]
     for _s in _SEEDS:
         if _s["f"] < desde: continue
@@ -4422,11 +4475,15 @@ def fetch_tennis_results(days_back=10):
         )
         if _dup: continue
         seen_ids.add(_sid)
+        # Si score es 0-0 y la fecha es HOY → estado pre/in (aún no empezó o en curso)
+        _seed_state = "post" if (_s["sh"] > 0 or _s["sa"] > 0) else (
+            "pre" if _s["f"] >= hoy else "post"
+        )
         results.append({
             "id": _sid, "deporte":"tenis",
             "home":_s["p1"], "away":_s["p2"], "p1":_s["p1"], "p2":_s["p2"],
             "score_h":_s["sh"], "score_a":_s["sa"],
-            "state":"post", "liga":f"{_s['t']} · BNP Paribas Open Indian Wells",
+            "state":_seed_state, "liga":f"{_s['t']} · BNP Paribas Open Indian Wells",
             "tour":_s["t"], "torneo":"BNP Paribas Open Indian Wells",
             "fecha":_s["f"], "hora":"12:00", "rank1":0, "rank2":0,
         })
@@ -5898,6 +5955,8 @@ def render_resultados_tab():
 
             _inicio_conteo_tab = "2026-03-06"  # solo desde 6 marzo 2026
             _auto_pk_cache = {}  # lazy — solo se calcula si se necesita
+            # Pre-cargar snap UNA sola vez para todo el bloque (evita leer disco N veces)
+            _snap_all_v = _load_picks_snap()
 
             for fecha in sorted(por_fecha.keys(), reverse=True):
                 dia_ps = por_fecha[fecha]
@@ -5959,9 +6018,15 @@ def render_resultados_tab():
 
                             # Pick del snapshot (generado en cartelera, antes de empezar)
                             _mid = p.get("id","")
-                            _snap_all_v = _load_picks_snap()
+                            # Usar snap pre-cargado (evita re-leer disco en cada partido)
                             auto_pk = _snap_all_v.get(_mid)
-                            # Fallback: buscar por home+fecha en el snapshot
+                            # Buscar también con/sin prefijo "ten_" (IDs legacy vs nuevo)
+                            if not auto_pk and _mid:
+                                if _mid.startswith("ten_"):
+                                    auto_pk = _snap_all_v.get(_mid[4:])
+                                else:
+                                    auto_pk = _snap_all_v.get(f"ten_{_mid}")
+                            # Fallback: buscar por home+fecha en snap
                             if not auto_pk:
                                 _ph_v = (p.get("home","") or p.get("p1","") or "").lower().strip()
                                 _pf_v = p.get("fecha","")
@@ -5969,8 +6034,63 @@ def render_resultados_tab():
                                     if (_sv.get("fecha","") == _pf_v and _ph_v and
                                             (_sv.get("home","") or "").lower().strip() == _ph_v):
                                         auto_pk = _sv; break
+                            # Fallback 2: buscar por p1 normalizado + fecha (tenis)
+                            if not auto_pk and sport_key == "tenis":
+                                _pp1_v = (p.get("p1","") or p.get("home","") or "").lower().strip()
+                                _pf_v  = p.get("fecha","")
+                                for _sv in _snap_all_v.values():
+                                    _sv_home = (_sv.get("home","") or "").lower().strip()
+                                    _sv_away = (_sv.get("away","") or "").lower().strip()
+                                    if _sv.get("fecha","") == _pf_v and _pp1_v and (
+                                        _sv_home == _pp1_v or _sv_away == _pp1_v or
+                                        _pp1_v.split()[-1] in _sv_home or _pp1_v.split()[-1] in _sv_away
+                                    ):
+                                        auto_pk = _sv; break
 
                             pick_rows = []
+                            # Si no hay snap: generar pick retroactivo con el modelo
+                            if not auto_pk:
+                                try:
+                                    _retro = _villar_auto_pick(_p_fixed)
+                                    if _retro and _retro.get("pick"):
+                                        auto_pk = {
+                                            "pick": _retro["pick"],
+                                            "prob": _retro.get("prob", 0),
+                                            "odd":  _retro.get("odd", 0),
+                                            "src":  _retro.get("src", "🔁 Retroactivo"),
+                                            "home": _p_fixed.get("home",""),
+                                            "away": _p_fixed.get("away",""),
+                                            "fecha": _p_fixed.get("fecha",""),
+                                        }
+                                        # Guardar en snap para no re-calcular
+                                        try:
+                                            _snap_auto_pick(_mid, auto_pk, state="post", force=False)
+                                        except: pass
+                                except: pass
+                            # Último recurso: pick por odds si existen
+                            if not auto_pk and sport_key == "futbol":
+                                try:
+                                    _oh = _p_fixed.get("odd_h", 0)
+                                    _oa = _p_fixed.get("odd_a", 0)
+                                    _od = _p_fixed.get("odd_d", 0)
+                                    if _oh > 1 and _oa > 1:
+                                        _probs = {
+                                            _p_fixed.get("home","?"):  (1/_oh if _oh>1 else 0),
+                                            "Empate":                   (1/_od if _od>1 else 0),
+                                            _p_fixed.get("away","?"): (1/_oa if _oa>1 else 0),
+                                        }
+                                        _best_lbl = max(_probs, key=_probs.get)
+                                        _best_p   = _probs[_best_lbl]
+                                        if _best_p > 0.38:
+                                            auto_pk = {
+                                                "pick": _best_lbl,
+                                                "prob": _best_p,
+                                                "src": "📊 Cuotas",
+                                                "home": _p_fixed.get("home",""),
+                                                "away": _p_fixed.get("away",""),
+                                                "fecha": _p_fixed.get("fecha",""),
+                                            }
+                                except: pass
                             if auto_pk:
                                 _vd2, _vc2, _ex2 = _villar_match_pick_to_result(auto_pk, _p_fixed)
                                 _prob2 = auto_pk.get("prob", 0)
@@ -5986,7 +6106,26 @@ def render_resultados_tab():
                                 if _fecha_p >= _inicio_conteo_tab:
                                     if "GANÓ"  in _vd2: ok_sp  += 1
                                     elif "FALLÓ" in _vd2: fail_sp += 1
-                                # NO contar auto_pick en stats — solo picks del usuario cuentan
+                                # Pick 2 (O/U NBA/tenis, 2° UEFA fútbol)
+                                _p2_lbl  = auto_pk.get("pick2","") or auto_pk.get("pick2_lbl","")
+                                _p2_prob = auto_pk.get("pick2_prob",0)
+                                if _p2_lbl and _p2_prob > 0:
+                                    try:
+                                        _pk2_for_audit = {**auto_pk, "pick": _p2_lbl, "prob": _p2_prob,
+                                                          "mkt": auto_pk.get("pick2_mkt","O/U")}
+                                        _vd2b, _vc2b, _ex2b = _villar_match_pick_to_result(_pk2_for_audit, _p_fixed)
+                                        pick_rows.append({
+                                            "label":   _p2_lbl,
+                                            "prob":    _p2_prob * 100 if _p2_prob <= 1 else _p2_prob,
+                                            "odd":     auto_pk.get("odd2", 0),
+                                            "src":     auto_pk.get("pick2_mkt","2° Pick"),
+                                            "verd":    _vd2b, "col": _vc2b, "expl": _ex2b,
+                                            "is_main": False,
+                                        })
+                                        if _fecha_p >= _inicio_conteo_tab:
+                                            if "GANÓ"  in _vd2b: ok_sp  += 1
+                                            elif "FALLÓ" in _vd2b: fail_sp += 1
+                                    except: pass
 
                             # Render card
                             has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
@@ -6002,7 +6141,12 @@ def render_resultados_tab():
                                 pct  = f" · {r['prob']:.0f}%" if r.get("prob",0)>0 else ""
                                 # Badge principal vs secundario
                                 _is_main = r.get("is_main", True)
-                                _main_badge = "<span style='background:#FFD70022;color:#FFD700;font-size:0.9rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>★ PICK</span>" if _is_main else ""
+                                if _is_main:
+                                    _main_badge = "<span style='background:#FFD70022;color:#FFD700;font-size:0.9rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>★ PICK</span>"
+                                else:
+                                    _p2_src = r.get("src","")
+                                    _p2_c   = "#ff6600" if "Over" in r.get("label","") else ("#00ccff" if ("Under" in r.get("label","") or "O/U" in _p2_src) else "#8855ff")
+                                    _main_badge = f"<span style='background:{_p2_c}22;color:{_p2_c};font-size:0.9rem;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:700'>2️⃣ {_p2_src}</span>"
                                 pick_html += (
                                     f"<div style='margin-top:4px;padding:5px 10px;border-radius:8px;"
                                     f"background:{bg};border:1px solid {bd};"
@@ -7897,8 +8041,27 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         _opp_qf = _qlf(_anam if is_home else _hnam, af if is_home else hf)
         # Cheat sheet de la competición como anchor de xG
         _cs_data   = get_league_stats(slug)
-        _cs_home   = _cs_data.get("avg_goals_home", 1.55 if slug in _concacaf_slugs else 1.62)
-        _cs_away   = _cs_data.get("avg_goals_away", 1.13 if slug in _concacaf_slugs else 1.30)
+        # ── Anchors calibrados con datos reales temporada 2024-25 ──
+        # UCL: xG home=1.68, away=1.21 (UEFA stats, 144 partidos)
+        # UEL: home≈1.55, away≈1.29 (2.84 goles/partido, UEFA 2024-25)
+        # UECL: home≈1.58, away≈1.37 (2.95 goles/partido, UEFA 2024-25)
+        # CONCACAF: home≈1.47, away≈1.14 (2.61 goles/partido, Sofascore 2025)
+        if slug in _concacaf_slugs:
+            _anchor_h_default = 1.47; _anchor_a_default = 1.14
+        elif "champions" in slug:
+            # UCL: blend 2024-25 (3.26 g/p, xG home=1.68/away=1.21) + 2025-26 (3.39 g/p)
+            # → promedios: home=1.75, away=1.26 — temporadas más goleadoras de la historia
+            _anchor_h_default = 1.75; _anchor_a_default = 1.26
+        elif "europa.conf" in slug or "ecl" in slug:
+            # UECL: blend 2024-25 (2.95 g/p) + 2025-26 (2.38 g/p) → 2.67 efectivo en knockout
+            _anchor_h_default = 1.50; _anchor_a_default = 1.17
+        elif "europa" in slug:
+            # UEL: 2024-25 fue 2.84-2.86; 2025-26 estimado similar → 2.82 blend
+            _anchor_h_default = 1.56; _anchor_a_default = 1.26
+        else:
+            _anchor_h_default = 1.62; _anchor_a_default = 1.30
+        _cs_home   = _cs_data.get("avg_goals_home", _anchor_h_default)
+        _cs_away   = _cs_data.get("avg_goals_away", _anchor_a_default)
         _cs_anchor = _cs_home if is_home else _cs_away  # prior de goles histórico del torneo
         _cs_coef   = _cs_data.get("ref_league_coef", 0.90)  # calidad promedio de la competición
 
@@ -16149,8 +16312,23 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     st.session_state["_kr_scan_ts"] = _cached_ts
         except: pass
 
-    # AUTO-SCAN: siempre escanear si no hay cache de hoy
+    # AUTO-SCAN: escanear si no hay cache de hoy Y no se ha hecho scan reciente
+    # NOTA: /tmp/ se borra al reiniciar el servidor — no forzar scan por eso solo.
+    # Cooldown: si ya hubo un scan (en esta sesión o en cache) hace < 30 min, no re-escanear.
+    _should_force_scan = False
     if not st.session_state.get("_king_scanned"):
+        # Revisar si hubo scan reciente (en los últimos 30 min) aunque /tmp/ esté vacío
+        _ss_last_scan = st.session_state.get("_kr_scan_ts", "")
+        _recent_scan = False
+        if _ss_last_scan:
+            try:
+                _ts_dt = datetime.strptime(_ss_last_scan, "%Y-%m-%d %H:%M")
+                _ts_dt = CDMX.localize(_ts_dt) if _ts_dt.tzinfo is None else _ts_dt
+                _recent_scan = (datetime.now(CDMX) - _ts_dt).total_seconds() < 1800  # 30 min
+            except: pass
+        if not _recent_scan:
+            _should_force_scan = True
+    if _should_force_scan:
         do_scan = True
     
     if do_scan or st.session_state.get("_king_scanned"):
@@ -17459,17 +17637,17 @@ if st.session_state["view"] == "cartelera":
                                     _nr = st.session_state.get("_nba_model_cache",{}).get(_gid)
                                     if not _nr: _nr = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",220))
                                     if _nr:
-                                        _ml_p = _nr["p_h_win"] if _nr["p_h_win"] >= 0.5 else _nr["p_a_win"]
+                                        _ml_p   = _nr["p_h_win"] if _nr["p_h_win"] >= 0.5 else _nr["p_a_win"]
                                         _ml_lbl = f"🏀 {g['home']} gana ML" if _nr["p_h_win"]>=0.5 else f"🏀 {g['away']} gana ML"
-                                        _ou_p = _nr["p_over"] if _nr["p_over"]>=0.53 else (_nr["p_under"] if _nr["p_under"]>=0.53 else 0)
-                                        _ou_lbl = (f"🔥 Over {_nr['line']:.0f}" if _nr["p_over"]>=0.53 else
-                                                   (f"❄️ Under {_nr['line']:.0f}" if _nr["p_under"]>=0.53 else ""))
-                                        _best_lbl = _ou_lbl if _ou_p > _ml_p and _ou_lbl else _ml_lbl
-                                        _best_p   = _ou_p   if _ou_p > _ml_p and _ou_lbl else _ml_p
-                                        _spkn = {"pick":_best_lbl,"prob":_best_p,"sport":"nba",
+                                        _ou_p   = _nr["p_over"] if _nr["p_over"] >= _nr["p_under"] else _nr["p_under"]
+                                        _ou_lbl = (f"🔥 Over {_nr['line']:.0f}" if _nr["p_over"] >= _nr["p_under"]
+                                                   else f"❄️ Under {_nr['line']:.0f}")
+                                        # Siempre guardar AMBOS: ML como pick principal, O/U como pick2
+                                        _spkn = {"pick":_ml_lbl,"prob":_ml_p,"sport":"nba",
                                                  "home":g.get("home",""),"away":g.get("away",""),
-                                                 "src":"🤖 Modelo NBA","mkt":"auto",
-                                                 "fecha":g.get("fecha","")}
+                                                 "src":"🤖 Modelo NBA","mkt":"ML",
+                                                 "fecha":g.get("fecha",""),
+                                                 "pick2":_ou_lbl,"pick2_prob":_ou_p,"pick2_mkt":"O/U"}
                                         _snap_auto_pick(_gid, _spkn, state="post", force=False)
                                 except: pass
                             _pick_html_n = ""
@@ -17525,20 +17703,25 @@ if st.session_state["view"] == "cartelera":
                                 if not _nba_pl:
                                     _nba_res = st.session_state.get("_nba_model_cache", {}).get(g.get("id",""))
                                     if _nba_res:
-                                        if _nba_res["p_over"] >= 0.53:
-                                            _nba_pl = f"Over {_nba_res['line']}"
-                                            _nba_pp = _nba_res["p_over"]
-                                        elif _nba_res["p_under"] >= 0.53:
-                                            _nba_pl = f"Under {_nba_res['line']}"
-                                            _nba_pp = _nba_res["p_under"]
-                                        # Snap a disco para auditoría de Villar
-                                        if _nba_pl and not live:
+                                        _nba_ml_p   = _nba_res["p_h_win"] if _nba_res["p_h_win"]>=0.5 else _nba_res["p_a_win"]
+                                        _nba_ml_lbl = (f"🏀 {g['home']} gana ML" if _nba_res["p_h_win"]>=0.5
+                                                       else f"🏀 {g['away']} gana ML")
+                                        _nba_ou_p   = _nba_res["p_over"] if _nba_res["p_over"]>=_nba_res["p_under"] else _nba_res["p_under"]
+                                        _nba_ou_lbl = (f"🔥 Over {_nba_res['line']:.0f}" if _nba_res["p_over"]>=_nba_res["p_under"]
+                                                       else f"❄️ Under {_nba_res['line']:.0f}")
+                                        _nba_pl  = _nba_ml_lbl
+                                        _nba_pp  = _nba_ml_p
+                                        _nba_pl2 = _nba_ou_lbl
+                                        _nba_pp2 = _nba_ou_p
+                                        # Snap a disco: ML principal, O/U como pick2
+                                        if not live:
                                             try:
                                                 _snap_auto_pick(g.get("id",""), {
-                                                    "pick": _nba_pl, "prob": _nba_pp,
+                                                    "pick": _nba_ml_lbl, "prob": _nba_ml_p,
                                                     "home": g.get("home",""), "away": g.get("away",""),
                                                     "sport": "nba", "fecha": g.get("fecha",""),
-                                                    "src": "🤖 Modelo NBA", "mkt": "O/U"
+                                                    "src": "🤖 Modelo NBA", "mkt": "ML",
+                                                    "pick2": _nba_ou_lbl, "pick2_prob": _nba_ou_p, "pick2_mkt": "O/U"
                                                 }, state="pre")
                                             except: pass
                                 # En vivo: recalcular con ritmo real del partido
@@ -17565,8 +17748,11 @@ if st.session_state["view"] == "cartelera":
                                         else:
                                             _nba_pl = ""; _nba_pp = 0
                                     except: pass
-                                # ── NBA Card: matchup + pick row ──
+                                # ── NBA Card: matchup + 2 pick rows (ML + O/U) ──
                                 _nba_pick_row = ""
+                                # pick2 puede venir del snap (bridge) o de lo calculado arriba
+                                _nba_pl2 = locals().get("_nba_pl2") or (_nba_br.get("pick2","") if _nba_br else "")
+                                _nba_pp2 = locals().get("_nba_pp2") or (_nba_br.get("pick2_prob",0) if _nba_br else 0)
                                 if _nba_pl and _nba_pp >= 0.46:
                                     if _nba_pp >= 0.68:    _npe,_npc,_npt = "💎","#00ccff","DIAMANTE"
                                     elif _nba_pp >= 0.60:  _npe,_npc,_npt = "🔥","#ff6600","FUEGO"
@@ -17580,13 +17766,28 @@ if st.session_state["view"] == "cartelera":
                                         f"<span style='font-size:1.1rem'>{_npe}</span>"
                                         f"<div style='flex:1;min-width:0'>"
                                         f"<div style='font-size:0.6rem;color:{_npc};font-weight:900;"
-                                        f"letter-spacing:.1em'>{_npfx}{_npt}</div>"
+                                        f"letter-spacing:.1em'>{_npfx}ML · {_npt}</div>"
                                         f"<div style='font-size:0.88rem;font-weight:900;color:#fff;"
                                         f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_nba_pl}</div>"
                                         f"</div>"
                                         f"<span style='font-size:1.05rem;font-weight:900;color:{_npc}'>{_nba_pp*100:.0f}%</span>"
                                         f"</div>"
                                     )
+                                    # Pick 2: O/U siempre
+                                    if _nba_pl2 and not live:
+                                        _ou_c = "#ff6600" if "Over" in _nba_pl2 else "#00ccff"
+                                        _nba_pick_row += (
+                                            f"<div style='border-top:1px solid #1a2535;margin-top:4px;"
+                                            f"padding-top:4px;display:flex;align-items:center;gap:6px'>"
+                                            f"<span style='font-size:0.9rem'>2️⃣</span>"
+                                            f"<div style='flex:1;min-width:0'>"
+                                            f"<div style='font-size:0.58rem;color:{_ou_c};font-weight:900;letter-spacing:.1em'>O/U</div>"
+                                            f"<div style='font-size:0.85rem;font-weight:700;color:#fff;"
+                                            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_nba_pl2}</div>"
+                                            f"</div>"
+                                            f"<span style='font-size:0.95rem;font-weight:900;color:{_ou_c}'>{_nba_pp2*100:.0f}%</span>"
+                                            f"</div>"
+                                        )
                                 _nba_border = "#ff444466" if live else "#00ccff22"
                                 _nba_hdr_c  = "#ff4444" if live else "#00ccff"
                                 st.markdown(
@@ -17938,6 +18139,9 @@ if st.session_state["view"] == "cartelera":
                                 # Pick del snapshot
                                 _tid = m.get("id","")
                                 _spkt = _snap_ten.get(_tid)
+                                # Buscar también con alias ten_ (IDs legacy)
+                                if not _spkt:
+                                    _spkt = _snap_ten.get(f"ten_{_tid}") or _snap_ten.get(_tid[4:] if _tid.startswith("ten_") else "")
                                 if not _spkt:
                                     _p1t = (m.get("p1","") or "").lower().strip()
                                     _pft = m.get("fecha","")
@@ -17945,6 +18149,27 @@ if st.session_state["view"] == "cartelera":
                                         if (_svt.get("fecha","") == _pft and _p1t and
                                                 (_svt.get("home","") or "").lower().strip() == _p1t):
                                             _spkt = _svt; break
+                                # Si aún no hay snap: generar pick ahora con modelo y guardar
+                                if not _spkt and _tid:
+                                    try:
+                                        _r1t = m.get("rank1") or 0
+                                        _r2t = m.get("rank2") or 0
+                                        if _r1t <= 0: _r1t = _resolve_rank_local(m.get("p1","")) or 150
+                                        if _r2t <= 0: _r2t = _resolve_rank_local(m.get("p2","")) or 150
+                                        _tm2 = tennis_model(_r1t, _r2t, 0, 0,
+                                            p1_name=m.get("p1",""), p2_name=m.get("p2",""))
+                                        _fav2 = m["p1"] if _tm2["p1"] >= _tm2["p2"] else m["p2"]
+                                        _pp2  = max(_tm2["p1"], _tm2["p2"])
+                                        _spkt = {
+                                            "pick": f"🎾 {_fav2} gana",
+                                            "prob": _pp2,
+                                            "home": m.get("p1",""), "away": m.get("p2",""),
+                                            "sport": "tenis", "fecha": m.get("fecha",""),
+                                            "src": f"🤖 Retroactivo #{_r1t} vs #{_r2t}", "mkt": "ML",
+                                        }
+                                        _snap_auto_pick(_tid, _spkt, state="post", force=False)
+                                        _snap_ten[_tid] = _spkt  # actualizar cache local
+                                    except: pass
                                 _pick_html_t = ""
                                 if _spkt:
                                     _ppt = _spkt.get("prob",0); _pptd = _ppt*100 if _ppt<=1 else _ppt
@@ -18009,14 +18234,42 @@ if st.session_state["view"] == "cartelera":
                                     _ten_live = m["state"] == "in"
                                     _ten_pl = f"{m['p1']} gana" if tm["p1"]>=tm["p2"] else f"{m['p2']} gana"
                                     _ten_pp = fav_p
-                                    # Snap pre-partido a disco para Villar
+                                    _ten_pl2 = ""; _ten_pp2 = 0.0  # se calcula en snap block abajo
+                                    # O/U sets: estimamos prob de 3 sets desde diferencia de ranking
+                                    _ten_ou_p   = 0.0
+                                    _ten_ou_lbl = ""
+                                    try:
+                                        _r1t_ = m.get("rank1") or 150
+                                        _r2t_ = m.get("rank2") or 150
+                                        # Diferencia de ranking → distancia → prob 3 sets
+                                        # Si hay gran diferencia → más probable 2-0 (Under 2.5)
+                                        _rdiff = abs((_r1t_ or 150) - (_r2t_ or 150))
+                                        if _rdiff > 80:
+                                            _p3s = 0.35   # favorito claro → 2-0 probable
+                                        elif _rdiff > 40:
+                                            _p3s = 0.45
+                                        else:
+                                            _p3s = 0.58   # parejo → más chance de 3 sets
+                                        # También usar probs del modelo: si muy parejo → 3 sets más probable
+                                        _pdiff_m = abs(tm["p1"] - tm["p2"])
+                                        if _pdiff_m < 0.08:
+                                            _p3s = max(_p3s, 0.60)
+                                        if _p3s >= 0.50:
+                                            _ten_ou_lbl = f"🎾 Over 2.5 sets"
+                                            _ten_ou_p   = _p3s
+                                        else:
+                                            _ten_ou_lbl = f"🎾 Under 2.5 sets"
+                                            _ten_ou_p   = 1.0 - _p3s
+                                    except: pass
+                                    # Snap pre-partido a disco para Villar: ML principal + O/U sets
                                     if not _ten_live and _ten_pl:
                                         try:
                                             _snap_auto_pick(m.get("id",""), {
                                                 "pick": f"🎾 {_ten_pl}", "prob": _ten_pp,
                                                 "home": m.get("p1",""), "away": m.get("p2",""),
                                                 "sport": "tenis", "fecha": m.get("fecha",""),
-                                                "src": "🤖 Modelo Tenis", "mkt": "ML"
+                                                "src": "🤖 Modelo Tenis", "mkt": "ML",
+                                                "pick2": _ten_ou_lbl, "pick2_prob": _ten_ou_p, "pick2_mkt": "O/U sets"
                                             }, state="pre")
                                         except: pass
                                     if _ten_live:
@@ -18032,7 +18285,10 @@ if st.session_state["view"] == "cartelera":
                                                 _ten_pp = min(0.92, _ten_pp + _adv * 0.12)
                                             # Si va empatado, mantener prob del modelo
                                         except: pass
-                                    # ── Tennis Card: matchup + pick row + analizar ──
+                                    # ── Tennis Card: matchup + 2 pick rows (ML + O/U sets) ──
+                                    # pick2: O/U sets viene del bloque de snap de arriba
+                                    _ten_pl2 = locals().get("_ten_ou_lbl","") or (_snap_ten.get(m.get("id",""),{}).get("pick2","") if "_snap_ten" in dir() else "")
+                                    _ten_pp2 = locals().get("_ten_ou_p",0.0) or (_snap_ten.get(m.get("id",""),{}).get("pick2_prob",0) if "_snap_ten" in dir() else 0)
                                     _ten_pick_row = ""
                                     if _ten_pl and _ten_pp >= 0.46:
                                         if _ten_pp >= 0.68:    _tpe,_tpc,_tpt = "💎","#00ccff","DIAMANTE"
@@ -18047,13 +18303,28 @@ if st.session_state["view"] == "cartelera":
                                             f"<span style='font-size:1.1rem'>{_tpe}</span>"
                                             f"<div style='flex:1;min-width:0'>"
                                             f"<div style='font-size:0.6rem;color:{_tpc};font-weight:900;"
-                                            f"letter-spacing:.1em'>{_tpfx}{_tpt}</div>"
+                                            f"letter-spacing:.1em'>{_tpfx}ML · {_tpt}</div>"
                                             f"<div style='font-size:0.88rem;font-weight:900;color:#fff;"
                                             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_ten_pl}</div>"
                                             f"</div>"
                                             f"<span style='font-size:1.05rem;font-weight:900;color:{_tpc}'>{_ten_pp*100:.0f}%</span>"
                                             f"</div>"
                                         )
+                                        # Pick 2: O/U sets (solo pre-partido)
+                                        if _ten_pl2 and not _ten_live:
+                                            _tou_c = "#ff6600" if "Over" in _ten_pl2 else "#00ccff"
+                                            _ten_pick_row += (
+                                                f"<div style='border-top:1px solid #1d2a1a;margin-top:4px;"
+                                                f"padding-top:4px;display:flex;align-items:center;gap:6px'>"
+                                                f"<span style='font-size:0.9rem'>2️⃣</span>"
+                                                f"<div style='flex:1;min-width:0'>"
+                                                f"<div style='font-size:0.58rem;color:{_tou_c};font-weight:900;letter-spacing:.1em'>O/U SETS</div>"
+                                                f"<div style='font-size:0.85rem;font-weight:700;color:#fff;"
+                                                f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_ten_pl2}</div>"
+                                                f"</div>"
+                                                f"<span style='font-size:0.95rem;font-weight:900;color:{_tou_c}'>{_ten_pp2*100:.0f}%</span>"
+                                                f"</div>"
+                                            )
                                     _ten_border = "#ff444466" if _ten_live else "#00ff8822"
                                     _ten_hdr_c  = "#ff4444" if _ten_live else "#00ff88"
                                     _ten_tour_c = "#00ccff" if m.get("tour","")=="ATP" else "#aa00ff"
@@ -18518,8 +18789,9 @@ if st.session_state["view"] == "cartelera":
                                                                     "home":_m.get("home",""),"away":_m.get("away",""),
                                                                     "sport":"futbol","fecha":_m.get("fecha",""),
                                                                     "src":"⚡ Cartelera","mkt":"auto",
-                                                                    "pick2": _pick2_lbl_c if "_pick2_lbl_c" in dir() else None,
-                                                                    "pick2_prob": _pick2_prob_c if "_pick2_prob_c" in dir() else None,
+                                                                    "pick2": _pick2_lbl_c if "pick2_lbl_c" in locals() else None,
+                                                                    "pick2_prob": _pick2_prob_c if "pick2_prob_c" in locals() else None,
+                                                                    "pick2_mkt": "UEFA 2°" if ("pick2_lbl_c" in locals() and _pick2_lbl_c) else "",
                                                                     "is_uefa": _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"},
                                                                 }
                                                                 st.session_state["_diamond_bridge"][_bk] = _snap_data
