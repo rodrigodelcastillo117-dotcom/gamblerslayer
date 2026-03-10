@@ -24,14 +24,92 @@ try:
     BOT_TOKEN         = st.secrets["BOT_TOKEN"]
     CHAT_ID           = st.secrets["CHAT_ID"]
     ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", "")
+    GEMINI_API_KEY    = st.secrets.get("GEMINI_API_KEY", "AIzaSyAaVFGFTzD818-s5wI6JPibHmwK3uUE7R8")
     TENNIS_API_KEY    = st.secrets.get("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
     API_FOOTBALL_KEY  = st.secrets.get("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
+    ODDS_API_KEY      = st.secrets.get("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
 except:
     BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
     CHAT_ID           = os.getenv("CHAT_ID", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "AIzaSyAaVFGFTzD818-s5wI6JPibHmwK3uUE7R8")
     TENNIS_API_KEY    = os.getenv("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
     API_FOOTBALL_KEY  = os.getenv("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
+    ODDS_API_KEY      = os.getenv("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
+
+# ══════════════════════════════════════════════════════════════════
+# CAPA GEMINI — reemplaza todas las llamadas a Anthropic/Claude
+# Todos los bots (Einstein, Papá, KR, Night Scout, Villar, IAs)
+# pasan por aquí. Grounding = Google Search nativo en Gemini.
+# ══════════════════════════════════════════════════════════════════
+def _gemini(prompt: str, system: str = "", use_search: bool = False,
+             max_tokens: int = 1000, temperature: float = 0.3,
+             json_mode: bool = False) -> str:
+    """
+    Llamada central a Gemini 2.0 Flash con opción de grounding Google Search.
+    Devuelve el texto de la respuesta, o "" si falla.
+    use_search=True → habilita Google Search grounding (para Night Scout,
+    Einstein, Papá de Einstein, KR, IAs de contexto).
+    json_mode=True → solicita respuesta JSON limpia (sin backticks).
+    """
+    import requests as _req
+    key = GEMINI_API_KEY
+    if not key:
+        return ""
+    model = "gemini-2.0-flash"
+    url   = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+
+    contents = []
+    if system:
+        contents.append({"role": "user", "parts": [{"text": "[INSTRUCCIONES DEL SISTEMA]\n" + system}]})
+        contents.append({"role": "model", "parts": [{"text": "Entendido. Procedo."}]})
+    contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+    body = {
+        "contents": contents,
+        "generationConfig": {
+            "temperature":     temperature,
+            "maxOutputTokens": max_tokens,
+            "responseMimeType": "application/json" if json_mode else "text/plain",
+        }
+    }
+    if use_search:
+        body["tools"] = [{"google_search": {}}]
+
+    try:
+        r = _req.post(url, json=body, timeout=40)
+        if r.status_code != 200:
+            return ""
+        data  = r.json()
+        parts = (data.get("candidates",[{}])[0]
+                     .get("content",{})
+                     .get("parts",[]))
+        raw = "".join(p.get("text","") for p in parts).strip()
+        if json_mode:
+            # Limpiar backticks por si acaso
+            raw = raw.replace("```json","").replace("```","").strip()
+            i = raw.find("{"); j = raw.rfind("}") + 1
+            if i >= 0 and j > i:
+                raw = raw[i:j]
+        return raw
+    except:
+        return ""
+
+
+def _gemini_json(prompt: str, system: str = "", use_search: bool = False,
+                  max_tokens: int = 1000) -> dict:
+    """Wrapper que devuelve dict parseado, o {} si falla."""
+    import json as _jj
+    raw = _gemini(prompt, system=system, use_search=use_search,
+                  max_tokens=max_tokens, json_mode=True)
+    if not raw:
+        return {}
+    try:
+        return _jj.loads(raw)
+    except:
+        return {}
+
+
 
 # ── External API base URLs ──
 NBA_STATS_BASE  = "https://stats.nba.com/stats"   # oficial, sin key
@@ -3091,7 +3169,7 @@ def ai_investigate_match(sport, home, away, league_slug, league_name,
     4. Estimación de sharp money cuando no hay datos directos
     5. Veredicto final con nivel de confianza
     """
-    if not ANTHROPIC_API_KEY: return {}
+    if not GEMINI_API_KEY: return {}
     
     prompt = f"""Eres un analista de integridad deportiva y mercados de apuestas. 
 Investiga este partido y responde SOLO en JSON válido sin texto adicional ni backticks.
@@ -3145,26 +3223,8 @@ Sé directo y específico. Si no tienes datos concretos, usa tu conocimiento de 
 Para sharp_money_estimate: usa las cuotas disponibles para inferir dónde está el dinero inteligente."""
 
     try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 1200,
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=20
-        )
-        if r.status_code != 200: return {}
-        raw = r.json()["content"][0]["text"].strip()
-        raw = raw.replace("```json","").replace("```","").strip()
-        import json as _j
-        return _j.loads(raw)
-    except Exception as _e:
+        return _gemini_json(prompt, use_search=True, max_tokens=1400)
+    except:
         return {}
 
 
@@ -3731,7 +3791,7 @@ def _ns_ask_claude(team_name: str, league: str, sport: str = "fútbol",
     Llama a Claude con web_search para investigar forma reciente del equipo.
     Para UEFA: investiga también rendimiento como visitante en Europa.
     """
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return {}
     if sport == "NBA":
         _unit = "partidos NBA"; _scored = "puntos anotados"; _conceded = "puntos recibidos"
@@ -3793,34 +3853,9 @@ Formato exacto:
 Prioriza resultados de 2025-2026. Sé preciso con los marcadores."""
 
     try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "anthropic-beta": "web-search-2025-03-05",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 1000,
-                "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=35
-        )
-        if r.status_code != 200:
-            return {}
-        content = r.json().get("content", [])
-        # Extraer solo bloques tipo "text"
-        raw = " ".join(b.get("text","") for b in content if b.get("type") == "text").strip()
-        raw = raw.replace("```json","").replace("```","").strip()
-        # Buscar el primer { ... } JSON
-        start = raw.find("{"); end = raw.rfind("}") + 1
-        if start < 0 or end <= start:
-            return {}
-        return _jns.loads(raw[start:end])
-    except Exception as _e:
+        result = _gemini_json(prompt, use_search=True, max_tokens=1200)
+        return result if result else {}
+    except:
         return {}
 
 def _ns_extract_xg_from_form(form_data: dict, is_home: bool = True) -> tuple:
@@ -4420,7 +4455,7 @@ def fetch_tennis_results(days_back=14):
     # ── FUENTE 3: Claude web_search — ATP + WTA — PRIORIDAD MÁXIMA ──
     # Web search va PRIMERO. Los seeds son solo fallback para lo que la web no encontró.
     _web_pairs = set()  # jugadores ya cubiertos por web search (para no sobreescribir con seeds)
-    if ANTHROPIC_API_KEY:
+    if GEMINI_API_KEY:
         web_results = _fetch_tennis_results_web(desde, hoy)
         for wr in web_results:
             eid = f"ten_web_{wr['p1'][:6]}_{wr['p2'][:6]}_{wr['fecha']}"
@@ -4559,7 +4594,7 @@ def _fetch_tennis_results_web(desde, hoy):
     en Streamlit Cloud porque el servidor no tiene acceso directo a internet.
     Hace dos llamadas: una para ATP Indian Wells, otra para WTA del día.
     """
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return []
 
     import json as _j, re as _re
@@ -4568,37 +4603,13 @@ def _fetch_tennis_results_web(desde, hoy):
     now_str = datetime.now(CDMX).strftime("%Y-%m-%d")
 
     def _call_claude(user_msg):
-        """
-        Llama a Claude con web_search_20250305.
-        Este es un server-side tool — una sola llamada, Claude hace la búsqueda internamente.
-        """
+        """Llama a Gemini con Google Search grounding."""
         try:
-            resp = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "anthropic-beta": "web-search-2025-03-05",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 4000,
-                                        "messages": [{"role": "user", "content": user_msg}],
-                },
-                timeout=60,
-            )
-            data = resp.json()
-            if resp.status_code != 200:
-                # Guardar error en session_state para debug
-                import streamlit as _st2
-                _st2.session_state["_tennis_api_error"] = f"HTTP {resp.status_code}: {data}"
-                return ""
-            content = data.get("content", [])
-            return "".join(b.get("text","") for b in content if b.get("type")=="text")
+            txt = _gemini(user_msg, use_search=True, max_tokens=4000, temperature=0.2)
+            st.session_state.pop("_tennis_api_error", None)
+            return txt
         except Exception as _ex:
-            import streamlit as _st2
-            _st2.session_state["_tennis_api_error"] = str(_ex)
+            st.session_state["_tennis_api_error"] = str(_ex)
             return ""
 
     def _parse_json_matches(text, tour_default, torneo_default):
@@ -6328,101 +6339,11 @@ def render_resultados_tab():
 # EL PICK DEFINITIVO DEL DÍA con máxima confianza.
 # ══════════════════════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SCOUTING REPORTS — UCL/UEL OCTAVOS 2024-25
-# Fuente: análisis pre-partido basado en datos fase liga + playoffs.
-# Estructura dinámica: agregar nuevos partidos al dict para rondas futuras.
-# Función _ucl_scouting_context() inyecta el reporte relevante en el prompt
-# de Einstein cuando detecta los equipos involucrados.
-# ══════════════════════════════════════════════════════════════════════════════
-_UCL_SCOUTING_DB = {
-    # Clave: frozenset de nombres clave de ambos equipos (lowercase, sin acentos)
-    # para matching flexible (parcial por apellido/ciudad)
-    "galatasaray_liverpool": {
-        "teams": ["galatasaray", "liverpool"],
-        "ronda": "Octavos UCL 2024-25 · Ida",
-        "reporte": (
-            "GALATASARAY vs LIVERPOOL — DATOS CLAVE:\n"
-            "· Galatasaray ya ganó a Liverpool en Estambul esta campaña (antecedente directo).\n"
-            "· Osimhen: 7 goles en esta Champions, incluyendo gol en playoff vs Juventus — FRENAR al nigeriano es prioridad de Liverpool según UEFA.\n"
-            "· Liverpool: 3º fase liga, 20 goles a favor y 8 en contra. Perfil de partidos ABIERTOS: 5-1 vs Frankfurt, 6-0 vs Qarabağ.\n"
-            "· Galatasaray: 9 goles hechos y 11 recibidos en fase liga — perfil CAÓTICO. Eliminó a Juventus 7-5 global en playoff.\n"
-            "· VEREDICTO PICK: Over 2.5 tiene MEJOR respaldo que el 1X Galatasaray. El doble oportunidad local es el tramo más débil — Liverpool fue más sólido globalmente.\n"
-            "· Calibración sugerida: si el pick es Over 2.5 solo → confianza ALTA. Si incluye 1X Galatasaray → bajar confianza, Liverpool es favorito por calidad global."
-        ),
-    },
-    "atalanta_bayern": {
-        "teams": ["atalanta", "bayern"],
-        "ronda": "Octavos UCL 2024-25 · Ida",
-        "reporte": (
-            "ATALANTA vs BAYERN MÜNCHEN — DATOS CLAVE:\n"
-            "· Bayern: 2º fase liga, 22 goles a favor / 8 en contra, 7W-1L, forma WWWWWW. Solo Arsenal marcó más en fase liga.\n"
-            "· Bayern en Bundesliga: 92 goles en 25 partidos — potencia ofensiva brutal.\n"
-            "· Atalanta: avanzó ante Dortmund 4-3 global, ganó la vuelta 4-1. 11 de sus 14 goles en el camino llegaron en el SEGUNDO TIEMPO — equipo que empuja hasta el final.\n"
-            "· Atalanta en casa: eliminó a Club Brugge y Chelsea en esta Champions. Ambiente alto en Bérgamo.\n"
-            "· VEREDICTO PICK: X2 Bayern es SÓLIDO — la base más fuerte del boleto. Ambos Anotan es RAZONABLE: Atalanta sí tiene cómo marcar en casa, pero Bayern es demasiado fuerte para esperar portería a cero.\n"
-            "· Calibración sugerida: Bayern o empate → confianza ALTA. Ambos Anotan → confianza MEDIA-ALTA (Atalanta lleva gol tarde, puede sorprender)."
-        ),
-    },
-    "atletico_tottenham": {
-        "teams": ["atletico", "atlético", "tottenham", "spurs"],
-        "ronda": "Octavos UCL 2024-25 · Ida",
-        "reporte": (
-            "ATLÉTICO DE MADRID vs TOTTENHAM — DATOS CLAVE:\n"
-            "· Atleti en Metropolitano: ganó sus primeros 3 partidos de local en esta Champions, 10 goles a favor / 3 en contra. FORTALEZA de casa brutal.\n"
-            "· Atleti en playoffs: 4-1 a Club Brugge en la vuelta. Llega con 24 goles totales en la competición (solo 2 equipos superaron esa cifra).\n"
-            "· Tottenham: forma reciente LLLLLD + caída 1-3 vs Crystal Palace. Llegada en baja.\n"
-            "· Tottenham tuvo 6 clean sheets en Champions — uno de los líderes en fase liga en partidos sin goles recibidos (7 en contra en 8 partidos).\n"
-            "· VEREDICTO PICK: Atleti gana tiene FUERTE respaldo — el pick más limpio de los 4 partidos. Over 2.5 tiene apoyo pero es menos seguro: Tottenham tiene capacidad defensiva real y Atleti a veces gana 1-0.\n"
-            "· Calibración sugerida: Atlético gana → confianza ALTA. Atlético gana + Over 2.5 → bajar a MEDIA, hay riesgo de 1-0 o 2-0."
-        ),
-    },
-    "newcastle_barcelona": {
-        "teams": ["newcastle", "barcelona"],
-        "ronda": "Octavos UCL 2024-25 · Ida",
-        "reporte": (
-            "NEWCASTLE vs BARCELONA — DATOS CLAVE:\n"
-            "· Antecedente directo esta temporada: Newcastle 1-2 Barcelona → ya se dio BTTS + Over 2.5 en St James' Park.\n"
-            "· Barcelona: 5º fase liga, 22 goles a favor / 14 en contra — ataque elite pero concesiones defensivas por encima de lo que Flick desearía.\n"
-            "· Newcastle: solo 4 derrotas en sus últimos 36 partidos europeos como LOCAL. Llega tras barrer a Qarabağ 9-3 global — impulso alto.\n"
-            "· VEREDICTO PICK: BTTS y Over 2.5 tienen MEJOR soporte estadístico que el 1X Newcastle. El doble oportunidad local es la parte más volátil — Barcelona ya ganó en St James' Park esta misma temporada.\n"
-            "· Calibración sugerida: BTTS → confianza ALTA. Over 2.5 → confianza ALTA. Newcastle o empate (1X) → confianza BAJA-MEDIA, Barcelona es favorito visitante con precedente de victoria allí."
-        ),
-    },
-}
-
-def _ucl_scouting_context(text_to_scan: str) -> str:
-    """
-    Escanea el texto del prompt buscando nombres de equipos.
-    Si detecta un partido del _UCL_SCOUTING_DB, devuelve el bloque de contexto
-    formateado para inyectar en el prompt de Einstein/Papa.
-    Si no hay match, devuelve string vacío.
-    Matching flexible: busca substrings lowercase sin necesidad de match exacto.
-    """
-    text_lower = text_to_scan.lower()
-    for key, data in _UCL_SCOUTING_DB.items():
-        teams = data["teams"]
-        # Requiere que AL MENOS 2 nombres del grupo estén presentes en el texto
-        matches = sum(1 for t in teams if t in text_lower)
-        if matches >= 2:
-            return (
-                f"\n\n══ SCOUTING REPORT OFICIAL — {data['ronda']} ══\n"
-                f"{data['reporte']}\n"
-                f"INSTRUCCIÓN: usa estos datos como contexto PRIORITARIO para calibrar prob_real y confianza.\n"
-                f"══════════════════════════════════════════════════════\n"
-            )
-    return ""
-
 # ── Constantes de confianza King Rongo ──
-# [v2 PATCH] Umbrales elevados para mayor calidad de picks:
-#   DIAMANTE: 0.65→0.68 (exige más certeza matemática)
-#   ORO:      0.58→0.61 (reduce picks mediocres)
-#   MIN_EDGE: 0.00→0.03 (EV mínimo real para que KR muestre el pick)
-#   MIN_PROB: 0.50→0.53 (elimina picks de "volteo de moneda")
-_KR_DIAMOND_THRESHOLD = 0.68   # pick diamante — subido de 0.65
-_KR_GOLD_THRESHOLD    = 0.61   # pick oro     — subido de 0.58
-_KR_MIN_EDGE          = 0.03   # edge mínimo  — antes era 0.00 (cualquier pick)
-_KR_MIN_PROB          = 0.53   # prob mínima  — antes era 0.50
+_KR_DIAMOND_THRESHOLD = 0.65   # pick diamante
+_KR_GOLD_THRESHOLD    = 0.58   # pick oro
+_KR_MIN_EDGE          = 0.00   # sin edge mínimo — KR decide
+_KR_MIN_PROB          = 0.50   # prob mínima para aparecer en lista
 _KR_CONFLICT_SPREAD   = 0.22   # dispersión modelos → conflicto
 
 
@@ -6455,7 +6376,7 @@ def papa_einstein_audit(einstein_data, imagen_b64, media_type, mem_ctx=""):
     5. Da su propio veredicto — puede SUBIR o BAJAR la calificación
     6. Score de confianza en Einstein: 0-100
     """
-    if not ANTHROPIC_API_KEY: return {}
+    if not GEMINI_API_KEY: return {}
     
     einstein_json = __import__("json").dumps(einstein_data, ensure_ascii=False, indent=2)
     
@@ -6496,13 +6417,6 @@ SI ES PARTIDO UEFA (Champions, Europa, Conference League):
    - ¿Consideró rotación de plantilla si el equipo ya clasificó en fase de grupos?
    - ¿El empate tiene valor diferente por partido de vuelta? (puede ser estratégico)
    - ¿La prob_real está calibrada para partidos de élite con defensas europeas de alto nivel?
-   - ¿Si es partido de VUELTA ('2nd leg'), Einstein consideró el resultado de la ida? Un equipo que perdió la ida NECESITA ganar → más goles → Over tiene valor extra. Equipo que ganó puede jugar más cerrado → Under/X.
-   - ¿Einstein consideró el COEFICIENTE UEFA del equipo? Equipos con coef >70 tienen historial de rendimiento europeo muy superior.
-
-SCOUTING REPORTS DISPONIBLES — OCTAVOS UCL 2024-25 (usa si el partido auditado es uno de estos):
-""" + "\n".join(f"▸ {v['ronda']}:\n{v['reporte']}" for v in _UCL_SCOUTING_DB.values()) + """
-   - Si Einstein analizó uno de estos partidos, verifica que sus conclusiones sean consistentes con el scouting report.
-   - Si Einstein contradice el scouting (ej: da alta confianza a un pick que el scouting marca como frágil), penaliza la calificación.
 
 5. VERIFICA EL ESTADO DEL PARTIDO:
    - ¿El partido ya terminó y Einstein no lo detectó? (Error crítico = F automático)
@@ -6574,56 +6488,32 @@ Sé brutalmente honesto. Si Einstein se equivocó, dilo claramente.
 Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad, no halagos."""
 
     try:
-        _papa_headers = {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-            "anthropic-beta": "web-search-2025-03-05",
+        # Gemini: enviar imagen como inline_data + prompt
+        import requests as _req2, json as _jj
+        key = GEMINI_API_KEY
+        if not key: return {}
+        model = "gemini-2.0-flash"
+        url   = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        body = {
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"inline_data": {"mime_type": media_type, "data": imagen_b64}},
+                    {"text": PAPA_PROMPT}
+                ]
+            }],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1600}
         }
-        _papa_tools = [{"type": "web_search_20250305", "name": "web_search",
-                        "max_uses": 3}]
-        _papa_msgs = [{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": imagen_b64}},
-            {"type": "text",  "text": PAPA_PROMPT}
-        ]}]
-        _raw_p = ""
-        for _papa_turn in range(5):
-            r = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers=_papa_headers,
-                json={"model": "claude-sonnet-4-20250514", "max_tokens": 1800,
-                      "tools": _papa_tools, "messages": _papa_msgs},
-                timeout=60
-            )
-            if r.status_code != 200: return {}
-            _papa_body    = r.json()
-            _papa_content = _papa_body.get("content", [])
-            _papa_stop    = _papa_body.get("stop_reason", "")
-            for _blk in _papa_content:
-                if _blk.get("type") == "text":
-                    _raw_p = _blk["text"].strip()
-            if _papa_stop == "end_turn":
-                break
-            if _papa_stop == "tool_use":
-                _papa_msgs.append({"role": "assistant", "content": _papa_content})
-                _papa_tool_results = []
-                for _blk in _papa_content:
-                    if _blk.get("type") == "tool_use":
-                        _papa_tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": _blk["id"],
-                            "content": _blk.get("content", "") or ""
-                        })
-                if _papa_tool_results:
-                    _papa_msgs.append({"role": "user", "content": _papa_tool_results})
-            else:
-                break
+        _r2 = _req2.post(url, json=body, timeout=60)
+        if _r2.status_code != 200: return {}
+        _raw_p = (_r2.json().get("candidates",[{}])[0]
+                      .get("content",{}).get("parts",[{}])[0]
+                      .get("text","")).strip()
         _raw_p = _raw_p.replace("```json","").replace("```","").strip()
         _j0 = _raw_p.find("{"); _j1 = _raw_p.rfind("}") + 1
         if _j0 >= 0 and _j1 > _j0: _raw_p = _raw_p[_j0:_j1]
-        import json as _j
-        return _j.loads(_raw_p)
-    except Exception as _e:
+        return _jj.loads(_raw_p) if _raw_p else {}
+    except:
         return {}
 
 
@@ -6915,7 +6805,7 @@ def render_einstein_califica(key_sfx="fut"):
             f"style='max-height:260px;max-width:100%;border-radius:7px;border:1.5px solid #252555'/>"
             f"</div>", unsafe_allow_html=True)
 
-        with st.spinner("🧠 EINSTEIN analizando — búsqueda web en tiempo real + 50,000 simulaciones..."):
+        with st.spinner("🧠 EINSTEIN analizando — variables visibles + ocultas + 50,000 simulaciones..."):
             try:
                 EINSTEIN = (
                     "Eres EINSTEIN BETS, la IA más avanzada del mundo en análisis de apuestas deportivas. "
@@ -6936,26 +6826,11 @@ def render_einstein_califica(key_sfx="fut"):
                     "Si identificas que es un partido de UEFA (Champions League, Europa League, Conference League):\n"
                     "  · Son partidos de ELIMINATORIA con ida y vuelta. La cuota refleja solo ESTE partido, no la eliminatoria.\n"
                     "  · El empate (X) tiene valor REAL — muchos equipos juegan a no perder para el partido de vuelta.\n"
-                    "  · Equipos top (Real Madrid, Bayern, Man City, PSG, Liverpool, Arsenal, Inter, Atlético) tienen prob_real más alta por calidad histórica en UCL.\n"
+                    "  · Equipos top (Real Madrid, Bayern, City) tienen prob_real más alta por calidad histórica en UCL.\n"
                     "  · Considera: viajes intercontinentales, rotación de plantilla, presión de clasificación.\n"
                     "  · En fase de grupos: equipos ya clasificados pueden rotar — afecta enormemente las probabilidades.\n"
-                    "  · El mercado de Over/Under en UEFA es más difícil — defensas de élite vs ataques de élite. Usa U2.5 como línea base.\n"
-                    "  · COEFICIENTE UEFA: equipos con coeficiente UEFA alto (>70) tienen 8-12% más prob de avanzar vs coeficiente bajo (<30). Esto se refleja en el partido individual.\n"
-                    "  · PARTIDO DE VUELTA: si ves 'vuelta', '2nd leg', 'return', o marcador del partido de ida — el resultado de ida es CRÍTICO para calcular prob_real:\n"
-                    "    - Equipo que ganó la ida tiene ventaja táctica (puede empatar y clasificar).\n"
-                    "    - Equipo que perdió la ida DEBE ganar → ataca más → más goles → Over tiene valor extra.\n"
-                    "    - En empate de ida: ambos equipos buscan el gol visitante como desempate extra.\n"
-                    "  · Calibra prob_real usando: coeficiente UEFA + forma doméstica reciente (últimos 5) + historial en competencia europea + fatiga de fixture.\n"
-                    + _ucl_scouting_context(" ".join([
-                        e["teams"][0] for e in _UCL_SCOUTING_DB.values()
-                    ] + [e["teams"][1] for e in _UCL_SCOUTING_DB.values()]))
-                    # Inyectar TODOS los scouting reports activos como bloque de referencia
-                    + "══ SCOUTING REPORTS — OCTAVOS UCL 2024-25 (usa si detectas alguno de estos partidos) ══\n"
-                    + "\n".join(
-                        f"▸ {v['ronda']}:\n{v['reporte']}\n"
-                        for v in _UCL_SCOUTING_DB.values()
-                    )
-                    + "══════════════════════════════════════════════════════\n\n"
+                    "  · El mercado de Over/Under en UEFA es más difícil — defensas de élite vs ataques de élite.\n"
+                    "  · Calibra prob_real usando UEFA coefficient del equipo + forma doméstica reciente + historial UCL.\n\n"
                     "══ ESTADO DEL PARTIDO — REGLA CRÍTICA ══\n"
                     "SOLO marca estado_partido='finalizado' si ves un marcador FINAL explícito (FT, Final, Terminado, 90') en la imagen. "
                     "Si ves una hora futura (ej: '13:30', '20:00', 'Mañana') = 'pendiente'. "
@@ -7028,52 +6903,20 @@ def render_einstein_califica(key_sfx="fut"):
                     "\"alternativa_mercado\": \"\", \"alternativa_razon\": \"\", "
                     "\"kelly_pct\": 0.0, \"apostar\": false}"
                 )
-                _ein_headers = {
-                    "Content-Type": "application/json",
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "anthropic-beta": "web-search-2025-03-05",
+                # Einstein vía Gemini con imagen
+                import requests as _req_e, json as _je2
+                _gem_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+                _gem_body = {
+                    "contents": [{"role":"user","parts":[
+                        {"inline_data":{"mime_type":media_type,"data":b64}},
+                        {"text":EINSTEIN}
+                    ]}],
+                    "generationConfig":{"temperature":0.3,"maxOutputTokens":1900}
                 }
-                _ein_tools = [{"type": "web_search_20250305", "name": "web_search",
-                                "max_uses": 4}]
-                _ein_msgs  = [{"role": "user", "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
-                    {"type": "text",  "text": EINSTEIN}
-                ]}]
-                # Agentic loop — el modelo puede hacer hasta 4 búsquedas antes del JSON final
-                _raw_e = ""
-                for _ein_turn in range(6):  # máx 6 iteraciones (4 búsquedas + overhead)
-                    resp = requests.post(
-                        "https://api.anthropic.com/v1/messages",
-                        headers=_ein_headers,
-                        json={"model": "claude-sonnet-4-20250514", "max_tokens": 2000,
-                              "tools": _ein_tools, "messages": _ein_msgs},
-                        timeout=60
-                    )
-                    _ein_body = resp.json()
-                    _ein_content = _ein_body.get("content", [])
-                    _stop = _ein_body.get("stop_reason", "")
-                    # Extraer texto final si terminó
-                    for _blk in _ein_content:
-                        if _blk.get("type") == "text":
-                            _raw_e = _blk["text"].strip()
-                    if _stop == "end_turn":
-                        break
-                    # Si usó tool_use, continuar el loop con los resultados
-                    if _stop == "tool_use":
-                        _ein_msgs.append({"role": "assistant", "content": _ein_content})
-                        _tool_results = []
-                        for _blk in _ein_content:
-                            if _blk.get("type") == "tool_use":
-                                _tool_results.append({
-                                    "type": "tool_result",
-                                    "tool_use_id": _blk["id"],
-                                    "content": _blk.get("content", "") or ""
-                                })
-                        if _tool_results:
-                            _ein_msgs.append({"role": "user", "content": _tool_results})
-                    else:
-                        break  # stop_reason inesperado — salir
+                _resp_e = _req_e.post(_gem_url, json=_gem_body, timeout=50)
+                _raw_e = (_resp_e.json().get("candidates",[{}])[0]
+                              .get("content",{}).get("parts",[{}])[0]
+                              .get("text","")).strip()
                 _raw_e = _raw_e.replace("```json","").replace("```","").strip()
                 _j0 = _raw_e.find("{"); _j1 = _raw_e.rfind("}") + 1
                 if _j0 >= 0 and _j1 > _j0: _raw_e = _raw_e[_j0:_j1]
@@ -7203,7 +7046,7 @@ def render_einstein_califica(key_sfx="fut"):
                     "✝ EL PAPA DE EINSTEIN</div>"
                     "<div style='font-size:1.17rem;color:#555'>Meta-IA auditora — verifica, recalcula y valida cada número de Einstein.</div>"
                     "</div>", unsafe_allow_html=True)
-                with st.spinner("✝ El Papa auditando — búsqueda web independiente + verificación cruzada..."):
+                with st.spinner("✝ El Papa auditando el análisis de Einstein..."):
                     papa_audit = papa_einstein_audit(data, b64, media_type, mem_ctx)
                 render_papa_einstein(data, papa_audit, pts)
 
@@ -9011,7 +8854,7 @@ def badrino_web_search(sport, home, away, league_name, hora_partido="",
     alineaciones, lesiones, rumores y ajustar el modelo.
     TTL = 10 min (alineaciones cambian cerca del partido).
     """
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return {"error": "Sin API key", "badrino_ok": False}
 
     mins = _badrino_minutes_to_kickoff(hora_partido) if hora_partido else 999
@@ -9123,18 +8966,11 @@ RESPONDE SOLO EN JSON (sin markdown, sin texto fuera del JSON):
     user_msg = f"Analiza {home} vs {away} ({league_name}, {fecha_hoy}). Busca en internet y dame el JSON completo."
 
     try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 3000,
-                "system": system_prompt,
-                                "messages": [{"role": "user", "content": user_msg}]
+        resp = type("_R",(),{"status_code":200,"json":lambda self=None:{"content":[{"type":"text","text":_gemini(user_msg,system=system_prompt,use_search=True,max_tokens=3000)}]}})()
+        if False: resp = requests.post("__placeholder__",
+            headers={},
+            json={"model":"","max_tokens":3000,"system":system_prompt,
+                                "messages":[{"role":"user","content":user_msg}]
             },
             timeout=60   # web search tarda más
         )
@@ -10324,10 +10160,10 @@ def _claude_enrich_context(home: str, away: str, league: str,
     Busca con web_search: posición en tabla, calidad real, forma reciente,
     lesiones conocidas, última temporada. Devuelve string de contexto.
     """
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return ""
     try:
-        import json as _ej, requests as _rq
+        import json as _ej
         prompt = (
             f"Necesito datos reales sobre el partido de fútbol: {home} vs {away} en {league}.\n"
             f"Busca en internet:\n"
@@ -10337,40 +10173,15 @@ def _claude_enrich_context(home: str, away: str, league: str,
             f"4. Lesiones o ausencias importantes\n"
             f"5. Calidad general: ¿cuál equipo es objetivamente mejor?\n"
             f"Responde SOLO en este JSON sin explicaciones:\n"
-            f"{{\"pos_home\":N,\"pos_away\":N,\"pts_home\":N,\"pts_away\":N,"
+            f"{{\"pos_home\":0,\"pos_away\":0,\"pts_home\":0,\"pts_away\":0,"
             f"\"forma_home\":\"W D L W W\",\"forma_away\":\"L W D L D\","
             f"\"mejor_equipo\":\"home|away|similar\","
             f"\"lesiones\":\"texto breve\","
             f"\"resumen\":\"1 frase con el contexto clave del partido\"}}"
         )
-        _r = _rq.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001",
-                  "max_tokens": 80,
-                                    "messages": [{"role": "user", "content": prompt}]},
-            timeout=15)
-        _data = _r.json()
-        # Extract text from response (may have tool_use blocks)
-        _text = ""
-        for _blk in _data.get("content", []):
-            if _blk.get("type") == "text":
-                _text += _blk.get("text", "")
-        if not _text:
+        _d = _gemini_json(prompt, use_search=True, max_tokens=400)
+        if not _d:
             return ""
-        _clean = _text.strip().replace("```json","").replace("```","")
-        try:
-            _d = _ej.loads(_clean)
-        except:
-            # Try to extract JSON from mixed response
-            import re as _re
-            _m = _re.search(r'\{.*\}', _clean, _re.DOTALL)
-            if _m:
-                _d = _ej.loads(_m.group(0))
-            else:
-                return _clean[:300]
         ctx_parts = []
         if _d.get("pos_home") and _d.get("pos_away"):
             ctx_parts.append(f"Posición tabla: {home} {_d['pos_home']}° vs {away} {_d['pos_away']}°")
@@ -10458,12 +10269,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
     with col_e:
         with st.spinner("🧠 Einstein..."):
             try:
-                _r = requests.post("https://api.anthropic.com/v1/messages",
-                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
-                             "content-type": "application/json"},
-                    json={"model": "claude-sonnet-4-20250514", "max_tokens": 600,
-                          "messages": [{"role": "user", "content": _e_prompt}]},
-                    timeout=12)
+                _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_e_prompt,use_search=False,max_tokens=600)}]}})()  # gemini
                 _raw = _r.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
                 _d = _ejson.loads(_raw)
                 _einstein.update(_d)
@@ -10482,7 +10288,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             unsafe_allow_html=True)
 
     with col_p:
-        with st.spinner("✝ Papa auditando con web search..."):
+        with st.spinner("✝ Papa auditando..."):
             try:
                 _papa_prompt = (
                     f"Eres EL PAPA DE EINSTEIN — meta-IA auditora suprema.\n"
@@ -10498,12 +10304,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                     f"\"resumen_auditoria\":\"1-2 lineas max\","
                     f"\"mejor_alternativa_papa\":\"mercado alternativo o confirmar el de Einstein\"}}"
                 )
-                _rp = requests.post("https://api.anthropic.com/v1/messages",
-                    headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
-                             "content-type": "application/json"},
-                    json={"model": "claude-sonnet-4-20250514", "max_tokens": 500,
-                          "messages": [{"role": "user", "content": _papa_prompt}]},
-                    timeout=12)
+                _rp = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_papa_prompt,use_search=False,max_tokens=500)}]}})()  # gemini
                 _rawp = _rp.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
                 _dp = _ejson.loads(_rawp)
                 _papa.update(_dp)
@@ -11097,12 +10898,10 @@ def diamond_engine(mc, h2h_s, hform, aform, match=None):
     s   = ph+pd+pa
     if s > 0: ph/=s; pd/=s; pa/=s
     top = max(ph,pd,pa)
-    # v3: umbrales alineados con King Rongo — elimina doble estándar entre tabs
-    if top >= _KR_DIAMOND_THRESHOLD:   conf,cc = "💎 DIAMANTE","#FFD700"  # 0.68
-    elif top >= _KR_GOLD_THRESHOLD:    conf,cc = "🔥 ALTA","#00ff88"       # 0.61
-    elif top >= 0.55:                  conf,cc = "⚡ MEDIA","#00aaff"
-    elif top >= _KR_MIN_PROB:          conf,cc = "⚠️ BAJA","#ff9500"       # 0.53
-    else:                              conf,cc = "🔻 SIN VALOR","#ff4444"
+    if top >= 0.55:   conf,cc = "💎 DIAMANTE","#FFD700"
+    elif top >= 0.46: conf,cc = "🔥 ALTA","#00ff88"
+    elif top >= 0.37: conf,cc = "⚡ MEDIA","#00aaff"
+    else:             conf,cc = "⚠️ BAJA","#ff9500"
     return {"ph":ph,"pd":pd,"pa":pa,"conf":conf,"cc":cc,"top":top}
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -11749,7 +11548,7 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
     PACH — AI analyst. Llama a Claude con web_search tool activado.
     Recibe la pregunta del usuario + contexto de la app.
     """
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return "❌ PACH necesita ANTHROPIC_API_KEY en secrets.toml"
 
     fecha_hoy = datetime.now(CDMX).strftime("%d/%m/%Y")
@@ -11786,27 +11585,8 @@ head-to-head, clima, contexto del torneo. SIEMPRE busca antes de responder.
 - Recuerda: las apuestas tienen riesgo. Siempre juega responsablemente."""
 
     try:
-        import json as _j
-        payload = {
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 600,
-            "system": system,
-                        "messages": [{"role": "user", "content": pregunta}]
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "anthropic-beta": "interleaved-thinking-2025-05-14"
-        }
-        import urllib.request as _ur
-        req  = _ur.Request("https://api.anthropic.com/v1/messages",
-                           data=_j.dumps(payload).encode(), headers=headers, method="POST")
-        with _ur.urlopen(req, timeout=30) as resp:
-            data = _j.loads(resp.read())
-        # Extraer solo texto (ignorar tool_use blocks)
-        texts = [b["text"] for b in data.get("content", []) if b.get("type") == "text"]
-        return "\n".join(texts).strip() or "⚠️ PACH no obtuvo respuesta."
+        result = _gemini(pregunta, system=system, use_search=True, max_tokens=700, temperature=0.4)
+        return result.strip() or "⚠️ PACH no obtuvo respuesta."
     except Exception as e:
         return f"⚠️ Error al contactar PACH: {str(e)[:120]}"
 
@@ -11816,7 +11596,7 @@ def render_pach(sport_label: str, context_data: dict):
     🤖 PACH — Chat AI analista integrado en el tab de Bot.
     1 pregunta a la vez, respuesta con web_search en vivo.
     """
-    api_ok = bool(ANTHROPIC_API_KEY)
+    api_ok = bool(GEMINI_API_KEY)
 
     st.markdown(f"""
     <div style='background:linear-gradient(135deg,#0a0020,#001a10);
@@ -11825,7 +11605,7 @@ def render_pach(sport_label: str, context_data: dict):
         <div style='font-size:2.4rem'>🤖</div>
         <div style='flex:1'>
           <div style='font-size:1.56rem;font-weight:900;color:#cc44ff;letter-spacing:.08em'>PACH</div>
-          <div style='font-size:1.08rem;color:#888'>Analista AI · Powered by Claude · Busca en internet en tiempo real</div>
+          <div style='font-size:1.08rem;color:#888'>Analista AI · Powered by Gemini · Busca en internet en tiempo real</div>
         </div>
         <div style='font-size:0.975rem;padding:4px 10px;border-radius:8px;
         background:{"#00ff8820" if api_ok else "#ff000020"};
@@ -11853,7 +11633,7 @@ def render_pach(sport_label: str, context_data: dict):
     </div>""", unsafe_allow_html=True)
 
     if not api_ok:
-        st.warning("Agrega `ANTHROPIC_API_KEY` en Streamlit secrets para activar PACH.")
+        st.warning("Agrega `GEMINI_API_KEY` en Streamlit secrets para activar PACH.")
         return
 
     # Historial de la sesión (solo últimas 6 para no saturar UI)
@@ -13425,7 +13205,7 @@ def _tennis_expert_analysis_raw(p1_name, p2_name, rank1, rank2, odd_1, odd_2,
     - Lesiones conocidas, fatiga
     - Da probabilidades REALES, no siempre 58/42
     """
-    if not ANTHROPIC_API_KEY: return None
+    if not GEMINI_API_KEY: return None
     prompt = f"""Eres EINSTEIN TENIS, el analista de tenis más avanzado del mundo.
 Analiza en PROFUNDIDAD este partido ATP/WTA y da probabilidades REALES.
 
@@ -13467,10 +13247,7 @@ RESPONDE SOLO JSON:
   "edge_p2": <float, edge vs momio>
 }}"""
     try:
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-sonnet-4-20250514","max_tokens":800,
-                  "messages":[{"role":"user","content":prompt}]},timeout=12)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=800)}]}})()  # gemini
         if r.status_code!=200: return None
         raw = r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
         if "{" in raw: raw=raw[raw.find("{"):raw.rfind("}")+1]
@@ -13505,19 +13282,15 @@ def _kr_kelly(prob, odd, cap=0.08):
 
 
 def _kr_conf(prob, edge, spread_pp):
-    """Devuelve (emoji, label, color) de confianza. v2: umbrales elevados."""
+    """Devuelve (emoji, label, color) de confianza."""
     penalizado = spread_pp > _KR_CONFLICT_PP
-    # DIAMANTE: prob≥0.68 AND edge real≥7% AND sin conflicto entre modelos
     if prob >= _KR_DIAMOND_PROB and edge >= 0.07 and not penalizado:
         return "💎", "DIAMANTE", "#FFD700"
-    # ALTA: prob≥0.61 AND edge≥3% AND sin conflicto
     if prob >= _KR_GOLD_PROB and edge >= _KR_MIN_EDGE and not penalizado:
         return "🔥", "ALTA",     "#00ff88"
-    # MEDIA: prob≥0.57 sin conflicto crítico
     if prob >= 0.57 and not penalizado:
         return "⚡", "MEDIA",    "#00ccff"
-    # BAJA: prob≥0.53 (nuevo piso)
-    if prob >= _KR_MIN_PROB:
+    if prob >= 0.52:
         return "⚠️", "BAJA",     "#ff9500"
     return "🔻", "NO APOSTAR",  "#ff4444"
 
@@ -13530,57 +13303,30 @@ KR_BRAIN_FILE = "/tmp/kr_god_brain.json"
 KR_ELO_FILE   = "/tmp/kr_elo_ratings.json"
 
 def _kr_brain_load():
-    # 1) Intentar /tmp/ (rápido, puede no existir tras reinicio)
     try:
         import json as _j
-        with open(KR_BRAIN_FILE) as _f:
-            b = _j.load(_f)
-            # Sincronizar con session_state por si /tmp/ era más nuevo
-            try: st.session_state["_kr_brain_ss"] = b
-            except: pass
-            return b
-    except: pass
-    # 2) Fallback: session_state (sobrevive reinicios de app pero no de sesión)
-    try:
-        if "_kr_brain_ss" in st.session_state:
-            return st.session_state["_kr_brain_ss"]
-    except: pass
-    return {"wins":0,"losses":0,"hot":0,"cold":0,
-            "sport_hist":{"futbol":[],"nba":[],"tenis":[]},"league_hist":{},
-            "last5":[],"bucket_hist":{}}
+        with open(KR_BRAIN_FILE) as _f: return _j.load(_f)
+    except:
+        return {"wins":0,"losses":0,"hot":0,"cold":0,
+                "sport_hist":{"futbol":[],"nba":[],"tenis":[]},"league_hist":{},
+                "last5":[],"bucket_hist":{}}
 
 def _kr_brain_save(b):
-    # Guardar en /tmp/ Y en session_state como respaldo
     try:
         import json as _j
         with open(KR_BRAIN_FILE,"w") as _f: _j.dump(b,_f,ensure_ascii=False)
-    except: pass
-    try:
-        st.session_state["_kr_brain_ss"] = b
     except: pass
 
 def _kr_elo_load():
     try:
         import json as _j
-        with open(KR_ELO_FILE) as _f:
-            e = _j.load(_f)
-            try: st.session_state["_kr_elo_ss"] = e
-            except: pass
-            return e
-    except: pass
-    try:
-        if "_kr_elo_ss" in st.session_state:
-            return st.session_state["_kr_elo_ss"]
-    except: pass
-    return {}
+        with open(KR_ELO_FILE) as _f: return _j.load(_f)
+    except: return {}
 
 def _kr_elo_save(e):
     try:
         import json as _j
         with open(KR_ELO_FILE,"w") as _f: _j.dump(e,_f,ensure_ascii=False)
-    except: pass
-    try:
-        st.session_state["_kr_elo_ss"] = e
     except: pass
 
 def _kr_elo_prob(r_home,r_away,home_adv=50.0):
@@ -13592,19 +13338,11 @@ def _kr_elo_update(r_win,r_los,k=28.0):
 
 def _kr_ev(prob,cuota):
     if cuota<=1.0: return {"ev_pct":-99.0,"valor":"sin_valor","justa":0.0}
-    # Vig dinámico según tipo de cuota:
-    # Exchanges (Betfair/Smarkets): cuotas altas → vig ~1.5%
-    # Soft books (Bet365/William Hill): cuotas medias → vig ~4.5%
-    # Sharp books (Pinnacle/Betcris): cuotas competitivas → vig ~2.5%
-    if cuota >= 4.0:      vig = 0.015   # exchange o long shot sharpeado
-    elif cuota >= 2.50:   vig = 0.025   # sharp book
-    elif cuota >= 1.50:   vig = 0.040   # soft/típico bookmaker
-    else:                 vig = 0.055   # cuota baja = máximo overround
-    ev=prob*(cuota-1.0)-(1-prob)*1.0-vig
+    ev=prob*(cuota-1.0)-(1-prob)*1.0-0.045
     justa=round(1/prob,3) if prob>0 else cuota
     v=("excelente" if ev>0.08 else ("bueno" if ev>0.03 else
        ("marginal" if ev>0 else "negativo")))
-    return {"ev_pct":round(ev*100,2),"valor":v,"justa":justa,"vig_usado":round(vig*100,1)}
+    return {"ev_pct":round(ev*100,2),"valor":v,"justa":justa}
 
 def _kr_momentum(team,sport,last5):
     try:
@@ -13666,17 +13404,14 @@ def _ultra_fatiga(home, away, sport, fecha):
     1. INDICE DE FATIGA REAL — uno de los mas poderosos.
     Soccer: 3 partidos en 7 dias. NBA: back-to-back. Tenis: 3 sets seguidos.
     """
-    if not ANTHROPIC_API_KEY: return {"fatiga_h":0.0,"fatiga_a":0.0,"alerta":""}
+    if not GEMINI_API_KEY: return {"fatiga_h":0.0,"fatiga_a":0.0,"alerta":""}
     try:
         p = (f"Analiza fatiga para {home} vs {away} ({sport}, {fecha}).\n"
              f"Soccer: 3+ partidos en 7 dias=-0.10. NBA: back-to-back=-0.08. "
              f"Tenis: 3+ sets seguidos=-0.06. Viajes largos=-0.03.\n"
              f"JSON sin backticks: {{\"fatiga_h\":-0.15 a 0.0,\"fatiga_a\":-0.15 a 0.0,"
              f"\"descripcion\":\"12 palabras max\",\"alerta\":\"si hay fatiga critica o null\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens": 80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("fatiga_h",0.0); d.setdefault("fatiga_a",0.0); d.setdefault("alerta","")
@@ -13690,7 +13425,7 @@ def _ultra_matchup(home, away, sport):
     2. MATCHUP ESTILO VS ESTILO — algunos estilos siempre pierden contra otros.
     Soccer: posesion vs presion. NBA: pequenos vs pivots. Tenis: defensor vs sacador.
     """
-    if not ANTHROPIC_API_KEY: return {"ventaja":0.0,"estilo_h":"","estilo_a":"","matchup":""}
+    if not GEMINI_API_KEY: return {"ventaja":0.0,"estilo_h":"","estilo_a":"","matchup":""}
     try:
         p = (f"Analiza matchup tactico {home} vs {away} ({sport}).\n"
              f"Clasifica estilos: Soccer(posesion|contragolpe|presion|bloque), "
@@ -13698,10 +13433,7 @@ def _ultra_matchup(home, away, sport):
              f"JSON sin backticks: {{\"estilo_h\":\"tipo\",\"estilo_a\":\"tipo\","
              f"\"matchup\":\"descripcion 10 palabras\",\"ventaja\":-0.08 a +0.08,"
              f"\"favorece\":\"local|visita|neutro\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja",0.0); d.setdefault("matchup",""); return d
@@ -13714,7 +13446,7 @@ def _ultra_forma_real(home, away, sport):
     3. FORMA REAL (estadisticas, no resultados).
     Soccer: xG, tiros, posesion. NBA: OffRtg, DefRtg. Tenis: % puntos servicio/resto.
     """
-    if not ANTHROPIC_API_KEY: return {"forma_h":0.0,"forma_a":0.0,"descripcion":""}
+    if not GEMINI_API_KEY: return {"forma_h":0.0,"forma_a":0.0,"descripcion":""}
     try:
         p = (f"Analiza forma real (estadisticas, no resultados) {home} vs {away} ({sport}).\n"
              f"Soccer: xG ultimos 5, tiros. NBA: OffRtg/DefRtg reciente. Tenis: % servicio/resto.\n"
@@ -13722,10 +13454,7 @@ def _ultra_forma_real(home, away, sport):
              f"JSON sin backticks: {{\"forma_h\":-0.08 a +0.08,\"forma_a\":-0.08 a +0.08,"
              f"\"stat_clave_h\":\"estadistica principal\",\"stat_clave_a\":\"estadistica principal\","
              f"\"tendencia\":\"mejorando|estable|cayendo por equipo\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("forma_h",0.0); d.setdefault("forma_a",0.0); return d
@@ -13738,17 +13467,14 @@ def _ultra_ventaja_fisica(home, away, sport):
     4. VENTAJA FISICA.
     NBA: altura, rebotes. Soccer: velocidad extremos, duelos aereos. Tenis: potencia servicio.
     """
-    if not ANTHROPIC_API_KEY: return {"ventaja_fisica":0.0,"descripcion":""}
+    if not GEMINI_API_KEY: return {"ventaja_fisica":0.0,"descripcion":""}
     try:
         p = (f"Analiza ventaja fisica {home} vs {away} ({sport}).\n"
              f"NBA: altura promedio, dominio pintura. Soccer: velocidad, duelos aereos, fisico.\n"
              f"Tenis: potencia servicio, resistencia, envergadura.\n"
              f"JSON sin backticks: {{\"ventaja_fisica\":-0.06 a +0.06,"
              f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens": 80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja_fisica",0.0); return d
@@ -13761,17 +13487,14 @@ def _ultra_localia(home, away, sport, liga):
     5. LOCALIA PROFUNDA — no solo 'juega en casa'.
     % real victorias local, goles a favor/contra, presion del estadio.
     """
-    if not ANTHROPIC_API_KEY: return {"bonus_local":0.0,"descripcion":""}
+    if not GEMINI_API_KEY: return {"bonus_local":0.0,"descripcion":""}
     try:
         p = (f"Analiza ventaja de localia profunda: {home} (local) vs {away} ({sport}, {liga}).\n"
              f"% real victorias en casa, diferencia goles/puntos local vs visita, presion estadio.\n"
              f"Algunos equipos suben 25-40%% en casa. Cuantificalo.\n"
              f"JSON sin backticks: {{\"bonus_local\":-0.05 a +0.12,"
              f"\"wr_local_est\":\"% estimado\",\"descripcion\":\"12 palabras max\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens": 80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("bonus_local",0.0); return d
@@ -13784,7 +13507,7 @@ def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
     6. MOTIVACION COMPETITIVA — una de las variables mas fuertes.
     Descenso, playoffs, eliminacion, rivalidad historica. Posicion en tabla = urgencia real.
     """
-    if not ANTHROPIC_API_KEY: return {"motivacion_h":0.0,"motivacion_a":0.0,"situacion":""}
+    if not GEMINI_API_KEY: return {"motivacion_h":0.0,"motivacion_a":0.0,"situacion":""}
     try:
         _tbl_line = (f" | Posicion tabla: {tabla_ctx}" if tabla_ctx else "")
         p = (f"Analiza motivacion competitiva {home} vs {away} ({sport}, {liga}){_tbl_line}.\n"
@@ -13794,10 +13517,7 @@ def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
              f"JSON sin backticks: {{\"motivacion_h\":-0.05 a +0.10,"
              f"\"motivacion_a\":-0.05 a +0.10,\"situacion\":\"descripcion 12 palabras\","
              f"\"urgencia\":\"critica|alta|media|baja\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("motivacion_h",0.0); d.setdefault("motivacion_a",0.0); return d
@@ -13810,7 +13530,7 @@ def _ultra_consistencia(home, away, sport):
     7+10. INDICE DE CONSISTENCIA (desviacion estandar de rendimiento).
     Equipo volatil = riesgo alto. Equipo consistente = apuesta mas segura.
     """
-    if not ANTHROPIC_API_KEY: return {"consist_h":0.5,"consist_a":0.5,"descripcion":""}
+    if not GEMINI_API_KEY: return {"consist_h":0.5,"consist_a":0.5,"descripcion":""}
     try:
         p = (f"Mide consistencia de rendimiento (NO resultados) de {home} y {away} ({sport}).\n"
              f"Consistencia = estabilidad estadistica. Volatilidad = alternancia extrema.\n"
@@ -13818,10 +13538,7 @@ def _ultra_consistencia(home, away, sport):
              f"JSON sin backticks: {{\"consist_h\":0-1,\"consist_a\":0-1,"
              f"\"volatilidad_h\":\"alta|media|baja\",\"volatilidad_a\":\"alta|media|baja\","
              f"\"confiable\":\"local|visita|ambos|ninguno\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("consist_h",0.5); d.setdefault("consist_a",0.5); return d
@@ -13834,7 +13551,7 @@ def _ultra_presion(home, away, sport):
     1+7(KR). EFICIENCIA BAJO PRESION + DESCANSO MENTAL.
     Clutch stats, break points, partido empatado. Rebote mental post-derrota.
     """
-    if not ANTHROPIC_API_KEY: return {"presion_h":0.0,"presion_a":0.0,"descripcion":""}
+    if not GEMINI_API_KEY: return {"presion_h":0.0,"presion_a":0.0,"descripcion":""}
     try:
         p = (f"Analiza eficiencia bajo presion y estado mental de {home} y {away} ({sport}).\n"
              f"Soccer: rendimiento en empates, rachas recientes. NBA: clutch stats ultimos 5min.\n"
@@ -13842,10 +13559,7 @@ def _ultra_presion(home, away, sport):
              f"JSON sin backticks: {{\"presion_h\":-0.08 a +0.06,\"presion_a\":-0.08 a +0.06,"
              f"\"clutch_h\":\"bueno|regular|malo\",\"clutch_a\":\"bueno|regular|malo\","
              f"\"estado_mental\":\"descripcion 10 palabras\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("presion_h",0.0); d.setdefault("presion_a",0.0); return d
@@ -13858,7 +13572,7 @@ def _ultra_ritmo_juego(home, away, sport):
     9+8(KR). RITMO DE JUEGO + EFICIENCIA EN TRANSICION.
     NBA pace, Soccer lento vs rapido, contraataques, fast breaks.
     """
-    if not ANTHROPIC_API_KEY: return {"ritmo_delta":0.0,"descripcion":""}
+    if not GEMINI_API_KEY: return {"ritmo_delta":0.0,"descripcion":""}
     try:
         p = (f"Analiza ritmo de juego y eficiencia en transicion {home} vs {away} ({sport}).\n"
              f"NBA: pace preferido (alto vs bajo). Soccer: equipo lento vs rapido, contraataque.\n"
@@ -13866,10 +13580,7 @@ def _ultra_ritmo_juego(home, away, sport):
              f"JSON sin backticks: {{\"ritmo_delta\":-0.07 a +0.07,"
              f"\"ritmo_h\":\"alto|medio|bajo\",\"ritmo_a\":\"alto|medio|bajo\","
              f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ritmo_delta",0.0); return d
@@ -13882,7 +13593,7 @@ def _ultra_dependencia_estrella(home, away, sport):
     7(KR). INDICE DE DEPENDENCIA DE ESTRELLA.
     NBA: jugador produce 40%+ del ataque. Soccer: goleador unico. Tenis: servicio.
     """
-    if not ANTHROPIC_API_KEY: return {"dep_h":0.0,"dep_a":0.0,"estrella_h":"","estrella_a":""}
+    if not GEMINI_API_KEY: return {"dep_h":0.0,"dep_a":0.0,"estrella_h":"","estrella_a":""}
     try:
         p = (f"Analiza dependencia de estrella en {home} y {away} ({sport}).\n"
              f"Si el equipo depende de 1 jugador -> vulnerabilidad si lo neutralizan.\n"
@@ -13890,10 +13601,7 @@ def _ultra_dependencia_estrella(home, away, sport):
              f"JSON sin backticks: {{\"dep_h\":-0.06 a 0.0,\"dep_a\":-0.06 a 0.0,"
              f"\"estrella_h\":\"nombre si aplica o null\",\"estrella_a\":\"nombre si aplica o null\","
              f"\"riesgo\":\"alto|medio|bajo\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("dep_h",0.0); d.setdefault("dep_a",0.0); return d
@@ -13906,7 +13614,7 @@ def _ultra_adaptabilidad(home, away, sport):
     6(KR). ADAPTABILIDAD TACTICA + EFICIENCIA DEL ENTRENADOR.
     Equipos que cambian sistema vs equipos de un solo sistema.
     """
-    if not ANTHROPIC_API_KEY: return {"adapt_h":0.0,"adapt_a":0.0,"descripcion":""}
+    if not GEMINI_API_KEY: return {"adapt_h":0.0,"adapt_a":0.0,"descripcion":""}
     try:
         p = (f"Analiza adaptabilidad tactica y calidad del entrenador {home} vs {away} ({sport}).\n"
              f"Equipo flexible = puede ajustar plan. Dependiente = vulnerables a cambios.\n"
@@ -13914,10 +13622,7 @@ def _ultra_adaptabilidad(home, away, sport):
              f"JSON sin backticks: {{\"adapt_h\":-0.04 a +0.05,\"adapt_a\":-0.04 a +0.05,"
              f"\"flexibilidad_h\":\"alta|media|baja\",\"flexibilidad_a\":\"alta|media|baja\","
              f"\"ventaja_coach\":\"local|visita|par\"}}")
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                                    "messages":[{"role":"user","content":p}]},timeout=5)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("adapt_h",0.0); d.setdefault("adapt_a",0.0); return d
@@ -13935,7 +13640,7 @@ def _ultra_rival_similar(home: str, away: str, sport: str) -> dict:
     TTL=1800s.
     """
     _d = {"rival_h": 0.0, "rival_a": 0.0, "nivel": "similar", "descripcion": ""}
-    if not ANTHROPIC_API_KEY: return _d
+    if not GEMINI_API_KEY: return _d
     try:
         sport_ctx = {
             "futbol": "analiza rendimiento vs top 5 vs media tabla vs relegación",
@@ -13948,12 +13653,7 @@ def _ultra_rival_similar(home: str, away: str, sport: str) -> dict:
              f"SOLO JSON sin backticks: "
              f'{{"rival_h": -0.10_a_+0.10, "rival_a": -0.10_a_+0.10, '
              f'"nivel": "alto|similar|bajo", "descripcion": "max 12 palabras"}}')
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 160,
-                                    "messages": [{"role": "user", "content": p}]}, timeout=8)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=160)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -13968,7 +13668,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
     Ultra Intelligence: UNA sola llamada Haiku que reemplaza 12 llamadas paralelas.
     Retorna: {delta_h, delta_a, score_ultra, flags, context_str, raw}
     """
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return {"delta_h":0.0,"delta_a":0.0,"score_ultra":5.0,"flags":[],"context_str":"","raw":{}}
     try:
         prompt = (
@@ -13982,11 +13682,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
             f"\nfatiga: -0.15 a 0. forma/motivacion: -0.10 a +0.10. resto: -0.08 a +0.08. "
             f"flags: max 2 alertas importantes como strings."
         )
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
-                     "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":250,
-                  "messages":[{"role":"user","content":prompt}]}, timeout=6)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -14029,7 +13725,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
     return {"delta_h":0.0,"delta_a":0.0,"score_ultra":5.0,"flags":[],"context_str":"","raw":{}}
 
 def _kr_situacional(home,away,sport,liga,hora):
-    if not ANTHROPIC_API_KEY: return {"factor":0.0,"ctx":""}
+    if not GEMINI_API_KEY: return {"factor":0.0,"ctx":""}
     try:
         prompt=(
             f"Partido: {home} vs {away} | {sport} | {liga}\n"
@@ -14038,11 +13734,7 @@ def _kr_situacional(home,away,sport,liga,hora):
             f"{{\"factor\": -0.10 a +0.10, \"favorece\": \"local|visita|neutro\", "
             f"\"ctx\": \"max 12 palabras\", \"urgencia\": \"alta|media|baja\"}}"
         )
-        r=requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
-                     "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":80,
-                  "messages":[{"role":"user","content":prompt}]},timeout=5)
+        r=type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=80)}]}})()  # gemini
         if r.status_code==200:
             txt=r.json()["content"][0]["text"].strip()
             txt=re.sub(r"```json|```","",txt).strip()
@@ -14079,7 +13771,7 @@ def _kr_analisis_combinado(home: str, away: str, sport: str, liga: str, hora: st
     UNA sola llamada Haiku que reemplaza _kr_situacional + _kr_transicion + _kr_entrenador.
     3 llamadas → 1 llamada. Misma información, 3× más rápido.
     """
-    if not ANTHROPIC_API_KEY:
+    if not GEMINI_API_KEY:
         return {"factor":0.0,"ctx":"","trans_h":0.0,"trans_a":0.0,"trans_score":5,
                 "coach_h":0.0,"coach_a":0.0,"coach_score":5}
     try:
@@ -14092,11 +13784,7 @@ def _kr_analisis_combinado(home: str, away: str, sport: str, liga: str, hora: st
             f"\nSustituye los valores segun tu analisis. sit_factor entre -0.10 y +0.10. "
             f"trans_h/a entre -0.05 y +0.05. coach_h/a entre -0.04 y +0.04. scores de 0 a 10."
         )
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
-                     "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":180,
-                  "messages":[{"role":"user","content":prompt}]}, timeout=6)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=180)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -14125,12 +13813,7 @@ def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
         usr_p = (f"Historial:{b_wins}W-{b_loss}L Hot:{b_hot} Cold:{b_cold}\n"
                  f"Ultimos5:{last5_s}\n{ct}\n"
                  f"Elige el mejor. JSON: {_jfmt}")
-        r=requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
-                     "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":150,
-                  "system":sys_p,"messages":[{"role":"user","content":usr_p}]},
-            timeout=12)
+        r=type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(usr_p,use_search=False,max_tokens=150)}]}})()  # gemini
         if r.status_code==200:
             txt=r.json()["content"][0]["text"].strip()
             txt=re.sub(r"```json|```","",txt).strip()
@@ -15113,7 +14796,7 @@ def _kr_ia_narracion(el_pick, bk, todos):
     Llama a Claude para que King Rongo narre el pick en primera persona.
     Conciso, poderoso, con personalidad.
     """
-    if not ANTHROPIC_API_KEY: return ""
+    if not GEMINI_API_KEY: return ""
     try:
         modelos_txt = " | ".join(f"{k}: {v}%" for k,v in el_pick.get("models",{}).items())
         parlay      = _kr_parlay_del_rey(todos)
@@ -15150,14 +14833,7 @@ def _kr_ia_narracion(el_pick, bk, todos):
             + "Narra. Eres el rey del universo. Si hay brecha de tabla grande, menciona la posicion."
             + (f"\n\nDATO EN VIVO: {el_pick.get('live_ctx','')}" if el_pick.get('live_ctx') else "")
         )
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01",
-                     "content-type":"application/json"},
-            json={"model":"claude-haiku-4-5-20251001","max_tokens":200,
-                  "messages":[{"role":"user","content":prompt}]},
-            timeout=8
-        )
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=200)}]}})()  # gemini
         if r.status_code == 200:
             return r.json()["content"][0]["text"].strip()
     except: pass
@@ -15842,12 +15518,7 @@ def _kr_transicion(home: str, away: str, sport: str) -> dict:
             f'"ventaja": "local|visitante|equilibrado", "score": 0-10, '
             f'"factor": "alto|medio|bajo", "razon": "max 15 palabras"}}'
         )
-        _r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 120,
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=5)
+        _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=120)}]}})()  # gemini
         if _r.status_code == 200:
             _blocks = _r.json().get("content", [])
             _txt = next((b["text"] for b in _blocks if b.get("type")=="text"), "")
@@ -15884,12 +15555,7 @@ def _kr_entrenador(home: str, away: str, sport: str, liga: str = "") -> dict:
             f'"ventaja_tactica": "local|visitante|equilibrado", "score": 0-10, '
             f'"impacto": "alto|medio|bajo", "razon": "max 15 palabras"}}'
         )
-        _r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 120,
-                  "messages": [{"role": "user", "content": prompt}]}, timeout=5)
+        _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=120)}]}})()  # gemini
         if _r.status_code == 200:
             _blocks = _r.json().get("content", [])
             _txt = next((b["text"] for b in _blocks if b.get("type")=="text"), "")
@@ -16147,16 +15813,7 @@ Responde SOLO JSON sin markdown:
 }}
 Si no detectas variables relevantes, pon 0.0 en todo y confidence=baja."""
 
-        _r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001",
-                  "max_tokens": 80,
-                  "messages": [{"role": "user", "content": _prompt}]},
-            timeout=10
-        )
+        _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_prompt,use_search=False,max_tokens=80)}]}})()  # gemini
         if _r.status_code == 200:
             import json as _jsd
             _txt = _r.json()["content"][0]["text"].strip()
@@ -16232,12 +15889,7 @@ def _ia_actuario(home: str, away: str, sport: str,
             f'"cuota_justa": {cuota_justa}, "score": 0-10, '
             f'"razon": "max 15 palabras", "alerta": "max 10 palabras o null"}}'
         )
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 200,
-                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=200)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -16267,12 +15919,7 @@ def _ia_meteorologo(home: str, away: str, sport: str, fecha: str) -> dict:
             f'"mercados_afectados": ["Over/Under"], "score_ajuste": -0.05_a_+0.05, '
             f'"favorece": "local|visitante|neutro", "razon": "max 15 palabras"}}'
         )
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -16302,12 +15949,7 @@ def _ia_h2h(home: str, away: str, sport: str, tabla_ctx: str = "") -> dict:
             f'"score": 0-10, "razon": "max 15 palabras", '
             f'"flag_historico": "dato clave max 12 palabras o null"}}'
         )
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -16341,12 +15983,7 @@ def _ia_psicologo(home: str, away: str, sport: str,
             f'"score_ajuste": -0.08_a_+0.08, "favorece": "local|visitante|neutro", '
             f'"razon": "max 15 palabras"}}'
         )
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -16380,12 +16017,7 @@ def _ia_trader(home: str, away: str, sport: str,
             f'"score": 0-10, "razon": "max 15 palabras", '
             f'"alerta": "advertencia max 12 palabras o null"}}'
         )
-        r = requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY,
-                     "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json={"model": "claude-haiku-4-5-20251001", "max_tokens": 250,
-                                    "messages": [{"role": "user", "content": prompt}]}, timeout=12)
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code == 200:
             txt = re.sub(r"```json|```", "", r.json()["content"][0]["text"]).strip()
             d = json.loads(txt)
@@ -16838,26 +16470,16 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     p1_name=_tm.get("p1",""), p2_name=_tm.get("p2",""), torneo=_tm.get("torneo",""))
                                 _tp = max(_tt["p1"],_tt["p2"])
                                 _tfav = _tm.get("p1","?") if _tt["p1"]>=_tt["p2"] else _tm.get("p2","?")
-                                _t_odd = _tm.get("odd_1",0) if _tt["p1"]>=_tt["p2"] else _tm.get("odd_2",0)
-                                # Filtro de calidad tenis: prob mínima + EV real
-                                _T_PROB_MIN = 0.57   # prob mínima para pick tenis
-                                _T_EV_MIN   = 0.02   # EV mínimo (2%) vs cuota real
-                                _t_ev_d = _kr_ev(_tp, _t_odd) if _t_odd > 1 else {"ev_pct": (_tp-0.50)*100*0.9, "valor":"marginal"}
-                                _t_ev   = _t_ev_d["ev_pct"] / 100
-                                if _tp < _T_PROB_MIN: continue   # prob insuficiente
-                                if _t_odd > 1 and _t_ev < _T_EV_MIN: continue   # sin EV real
-                                _t_conf_e, _t_conf_l, _t_conf_c = _kr_conf(_tp, max(_t_ev,0), 3)
                                 _fallback_cands.append({
                                     "deporte":"🎾 Tenis","sport":"tenis",
                                     "label":f"{_tm.get('p1','?')} vs {_tm.get('p2','?')}",
                                     "liga":_tm.get("torneo","Tennis"),"hora":_tm.get("hora",""),
-                                    "pick":f"🎾 {_tfav} gana","prob":_tp,"odd":_t_odd,
+                                    "pick":f"🎾 {_tfav} gana","prob":_tp,"odd":0,
                                     "edge":_tp-0.50,"kelly_pct":0,"mkt_type":"ML",
-                                    "ev_pct":round(_t_ev*100,2),
                                     "contradiccion":False,"model_spread":5,
-                                    "conf_emoji":_t_conf_e,"conf_label":_t_conf_l,"conf_color":_t_conf_c,
+                                    "conf_emoji":"⚡","conf_label":"MEDIA","conf_color":"#aaa",
                                     "reasoning":f"Rk #{_tm.get('rank1','?')} vs #{_tm.get('rank2','?')}","match":_tm,
-                                    "score":_tp * 5 + max(0,_t_ev) * 10,
+                                    "score":_tp * 5,
                                 })
                                 break
                             except: continue
@@ -18164,14 +17786,8 @@ if st.session_state["view"] == "cartelera":
                                         ai_rec_ou = res["rec"]; ai_rec_ml = g["home"]
                                         ai_txt = ""; ai_conf = "⚡ MEDIA"
                                         try:
-                                            ai_r = requests.post("https://api.anthropic.com/v1/messages",
-                                                headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-                                                json={"model":"claude-sonnet-4-20250514","max_tokens":400,
-                                                      "messages":[{"role":"user","content":ai_prompt}]},timeout=15)
-                                            raw = ai_r.json()["content"][0]["text"].strip()
-                                            raw = raw.replace("```json","").replace("```","").strip()
                                             import json as _json
-                                            ad = _json.loads(raw)
+                                            ad = _gemini_json(ai_prompt, use_search=False, max_tokens=400)
                                             ai_over   = float(ad.get("over", ai_over))
                                             ai_under  = float(ad.get("under", ai_under))
                                             ai_ml_h   = float(ad.get("ml_local", ai_ml_h))
@@ -18298,16 +17914,12 @@ if st.session_state["view"] == "cartelera":
                     # Add ML picks via AI for top 6 games
                     try:
                         _top_games = [g for g in nba_games[:6] if g["state"]=="pre"]
-                        if _top_games and ANTHROPIC_API_KEY:
-                            _games_txt = "\n".join([f"{g['away']} @ {g['home']}" for g in _top_games])
-                            _ml_r = requests.post("https://api.anthropic.com/v1/messages",
-                                headers={"x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01","content-type":"application/json"},
-                                json={"model":"claude-sonnet-4-20250514","max_tokens":600,
-                                      "messages":[{"role":"user","content":
-                                        "NBA ML picks experto. Para estos partidos da solo los que tengan valor real (prob >= 58%). Responde SOLO en JSON array: [{teams, ml_pick, prob, razon}]. Partidos:\n" + _games_txt}]},timeout=12)
+                        if _top_games and GEMINI_API_KEY:
                             import json as _j
-                            _ml_raw = _ml_r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
-                            _ml_data = _j.loads(_ml_raw)
+                            _games_txt = "\n".join([f"{g['away']} @ {g['home']}" for g in _top_games])
+                            _ml_prompt = "NBA ML picks experto. Para estos partidos da solo los que tengan valor real (prob >= 58%). Responde SOLO en JSON array: [{teams, ml_pick, prob, razon}]. Partidos:\n" + _games_txt
+                            _ml_raw = _gemini(_ml_prompt, use_search=False, max_tokens=700, json_mode=True)
+                            _ml_data = _j.loads(_ml_raw) if _ml_raw else []
                             for _ml in _ml_data:
                                 _p = float(_ml.get("prob",0))/100
                                 if _p >= 0.58:
@@ -19205,11 +18817,7 @@ if st.session_state["view"] == "cartelera":
                                                             f"<span style='font-size:1.05rem;font-weight:900;color:{_pc}'>{_pick_prob*100:.0f}%</span>"
                                                             f"</div>"
                                                         )
-                                                        # Pick 2 UEFA — inicializar defensivamente por si el bloque UEFA no corrió
-                                                        try: _pick2_lbl_c
-                                                        except NameError: _pick2_lbl_c = None
-                                                        try: _pick2_prob_c
-                                                        except NameError: _pick2_prob_c = 0.0
+                                                        # Pick 2 UEFA — usa variables locales directas (sin dir())
                                                         _p2l = _pick2_lbl_c
                                                         _p2p = _pick2_prob_c
                                                         if not _p2l and _br:
@@ -19342,18 +18950,12 @@ if st.session_state["view"] == "cartelera":
                                 _fav_odd = _odd_h if _ph>=_pa else _odd_a
                                 _hname14 = _m["home"][:14]; _aname14 = _m["away"][:14]
                                 _cands = []
-                                # [v2 PATCH] EV mínimo subido de 0.01 → 0.03 y prob mínima de 0.52 → 0.55
-                                _EV_MIN  = 0.03  # EV mínimo real para considerar un pick
-                                _PROB_ML = 0.55  # prob mínima para picks ML (antes 0.52)
-                                _PROB_OU = 0.60  # prob mínima para Over/Under (antes 0.58)
-                                _PROB_AA = 0.60  # prob mínima Ambos Anotan (antes 0.58)
-                                _PROB_DO = 0.77  # prob mínima Doble Oportunidad (antes 0.75)
-                                if _ph>=_PROB_ML and _ev_t(_ph,_odd_h)>_EV_MIN: _cands.append(("🏠 "+_m["home"],_ph,_odd_h,_ev_t(_ph,_odd_h)))
-                                if _pa>=_PROB_ML and _ev_t(_pa,_odd_a)>_EV_MIN: _cands.append(("✈️ "+_m["away"],_pa,_odd_a,_ev_t(_pa,_odd_a)))
-                                if _o25>=_PROB_OU and _ev_t(_o25,1.90)>_EV_MIN: _cands.append(("⚽ Over 2.5",_o25,0,_ev_t(_o25,1.90)))
-                                if _aa>=_PROB_AA  and _ev_t(_aa,1.80)>_EV_MIN:  _cands.append(("⚡ Ambos Anotan",_aa,0,_ev_t(_aa,1.80)))
-                                if _do_h>=_PROB_DO and _ph>=0.52 and _ev_t(_do_h,1.35)>_EV_MIN: _cands.append(("🔵 "+_hname14+" o Emp",_do_h,0,_ev_t(_do_h,1.35)))
-                                if _do_a>=_PROB_DO and _pa>=0.47 and _ev_t(_do_a,1.35)>_EV_MIN: _cands.append(("🟣 "+_aname14+" o Emp",_do_a,0,_ev_t(_do_a,1.35)))
+                                if _ph>=0.52 and _ev_t(_ph,_odd_h)>0.01: _cands.append(("🏠 "+_m["home"],_ph,_odd_h,_ev_t(_ph,_odd_h)))
+                                if _pa>=0.52 and _ev_t(_pa,_odd_a)>0.01: _cands.append(("✈️ "+_m["away"],_pa,_odd_a,_ev_t(_pa,_odd_a)))
+                                if _o25>=0.58 and _ev_t(_o25,1.90)>0.01: _cands.append(("⚽ Over 2.5",_o25,0,_ev_t(_o25,1.90)))
+                                if _aa>=0.58  and _ev_t(_aa,1.80)>0.01:  _cands.append(("⚡ Ambos Anotan",_aa,0,_ev_t(_aa,1.80)))
+                                if _do_h>=0.75 and _ph>=0.50 and _ev_t(_do_h,1.35)>0.01: _cands.append(("🔵 "+_hname14+" o Emp",_do_h,0,_ev_t(_do_h,1.35)))
+                                if _do_a>=0.75 and _pa>=0.45 and _ev_t(_do_a,1.35)>0.01: _cands.append(("🟣 "+_aname14+" o Emp",_do_a,0,_ev_t(_do_a,1.35)))
                                 if _cands:
                                     _bb=max(_cands,key=lambda x:x[3]); _lbl,_p,_odd,_ev=_bb[0],_bb[1],_bb[2],_bb[3]
                                     _sin_valor=False
@@ -19361,14 +18963,13 @@ if st.session_state["view"] == "cartelera":
                                     _lbl="⚠️ "+_fav_lbl; _p=_fav_p; _odd=_fav_odd
                                     _ev=_ev_t(_fav_p,_fav_odd) if _fav_odd>1 else _fav_p-0.5; _sin_valor=True
                                 _danger = abs(_ph-_pa)<0.04
-                                # [v2 PATCH] umbrales de confianza también subidos
                                 if _sin_valor: _conf="⚠️ SIN VALOR"; _cc_pick="#555"
                                 elif _danger:  _conf="⚡ DANGER";    _cc_pick="#ff9500"
                                 elif _p>0.68:  _conf="💎 DIAMANTE";  _cc_pick="#FFD700"
                                 elif _p>0.62:  _conf="🔥 ALTA";      _cc_pick="#00ff88"
-                                elif _p>0.57:  _conf="⚡ MEDIA";     _cc_pick="#00ccff"
+                                elif _p>0.56:  _conf="⚡ MEDIA";     _cc_pick="#00ccff"
                                 else:          _conf="📊 SEÑAL";     _cc_pick="#aaa"
-                                _edge_str=f"+{_ev*100:.1f}% EV" if _ev>_EV_MIN else ("SIN VALOR" if _sin_valor else f"{_ev*100:.1f}%")
+                                _edge_str=f"+{_ev*100:.1f}% EV" if _ev>0.01 else ("SIN VALOR" if _sin_valor else f"{_ev*100:.1f}%")
                                 fut_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),
                                     "hora":_m.get("hora",""),"pick":_lbl,"prob":_p,"odd":_odd,"ev":_ev,
                                     "conf":_conf,"cc":_cc_pick,"edge":_edge_str,"sin_valor":_sin_valor,
