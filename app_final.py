@@ -8335,19 +8335,43 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             _tot = 1/odd_h + 1/odd_d + 1/odd_a
             _ph_imp = (1/odd_h) / _tot
             _pa_imp = (1/odd_a) / _tot
-            _hxg_odds = max(0.50, 1.52 + (_ph_imp - 0.46) * 2.80)
-            # UCL/UEFA: visitante siempre es equipo de nivel — floor más alto
-            _is_ucl_g  = "champions" in slug
+            _is_ucl_g  = "champions" in slug and "concacaf" not in slug
             _is_uefa_g = slug in {"uefa.champions","uefa.europa","uefa.europa.conf","uefa.cl","uefa.el","uefa.ecl"}
             _is_cncf_g = slug in {"concacaf.champions","concacaf.league"}
+            # ── xG desde total del partido (no fórmula lineal individual) ──
+            # Ambos equipos en torneos élite meten goles — no castigar al visitante
+            # Calcular xG_total y repartir por ratio histórico home/away
+            _ph_imp_s  = _ph_imp; _pa_imp_s = _pa_imp; _pd_imp_s = _pd_imp if "_pd_imp" in dir() else (1/odd_d)/(1/odd_h+1/odd_d+1/odd_a)
+            _balance   = 1 - abs(_ph_imp_s - _pa_imp_s)   # 0=dominante, 1=muy parejo
+            _draw_fac  = (_pd_imp_s / 0.28)               # empate probable = partido abierto
             if _is_ucl_g:
-                _axg_odds = max(1.05, 1.20 + (_pa_imp - 0.30) * 2.50)
-            elif _is_uefa_g:
-                _axg_odds = max(0.95, 1.15 + (_pa_imp - 0.30) * 2.50)
+                # UCL eliminatorias: ~2.8-3.1 g/partido real
+                # Favorito claro → ataca más pero rival defiende → 2.8
+                # Parejo → ida y vuelta → 3.1
+                _xg_total_odds = 2.70 + _balance * 0.35 + _draw_fac * 0.18
+                _ratio_h_base  = 0.582
             elif _is_cncf_g:
-                _axg_odds = max(0.90, 1.12 + (_pa_imp - 0.30) * 2.50)
+                # CONCACAF: distinguir fase por odds del favorito
+                # 1ra ronda élite vs relleno (ph>0.65) → xG alto ~3.2
+                # Cuartos/Semis/Final élite vs élite (ph 0.45-0.65) → xG ~2.55
+                _ph_max = max(_ph_imp_s, _pa_imp_s)
+                if _ph_max > 0.65:
+                    _xg_total_odds = 3.20 + _balance * 0.20  # vs relleno
+                elif _ph_max > 0.55:
+                    _xg_total_odds = 2.70 + _balance * 0.18  # élite domina
+                else:
+                    _xg_total_odds = 2.50 + _balance * 0.20  # parejo élite
+                _ratio_h_base  = 0.554
+            elif _is_uefa_g:
+                _xg_total_odds = 2.60 + _balance * 0.38 + _draw_fac * 0.18
+                _ratio_h_base  = 0.558
             else:
-                _axg_odds = max(0.35, 1.10 + (_pa_imp - 0.30) * 2.50)
+                _xg_total_odds = 2.45 + _balance * 0.35 + _draw_fac * 0.15
+                _ratio_h_base  = 0.565
+            # Split home/away: favorito local ataca más
+            _ratio_h_adj   = max(0.44, min(0.65, _ratio_h_base + (_ph_imp_s - 0.45) * 0.15))
+            _hxg_odds = _xg_total_odds * _ratio_h_adj
+            _axg_odds = _xg_total_odds * (1 - _ratio_h_adj)
             _xg_odds_mine = _hxg_odds if is_home else _axg_odds
             # Ponderación odds vs modelo propio:
             # - Sin forma: 80% odds (no tenemos nada más)
@@ -18863,8 +18887,8 @@ if st.session_state["view"] == "cartelera":
                                                                         ("Ambos Anotan",_btts_pre, _ev_g2(_btts_pre, _aa_odd),       "AA"),
                                                                         ("Over 1.5",    _o15_pre,  _ev_g2(_o15_pre,  1.35),          "O15"),
                                                                     ]
-                                                                    # Para UEFA: forzar umbral de prob más bajo (son partidos de alto xG)
-                                                                    _prob_min = 0.35 if _is_intl else 0.40
+                                                                    # Para UEFA/intl: umbral más bajo para que AA pueda entrar
+                                                                    _prob_min = 0.38 if _is_intl else 0.42
                                                                     _g_ok   = [o for o in _goles_pool if o[1] >= _prob_min and o[3] != "O15"]
                                                                     _g_ev   = [o for o in _g_ok if o[2] > 0]
                                                                     _g_best = (max(_g_ev, key=lambda o: o[2]) if _g_ev else
@@ -18889,12 +18913,32 @@ if st.session_state["view"] == "cartelera":
                                                                         _do_h_o = (_oh_u*_od_u/(_oh_u+_od_u) if _oh_u>1 and _od_u>1 else 1.30)
                                                                         _do_a_o = (_oa_u*_od_u/(_oa_u+_od_u) if _oa_u>1 and _od_u>1 else 1.25)
                                                                         def _ev_do(p, odd): return p*(odd-1)-(1-p)
-                                                                        if _ev_do(_do_h_p, _do_h_o) >= _ev_do(_do_a_p, _do_a_o):
-                                                                            _pick_lbl  = _m["home"] + " DO"
-                                                                            _pick_prob = min(0.92, _do_h_p)
+                                                                        _ev_do_h = _ev_do(_do_h_p, _do_h_o)
+                                                                        _ev_do_a = _ev_do(_do_a_p, _do_a_o)
+                                                                        # Comparar DO vs ML: elegir la opción con mejor EV para pick1 UEFA
+                                                                        _ml_h_o = _oh_u if _oh_u > 1 else 2.00
+                                                                        _ml_a_o = _oa_u if _oa_u > 1 else 2.50
+                                                                        _ev_ml_h = _ev_do(_ph2_adj, _ml_h_o)
+                                                                        _ev_ml_a = _ev_do(_pa2_adj, _ml_a_o)
+                                                                        _uefa_pool = [
+                                                                            (_m["home"] + " DO",   _do_h_p,  _ev_do_h, "DO"),
+                                                                            (_m["away"] + " DO",   _do_a_p,  _ev_do_a, "DO"),
+                                                                            (_m["home"] + " Gana", _ph2_adj, _ev_ml_h, "ML"),
+                                                                            (_m["away"] + " Gana", _pa2_adj, _ev_ml_a, "ML"),
+                                                                        ]
+                                                                        # DO y ML tienen igual EV matemático — la diferencia es prob/cuota
+                                                                        # Si hay favorito claro (ph o pa ≥ 0.55): ML directo (mejor cuota)
+                                                                        # Si parejo: DO del más probable (más seguro)
+                                                                        if _ph2_adj >= 0.55:
+                                                                            _best_uefa = (_m["home"] + " Gana", _ph2_adj, _ev_ml_h, "ML")
+                                                                        elif _pa2_adj >= 0.55:
+                                                                            _best_uefa = (_m["away"] + " Gana", _pa2_adj, _ev_ml_a, "ML")
+                                                                        elif _ph2_adj >= _pa2_adj:
+                                                                            _best_uefa = (_m["home"] + " DO",   _do_h_p,  _ev_do_h, "DO")
                                                                         else:
-                                                                            _pick_lbl  = _m["away"] + " DO"
-                                                                            _pick_prob = min(0.92, _do_a_p)
+                                                                            _best_uefa = (_m["away"] + " DO",   _do_a_p,  _ev_do_a, "DO")
+                                                                        _pick_lbl  = _best_uefa[0]
+                                                                        _pick_prob = min(0.92, _best_uefa[1])
                                                                         # Pick2 UEFA: goles ya calculado arriba, solo sobreescribir si mejor op disponible
                                                                         if not _pick2_lbl_c:
                                                                             _pick2_lbl_c  = "Over 2.5"
