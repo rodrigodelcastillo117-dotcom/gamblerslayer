@@ -5552,144 +5552,60 @@ def _villar_auto_pick(partido_db):
             _build_pick(f"🌓 {away} gana cualquier mitad", _gcm_a,  "GCM", _o_gcma),
         ]
 
-        # ── Para UEFA (champions/europa/conf): 2 picks basados en perfil del partido ──
-        # Lógica: el partido define qué tiene sentido apostar, no el EV global.
-        # 3 perfiles: FAVORITO CLARO | PAREJO | DEFENSIVO
-        # Los 2 picks deben ser de CATEGORÍAS distintas:
-        #   Cat A (resultado): ML, DO, GCM, Empate
-        #   Cat B (goles):     O25, O35, U25, AA, TG
+        # ── Para UEFA (champions/europa/conf): 2 picks por probabilidades reales ──
+        # Pick 1: Cat A (resultado) — ML, DO, GCM, Empate
+        # Pick 2: Cat B (goles)    — mejor EV/prob entre O25, O35, AA, U25, TG
+        # La elección entre O25/O35/AA/U25 la hacen las probs del partido, no perfiles fijos.
         _uefa_only = {"uefa.champions","uefa.europa","uefa.europa.conf"}
         _pick2_lbl = None; _pick2_prob = None; _pick2_odd = None; _pick2_ev = None
 
         if slug in _uefa_only:
-            _xgt = hxg + axg   # xG total del partido
-            _ml_diff = abs(_ph_d - _pa_d)  # diferencia de fuerza
+            _xgt     = hxg + axg
+            _ml_diff = abs(_ph_d - _pa_d)
 
-            # ── Perfil del partido ──
-            _perfil_fav    = _ml_diff >= 0.18  # un equipo es favorito claro (>18pp diferencia)
-            _perfil_parejo = _ml_diff < 0.10   # partido muy parejo (<10pp)
-            _perfil_goles  = _xgt >= 2.8       # partido esperado de muchos goles
-            _perfil_bajo   = _xgt < 2.2        # partido esperado defensivo
-
-            # Diccionario rápido para buscar outcomes por mkt
+            # ── Helpers ──
             _out_by_mkt = {}
             for _o in _all_outcomes:
                 _out_by_mkt.setdefault(_o[4], []).append(_o)
 
-            def _best_of_mkt(*mkts):
-                """Mejor outcome (por EV si existe, si no por prob) entre los mercados dados."""
-                _pool = []
-                for _mk in mkts:
-                    _pool.extend(_out_by_mkt.get(_mk, []))
+            def _best_of_mkt(*mkts, min_prob=0.0):
+                _pool = [o for mk in mkts for o in _out_by_mkt.get(mk,[]) if o[1]>=min_prob]
                 if not _pool: return None
-                # Preferir con EV>0, si no el de mayor prob
-                _ev_pool = [o for o in _pool if o[3] > 0.0]
-                return max(_ev_pool or _pool, key=lambda o: o[3] if _ev_pool else o[1])
+                _evp = [o for o in _pool if o[3]>0]
+                return max(_evp or _pool, key=lambda o: o[3] if _evp else o[1])
 
-            # ── Pick 1: según perfil resultado ──
-            # main_lbl/main_prob ya están calculados (máx EV global), pero
-            # para UEFA queremos que pick1 sea SIEMPRE de Cat A (resultado)
-            _cat_a_pool = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X")]
-            _cat_b_pool = [o for o in _all_outcomes if o[4] in ("O25","O35","U25","AA","TG","U35")]
+            # ── Pick 1: forzar Cat A (resultado) para UEFA ──
+            _cat_a_ev  = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X") and o[3]>0 and o[1]>=0.45]
+            _cat_a_all = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X")]
+            _p1_uefa   = (max(_cat_a_ev,  key=lambda o: o[3]) if _cat_a_ev  else
+                          max(_cat_a_all, key=lambda o: o[1]) if _cat_a_all else None)
+            if _p1_uefa and _p1_uefa[1] >= main_prob * 0.85:
+                main_lbl  = _p1_uefa[0]
+                main_prob = _p1_uefa[1]
+                main_odd  = _p1_uefa[2]
+                _best_ev  = _p1_uefa[3]
+                _best_mkt = _p1_uefa[4]
 
-            # Pick 1 — Cat A: resultado más sólido del partido
-            if _perfil_fav:
-                # Favorito claro: ML directo si tiene probabilidad real
-                _fav_ml = _best_of_mkt("ML")
-                # O bien GCM (gana cualquier mitad) si la prob del ML es < 65%
-                _gcm_p = _best_of_mkt("GCM")
-                if _fav_ml and _fav_ml[1] >= 0.58:
-                    _p1_cat_a = _fav_ml
-                elif _gcm_p and _gcm_p[1] >= 0.62:
-                    _p1_cat_a = _gcm_p
-                else:
-                    _p1_cat_a = _fav_ml or _best_of_mkt("DO")
-            elif _perfil_parejo:
-                # Parejo: DO (doble oportunidad) o Empate si tiene EV
-                _do_best  = _best_of_mkt("DO")
-                _emp_best = _best_of_mkt("X")
-                if _emp_best and _emp_best[3] > 0.01 and _pd_d >= 0.28:
-                    _p1_cat_a = _emp_best
-                elif _do_best and _do_best[1] >= 0.72:
-                    _p1_cat_a = _do_best
-                else:
-                    _p1_cat_a = _best_of_mkt("ML")
-            else:
-                # Normal: mejor ML o DO con EV
-                _p1_cat_a = (_best_of_mkt("ML") or _best_of_mkt("DO"))
+            # ── Pick 2: Cat B — elegir por EV real entre los candidatos viables ──
+            # Candidatos: O25, O35, AA, U25, TG (prob ≥ 40%)
+            _gol_mkts = ("O25","O35","AA","U25","TG","U35")
+            _cat_b_all = [o for o in _all_outcomes
+                          if o[4] in _gol_mkts
+                          and o[1] >= 0.40
+                          and o[0] != main_lbl]
 
-            # Pick 2 — Cat B: goles/ritmo del partido
-            if _perfil_goles:
-                if _xgt >= 3.2:
-                    # Muchos goles esperados: Over 3.5 primero, si no Over 2.5
-                    _o35_o = _best_of_mkt("O35")
-                    _o25_o = _best_of_mkt("O25")
-                    if _o35_o and _o35_o[1] >= 0.42:
-                        _p2_cat_b = _o35_o
-                    elif _o25_o and _o25_o[1] >= 0.58:
-                        _p2_cat_b = _o25_o
-                    else:
-                        _p2_cat_b = _best_of_mkt("AA")
-                else:
-                    # Goles moderados-altos: AA o Over 2.5
-                    _aa_o  = _best_of_mkt("AA")
-                    _o25_o = _best_of_mkt("O25")
-                    # AA si ambos equipos fuertes en ataque; O25 si hay diferencia
-                    if _aa_o and abs(_ph_d-_pa_d) < 0.12 and _aa_o[1] >= 0.60:
-                        _p2_cat_b = _aa_o
-                    elif _o25_o and _o25_o[1] >= 0.58:
-                        _p2_cat_b = _o25_o
-                    else:
-                        _p2_cat_b = _aa_o or _o25_o
-            elif _perfil_bajo:
-                # Defensivo: Under 2.5 o TG del favorito -0.5
-                _u25_o = _best_of_mkt("U25")
-                _tg_o  = _best_of_mkt("TG")
-                if _u25_o and _u25_o[1] >= 0.52:
-                    _p2_cat_b = _u25_o
-                elif _tg_o and _tg_o[1] >= 0.60:
-                    _p2_cat_b = _tg_o
-                else:
-                    _p2_cat_b = _best_of_mkt("O25")
-            else:
-                # Normal: escoger entre AA, O25, TG el de mayor EV/prob
-                _aa_o  = _best_of_mkt("AA")
-                _o25_o = _best_of_mkt("O25")
-                _tg_o  = _best_of_mkt("TG")
-                _gol_opts = [o for o in [_aa_o, _o25_o, _tg_o] if o]
-                _p2_cat_b = max(_gol_opts, key=lambda o: o[3] if o[3]>0 else o[1]) if _gol_opts else None
-
-            # ── Asignar picks: evitar que sean iguales ──
-            # Si pick1 calculado arriba ya es ML/DO, úsarlo en lugar de main_lbl si es diferente
-            if _p1_cat_a and _p1_cat_a[0] != main_lbl:
-                # Comparar: si el cat_a tiene prob cercana o mejor → usarlo
-                if _p1_cat_a[1] >= main_prob * 0.88:
-                    main_lbl  = _p1_cat_a[0]
-                    main_prob = _p1_cat_a[1]
-                    main_odd  = _p1_cat_a[2]
-                    _best_ev  = _p1_cat_a[3]
-                    _best_mkt = _p1_cat_a[4]
-
-            if _p2_cat_b and _p2_cat_b[0] != main_lbl:
-                _pick2_lbl  = _p2_cat_b[0]
-                _pick2_prob = _p2_cat_b[1]
-                _pick2_odd  = _p2_cat_b[2]
-                _pick2_ev   = _p2_cat_b[3]
+            if _cat_b_all:
+                # Prioridad 1: EV positivo real (mejor EV)
+                _cat_b_ev = [o for o in _cat_b_all if o[3] > 0.0]
+                # Prioridad 2: mayor probabilidad entre los viables
+                _p2_uefa = (max(_cat_b_ev,  key=lambda o: o[3]) if _cat_b_ev else
+                            max(_cat_b_all, key=lambda o: o[1]))
+                _pick2_lbl  = _p2_uefa[0]
+                _pick2_prob = _p2_uefa[1]
+                _pick2_odd  = _p2_uefa[2]
+                _pick2_ev   = _p2_uefa[3]
                 if _has_real_odds and _pick2_ev < _min_ev:
                     _pick2_lbl = _pick2_lbl + " (sin valor)"
-
-            # Sanity check: si los 2 picks son del mismo tipo, forzar pick2 distinto
-            if _pick2_lbl and _best_mkt == (_p2_cat_b[4] if _p2_cat_b else ""):
-                # Buscar cualquier mercado de Cat B que sea distinto
-                _alt_pool = [o for o in _cat_b_pool
-                             if o[4] != _best_mkt and o[0] != main_lbl
-                             and o[1] >= 0.40]
-                if _alt_pool:
-                    _alt = max(_alt_pool, key=lambda o: o[3] if o[3]>0 else o[1])
-                    _pick2_lbl  = _alt[0]
-                    _pick2_prob = _alt[1]
-                    _pick2_odd  = _alt[2]
-                    _pick2_ev   = _alt[3]
 
         return {
             "pick":       main_lbl,
@@ -18838,8 +18754,15 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
-                                                        # Sin bridge: calcular pick con EV real — NUNCA elige O1.5 salvo que sea el único
-                                                        if not _pick_lbl:
+                                                        # Si viene del bridge, leer pick2 del bridge también
+                                                        _pick2_lbl_c  = (_br.get("pick2","")  if _br else "") or None
+                                                        _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or None
+                                                        # Sin bridge (o bridge sin pick2 UEFA): calcular modelo xG
+                                                        _needs_pick2_calc = (
+                                                            not _pick2_lbl_c
+                                                            and _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
+                                                        )
+                                                        if not _pick_lbl or _needs_pick2_calc:
                                                             try:
                                                                 import math as _pm
                                                                 _xg_tot = _hx2 + _ax2
@@ -18881,62 +18804,37 @@ if st.session_state["view"] == "cartelera":
                                                                 else:
                                                                     # fallback absoluto
                                                                     _best_pre = (_m["home"] + " Gana", _ph2_adj, 0, "ML")
-                                                                _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
+                                                                # Solo asignar pick1 si no venía del bridge
+                                                                if not (_br.get("pick","") if _br else ""):
+                                                                    _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
                                                                 # ── 2° pick UEFA: basado en perfil del partido ──
                                                                 _uefa3 = {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                                _pick2_lbl_c = None; _pick2_prob_c = None
+                                                                if not _pick2_lbl_c:  # solo recalcular si no hay pick2 del bridge
+                                                                    _pick2_lbl_c = None; _pick2_prob_c = None
                                                                 if _m.get("slug","") in _uefa3:
-                                                                    # Perfil del partido
-                                                                    _xgt_c   = _hx2 + _ax2
-                                                                    _ml_dc   = abs(_ph2_adj - _pa2_adj)
-                                                                    _p_fav_c = _ml_dc >= 0.18
-                                                                    _p_par_c = _ml_dc < 0.10
-                                                                    _p_gol_c = _xgt_c >= 2.8
-                                                                    _p_def_c = _xgt_c < 2.2
-
-                                                                    # Cat A (resultado) — candidatos del pool
-                                                                    _cat_a_c = [o for o in _opts_pre if o[3] in ("ML","DO","X","GCM")]
-                                                                    # Cat B (goles) — candidatos del pool
-                                                                    _cat_b_c = [o for o in _opts_pre if o[3] in ("O25","O35","U25","AA","TG")]
-
-                                                                    def _best_c(*mkts):
-                                                                        _pl = [o for o in _opts_pre if o[3] in mkts]
-                                                                        if not _pl: return None
-                                                                        _ev_pl = [o for o in _pl if o[2] > 0.0]
-                                                                        return max(_ev_pl or _pl, key=lambda o: o[2] if _ev_pl else o[1])
-
-                                                                    # Pick 1 (resultado): reemplazar si el perfil lo justifica
-                                                                    _p1_c = None
-                                                                    if _p_fav_c:
-                                                                        _p1_c = _best_c("ML") or _best_c("GCM")
-                                                                    elif _p_par_c and _pd2 >= 0.27:
-                                                                        _p1_c = _best_c("X") or _best_c("DO") or _best_c("ML")
-                                                                    else:
-                                                                        _p1_c = _best_c("ML") or _best_c("DO")
-                                                                    if _p1_c and _p1_c[1] >= _best_pre[1] * 0.88:
+                                                                    # Pick 1: forzar Cat A (resultado) para UEFA
+                                                                    _cat_a_c_ev  = [o for o in _opts_pre if o[3] in ("ML","DO","X","GCM") and o[2]>0 and o[1]>=0.45]
+                                                                    _cat_a_c_all = [o for o in _opts_pre if o[3] in ("ML","DO","X","GCM")]
+                                                                    _p1_c = (max(_cat_a_c_ev,  key=lambda o: o[2]) if _cat_a_c_ev  else
+                                                                             max(_cat_a_c_all, key=lambda o: o[1]) if _cat_a_c_all else None)
+                                                                    # Solo reemplazar pick1 si no vino del bridge y la prob es cercana
+                                                                    if _p1_c and not (_br.get("pick","") if _br else "") and _p1_c[1] >= _best_pre[1] * 0.85:
                                                                         _pick_lbl  = _p1_c[0]
                                                                         _pick_prob = min(0.92, _p1_c[1])
 
-                                                                    # Pick 2 (goles): según ritmo esperado del partido
-                                                                    _p2_c = None
-                                                                    if _p_gol_c:
-                                                                        if _xgt_c >= 3.2:
-                                                                            _p2_c = _best_c("O35") or _best_c("O25")
-                                                                        else:
-                                                                            # parejo + goles → AA; diferencia → O25
-                                                                            if _ml_dc < 0.12:
-                                                                                _p2_c = _best_c("AA") or _best_c("O25")
-                                                                            else:
-                                                                                _p2_c = _best_c("O25") or _best_c("AA")
-                                                                    elif _p_def_c:
-                                                                        _p2_c = _best_c("U25") or _best_c("TG")
-                                                                    else:
-                                                                        # Normal: TG del favorito si lo hay, si no O25/AA
-                                                                        _p2_c = _best_c("TG") or _best_c("AA") or _best_c("O25")
-
-                                                                    if _p2_c and _p2_c[0] != _pick_lbl:
-                                                                        _pick2_lbl_c  = _p2_c[0]
-                                                                        _pick2_prob_c = min(0.92, _p2_c[1])
+                                                                    # Pick 2: mejor EV/prob entre candidatos goles (prob ≥ 40%)
+                                                                    _gol_mkts_c = ("O25","O35","AA","U25","TG","U35")
+                                                                    _cat_b_c_all = [o for o in _opts_pre
+                                                                                    if o[3] in _gol_mkts_c
+                                                                                    and o[1] >= 0.40
+                                                                                    and o[0] != _pick_lbl]
+                                                                    if _cat_b_c_all:
+                                                                        _cat_b_c_ev = [o for o in _cat_b_c_all if o[2]>0.0]
+                                                                        _p2_c = (max(_cat_b_c_ev,  key=lambda o: o[2]) if _cat_b_c_ev else
+                                                                                 max(_cat_b_c_all, key=lambda o: o[1]))
+                                                                        if _p2_c and _p2_c[0] != _pick_lbl:
+                                                                            _pick2_lbl_c  = _p2_c[0]
+                                                                            _pick2_prob_c = min(0.92, _p2_c[1])
                                                             except: pass
                                                     # ── Si calculamos pick nuevo (sin bridge), guardarlo en bridge ──
                                                     if _pick_lbl and not (_br.get("pick","") if _br else ""):
@@ -18994,8 +18892,13 @@ if st.session_state["view"] == "cartelera":
                                                         )
 
                                                         # ── Pick 2 para UEFA ──
-                                                        _p2l = _pick2_lbl_c if "_pick2_lbl_c" in dir() else None
-                                                        _p2p = _pick2_prob_c if "_pick2_prob_c" in dir() else None
+                                                        # Leer de: 1) variable local (recién calculada) 2) bridge sesión 3) snap disco
+                                                        _p2l = (locals().get("_pick2_lbl_c")
+                                                                or (_br.get("pick2") if _br else None)
+                                                                or (_snap_all_v.get(_m.get("id",""),{}).get("pick2") if "_snap_all_v" in locals() else None))
+                                                        _p2p = (locals().get("_pick2_prob_c")
+                                                                or (_br.get("pick2_prob",0) if _br else 0)
+                                                                or (_snap_all_v.get(_m.get("id",""),{}).get("pick2_prob",0) if "_snap_all_v" in locals() else 0))
                                                         if _p2l and _p2p and _p2p >= 0.35:
                                                             _pick_row += (
                                                                 f"<div style='border-top:1px solid #1a1a30;margin-top:4px;padding-top:4px;"
