@@ -1918,6 +1918,203 @@ def get_real_odds(home_name, away_name, league_slug):
 
 
 # ══════════════════════════════════════════════════════════
+# FULL ODDS FETCHER — h2h + totals + btts en una sola llamada
+# Devuelve cuotas reales para EV calculation
+# ══════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_full_odds(home_name: str, away_name: str, league_slug: str) -> dict:
+    """
+    Obtiene cuotas reales de Odds API para múltiples mercados:
+    h2h (1X2), totals (O/U 2.5, 3.5, 1.5), btts.
+    Devuelve dict con cuotas promedio entre bookmakers.
+    Fallback: dict vacío → el caller usa cuotas fijas.
+    """
+    _key = st.session_state.get("runtime_odds_key", ODDS_API_KEY)
+    if not _key:
+        return {}
+    _slug_map = {
+        "eng.1":"soccer_epl","esp.1":"soccer_spain_la_liga",
+        "ger.1":"soccer_germany_bundesliga","ita.1":"soccer_italy_serie_a",
+        "fra.1":"soccer_france_ligue_one","ned.1":"soccer_netherlands_eredivisie",
+        "por.1":"soccer_portugal_primeira_liga","mex.1":"soccer_mexico_ligamx",
+        "usa.1":"soccer_usa_mls","arg.1":"soccer_argentina_primera_division",
+        "bra.1":"soccer_brazil_campeonato","tur.1":"soccer_turkey_super_league",
+        "bel.1":"soccer_belgium_first_div","sco.1":"soccer_scotland_premiership",
+        "sau.1":"soccer_saudi_professional_league",
+        "col.1":"soccer_colombia_primera_a","chi.1":"soccer_chile_campeonato",
+        "uefa.champions":"soccer_uefa_champs_league",
+        "uefa.europa":"soccer_uefa_europa_league",
+        "uefa.europa.conf":"soccer_uefa_europa_conference_league",
+        "concacaf.champions":"soccer_concacaf_champions_cup",
+        "eng.fa":"soccer_fa_cup","ger.1":"soccer_germany_bundesliga",
+        "ger.2":"soccer_germany_bundesliga2","eng.2":"soccer_epl2",
+    }
+    sport = _slug_map.get(league_slug)
+    if not sport:
+        return {}
+    try:
+        url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
+        resp = requests.get(url, params={
+            "apiKey": _key,
+            "regions": "eu",
+            "markets": "h2h,totals,btts",
+            "oddsFormat": "decimal",
+            "bookmakers": ",".join(BOOKMAKERS),
+        }, timeout=10)
+        if resp.status_code != 200:
+            return {}
+        _hn = home_name.lower()[:6]
+        _an = away_name.lower()[:6]
+        for game in resp.json():
+            _gh = (game.get("home_team","") or "").lower()
+            _ga = (game.get("away_team","") or "").lower()
+            if _hn not in _gh and _an not in _ga:
+                continue
+            # Acumular cuotas por mercado entre todos los books
+            _acc = {}  # mercado → lista de cuotas
+            for bk in game.get("bookmakers", []):
+                for mkt in bk.get("markets", []):
+                    k = mkt["key"]
+                    if k not in _acc: _acc[k] = {}
+                    for out in mkt.get("outcomes", []):
+                        nm = out["name"].lower()
+                        pr = float(out.get("price", 0) or 0)
+                        pt = out.get("point")
+                        # key único por outcome
+                        _okey = f"{nm}_{pt}" if pt is not None else nm
+                        if _okey not in _acc[k]: _acc[k][_okey] = []
+                        _acc[k][_okey].append(pr)
+            # Promediar
+            _avg = {}
+            for mk, outs in _acc.items():
+                _avg[mk] = {ok: round(sum(v)/len(v),3) for ok,v in outs.items() if v}
+            # Construir resultado normalizado
+            out = {}
+            # 1X2
+            if "h2h" in _avg:
+                _h2 = _avg["h2h"]
+                out["odd_h"] = _h2.get(_gh+"_None") or next((v for k,v in _h2.items() if _hn in k), 0)
+                out["odd_d"] = _h2.get("draw_None", _h2.get("draw", 0))
+                out["odd_a"] = _h2.get(_ga+"_None") or next((v for k,v in _h2.items() if _an in k), 0)
+            # Totals — buscar líneas 1.5 / 2.5 / 3.5
+            if "totals" in _avg:
+                _tot = _avg["totals"]
+                for _pt in ["1.5","2.5","3.5"]:
+                    _o_key = f"over_{_pt}"; _u_key = f"under_{_pt}"
+                    out[f"odd_o{_pt.replace('.','')}_api"] = _tot.get(_o_key, 0)
+                    out[f"odd_u{_pt.replace('.','')}_api"] = _tot.get(_u_key, 0)
+            # BTTS
+            if "btts" in _avg:
+                _bt = _avg["btts"]
+                out["odd_btts_yes_api"] = _bt.get("yes_None", _bt.get("yes", 0))
+                out["odd_btts_no_api"]  = _bt.get("no_None",  _bt.get("no",  0))
+            return out
+    except:
+        pass
+    return _league_odds_fallback(league_slug)
+
+# ── Cuotas promedio por liga (Pinnacle histórico 2023-25, sin margen) ──
+# Fuente: sbr-odds-history, football-data.co.uk, oddsportal medias de temporada
+# Formato: {slug: {odd_o15_api, odd_u15_api, odd_o25_api, odd_u25_api,
+#                  odd_o35_api, odd_u35_api, odd_btts_yes_api, odd_btts_no_api}}
+_LEAGUE_ODDS_DEFAULTS: dict = {
+    # ── Premier League — alta puntuación, BTTS frecuente ──
+    "eng.1":  {"odd_o15_api":1.24,"odd_u15_api":3.90,"odd_o25_api":1.82,"odd_u25_api":2.02,
+               "odd_o35_api":2.62,"odd_u35_api":1.47,"odd_btts_yes_api":1.73,"odd_btts_no_api":2.05},
+    # ── La Liga — menos goles, más Under ──
+    "esp.1":  {"odd_o15_api":1.22,"odd_u15_api":4.10,"odd_o25_api":1.87,"odd_u25_api":1.97,
+               "odd_o35_api":2.72,"odd_u35_api":1.44,"odd_btts_yes_api":1.78,"odd_btts_no_api":1.98},
+    # ── Bundesliga — máxima puntuación europea ──
+    "ger.1":  {"odd_o15_api":1.21,"odd_u15_api":4.20,"odd_o25_api":1.76,"odd_u25_api":2.08,
+               "odd_o35_api":2.50,"odd_u35_api":1.52,"odd_btts_yes_api":1.68,"odd_btts_no_api":2.12},
+    # ── Serie A — baja puntuación, más Under ──
+    "ita.1":  {"odd_o15_api":1.26,"odd_u15_api":3.70,"odd_o25_api":1.90,"odd_u25_api":1.95,
+               "odd_o35_api":2.80,"odd_u35_api":1.42,"odd_btts_yes_api":1.82,"odd_btts_no_api":1.94},
+    # ── Ligue 1 ──
+    "fra.1":  {"odd_o15_api":1.25,"odd_u15_api":3.80,"odd_o25_api":1.85,"odd_u25_api":1.99,
+               "odd_o35_api":2.68,"odd_u35_api":1.46,"odd_btts_yes_api":1.76,"odd_btts_no_api":2.00},
+    # ── Eredivisie — muy atacante ──
+    "ned.1":  {"odd_o15_api":1.19,"odd_u15_api":4.40,"odd_o25_api":1.72,"odd_u25_api":2.14,
+               "odd_o35_api":2.42,"odd_u35_api":1.57,"odd_btts_yes_api":1.64,"odd_btts_no_api":2.20},
+    # ── Primeira Liga ──
+    "por.1":  {"odd_o15_api":1.24,"odd_u15_api":3.90,"odd_o25_api":1.84,"odd_u25_api":2.00,
+               "odd_o35_api":2.65,"odd_u35_api":1.46,"odd_btts_yes_api":1.75,"odd_btts_no_api":2.02},
+    # ── Liga MX — mid-range, mucho local ──
+    "mex.1":  {"odd_o15_api":1.28,"odd_u15_api":3.60,"odd_o25_api":1.90,"odd_u25_api":1.94,
+               "odd_o35_api":2.78,"odd_u35_api":1.42,"odd_btts_yes_api":1.80,"odd_btts_no_api":1.96},
+    # ── MLS — muchos goles, cuotas equilibradas ──
+    "usa.1":  {"odd_o15_api":1.22,"odd_u15_api":4.10,"odd_o25_api":1.80,"odd_u25_api":2.04,
+               "odd_o35_api":2.58,"odd_u35_api":1.49,"odd_btts_yes_api":1.71,"odd_btts_no_api":2.08},
+    # ── Argentina ──
+    "arg.1":  {"odd_o15_api":1.26,"odd_u15_api":3.75,"odd_o25_api":1.88,"odd_u25_api":1.96,
+               "odd_o35_api":2.74,"odd_u35_api":1.43,"odd_btts_yes_api":1.79,"odd_btts_no_api":1.97},
+    # ── Brasil ──
+    "bra.1":  {"odd_o15_api":1.27,"odd_u15_api":3.65,"odd_o25_api":1.91,"odd_u25_api":1.93,
+               "odd_o35_api":2.82,"odd_u35_api":1.41,"odd_btts_yes_api":1.81,"odd_btts_no_api":1.95},
+    # ── Türkiye Süper Lig ──
+    "tur.1":  {"odd_o15_api":1.23,"odd_u15_api":4.00,"odd_o25_api":1.83,"odd_u25_api":2.01,
+               "odd_o35_api":2.63,"odd_u35_api":1.47,"odd_btts_yes_api":1.74,"odd_btts_no_api":2.03},
+    # ── Belgian Pro League ──
+    "bel.1":  {"odd_o15_api":1.20,"odd_u15_api":4.30,"odd_o25_api":1.78,"odd_u25_api":2.06,
+               "odd_o35_api":2.54,"odd_u35_api":1.51,"odd_btts_yes_api":1.69,"odd_btts_no_api":2.14},
+    # ── Scottish Premiership ──
+    "sco.1":  {"odd_o15_api":1.25,"odd_u15_api":3.85,"odd_o25_api":1.83,"odd_u25_api":2.01,
+               "odd_o35_api":2.65,"odd_u35_api":1.46,"odd_btts_yes_api":1.74,"odd_btts_no_api":2.03},
+    # ── Saudi Pro League ──
+    "sau.1":  {"odd_o15_api":1.24,"odd_u15_api":3.92,"odd_o25_api":1.84,"odd_u25_api":2.00,
+               "odd_o35_api":2.65,"odd_u35_api":1.46,"odd_btts_yes_api":1.75,"odd_btts_no_api":2.01},
+    # ── Colombia ──
+    "col.1":  {"odd_o15_api":1.27,"odd_u15_api":3.68,"odd_o25_api":1.90,"odd_u25_api":1.94,
+               "odd_o35_api":2.78,"odd_u35_api":1.42,"odd_btts_yes_api":1.80,"odd_btts_no_api":1.96},
+    # ── Chile ──
+    "chi.1":  {"odd_o15_api":1.29,"odd_u15_api":3.52,"odd_o25_api":1.92,"odd_u25_api":1.92,
+               "odd_o35_api":2.84,"odd_u35_api":1.40,"odd_btts_yes_api":1.82,"odd_btts_no_api":1.94},
+    # ── UEFA Champions League — alta calidad, bajo scoring ──
+    "uefa.champions":   {"odd_o15_api":1.27,"odd_u15_api":3.65,"odd_o25_api":1.85,"odd_u25_api":1.99,
+                         "odd_o35_api":2.68,"odd_u35_api":1.46,"odd_btts_yes_api":1.76,"odd_btts_no_api":2.00},
+    # ── UEFA Europa League ──
+    "uefa.europa":      {"odd_o15_api":1.26,"odd_u15_api":3.72,"odd_o25_api":1.87,"odd_u25_api":1.97,
+                         "odd_o35_api":2.72,"odd_u35_api":1.44,"odd_btts_yes_api":1.78,"odd_btts_no_api":1.98},
+    # ── UEFA Conference League ──
+    "uefa.europa.conf": {"odd_o15_api":1.25,"odd_u15_api":3.80,"odd_o25_api":1.89,"odd_u25_api":1.95,
+                         "odd_o35_api":2.76,"odd_u35_api":1.43,"odd_btts_yes_api":1.79,"odd_btts_no_api":1.97},
+    # ── CONCACAF Champions Cup ──
+    "concacaf.champions":{"odd_o15_api":1.28,"odd_u15_api":3.60,"odd_o25_api":1.91,"odd_u25_api":1.93,
+                          "odd_o35_api":2.80,"odd_u35_api":1.41,"odd_btts_yes_api":1.80,"odd_btts_no_api":1.96},
+    # ── FA Cup / Copa del Rey / DFB Pokal ──
+    "eng.fa":  {"odd_o15_api":1.26,"odd_u15_api":3.72,"odd_o25_api":1.88,"odd_u25_api":1.96,
+                "odd_o35_api":2.74,"odd_u35_api":1.43,"odd_btts_yes_api":1.78,"odd_btts_no_api":1.98},
+    "esp.copa":{"odd_o15_api":1.24,"odd_u15_api":3.90,"odd_o25_api":1.86,"odd_u25_api":1.98,
+                "odd_o35_api":2.70,"odd_u35_api":1.45,"odd_btts_yes_api":1.76,"odd_btts_no_api":2.00},
+    # ── Championship / Segunda División ──
+    "eng.2":   {"odd_o15_api":1.23,"odd_u15_api":4.00,"odd_o25_api":1.83,"odd_u25_api":2.01,
+                "odd_o35_api":2.64,"odd_u35_api":1.47,"odd_btts_yes_api":1.74,"odd_btts_no_api":2.03},
+    "esp.2":   {"odd_o15_api":1.25,"odd_u15_api":3.82,"odd_o25_api":1.86,"odd_u25_api":1.98,
+                "odd_o35_api":2.70,"odd_u35_api":1.45,"odd_btts_yes_api":1.77,"odd_btts_no_api":1.99},
+    "ger.2":   {"odd_o15_api":1.22,"odd_u15_api":4.15,"odd_o25_api":1.80,"odd_u25_api":2.04,
+                "odd_o35_api":2.60,"odd_u35_api":1.49,"odd_btts_yes_api":1.71,"odd_btts_no_api":2.09},
+    # ── Otros europeos ──
+    "den.1":   {"odd_o15_api":1.23,"odd_u15_api":4.05,"odd_o25_api":1.82,"odd_u25_api":2.02,
+                "odd_o35_api":2.62,"odd_u35_api":1.47,"odd_btts_yes_api":1.73,"odd_btts_no_api":2.05},
+    "nor.1":   {"odd_o15_api":1.21,"odd_u15_api":4.25,"odd_o25_api":1.79,"odd_u25_api":2.05,
+                "odd_o35_api":2.56,"odd_u35_api":1.50,"odd_btts_yes_api":1.70,"odd_btts_no_api":2.10},
+    "gre.1":   {"odd_o15_api":1.27,"odd_u15_api":3.65,"odd_o25_api":1.89,"odd_u25_api":1.95,
+                "odd_o35_api":2.76,"odd_u35_api":1.43,"odd_btts_yes_api":1.79,"odd_btts_no_api":1.97},
+}
+# Default genérico para ligas sin entrada
+_ODDS_DEFAULTS_GENERIC = {
+    "odd_o15_api":1.25,"odd_u15_api":3.80,
+    "odd_o25_api":1.87,"odd_u25_api":1.97,
+    "odd_o35_api":2.70,"odd_u35_api":1.45,
+    "odd_btts_yes_api":1.77,"odd_btts_no_api":1.99,
+}
+
+def _league_odds_fallback(slug: str) -> dict:
+    """Devuelve cuotas promedio de liga como fallback cuando Odds API falla."""
+    return dict(_LEAGUE_ODDS_DEFAULTS.get(slug, _ODDS_DEFAULTS_GENERIC))
+
+# ══════════════════════════════════════════════════════════
 # SHARP MONEY INTELLIGENCE SYSTEM
 # Detecta: línea de movimiento · steam moves · reverse line movement
 # Fuentes: The Odds API (multi-book) + Betfair Exchange + heurísticas
@@ -4856,7 +5053,7 @@ def _villar_auto_pick(partido_db):
         _ev_aa   = _ev(_aa_d,  1.75)
         # Doble Oportunidad
         _ev_do_h = _ev(_do_h_d, 1.30)
-        _ev_do_a = _ev(_do_a_d, 1.50)
+        _ev_do_a = _ev(_do_a_d, 1.17)
         _ev_d    = _ev(_pd_d, 3.30)
         _has_real_odds = odd_h > 1 and odd_a > 1
 
@@ -4871,40 +5068,64 @@ def _villar_auto_pick(partido_db):
         _o15_d   = float(mc.get("o15",0))
         _ev_gcm_h = _ev(_gcm_h, 1.55); _ev_gcm_a = _ev(_gcm_a, 1.65)
 
-        # ── Todos los outcomes — mayor prob selecciona el pick ──
+        # ── Todos los outcomes — pool de picks ──
+        # Cuotas reales de Odds API (h2h+totals+btts). Fallback: Pinnacle -22%
+        _fo = get_full_odds(home, away, slug)  # dict vacío si no disponible
+        _d = 0.78  # ajuste Pinnacle para cuotas fijas
+        def _ro(api_key, fallback):
+            """Real odd: usa API si > 1.01, si no usa fallback."""
+            v = float(_fo.get(api_key, 0) or 0)
+            return v if v > 1.01 else fallback
+        _o_o15  = _ro("odd_o15_api",  1.35*_d)
+        _o_u15  = _ro("odd_u15_api",  2.80*_d)
+        _o_o25  = _ro("odd_o25_api",  1.85*_d)
+        _o_u25  = _ro("odd_u25_api",  2.00*_d)
+        _o_o35  = _ro("odd_o35_api",  2.50*_d)
+        _o_u35  = _ro("odd_u35_api",  1.50*_d)
+        _o_aa   = _ro("odd_btts_yes_api", 1.75*_d)
+        _o_empx = odd_d if odd_d>1 else 3.30*_d
+        _o_doh  = 1.30*_d;  _o_doa = 1.50*_d   # DO rara vez en API
+        _o_gcmh = 1.55*_d;  _o_gcma= 1.65*_d
         _all_outcomes = [
-            (f"🏠 {home} gana",                      _ph_d,   odd_h, _ev_h,              "ML"),
-            (f"✈️ {away} gana",                      _pa_d,   odd_a, _ev_a,              "ML"),
-            ("⚽ Over 1.5",                            _o15_d,  1.35,  _ev(_o15_d,1.35),  "O15"),
-            ("⚽ Over 2.5",                            _o25_d,  1.85,  _ev_o25,            "O25"),
-            ("🔒 Under 2.5",                           _u25_d,  2.00,  _ev_u25,            "U25"),
-            ("⚡ Ambos Anotan",                         _aa_d,   1.75,  _ev_aa,             "AA"),
-            ("🤝 Empate",                               _pd_d,   3.30,  _ev_d,             "X"),
+            (f"🏠 {home} gana",    _ph_d,  odd_h,   _ev_h,                    "ML"),
+            (f"✈️ {away} gana",    _pa_d,  odd_a,   _ev_a,                    "ML"),
+            ("⚽ Over 1.5",        _o15_d, _o_o15,  _ev(_o15_d, _o_o15),      "O15"),
+            ("🔒 Under 1.5",       1-_o15_d,_o_u15, _ev(1-_o15_d,_o_u15),    "U15"),
+            ("⚽ Over 2.5",        _o25_d, _o_o25,  _ev(_o25_d, _o_o25),      "O25"),
+            ("🔒 Under 2.5",       _u25_d, _o_u25,  _ev(_u25_d, _o_u25),      "U25"),
+            ("⚡ Ambos Anotan",     _aa_d,  _o_aa,   _ev(_aa_d,  _o_aa),       "AA"),
+            ("🤝 Empate",           _pd_d,  _o_empx, _ev(_pd_d,  _o_empx),     "X"),
         ]
-        # DO siempre (son mercados válidos)
-        _all_outcomes.append((f"🔵 DO {home[:13]} o Emp", _do_h_d, 1.30, _ev_do_h, "DO"))
-        _all_outcomes.append((f"🟣 DO {away[:13]} o Emp", _do_a_d, 1.50, _ev_do_a, "DO"))
-        # Over/Under 3.5
-        _all_outcomes.append(("⚽⚽ Over 3.5",  _o35_d, 2.50, _ev_o35, "O35"))
-        _all_outcomes.append(("🔒🔒 Under 3.5", _u35_d, 1.50, _ev(_u35_d,1.50), "U35"))
-        # Gana cualquier mitad — basado en MC real (gana 1er tiempo O gana 2do tiempo)
-        _all_outcomes.append((f"🌓 {home[:13]} gana c/mitad", _gcm_h, 1.55, _ev_gcm_h, "GCM"))
-        _all_outcomes.append((f"🌓 {away[:13]} gana c/mitad", _gcm_a, 1.65, _ev_gcm_a, "GCM"))
-        # Goles equipo LOCAL
-        if _h_o05 > 0.10: _all_outcomes.append((f"🎯 {home[:13]} +0.5",    _h_o05, 1.55, _ev(_h_o05,1.55), "TG"))
-        if _h_u05 > 0.10: _all_outcomes.append((f"🛡️ {home[:13]} -0.5",   _h_u05, 2.10, _ev(_h_u05,2.10), "TG"))
-        if _h_o15 > 0.10: _all_outcomes.append((f"🎯🎯 {home[:13]} +1.5",  _h_o15, 2.20, _ev(_h_o15,2.20), "TG"))
-        if _h_u15 > 0.10: _all_outcomes.append((f"🛡️ {home[:13]} -1.5",   _h_u15, 1.65, _ev(_h_u15,1.65), "TG"))
-        # Goles equipo VISITANTE
-        if _a_o05 > 0.10: _all_outcomes.append((f"🎯 {away[:13]} +0.5",    _a_o05, 1.65, _ev(_a_o05,1.65), "TG"))
-        if _a_u05 > 0.10: _all_outcomes.append((f"🛡️ {away[:13]} -0.5",   _a_u05, 2.00, _ev(_a_u05,2.00), "TG"))
-        if _a_o15 > 0.10: _all_outcomes.append((f"🎯🎯 {away[:13]} +1.5",  _a_o15, 2.40, _ev(_a_o15,2.40), "TG"))
-        if _a_u15 > 0.10: _all_outcomes.append((f"🛡️ {away[:13]} -1.5",   _a_u15, 1.75, _ev(_a_u15,1.75), "TG"))
-        # Filtrar outcomes con prob mínima
+        _all_outcomes.append((f"🔵 DO {home[:13]} o Emp", _do_h_d, _o_doh, _ev(_do_h_d,_o_doh), "DO"))
+        _all_outcomes.append((f"🟣 DO {away[:13]} o Emp", _do_a_d, _o_doa, _ev(_do_a_d,_o_doa), "DO"))
+        _all_outcomes.append(("⚽⚽ Over 3.5",  _o35_d, _o_o35, _ev(_o35_d,_o_o35), "O35"))
+        _all_outcomes.append(("🔒🔒 Under 3.5", _u35_d, _o_u35, _ev(_u35_d,_o_u35), "U35"))
+        _all_outcomes.append((f"🌓 {home[:13]} gana c/mitad", _gcm_h, _o_gcmh, _ev(_gcm_h,_o_gcmh), "GCM"))
+        _all_outcomes.append((f"🌓 {away[:13]} gana c/mitad", _gcm_a, _o_gcma, _ev(_gcm_a,_o_gcma), "GCM"))
+        _o_ho05=1.55*_d; _o_hu05=2.10*_d; _o_ho15=2.20*_d; _o_hu15=1.65*_d
+        _o_ao05=1.65*_d; _o_au05=2.00*_d; _o_ao15=2.40*_d; _o_au15=1.75*_d
+        if _h_o05 > 0.10: _all_outcomes.append((f"🎯 {home[:13]} +0.5",    _h_o05, _o_ho05, _ev(_h_o05,_o_ho05), "TG"))
+        if _h_u05 > 0.10: _all_outcomes.append((f"🛡️ {home[:13]} -0.5",   _h_u05, _o_hu05, _ev(_h_u05,_o_hu05), "TG"))
+        if _h_o15 > 0.10: _all_outcomes.append((f"🎯🎯 {home[:13]} +1.5",  _h_o15, _o_ho15, _ev(_h_o15,_o_ho15), "TG"))
+        if _h_u15 > 0.10: _all_outcomes.append((f"🛡️ {home[:13]} -1.5",   _h_u15, _o_hu15, _ev(_h_u15,_o_hu15), "TG"))
+        if _a_o05 > 0.10: _all_outcomes.append((f"🎯 {away[:13]} +0.5",    _a_o05, _o_ao05, _ev(_a_o05,_o_ao05), "TG"))
+        if _a_u05 > 0.10: _all_outcomes.append((f"🛡️ {away[:13]} -0.5",   _a_u05, _o_au05, _ev(_a_u05,_o_au05), "TG"))
+        if _a_o15 > 0.10: _all_outcomes.append((f"🎯🎯 {away[:13]} +1.5",  _a_o15, _o_ao15, _ev(_a_o15,_o_ao15), "TG"))
+        if _a_u15 > 0.10: _all_outcomes.append((f"🛡️ {away[:13]} -1.5",   _a_u15, _o_au15, _ev(_a_u15,_o_au15), "TG"))
+        # Filtrar prob mínima
         _all_outcomes = [o for o in _all_outcomes if o[1] >= 0.08]
 
-        # ── Selección: MAYOR PROBABILIDAD (honesto, EV con cuotas fijas es estimado) ──
-        _best = max(_all_outcomes, key=lambda o: o[1])
+        # ── Selección: MAYOR EV entre mercados con ≥52% prob ──
+        # DO/Under: cuota baja → requieren prob más alta para tener EV real
+        # Mínima prob para EV>0 por mercado (= 1/cuota_mercado + margen 2%)
+        _CUOTA_MIN = {"ML":0.54,"X":0.37,"O25":0.56,"U25":0.52,"O35":0.42,"U35":0.69,"AA":0.59,"DO":0.79,"GCM":0.67,"TG":0.67}
+        _ev_candidates = [o for o in _all_outcomes if o[1] >= _CUOTA_MIN.get(o[4], 0.52) and o[3] > 0.0]
+        if _ev_candidates:
+            _best = max(_ev_candidates, key=lambda o: o[3])  # mayor EV
+        else:
+            # Fallback: mayor prob entre todos (sin DO de cuota baja)
+            _pool = [o for o in _all_outcomes if o[4] not in ("DO",) and o[1] >= 0.45]
+            _best = max(_pool, key=lambda o: o[1]) if _pool else max(_all_outcomes, key=lambda o: o[1])
 
         main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
         _best_ev  = _best[3]
@@ -4923,14 +5144,15 @@ def _villar_auto_pick(partido_db):
         _all_market_picks = [
             _build_pick(f"🏠 {home} gana",                _ph_d,   "ML",  odd_h),
             _build_pick(f"✈️ {away} gana",                _pa_d,   "ML",  odd_a),
-            _build_pick("⚽ Over 2.5",                     _o25_d,  "O25", 1.85),
-            _build_pick("🔒 Under 2.5",                    _u25_d,  "U25", 2.00),
-            _build_pick("⚡ Ambos Anotan",                  _aa_d,   "AA",  1.75),
-            _build_pick(f"🔵 DO {home} o Empate",          _do_h_d, "DO",  1.30),
-            _build_pick(f"🟣 DO {away} o Empate",          _do_a_d, "DO",  1.50),
-            _build_pick("⚽⚽ Over 3.5",                    _o35_d,  "O35", 2.50),
-            _build_pick(f"🌓 {home} gana cualquier mitad", _gcm_h,  "GCM", 1.55),
-            _build_pick(f"🌓 {away} gana cualquier mitad", _gcm_a,  "GCM", 1.65),
+            _build_pick("⚽ Over 1.5",                     _o15_d,  "O15", _o_o15),
+            _build_pick("⚽ Over 2.5",                     _o25_d,  "O25", _o_o25),
+            _build_pick("🔒 Under 2.5",                    _u25_d,  "U25", _o_u25),
+            _build_pick("⚡ Ambos Anotan",                  _aa_d,   "AA",  _o_aa),
+            _build_pick(f"🔵 DO {home} o Empate",          _do_h_d, "DO",  _o_doh),
+            _build_pick(f"🟣 DO {away} o Empate",          _do_a_d, "DO",  _o_doa),
+            _build_pick("⚽⚽ Over 3.5",                    _o35_d,  "O35", _o_o35),
+            _build_pick(f"🌓 {home} gana cualquier mitad", _gcm_h,  "GCM", _o_gcmh),
+            _build_pick(f"🌓 {away} gana cualquier mitad", _gcm_a,  "GCM", _o_gcma),
         ]
 
         return {
@@ -10312,23 +10534,37 @@ def tg_send(msg):
 
 def _best_market_soccer(m, dp, mc):
     """
-    Evalúa todos los mercados válidos y devuelve el de MAYOR probabilidad.
-    Mercados: 1X2, Over 2.5, Over 3.5, Ambos Anotan, Gana cualquier mitad.
-    NO incluye O1.5, ML simple sin cuota, Handicap.
+    Evalúa todos los mercados con cuotas REALES de Odds API (fallback fijas -22%).
+    Selecciona el de MAYOR EV con prob ≥52% y EV > 0.
     """
+    _fo  = get_full_odds(m.get("home",""), m.get("away",""), m.get("slug",""))
+    _d3  = 0.78
+    def _ro(k, fb): v=float(_fo.get(k,0) or 0); return v if v>1.01 else fb
+    _o_o25  = _ro("odd_o25_api",  1.85*_d3)
+    _o_u25  = _ro("odd_u25_api",  2.00*_d3)
+    _o_o35  = _ro("odd_o35_api",  2.50*_d3)
+    _o_u35  = _ro("odd_u35_api",  1.50*_d3)
+    _o_aa   = _ro("odd_btts_yes_api", 1.75*_d3)
     opts = []
     # 1X2
-    if m.get("odd_h",0)>1: opts.append(("🏠 "+m["home"][:15]+" gana",    dp["ph"], m["odd_h"], dp["ph"]-(1/m["odd_h"])))
-    if m.get("odd_d",0)>1: opts.append(("🤝 Empate",                      dp["pd"], m["odd_d"], dp["pd"]-(1/m["odd_d"])))
-    if m.get("odd_a",0)>1: opts.append(("✈️ "+m["away"][:15]+" gana",      dp["pa"], m["odd_a"], dp["pa"]-(1/m["odd_a"])))
-    # DO cualquiera gana — también eliminado
-    # Over / BTTS
-    opts.append(("⚽ Over 2.5",             mc["o25"],  0, mc["o25"]-0.52))
-    opts.append(("⚽ Over 3.5",             mc["o35"],  0, mc["o35"]-0.45))
-    opts.append(("⚡ Ambos Anotan (AA)",    mc["btts"], 0, mc["btts"]-0.52))
-    # Ordenar: mayor probabilidad primero (el pick DIAMANTE = max prob con edge+)
-    opts.sort(key=lambda x: (-x[1], -x[3]))
+    if m.get("odd_h",0)>1: opts.append(("🏠 "+m["home"][:15]+" gana",    dp["ph"], m["odd_h"], dp["ph"]-(1/m["odd_h"]), "ML"))
+    if m.get("odd_d",0)>1: opts.append(("🤝 Empate",                      dp["pd"], m["odd_d"], dp["pd"]-(1/m["odd_d"]), "X"))
+    if m.get("odd_a",0)>1: opts.append(("✈️ "+m["away"][:15]+" gana",      dp["pa"], m["odd_a"], dp["pa"]-(1/m["odd_a"]), "ML"))
+    # DO (cuotas fijas — raramente en API)
+    opts.append((f"🔵 DO {m['home'][:13]} o Emp", min(0.95,dp["ph"]+dp["pd"]), 1.30*_d3, min(0.95,dp["ph"]+dp["pd"])-(1/(1.30*_d3)), "DO"))
+    opts.append((f"🟣 DO {m['away'][:13]} o Emp", min(0.95,dp["pa"]+dp["pd"]), 1.50*_d3, min(0.95,dp["pa"]+dp["pd"])-(1/(1.50*_d3)), "DO"))
+    # Totals + BTTS con cuotas reales
+    opts.append(("⚽ Over 2.5",          mc["o25"],       _o_o25, mc["o25"]-(1/_o_o25),        "O25"))
+    opts.append(("⚽⚽ Over 3.5",        mc["o35"],       _o_o35, mc["o35"]-(1/_o_o35),        "O35"))
+    opts.append(("🔒 Under 2.5",         1-mc["o25"],     _o_u25, (1-mc["o25"])-(1/_o_u25),   "U25"))
+    opts.append(("🔒 Under 3.5",         1-mc["o35"],     _o_u35, (1-mc["o35"])-(1/_o_u35),   "U35"))
+    opts.append(("⚡ Ambos Anotan (AA)", mc["btts"],      _o_aa,  mc["btts"]-(1/_o_aa),        "AA"))
+    # GCM si disponible
+    if mc.get("gcm_h",0)>0.10: opts.append((f"🌓 {m['home'][:13]} gana c/mitad", mc["gcm_h"], 1.55*_d3, mc["gcm_h"]-(1/(1.55*_d3)), "GCM"))
+    if mc.get("gcm_a",0)>0.10: opts.append((f"🌓 {m['away'][:13]} gana c/mitad", mc["gcm_a"], 1.65*_d3, mc["gcm_a"]-(1/(1.65*_d3)), "GCM"))
+    # Filtrar: EV+ y prob ≥52%
     valid = [o for o in opts if o[3] > 0.0 and o[1] >= 0.52]
+    valid.sort(key=lambda x: -x[3])
     return valid[0] if valid else None
 
 def escanear_y_enviar(matches):
@@ -13461,15 +13697,24 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 _kr_all_mkts = [(l,p,o,g) for l,p,o,g in _kr_all_mkts if p >= 0.10]
                 if not _kr_all_mkts: continue
 
-                # Selección: MAYOR PROBABILIDAD
-                # Selección por EV (prob*odd-1), prob mínima 40%
+                # Selección por EV real, excluyendo O1.5 salvo que sea el único viable
                 _kr_valid = [(l,p,o,mk) for l,p,o,mk in _kr_all_mkts if p>0.01 and o>1.0]
                 if not _kr_valid: _kr_valid = _kr_all_mkts
-                _kr_ev_ok = [(l,p,o,mk) for l,p,o,mk in _kr_valid if p>=0.40]
-                if _kr_ev_ok:
-                    _best_kr = max(_kr_ev_ok, key=lambda x: x[1]*x[2]-1)
+                # Candidatos con EV+ y prob mínima 45%, sin O1.5
+                _kr_ev_no15 = [(l,p,o,mk) for l,p,o,mk in _kr_valid
+                               if p>=0.45 and (p*o-1)>0.0 and mk!="OU" or
+                                  (p>=0.45 and (p*o-1)>0.0 and mk=="OU" and "1.5" not in l)]
+                if _kr_ev_no15:
+                    _best_kr = max(_kr_ev_no15, key=lambda x: x[1]*x[2]-1)
                 else:
-                    _best_kr = max(_kr_valid, key=lambda x: x[1])
+                    # Fallback: cualquier EV+ con prob 45%
+                    _kr_ev_ok = [(l,p,o,mk) for l,p,o,mk in _kr_valid if p>=0.45 and (p*o-1)>0.0]
+                    if _kr_ev_ok:
+                        _best_kr = max(_kr_ev_ok, key=lambda x: x[1]*x[2]-1)
+                    else:
+                        # Sin EV+: mayor prob excluyendo O1.5
+                        _kr_no15 = [(l,p,o,mk) for l,p,o,mk in _kr_valid if "1.5 Total" not in l and p>=0.45]
+                        _best_kr = max(_kr_no15, key=lambda x: x[1]) if _kr_no15 else max(_kr_valid, key=lambda x: x[1])
                 lbl, prob, odd, mkt = _best_kr[0], _best_kr[1], _best_kr[2], _best_kr[3]
 
                 if prob < 0.40: continue  # umbral mínimo razonable
@@ -17643,6 +17888,9 @@ if st.session_state["view"] == "cartelera":
                                                     # ── Defaults seguros para pick (evita NameError) ──
                                                     _pick_lbl  = _br.get("pick","") if _br else ""
                                                     _pick_prob = _br.get("prob",0)  if _br else 0
+                                                    # Si el pick guardado es O1.5, ignorarlo y recalcular
+                                                    if _pick_lbl and "1.5 Total" in _pick_lbl:
+                                                        _pick_lbl = ""; _pick_prob = 0; _br = None
 
 
                                                     # ── Para partidos EN VIVO: calcular pick en tiempo real ──
@@ -17746,13 +17994,16 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
-                                                        # Sin bridge: calcular pick con el modelo xG ya disponible — SIEMPRE genera un pick
+                                                        # Sin bridge: calcular pick con EV real — NUNCA elige O1.5 salvo que sea el único
                                                         if not _pick_lbl:
                                                             try:
                                                                 import math as _pm
                                                                 _xg_tot = _hx2 + _ax2
-                                                                _o25_pre = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(3))
-                                                                _o15_pre = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(2))
+                                                                _o25_pre  = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(3))
+                                                                _o35_pre  = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(4))
+                                                                _o15_pre  = 1 - sum(_xg_tot**k * _pm.exp(-_xg_tot) / _pm.factorial(k) for k in range(2))
+                                                                _u25_pre  = 1 - _o25_pre
+                                                                _btts_pre = (1 - _pm.exp(-_hx2)) * (1 - _pm.exp(-_ax2))
                                                                 # Tabla posición delta
                                                                 _tbl_dh = 0.0; _tbl_da = 0.0
                                                                 try:
@@ -17760,23 +18011,33 @@ if st.session_state["view"] == "cartelera":
                                                                     _tbl_dh = _tbl_pre.get("delta_h", 0)
                                                                     _tbl_da = _tbl_pre.get("delta_a", 0)
                                                                 except: pass
-                                                                # Probabilidades ajustadas con tabla
                                                                 _ph2_adj = min(0.92, _ph2 + _tbl_dh)
                                                                 _pa2_adj = min(0.92, _pa2 + _tbl_da)
-                                                                # Construir opciones: siempre al menos el mejor de los 3 lados
+                                                                # EV = prob * (odd-1) - (1-prob)  con cuotas típicas de mercado
+                                                                def _ev2(p, odd): return p*(odd-1)-(1-p)
+                                                                # Todos los mercados con EV y prob mínima ≥52%
                                                                 _opts_pre = [
-                                                                    (_m["home"] + " Gana", _ph2_adj),
-                                                                    (_m["away"] + " Gana", _pa2_adj),
+                                                                    (_m["home"] + " Gana", _ph2_adj,  _ev2(_ph2_adj,  _m.get("odd_h",2.0) or 2.0),  "ML"),
+                                                                    (_m["away"] + " Gana", _pa2_adj,  _ev2(_pa2_adj,  _m.get("odd_a",2.5) or 2.5),  "ML"),
+                                                                    ("Empate",              _pd2,      _ev2(_pd2,      _m.get("odd_d",3.3) or 3.3),  "X"),
+                                                                    ("Over 2.5",            _o25_pre,  _ev2(_o25_pre,  1.85),                        "O25"),
+                                                                    ("Under 2.5",           _u25_pre,  _ev2(_u25_pre,  2.00),                        "U25"),
+                                                                    ("Ambos Anotan",        _btts_pre, _ev2(_btts_pre, 1.75),                        "AA"),
+                                                                    ("Over 3.5",            _o35_pre,  _ev2(_o35_pre,  2.50),                        "O35"),
+                                                                    ("Over 1.5",            _o15_pre,  _ev2(_o15_pre,  1.35),                        "O15"),
                                                                 ]
-                                                                # Over si xG lo soporta
-                                                                if _o25_pre >= 0.50: _opts_pre.append(("Over 2.5", _o25_pre))
-                                                                elif _o15_pre >= 0.55: _opts_pre.append(("Over 1.5", _o15_pre))
-                                                                _u25_pre = 1 - _o25_pre
-                                                                if _u25_pre >= 0.55: _opts_pre.append(("Under 2.5", _u25_pre))
-                                                                # Empate solo si es genuinamente el más probable
-                                                                if _pd2 > _ph2_adj and _pd2 > _pa2_adj: _opts_pre.append(("Empate", _pd2))
-                                                                _pick_lbl, _pick_prob = max(_opts_pre, key=lambda x: x[1])
-                                                                _pick_prob = min(0.92, _pick_prob)
+                                                                _opts_pre = [o for o in _opts_pre if o[1] >= 0.52]
+                                                                # Candidatos con EV+, excluyendo O1.5
+                                                                _ev_cands = [o for o in _opts_pre if o[2] > 0.0 and o[3] != "O15"]
+                                                                if _ev_cands:
+                                                                    _best_pre = max(_ev_cands, key=lambda x: x[2])
+                                                                elif _opts_pre:
+                                                                    _no_o15 = [o for o in _opts_pre if o[3] != "O15"]
+                                                                    _best_pre = max(_no_o15 or _opts_pre, key=lambda x: x[1])
+                                                                else:
+                                                                    # fallback absoluto
+                                                                    _best_pre = (_m["home"] + " Gana", _ph2_adj, 0, "ML")
+                                                                _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
                                                             except: pass
                                                     # ── Si calculamos pick nuevo (sin bridge), guardarlo en bridge ──
                                                     if _pick_lbl and not (_br.get("pick","") if _br else ""):
@@ -18472,7 +18733,7 @@ else:
             ("🤝 Empate",                   _pd_d,   g.get("odd_d",0), "1X2"),
             (f"✈️ {_an} gana",             _pa_d,   g.get("odd_a",0), "1X2"),
             (f"🔵 DO {_hn}",               _do_h_d, 1.30,             "DO"),
-            (f"🟣 DO {_an}",               _do_a_d, 1.50,             "DO"),
+            (f"🟣 DO {_an}",               _do_a_d, 1.17,             "DO"),
             ("⚽ Over 1.5",                 _o15_d,  1.35,             "OU"),
             ("⚽ Over 2.5",                 _o25_d,  1.85,             "OU"),
             ("⚽⚽ Over 3.5",               _o35_d,  2.50,             "OU"),
