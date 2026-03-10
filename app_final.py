@@ -3725,24 +3725,47 @@ def _ns_needs_run() -> bool:
     except:
         return True
 
-def _ns_ask_claude(team_name: str, league: str, sport: str = "fútbol") -> dict:
+def _ns_ask_claude(team_name: str, league: str, sport: str = "fútbol",
+                   is_away_in_europe: bool = False, opponent: str = "") -> dict:
     """
-    Llama a Claude con web_search para investigar los últimos 5
-    partidos del equipo y devuelve un dict con forma estandarizada.
+    Llama a Claude con web_search para investigar forma reciente del equipo.
+    Para UEFA: investiga también rendimiento como visitante en Europa.
     """
     if not ANTHROPIC_API_KEY:
         return {}
-    # Adaptar terminología por deporte
     if sport == "NBA":
         _unit = "partidos NBA"; _scored = "puntos anotados"; _conceded = "puntos recibidos"
+        _extra = ""
     elif sport == "tenis":
         _unit = "partidos (sets ganados/perdidos)"; _scored = "sets ganados"; _conceded = "sets perdidos"
+        _extra = ""
     else:
         _unit = "partidos"; _scored = "goles marcados"; _conceded = "goles recibidos"
+        if is_away_in_europe:
+            _extra = f"""
+CONTEXTO ESPECIAL — VISITANTE EN EUROPA:
+Este equipo jugará FUERA de su país en UEFA ({league}).
+Investiga específicamente:
+- Rendimiento como VISITANTE en Champions/Europa League últimas 2-3 temporadas
+- W/D/L y goles en esos partidos europeos de visita
+- ¿Cómo rinde este equipo lejos de casa en competición europea?
+- Lesionados o ausencias clave para este partido vs {opponent}
+- Desventaja de viaje, idioma, estadio hostil (si aplica)
+Responde con "away_europe_record" y "away_europe_avg_goals" en el JSON."""
+        else:
+            _extra = f"""
+CONTEXTO UEFA — LOCAL:
+Este equipo juega en CASA en UEFA ({league}).
+Investiga:
+- Rendimiento como LOCAL en Champions/Europa League últimas 2-3 temporadas
+- Ambiente de su estadio, aficionados (si es conocido por ser muy ruidoso)
+- Lesionados o ausencias clave para este partido vs {opponent}
+Responde con "home_europe_record" y "home_europe_avg_goals" en el JSON.""" if "uefa" in league.lower() or "champions" in league.lower() or "europa" in league.lower() else ""
     prompt = f"""Investiga los ÚLTIMOS 5 {_unit.upper()} de: {team_name} ({league}) — {sport}
 
-Busca en internet los resultados más recientes de este equipo/jugador en 2025-2026.
+Busca en internet los resultados más recientes de este equipo en 2025-2026.
 Responde SOLO en JSON válido, sin texto adicional ni backticks markdown.
+{_extra}
 
 Formato exacto:
 {{
@@ -3752,18 +3775,21 @@ Formato exacto:
     {{"date": "YYYY-MM-DD", "home": "Equipo Local", "away": "Equipo Visitante", "score": "X-Y", "result": "W/D/L", "competition": "Liga/Copa"}},
     ...
   ],
-  "goals_scored_last5": <número total de {_scored} en últimos 5>,
-  "goals_conceded_last5": <número total de {_conceded} en últimos 5>,
+  "goals_scored_last5": <total de {_scored} en últimos 5>,
+  "goals_conceded_last5": <total de {_conceded} en últimos 5>,
   "wins_last5": <0-5>,
   "form_string": "<ej: WWDLW — del más antiguo al más reciente>",
-  "key_absences": "<lesionados o suspendidos importantes si los hay, o 'ninguna'>",
-  "momentum": "<alto/medio/bajo — basado en la racha reciente>",
-  "avg_goals_scored": <promedio de goles marcados por partido>,
-  "avg_goals_conceded": <promedio de goles recibidos por partido>,
-  "notes": "<dato clave de forma: racha invicta, cambio de técnico, clásico reciente, etc.>"
+  "key_absences": "<lesionados/suspendidos importantes o 'ninguna'>",
+  "momentum": "<alto/medio/bajo>",
+  "avg_goals_scored": <promedio goles marcados por partido>,
+  "avg_goals_conceded": <promedio goles recibidos por partido>,
+  "away_europe_record": "<ej: 3W-1D-4L en últimas 8 visitas europeas, o 'sin datos'>",
+  "away_europe_avg_goals": <promedio goles marcados en visitas europeas, o null>,
+  "home_europe_record": "<ej: 5W-2D-1L en últimas 8 en casa europeas, o 'sin datos'>",
+  "home_europe_avg_goals": <promedio goles marcados en casa europeas, o null>,
+  "notes": "<dato clave: racha, cambio técnico, motivación, contexto eliminatoria, etc.>"
 }}
 
-Si no encuentras datos exactos, usa tu mejor conocimiento actualizado del equipo.
 Prioriza resultados de 2025-2026. Sé preciso con los marcadores."""
 
     try:
@@ -3797,20 +3823,31 @@ Prioriza resultados de 2025-2026. Sé preciso con los marcadores."""
     except Exception as _e:
         return {}
 
-def _ns_extract_xg_from_form(form_data: dict) -> tuple:
+def _ns_extract_xg_from_form(form_data: dict, is_home: bool = True) -> tuple:
     """
     Convierte el resultado de _ns_ask_claude en (xg_scored, xg_conceded).
-    Usa avg_goals como proxy de xG — más realista que ESPN schedule parsing.
+    Usa avg_goals como proxy de xG.
+    Si hay datos europeos específicos (away_europe_avg_goals / home_europe_avg_goals),
+    los blendea 50/50 con el promedio general para mayor precisión.
     """
     try:
         scored   = float(form_data.get("avg_goals_scored", 1.2))
         conceded = float(form_data.get("avg_goals_conceded", 1.1))
-        wins     = int(form_data.get("wins_last5", 2))
         momentum = form_data.get("momentum", "medio").lower()
-        # Ajuste momentum
+        # Blendear con datos europeos si existen
+        if is_home:
+            _eu_scored = form_data.get("home_europe_avg_goals")
+        else:
+            _eu_scored = form_data.get("away_europe_avg_goals")
+        if _eu_scored and str(_eu_scored).replace(".","").isdigit():
+            try:
+                _eu_f = float(_eu_scored)
+                # 50% datos europeos + 50% liga doméstica
+                scored = round(0.50 * _eu_f + 0.50 * scored, 3)
+            except: pass
         _m_adj = {"alto": 1.08, "medio": 1.00, "bajo": 0.92}.get(momentum, 1.0)
         scored   = round(scored * _m_adj, 3)
-        conceded = round(conceded / _m_adj, 3)  # buena forma → concede menos
+        conceded = round(conceded / _m_adj, 3)
         return max(0.30, scored), max(0.25, conceded)
     except:
         return 1.2, 1.1
@@ -3906,23 +3943,45 @@ def _night_scout_run():
             try:
                 # Adaptar prompt por deporte
                 _ns_sport = "tenis" if slug.startswith("tennis:") else ("NBA" if slug == "nba" else "fútbol")
-                form = _ns_ask_claude(tname, league_name, sport=_ns_sport)
+                # Para UEFA: marcar si es visitante europeo
+                _is_away_eur = False
+                _opp_name = ""
+                if _ns_sport == "fútbol" and slug in {"uefa.champions","uefa.europa","uefa.europa.conf","concacaf.champions"}:
+                    # Buscar rival en el partido
+                    for _mm in (matches if "matches" in dir() else []):
+                        _hid_m = str(_mm.get("home_id",""))
+                        _aid_m = str(_mm.get("away_id",""))
+                        if tid == _aid_m:
+                            _is_away_eur = True
+                            _opp_name = _mm.get("home","")
+                            break
+                        elif tid == _hid_m:
+                            _opp_name = _mm.get("away","")
+                            break
+                form = _ns_ask_claude(tname, league_name, sport=_ns_sport,
+                                      is_away_in_europe=_is_away_eur, opponent=_opp_name)
                 if form and form.get("last_5"):
-                    xg_s, xg_c = _ns_extract_xg_from_form(form)
+                    xg_s, xg_c = _ns_extract_xg_from_form(form, is_home=not _is_away_eur)
                     cache[tid] = {
-                        "team":            tname,
-                        "slug":            slug,
-                        "form":            form,
-                        "xg_scored":       xg_s,
-                        "xg_conceded":     xg_c,
-                        "fetched_at":      _dt.now(CDMX).isoformat(),
-                        "form_string":     form.get("form_string","?????"),
-                        "momentum":        form.get("momentum","medio"),
-                        "key_absences":    form.get("key_absences",""),
-                        "notes":           form.get("notes",""),
-                        "wins_last5":      form.get("wins_last5",2),
-                        "goals_scored":    form.get("goals_scored_last5",6),
-                        "goals_conceded":  form.get("goals_conceded_last5",5),
+                        "team":                 tname,
+                        "slug":                 slug,
+                        "form":                 form,
+                        "xg_scored":            xg_s,
+                        "xg_conceded":          xg_c,
+                        "fetched_at":           _dt.now(CDMX).isoformat(),
+                        "form_string":          form.get("form_string","?????"),
+                        "momentum":             form.get("momentum","medio"),
+                        "key_absences":         form.get("key_absences",""),
+                        "notes":                form.get("notes",""),
+                        "wins_last5":           form.get("wins_last5",2),
+                        "goals_scored":         form.get("goals_scored_last5",6),
+                        "goals_conceded":       form.get("goals_conceded_last5",5),
+                        "away_europe_record":   form.get("away_europe_record",""),
+                        "away_europe_avg_goals":form.get("away_europe_avg_goals"),
+                        "home_europe_record":   form.get("home_europe_record",""),
+                        "home_europe_avg_goals":form.get("home_europe_avg_goals"),
+                        "is_away_europe":       _is_away_eur,
+                        "opponent":             _opp_name,
                     }
                     teams_done += 1
                 else:
@@ -5552,81 +5611,41 @@ def _villar_auto_pick(partido_db):
             _build_pick(f"🌓 {away} gana cualquier mitad", _gcm_a,  "GCM", _o_gcma),
         ]
 
-        # ── Para UEFA (champions/europa/conf): 2 picks por probabilidades reales ──
-        # Pick 1: Cat A (resultado) — ML, DO, GCM, Empate
-        # Pick 2: Cat B (goles)    — mejor EV/prob entre O25, O35, AA, U25, TG
-        # La elección entre O25/O35/AA/U25 la hacen las probs del partido, no perfiles fijos.
+        # ── UEFA: Pick 1 = resultado (DO favorito/local), Pick 2 = goles por EV ──
         _uefa_only = {"uefa.champions","uefa.europa","uefa.europa.conf"}
         _pick2_lbl = None; _pick2_prob = None; _pick2_odd = None; _pick2_ev = None
 
         if slug in _uefa_only:
-            _xgt     = hxg + axg
-            _ml_diff = abs(_ph_d - _pa_d)
+            # DO del local y visitante (ya existen en _all_outcomes)
+            _do_h_out = next((o for o in _all_outcomes if o[4]=="DO" and home.lower()[:8] in o[0].lower()[:12]), None)
+            _do_a_out = next((o for o in _all_outcomes if o[4]=="DO" and away.lower()[:8] in o[0].lower()[:12]), None)
+            _fav_away = _pa_d > _ph_d
+            _diff_ml  = abs(_ph_d - _pa_d)
 
-            # ── Helpers ──
-            _out_by_mkt = {}
-            for _o in _all_outcomes:
-                _out_by_mkt.setdefault(_o[4], []).append(_o)
-
-            def _best_of_mkt(*mkts, min_prob=0.0):
-                _pool = [o for mk in mkts for o in _out_by_mkt.get(mk,[]) if o[1]>=min_prob]
-                if not _pool: return None
-                _evp = [o for o in _pool if o[3]>0]
-                return max(_evp or _pool, key=lambda o: o[3] if _evp else o[1])
-
-            # ── Pick 1 UEFA: resultado — ML, DO, GCM, X (umbral 35%) ──
-            # Regla extra: si DO del local tiene prob ≥ 50% → preferirlo sobre ML visitante
-            _cat_a_ev  = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X") and o[3]>0 and o[1]>=0.35]
-            _cat_a_all = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X")]
-            # Candidato natural: mayor EV
-            _p1_natural = (max(_cat_a_ev, key=lambda o: o[3]) if _cat_a_ev else
-                           max(_cat_a_all, key=lambda o: o[1]) if _cat_a_all else None)
-            # DO local: buscar explícitamente
-            _do_home_cands = [o for o in _all_outcomes
-                              if o[4] == "DO" and home.lower()[:8] in o[0].lower()[:12]]
-            _do_home = max(_do_home_cands, key=lambda o: o[1]) if _do_home_cands else None
-            # Regla DO para UEFA: DO del FAVORITO (no siempre del local)
-            # Si visitante favorito claro → DO visitante; si local favorito → DO local
-            _do_away_cands = [o for o in _all_outcomes
-                              if o[4]=="DO" and away.lower()[:8] in o[0].lower()[:12]]
-            _do_away = max(_do_away_cands, key=lambda o: o[1]) if _do_away_cands else None
-            _fav_is_away = _pa_d > _ph_d
-            _fav_is_home = _ph_d >= _pa_d
-            _ml_diff_uefa = abs(_ph_d - _pa_d)
-            if _fav_is_away and _do_away and _do_away[1] >= 0.55 and _ml_diff_uefa >= 0.05:
-                # Visitante favorito claro → DO visitante
-                _p1_uefa = _do_away
-            elif _fav_is_home and _do_home and _do_home[1] >= 0.50 and _ml_diff_uefa >= 0.0:
-                # Local favorito → DO local
-                _p1_uefa = _do_home
+            # Pick 1: DO del favorito si prob ≥ 50%, sino mejor ML/DO/X por EV
+            if _fav_away and _do_a_out and _do_a_out[1] >= 0.55 and _diff_ml >= 0.05:
+                _p1u = _do_a_out
+            elif not _fav_away and _do_h_out and _do_h_out[1] >= 0.50:
+                _p1u = _do_h_out
             else:
-                _p1_uefa = _p1_natural
-            # UEFA: pick1 siempre = resultado
-            if _p1_uefa:
-                main_lbl  = _p1_uefa[0]
-                main_prob = _p1_uefa[1]
-                main_odd  = _p1_uefa[2]
-                _best_ev  = _p1_uefa[3]
-                _best_mkt = _p1_uefa[4]
+                _cat_a = [o for o in _all_outcomes if o[4] in ("ML","DO","X","GCM") and o[1]>=0.35]
+                _cat_a_ev = [o for o in _cat_a if o[3]>0]
+                _p1u = (max(_cat_a_ev, key=lambda o: o[3]) if _cat_a_ev else
+                        max(_cat_a,    key=lambda o: o[1]) if _cat_a else None)
+            if _p1u:
+                main_lbl  = _p1u[0]; main_prob = _p1u[1]
+                main_odd  = _p1u[2]; _best_ev  = _p1u[3]; _best_mkt = _p1u[4]
 
-            # ── Pick 2: Cat B — elegir por EV real entre los candidatos viables ──
-            # Candidatos: O25, O35, AA, U25, TG (prob ≥ 40%)
-            _gol_mkts = ("O25","O35","AA","U25","TG","U35")
-            _cat_b_all = [o for o in _all_outcomes
-                          if o[4] in _gol_mkts
-                          and o[1] >= 0.40
-                          and o[0] != main_lbl]
-
-            if _cat_b_all:
-                # Prioridad 1: EV positivo real (mejor EV)
-                _cat_b_ev = [o for o in _cat_b_all if o[3] > 0.0]
-                # Prioridad 2: mayor probabilidad entre los viables
-                _p2_uefa = (max(_cat_b_ev,  key=lambda o: o[3]) if _cat_b_ev else
-                            max(_cat_b_all, key=lambda o: o[1]))
-                _pick2_lbl  = _p2_uefa[0]
-                _pick2_prob = _p2_uefa[1]
-                _pick2_odd  = _p2_uefa[2]
-                _pick2_ev   = _p2_uefa[3]
+            # Pick 2: mejor EV entre goles (O25/O35/AA/U25/TG), prob ≥ 40%
+            _gols = [o for o in _all_outcomes
+                     if o[4] in ("O25","O35","AA","U25","TG","U35")
+                     and o[1] >= 0.40 and o[0] != main_lbl]
+            if _gols:
+                _gols_ev = [o for o in _gols if o[3]>0]
+                _p2u = (max(_gols_ev, key=lambda o: o[3]) if _gols_ev
+                        else max(_gols, key=lambda o: o[1]))
+                _pick2_lbl  = _p2u[0]; _pick2_prob = _p2u[1]
+                _pick2_odd  = _p2u[2]; _pick2_ev   = _p2u[3]
                 if _has_real_odds and _pick2_ev < _min_ev:
                     _pick2_lbl = _pick2_lbl + " (sin valor)"
 
@@ -6310,10 +6329,15 @@ def render_resultados_tab():
 # ══════════════════════════════════════════════════════════════════════════
 
 # ── Constantes de confianza King Rongo ──
-_KR_DIAMOND_THRESHOLD = 0.65   # pick diamante
-_KR_GOLD_THRESHOLD    = 0.58   # pick oro
-_KR_MIN_EDGE          = 0.00   # sin edge mínimo — KR decide
-_KR_MIN_PROB          = 0.50   # prob mínima para aparecer en lista
+# [v2 PATCH] Umbrales elevados para mayor calidad de picks:
+#   DIAMANTE: 0.65→0.68 (exige más certeza matemática)
+#   ORO:      0.58→0.61 (reduce picks mediocres)
+#   MIN_EDGE: 0.00→0.03 (EV mínimo real para que KR muestre el pick)
+#   MIN_PROB: 0.50→0.53 (elimina picks de "volteo de moneda")
+_KR_DIAMOND_THRESHOLD = 0.68   # pick diamante — subido de 0.65
+_KR_GOLD_THRESHOLD    = 0.61   # pick oro     — subido de 0.58
+_KR_MIN_EDGE          = 0.03   # edge mínimo  — antes era 0.00 (cualquier pick)
+_KR_MIN_PROB          = 0.53   # prob mínima  — antes era 0.50
 _KR_CONFLICT_SPREAD   = 0.22   # dispersión modelos → conflicto
 
 
@@ -6387,6 +6411,8 @@ SI ES PARTIDO UEFA (Champions, Europa, Conference League):
    - ¿Consideró rotación de plantilla si el equipo ya clasificó en fase de grupos?
    - ¿El empate tiene valor diferente por partido de vuelta? (puede ser estratégico)
    - ¿La prob_real está calibrada para partidos de élite con defensas europeas de alto nivel?
+   - ¿Si es partido de VUELTA ('2nd leg'), Einstein consideró el resultado de la ida? Un equipo que perdió la ida NECESITA ganar → más goles → Over tiene valor extra. Equipo que ganó puede jugar más cerrado → Under/X.
+   - ¿Einstein consideró el COEFICIENTE UEFA del equipo? Equipos con coef >70 tienen historial de rendimiento europeo muy superior.
 
 5. VERIFICA EL ESTADO DEL PARTIDO:
    - ¿El partido ya terminó y Einstein no lo detectó? (Error crítico = F automático)
@@ -6802,11 +6828,16 @@ def render_einstein_califica(key_sfx="fut"):
                     "Si identificas que es un partido de UEFA (Champions League, Europa League, Conference League):\n"
                     "  · Son partidos de ELIMINATORIA con ida y vuelta. La cuota refleja solo ESTE partido, no la eliminatoria.\n"
                     "  · El empate (X) tiene valor REAL — muchos equipos juegan a no perder para el partido de vuelta.\n"
-                    "  · Equipos top (Real Madrid, Bayern, City) tienen prob_real más alta por calidad histórica en UCL.\n"
+                    "  · Equipos top (Real Madrid, Bayern, Man City, PSG, Liverpool, Arsenal, Inter, Atlético) tienen prob_real más alta por calidad histórica en UCL.\n"
                     "  · Considera: viajes intercontinentales, rotación de plantilla, presión de clasificación.\n"
                     "  · En fase de grupos: equipos ya clasificados pueden rotar — afecta enormemente las probabilidades.\n"
-                    "  · El mercado de Over/Under en UEFA es más difícil — defensas de élite vs ataques de élite.\n"
-                    "  · Calibra prob_real usando UEFA coefficient del equipo + forma doméstica reciente + historial UCL.\n\n"
+                    "  · El mercado de Over/Under en UEFA es más difícil — defensas de élite vs ataques de élite. Usa U2.5 como línea base.\n"
+                    "  · COEFICIENTE UEFA: equipos con coeficiente UEFA alto (>70) tienen 8-12% más prob de avanzar vs coeficiente bajo (<30). Esto se refleja en el partido individual.\n"
+                    "  · PARTIDO DE VUELTA: si ves 'vuelta', '2nd leg', 'return', o marcador del partido de ida — el resultado de ida es CRÍTICO para calcular prob_real:\n"
+                    "    - Equipo que ganó la ida tiene ventaja táctica (puede empatar y clasificar).\n"
+                    "    - Equipo que perdió la ida DEBE ganar → ataca más → más goles → Over tiene valor extra.\n"
+                    "    - En empate de ida: ambos equipos buscan el gol visitante como desempate extra.\n"
+                    "  · Calibra prob_real usando: coeficiente UEFA + forma doméstica reciente (últimos 5) + historial en competencia europea + fatiga de fixture.\n\n"
                     "══ ESTADO DEL PARTIDO — REGLA CRÍTICA ══\n"
                     "SOLO marca estado_partido='finalizado' si ves un marcador FINAL explícito (FT, Final, Terminado, 90') en la imagen. "
                     "Si ves una hora futura (ej: '13:30', '20:00', 'Mañana') = 'pendiente'. "
@@ -8129,29 +8160,63 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             _my_qf  = max(_my_qf,  0.80)
             _opp_qf = max(_opp_qf, 0.78)
 
+        # ── Variables extra de Night Scout: rendimiento europeo, ausencias ──
+        _ns_info_full = _ns_get_team_info(_hid if is_home else _aid)
+        _has_eu_data  = False
+        _eu_avg_goals = None
+        if _ns_info_full:
+            _form_ns = _ns_info_full.get("form", {})
+            if is_home:
+                _eu_avg_goals = _form_ns.get("home_europe_avg_goals")
+                _eu_record    = _form_ns.get("home_europe_record", "")
+            else:
+                _eu_avg_goals = _form_ns.get("away_europe_avg_goals")
+                _eu_record    = _form_ns.get("away_europe_record", "")
+            try:
+                if _eu_avg_goals and float(str(_eu_avg_goals).replace(",",".")) > 0:
+                    _eu_avg_goals = float(str(_eu_avg_goals).replace(",","."))
+                    _has_eu_data  = True
+            except: _eu_avg_goals = None
+            # Penalización por rendimiento europeo de visitante — si tiene histórico malo lejos
+            _key_abs = (_form_ns.get("key_absences","") or "").lower()
+            _absences_penalty = 0.93 if any(w in _key_abs for w in ["lesion","baja","suspendido","out","absent"]) else 1.0
+        else:
+            _eu_record = ""; _absences_penalty = 1.0
+
+        # Penalización visitante fuera de su país (UEFA away european penalty)
+        # Equipos de ligas menos fuertes → más penalización de visita
+        _away_eu_pen = 1.0
+        if not is_home and slug in {"uefa.champions","uefa.europa","uefa.europa.conf"}:
+            _lg_gap = max(0, _opp_qf - _my_qf)  # diferencia calidad rival vs equipo
+            # Gap grande → equipo inferior visita a superior → penalizar más
+            _away_eu_pen = max(0.82, 1.0 - _lg_gap * 0.35)
+            # Si tiene historial europeo de visitante bueno → reducir penalización
+            if _has_eu_data and _eu_avg_goals and _eu_avg_goals >= 1.2:
+                _away_eu_pen = min(1.0, _away_eu_pen + 0.06)
+
         if _form_mine or _has_night_form:
             if _has_night_form and _ns_xg_s:
-                # Night Scout disponible: usar xG real investigado por IA
-                # Ajustar por calidad relativa de rivales en la copa
-                _qratio = min(1.25, max(0.78, _my_qf / max(_opp_qf, 0.50)))
-                _xg_dom_ns = _ns_xg_s * _qratio  # goles anotados del equipo
-                _xg_form = round(_xg_dom_ns, 3)
-                # Momentum bonus: si viene en racha (alto) o penalti (bajo)
+                _qratio   = min(1.25, max(0.78, _my_qf / max(_opp_qf, 0.50)))
+                # Si Night Scout tiene dato europeo → blendear 50% europeo + 50% general
+                if _has_eu_data and _eu_avg_goals:
+                    _xg_ns_base = round(0.50 * _eu_avg_goals + 0.50 * _ns_xg_s, 3)
+                else:
+                    _xg_ns_base = _ns_xg_s
+                _xg_dom_ns = _xg_ns_base * _qratio
                 _mom = (_ns_info.get("momentum","medio") or "medio").lower()
-                _mom_adj = {"alto":1.06,"medio":1.00,"bajo":0.94}.get(_mom, 1.0)
-                _xg_form = round(_xg_form * _mom_adj, 3)
-                # Si TAMBIÉN hay forma ESPN: blend 60% Night Scout / 40% ESPN
+                _mom_adj = {"alto":1.07,"medio":1.00,"bajo":0.93}.get(_mom, 1.0)
+                _xg_form = round(_xg_dom_ns * _mom_adj * _absences_penalty, 3)
                 if _form_mine:
                     _xg_espn = xg_weighted(_form_mine, is_home, odds_prior=0)
-                    _xg_form = round(0.60 * _xg_form + 0.40 * _xg_espn * min(1.25, max(0.78, _my_qf/max(_opp_qf,0.50))), 3)
+                    _xg_form = round(0.60 * _xg_form + 0.40 * _xg_espn * _qratio, 3)
             else:
                 _xg_dom = xg_weighted(_form_mine, is_home, odds_prior=0)
                 _qratio = min(1.25, max(0.78, _my_qf / max(_opp_qf, 0.50)))
-                _xg_form = round(_xg_dom * _qratio, 3)
-            # Blend: UEFA 60/25/15, CONCACAF más peso a forma propia (70/20/10)
-            _w_form = 0.65 if slug in _concacaf_slugs else 0.60
-            _w_anch = 0.20 if slug in _concacaf_slugs else 0.25
-            _w_qual = 0.15
+                _xg_form = round(_xg_dom * _qratio * _absences_penalty, 3)
+            # Blend: si tenemos dato europeo → mayor peso a forma (menos al anchor)
+            _w_form = 0.65 if (slug in _concacaf_slugs or _has_eu_data) else 0.60
+            _w_anch = 0.18 if _has_eu_data else (0.20 if slug in _concacaf_slugs else 0.25)
+            _w_qual = 1.0 - _w_form - _w_anch
             _quality_adj = (_my_qf / max(_cs_coef, 0.5)) - 1.0
             _xg_base = round(
                 _w_form * _xg_form
@@ -8160,10 +8225,11 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
                 3
             )
         else:
-            # Sin forma: usar anchor del torneo ajustado por calidad del equipo
             _quality_adj = (_my_qf / max(_cs_coef, 0.5)) - 1.0
             _xg_base = round(_cs_anchor * (1 + _quality_adj * 0.6), 3)
-            _xg_base = max(0.45, _xg_base)  # floor más alto: equipos CONCACAF/UEFA son competitivos
+            _xg_base = max(0.45, _xg_base)
+        # Aplicar penalización europeo visitante AL xg_base
+        _xg_base = round(_xg_base * _away_eu_pen, 3)
         # Altitud para equipos MX en casa (CONCACAF)
         if slug in _concacaf_slugs and is_home:
             _hl = (_hnam or "").lower()
@@ -8181,16 +8247,26 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         # que la forma doméstica no ve. Peso alto a odds cuando están disponibles.
         if odd_h > 1 and odd_a > 1 and odd_d > 1:
             _tot = 1/odd_h + 1/odd_d + 1/odd_a
-            _ph_imp = (1/odd_h) / _tot   # prob implícita sin margen
+            _ph_imp = (1/odd_h) / _tot
             _pa_imp = (1/odd_a) / _tot
-            # xG derivado de odds — calibrado para replicar distribución de goles real
-            # Calibración: ph≈0.46 → hxg≈1.52, ph≈0.60 → hxg≈1.91, ph≈0.30 → hxg≈1.08
             _hxg_odds = max(0.40, 1.52 + (_ph_imp - 0.46) * 2.80)
             _axg_odds = max(0.35, 1.10 + (_pa_imp - 0.30) * 2.50)
             _xg_odds_mine = _hxg_odds if is_home else _axg_odds
-            # Peso odds: 65% cuando hay forma propia, 80% sin forma (odds es todo lo que tenemos)
-            # UEFA y CONCACAF se tratan igual — en ambos los odds son muy informativos
-            _w_odds = 0.65 if _form_mine else 0.80
+            # Ponderación odds vs modelo propio:
+            # - Sin forma: 80% odds (no tenemos nada más)
+            # - Con forma ESPN: 65% odds
+            # - Con Night Scout europeo: 50% odds (el dato europeo es muy valioso)
+            # - Con Night Scout europeo + ESPN: 48% odds
+            if _has_eu_data and _has_night_form and _form_mine:
+                _w_odds = 0.48
+            elif _has_eu_data and _has_night_form:
+                _w_odds = 0.50
+            elif _has_night_form or _has_eu_data:
+                _w_odds = 0.58
+            elif _form_mine:
+                _w_odds = 0.65
+            else:
+                _w_odds = 0.80
             return max(0.35, round(_w_odds * _xg_odds_mine + (1 - _w_odds) * _xg_base, 3))
         return max(0.35, round(_xg_base, 3))
 
@@ -13274,15 +13350,19 @@ def _kr_kelly(prob, odd, cap=0.08):
 
 
 def _kr_conf(prob, edge, spread_pp):
-    """Devuelve (emoji, label, color) de confianza."""
+    """Devuelve (emoji, label, color) de confianza. v2: umbrales elevados."""
     penalizado = spread_pp > _KR_CONFLICT_PP
+    # DIAMANTE: prob≥0.68 AND edge real≥7% AND sin conflicto entre modelos
     if prob >= _KR_DIAMOND_PROB and edge >= 0.07 and not penalizado:
         return "💎", "DIAMANTE", "#FFD700"
+    # ALTA: prob≥0.61 AND edge≥3% AND sin conflicto
     if prob >= _KR_GOLD_PROB and edge >= _KR_MIN_EDGE and not penalizado:
         return "🔥", "ALTA",     "#00ff88"
+    # MEDIA: prob≥0.57 sin conflicto crítico
     if prob >= 0.57 and not penalizado:
         return "⚡", "MEDIA",    "#00ccff"
-    if prob >= 0.52:
+    # BAJA: prob≥0.53 (nuevo piso)
+    if prob >= _KR_MIN_PROB:
         return "⚠️", "BAJA",     "#ff9500"
     return "🔻", "NO APOSTAR",  "#ff4444"
 
@@ -18777,21 +18857,16 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
+                                                        # UEFA: si pick1 es de goles o no hay pick2, recalcular
                                                         _is_uefa_m = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                        # Para UEFA: recalcular SOLO si el pick del bridge es de goles (pick1 incorrecto)
-                                                        # o no hay pick2. Una vez corregido y guardado, usar el snap.
-                                                        _goles_mkts = {"Over","Under","Ambos","AA","O25","U25","O35"}
-                                                        _br_pick1 = (_br.get("pick","") if _br else "") or ""
-                                                        _br_pick1_is_goles = any(g in _br_pick1 for g in _goles_mkts)
-                                                        _br_pick2 = (_br.get("pick2","") if _br else "") or ""
-                                                        _uefa_needs_recalc = _is_uefa_m and (_br_pick1_is_goles or not _br_pick2)
-                                                        if not _is_uefa_m:
-                                                            _pick2_lbl_c  = (_br.get("pick2","")  if _br else "") or None
-                                                            _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or None
-                                                        else:
-                                                            _pick2_lbl_c = None; _pick2_prob_c = None
-                                                        # Calcular: sin pick1, o UEFA necesita corrección
-                                                        if not _pick_lbl or _uefa_needs_recalc:
+                                                        _goles_kw  = ("Over","Under","Ambos","AA")
+                                                        _p1_is_gol = any(g in _pick_lbl for g in _goles_kw)
+                                                        _has_pick2 = bool(_br.get("pick2","") if _br else "")
+                                                        _uefa_recalc = _is_uefa_m and (_p1_is_gol or not _has_pick2)
+                                                        if _uefa_recalc:
+                                                            _pick_lbl = ""  # forzar recálculo
+                                                        # Sin bridge o UEFA recalc: calcular pick con EV real
+                                                        if not _pick_lbl:
                                                             try:
                                                                 import math as _pm
                                                                 _xg_tot = _hx2 + _ax2
@@ -18833,173 +18908,110 @@ if st.session_state["view"] == "cartelera":
                                                                 else:
                                                                     # fallback absoluto
                                                                     _best_pre = (_m["home"] + " Gana", _ph2_adj, 0, "ML")
-                                                                # Para UEFA: pick1 SIEMPRE debe ser resultado (ML/DO/X/GCM)
-                                                                _uefa3 = {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                                _is_uefa_slug = _m.get("slug","") in _uefa3
-                                                                if _is_uefa_slug:
-                                                                    # Forzar pick1 = resultado (ML/DO/X/GCM), umbral 35%
-                                                                    # _opts_pre_do puede haber sido calculado arriba; si no, recalcular
-                                                                    if "_opts_pre_do" not in locals():
-                                                                        _odd_h_c2 = float(_m.get("odd_h",0) or 0)
-                                                                        _odd_d_c2 = float(_m.get("odd_d",0) or 0)
-                                                                        _do_h2    = min(0.95, _ph2_adj + _pd2)
-                                                                        _do_odd2  = (_odd_h_c2*_odd_d_c2/(_odd_h_c2+_odd_d_c2) if _odd_h_c2>1 and _odd_d_c2>1 else 1.30)
-                                                                        _opts_pre_do = list(_opts_pre) + [
-                                                                            (_m["home"]+" DO", _do_h2, _ev2(_do_h2,_do_odd2), "DO")
-                                                                        ]
-                                                                    _cat_a_pre_ev  = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM") and o[2]>0 and o[1]>=0.35]
-                                                                    _cat_a_pre_all = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM")]
-                                                                    _p1_nat2 = (max(_cat_a_pre_ev,  key=lambda o: o[2]) if _cat_a_pre_ev  else
-                                                                                max(_cat_a_pre_all, key=lambda o: o[1]) if _cat_a_pre_all else None)
-                                                                    # DO del favorito
-                                                                    _fav_aw2    = _pa2_adj > _ph2_adj
-                                                                    _mld2       = abs(_ph2_adj - _pa2_adj)
-                                                                    _do_h3      = min(0.95, _ph2_adj + _pd2)
-                                                                    _do_a3      = min(0.95, _pa2_adj + _pd2)
-                                                                    _odd_a_f    = float(_m.get("odd_a",0) or 0)
-                                                                    _odd_h_f    = float(_m.get("odd_h",0) or 0)
-                                                                    _odd_d_f    = float(_m.get("odd_d",0) or 0)
-                                                                    _do_a_odd_f = (_odd_a_f*_odd_d_f/(_odd_a_f+_odd_d_f) if _odd_a_f>1 and _odd_d_f>1 else 1.25)
-                                                                    _do_h_odd_f = (_odd_h_f*_odd_d_f/(_odd_h_f+_odd_d_f) if _odd_h_f>1 and _odd_d_f>1 else 1.30)
-                                                                    if _fav_aw2 and _do_a3>=0.55 and _mld2>=0.05:
-                                                                        _p1_forzado = (_m["away"]+" DO", _do_a3, _do_a_odd_f, _ev2(_do_a3,_do_a_odd_f), "DO")
-                                                                    elif not _fav_aw2 and _do_h3>=0.50:
-                                                                        _p1_forzado = (_m["home"]+" DO", _do_h3, _do_h_odd_f, _ev2(_do_h3,_do_h_odd_f), "DO")
+                                                                _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
+                                                                # ── UEFA: Pick1=DO local/visitante, Pick2=mejor mercado goles ──
+                                                                _pick2_lbl_c  = None
+                                                                _pick2_prob_c = 0.0
+                                                                _is_uefa3 = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
+                                                                if _is_uefa3:
+                                                                    _oh_u = float(_m.get("odd_h",0) or 0)
+                                                                    _od_u = float(_m.get("odd_d",0) or 0)
+                                                                    _oa_u = float(_m.get("odd_a",0) or 0)
+                                                                    _do_h_p = min(0.95, _ph2_adj + _pd2)
+                                                                    _do_a_p = min(0.95, _pa2_adj + _pd2)
+                                                                    _do_h_o = (_oh_u*_od_u/(_oh_u+_od_u) if _oh_u>1 and _od_u>1 else 1.30)
+                                                                    _do_a_o = (_oa_u*_od_u/(_oa_u+_od_u) if _oa_u>1 and _od_u>1 else 1.25)
+                                                                    def _ev3(p, odd): return p*(odd-1)-(1-p)
+                                                                    # Pick 1: DO del FAVORITO según las probabilidades del modelo
+                                                                    # Criterio: mayor EV entre DO_home y DO_away
+                                                                    # Si EVs iguales → mayor probabilidad gana
+                                                                    _ev_do_h = _ev3(_do_h_p, _do_h_o)
+                                                                    _ev_do_a = _ev3(_do_a_p, _do_a_o)
+                                                                    if _ev_do_h >= _ev_do_a:
+                                                                        _pick_lbl  = _m["home"] + " DO"
+                                                                        _pick_prob = min(0.92, _do_h_p)
                                                                     else:
-                                                                        _p1_forzado = _p1_nat2
-                                                                    if _p1_forzado:
-                                                                        _pick_lbl  = _p1_forzado[0]
-                                                                        _pick_prob = min(0.92, _p1_forzado[1])
-                                                                else:
-                                                                    # No UEFA: solo asignar si no venía del bridge
-                                                                    if not (_br.get("pick","") if _br else ""):
-                                                                        _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
-                                                                # ── 2° pick UEFA: mejor goles por EV/prob ──
-                                                                _pick2_lbl_c = None; _pick2_prob_c = None
-                                                                if _m.get("slug","") in _uefa3:
-                                                                    # Pick 1 UEFA: ML/DO/X/GCM — umbral 35%
-                                                                    # Agregar DO del local al pool
-                                                                    _odd_h_c = float(_m.get("odd_h",0) or 0)
-                                                                    _odd_d_c = float(_m.get("odd_d",0) or 0)
-                                                                    _do_h_prob_c = min(0.95, _ph2_adj + _pd2)
-                                                                    _do_h_odd_c  = (_odd_h_c*_odd_d_c/(_odd_h_c+_odd_d_c)
-                                                                                    if _odd_h_c>1 and _odd_d_c>1 else 1.30)
-                                                                    _opts_pre_do = list(_opts_pre) + [
-                                                                        (_m["home"]+" DO", _do_h_prob_c,
-                                                                         _ev2(_do_h_prob_c, _do_h_odd_c), "DO")
+                                                                        _pick_lbl  = _m["away"] + " DO"
+                                                                        _pick_prob = min(0.92, _do_a_p)
+                                                                    # Pick 2: todos los mercados de goles disponibles — mejor EV
+                                                                    # Pool ampliado: O25, O35, AA, U25, GCM home, GCM away
+                                                                    _gcm_h_p = _ph2_adj * (1 - (1-_ph2_adj)**2)  # aprox prob gana al menos 1 mitad
+                                                                    _gcm_a_p = _pa2_adj * (1 - (1-_pa2_adj)**2)
+                                                                    def _ev2u(p, odd): return p*(odd-1)-(1-p)
+                                                                    _p2_pool = [
+                                                                        ("Over 2.5",                _o25_pre,  _ev2u(_o25_pre, _oh_u*0 or 1.85),   "O25"),
+                                                                        ("Over 3.5",                _o35_pre,  _ev2u(_o35_pre, 2.50),                "O35"),
+                                                                        ("Ambos Anotan",            _btts_pre, _ev2u(_btts_pre, 1.75),               "AA"),
+                                                                        ("Under 2.5",               _u25_pre,  _ev2u(_u25_pre, 2.00),                "U25"),
+                                                                        (f"1X {_m['home'][:12]} c/mitad", _gcm_h_p, _ev2u(_gcm_h_p, 1.55),          "GCM"),
+                                                                        (f"2X {_m['away'][:12]} c/mitad", _gcm_a_p, _ev2u(_gcm_a_p, 1.65),          "GCM"),
                                                                     ]
-                                                                    _cat_a_c_ev  = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM") and o[2]>0 and o[1]>=0.35]
-                                                                    _cat_a_c_all = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM")]
-                                                                    _p1_nat_c = (max(_cat_a_c_ev,  key=lambda o: o[2]) if _cat_a_c_ev  else
-                                                                                 max(_cat_a_c_all, key=lambda o: o[1]) if _cat_a_c_all else None)
-                                                                    # DO del FAVORITO: visitante favorito → DO away; local favorito → DO home
-                                                                    _fav_away_c = _pa2_adj > _ph2_adj
-                                                                    _ml_diff_c  = abs(_ph2_adj - _pa2_adj)
-                                                                    _odd_a_c2   = float(_m.get("odd_a",0) or 0)
-                                                                    _do_a_prob_c = min(0.95, _pa2_adj + _pd2)
-                                                                    _do_a_odd_c  = (_odd_a_c2*_odd_d_c/(_odd_a_c2+_odd_d_c)
-                                                                                    if _odd_a_c2>1 and _odd_d_c>1 else 1.25)
-                                                                    if _fav_away_c and _do_a_prob_c >= 0.55 and _ml_diff_c >= 0.05:
-                                                                        # Visitante favorito → DO visitante
-                                                                        _p1_c = (_m["away"]+" DO", _do_a_prob_c, _do_a_odd_c,
-                                                                                 _ev2(_do_a_prob_c,_do_a_odd_c), "DO")
-                                                                    elif not _fav_away_c and _do_h_prob_c >= 0.50:
-                                                                        # Local favorito → DO local
-                                                                        _p1_c = (_m["home"]+" DO", _do_h_prob_c, _do_h_odd_c,
-                                                                                 _ev2(_do_h_prob_c,_do_h_odd_c), "DO")
-                                                                    else:
-                                                                        _p1_c = _p1_nat_c
-                                                                    # UEFA: pick1 siempre de resultado
-                                                                    if _p1_c:
-                                                                        _pick_lbl  = _p1_c[0]
-                                                                        _pick_prob = min(0.92, _p1_c[1])
-
-                                                                    # Pick 2: mejor EV/prob entre candidatos goles (prob ≥ 40%)
-                                                                    _gol_mkts_c = ("O25","O35","AA","U25","TG","U35")
-                                                                    _cat_b_c_all = [o for o in _opts_pre
-                                                                                    if o[3] in _gol_mkts_c
-                                                                                    and o[1] >= 0.40
-                                                                                    and o[0] != _pick_lbl]
-                                                                    if _cat_b_c_all:
-                                                                        _cat_b_c_ev = [o for o in _cat_b_c_all if o[2]>0.0]
-                                                                        _p2_c = (max(_cat_b_c_ev,  key=lambda o: o[2]) if _cat_b_c_ev else
-                                                                                 max(_cat_b_c_all, key=lambda o: o[1]))
-                                                                        if _p2_c and _p2_c[0] != _pick_lbl:
-                                                                            _pick2_lbl_c  = _p2_c[0]
-                                                                            _pick2_prob_c = min(0.92, _p2_c[1])
+                                                                    _p2_ok = [o for o in _p2_pool if o[1] >= 0.38]
+                                                                    _p2_ev = [o for o in _p2_ok if o[2] > 0]
+                                                                    _p2_best = (max(_p2_ev, key=lambda o: o[2]) if _p2_ev else
+                                                                                max(_p2_ok, key=lambda o: o[1]) if _p2_ok else None)
+                                                                    if _p2_best:
+                                                                        _pick2_lbl_c  = _p2_best[0]
+                                                                        _pick2_prob_c = min(0.92, _p2_best[1])
                                                             except: pass
-                                                    # ── Guardar en bridge: siempre para UEFA (recalcula), si no hay para el resto ──
-                                                    _save_to_bridge = (
-                                                        _pick_lbl and (
-                                                            _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                            or not (_br.get("pick","") if _br else "")
-                                                        )
-                                                    )
-                                                    if _save_to_bridge:
+                                                    # ── Guardar en bridge/snap ──
+                                                    _is_uefa_save = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
+                                                    if _pick_lbl and (_is_uefa_save or not (_br.get("pick","") if _br else "")):
                                                         try:
                                                             _bk = _m.get("id","") or f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}"
-                                                            if "st" in dir() and _bk:
+                                                            if _bk:
                                                                 if "_diamond_bridge" not in st.session_state:
                                                                     st.session_state["_diamond_bridge"] = {}
                                                                 _snap_data = {
-                                                                    "pick":_pick_lbl,"prob":_pick_prob,
-                                                                    "home":_m.get("home",""),"away":_m.get("away",""),
-                                                                    "sport":"futbol","fecha":_m.get("fecha",""),
-                                                                    "src":"⚡ Cartelera","mkt":"auto",
-                                                                    "pick2": _pick2_lbl_c if "pick2_lbl_c" in locals() else None,
-                                                                    "pick2_prob": _pick2_prob_c if "pick2_prob_c" in locals() else None,
-                                                                    "pick2_mkt": "UEFA 2°" if ("pick2_lbl_c" in locals() and _pick2_lbl_c) else "",
-                                                                    "is_uefa": _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"},
+                                                                    "pick": _pick_lbl, "prob": _pick_prob,
+                                                                    "home": _m.get("home",""), "away": _m.get("away",""),
+                                                                    "sport": "futbol", "fecha": _m.get("fecha",""),
+                                                                    "src": "⚡ Cartelera", "mkt": "DO" if " DO" in _pick_lbl else "auto",
+                                                                    "pick2": _pick2_lbl_c,
+                                                                    "pick2_prob": _pick2_prob_c,
+                                                                    "pick2_mkt": "UEFA 2°",
+                                                                    "is_uefa": _is_uefa_save,
                                                                 }
                                                                 st.session_state["_diamond_bridge"][_bk] = _snap_data
-                                                                # Guardar en disco para que Villar lo audite después
-                                                                # UEFA: force=True para sobreescribir pick antiguo (goles→resultado)
-                                                                _is_uefa_save = _snap_data.get("is_uefa", False)
                                                                 _snap_auto_pick(_bk, _snap_data, state=_m.get("state","pre"), force=_is_uefa_save)
                                                         except: pass
-                                                    # ── Preparar card: border rojo en vivo, dorado pre-partido ──
+                                                    # ── Render card ──
                                                     _card_border = "#ff444466" if _live else ("#c9a84c55" if _pick_prob >= 0.68 else "#c9a84c1a")
                                                     _score_or_hora = _sc if _live else _m.get("hora","")
                                                     _hdr_color = "#ff4444" if _live else "#6b5a3a"
-                                                    # ── Construir pick row HTML para insertar dentro del card ──
                                                     _pick_row = ""
-                                                    if _pick_lbl and _pick_prob >= 0.38:
-                                                        # Badge tier — usa prob del pick pre-partido si existe
+                                                    if _pick_lbl and _pick_prob >= 0.35:
                                                         _badge_prob = _pick_prob
-                                                        _pre_pick_lbl  = (_br.get("pick","") if _br else "") if _live else ""
-                                                        _pre_pick_prob = (_br.get("prob",0)  if _br else 0)  if _live else 0
-                                                        if _live and _pre_pick_prob >= 0.38: _badge_prob = _pre_pick_prob
-                                                        if _badge_prob >= 0.68:    _pe, _pc, _pt = "💎", "#00ccff", "DIAMANTE"
-                                                        elif _badge_prob >= 0.60:  _pe, _pc, _pt = "🔥", "#ff6600", "ORO"
-                                                        elif _badge_prob >= 0.53:  _pe, _pc, _pt = "⚡", "#FFD700", "TRUENO"
-                                                        elif _badge_prob >= 0.46:  _pe, _pc, _pt = "📊", "#888",    "DÉBIL"
-                                                        else:                      _pe, _pc, _pt = "🔍", "#555",    "LEVE"
-                                                        _lv_tag = ("🔴 EN VIVO" if _live else "PRE-PARTIDO")
+                                                        if _live:
+                                                            _pre_pp = (_br.get("prob",0) if _br else 0)
+                                                            if _pre_pp >= 0.35: _badge_prob = _pre_pp
+                                                        if _badge_prob >= 0.68:    _pe,_pc,_pt = "💎","#00ccff","DIAMANTE"
+                                                        elif _badge_prob >= 0.60:  _pe,_pc,_pt = "🔥","#ff6600","ORO"
+                                                        elif _badge_prob >= 0.53:  _pe,_pc,_pt = "⚡","#FFD700","TRUENO"
+                                                        elif _badge_prob >= 0.46:  _pe,_pc,_pt = "📊","#888","DÉBIL"
+                                                        else:                      _pe,_pc,_pt = "🔍","#555","LEVE"
+                                                        _lv_tag  = "🔴 EN VIVO" if _live else "PRE-PARTIDO"
                                                         _lbl_clean = _pick_lbl.replace("🔴 ","",1) if _live else _pick_lbl
-                                                        _glow = f"box-shadow:0 0 8px {_pc}55;" if _pick_prob >= 0.68 else ""
+                                                        _glow = f"box-shadow:0 0 8px {_pc}55;" if _badge_prob >= 0.68 else ""
                                                         _pick_row = (
                                                             f"<div style='border-top:1px solid #2a2010;margin-top:6px;padding-top:5px;"
                                                             f"display:flex;align-items:center;gap:6px;{_glow}'>"
                                                             f"<span style='font-size:1.1rem'>{_pe}</span>"
                                                             f"<div style='flex:1;min-width:0'>"
-                                                            f"<div style='font-size:0.6rem;color:{_pc};font-weight:900;"
-                                                            f"letter-spacing:.1em'>{_lv_tag} · {_pt}</div>"
+                                                            f"<div style='font-size:0.6rem;color:{_pc};font-weight:900;letter-spacing:.1em'>{_lv_tag} · {_pt}</div>"
                                                             f"<div style='font-size:0.88rem;font-weight:900;color:#fff;"
                                                             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_lbl_clean}</div>"
                                                             f"</div>"
                                                             f"<span style='font-size:1.05rem;font-weight:900;color:{_pc}'>{_pick_prob*100:.0f}%</span>"
                                                             f"</div>"
                                                         )
-
-                                                        # ── Pick 2 para UEFA ──
-                                                        # Leer de: 1) variable local (recién calculada) 2) bridge sesión 3) snap disco
-                                                        _p2l = (locals().get("_pick2_lbl_c")
-                                                                or (_br.get("pick2") if _br else None)
-                                                                or (_snap_all_v.get(_m.get("id",""),{}).get("pick2") if "_snap_all_v" in locals() else None))
-                                                        _p2p = (locals().get("_pick2_prob_c")
-                                                                or (_br.get("pick2_prob",0) if _br else 0)
-                                                                or (_snap_all_v.get(_m.get("id",""),{}).get("pick2_prob",0) if "_snap_all_v" in locals() else 0))
-                                                        if _p2l and _p2p and _p2p >= 0.35:
+                                                        # Pick 2 UEFA — usa variables locales directas (sin dir())
+                                                        _p2l = _pick2_lbl_c
+                                                        _p2p = _pick2_prob_c
+                                                        if not _p2l and _br:
+                                                            _p2l = _br.get("pick2","") or ""
+                                                            _p2p = _br.get("pick2_prob",0) or 0
+                                                        if _p2l and _p2p >= 0.35:
                                                             _pick_row += (
                                                                 f"<div style='border-top:1px solid #1a1a30;margin-top:4px;padding-top:4px;"
                                                                 f"display:flex;align-items:center;gap:6px'>"
@@ -19126,12 +19138,18 @@ if st.session_state["view"] == "cartelera":
                                 _fav_odd = _odd_h if _ph>=_pa else _odd_a
                                 _hname14 = _m["home"][:14]; _aname14 = _m["away"][:14]
                                 _cands = []
-                                if _ph>=0.52 and _ev_t(_ph,_odd_h)>0.01: _cands.append(("🏠 "+_m["home"],_ph,_odd_h,_ev_t(_ph,_odd_h)))
-                                if _pa>=0.52 and _ev_t(_pa,_odd_a)>0.01: _cands.append(("✈️ "+_m["away"],_pa,_odd_a,_ev_t(_pa,_odd_a)))
-                                if _o25>=0.58 and _ev_t(_o25,1.90)>0.01: _cands.append(("⚽ Over 2.5",_o25,0,_ev_t(_o25,1.90)))
-                                if _aa>=0.58  and _ev_t(_aa,1.80)>0.01:  _cands.append(("⚡ Ambos Anotan",_aa,0,_ev_t(_aa,1.80)))
-                                if _do_h>=0.75 and _ph>=0.50 and _ev_t(_do_h,1.35)>0.01: _cands.append(("🔵 "+_hname14+" o Emp",_do_h,0,_ev_t(_do_h,1.35)))
-                                if _do_a>=0.75 and _pa>=0.45 and _ev_t(_do_a,1.35)>0.01: _cands.append(("🟣 "+_aname14+" o Emp",_do_a,0,_ev_t(_do_a,1.35)))
+                                # [v2 PATCH] EV mínimo subido de 0.01 → 0.03 y prob mínima de 0.52 → 0.55
+                                _EV_MIN  = 0.03  # EV mínimo real para considerar un pick
+                                _PROB_ML = 0.55  # prob mínima para picks ML (antes 0.52)
+                                _PROB_OU = 0.60  # prob mínima para Over/Under (antes 0.58)
+                                _PROB_AA = 0.60  # prob mínima Ambos Anotan (antes 0.58)
+                                _PROB_DO = 0.77  # prob mínima Doble Oportunidad (antes 0.75)
+                                if _ph>=_PROB_ML and _ev_t(_ph,_odd_h)>_EV_MIN: _cands.append(("🏠 "+_m["home"],_ph,_odd_h,_ev_t(_ph,_odd_h)))
+                                if _pa>=_PROB_ML and _ev_t(_pa,_odd_a)>_EV_MIN: _cands.append(("✈️ "+_m["away"],_pa,_odd_a,_ev_t(_pa,_odd_a)))
+                                if _o25>=_PROB_OU and _ev_t(_o25,1.90)>_EV_MIN: _cands.append(("⚽ Over 2.5",_o25,0,_ev_t(_o25,1.90)))
+                                if _aa>=_PROB_AA  and _ev_t(_aa,1.80)>_EV_MIN:  _cands.append(("⚡ Ambos Anotan",_aa,0,_ev_t(_aa,1.80)))
+                                if _do_h>=_PROB_DO and _ph>=0.52 and _ev_t(_do_h,1.35)>_EV_MIN: _cands.append(("🔵 "+_hname14+" o Emp",_do_h,0,_ev_t(_do_h,1.35)))
+                                if _do_a>=_PROB_DO and _pa>=0.47 and _ev_t(_do_a,1.35)>_EV_MIN: _cands.append(("🟣 "+_aname14+" o Emp",_do_a,0,_ev_t(_do_a,1.35)))
                                 if _cands:
                                     _bb=max(_cands,key=lambda x:x[3]); _lbl,_p,_odd,_ev=_bb[0],_bb[1],_bb[2],_bb[3]
                                     _sin_valor=False
@@ -19139,13 +19157,14 @@ if st.session_state["view"] == "cartelera":
                                     _lbl="⚠️ "+_fav_lbl; _p=_fav_p; _odd=_fav_odd
                                     _ev=_ev_t(_fav_p,_fav_odd) if _fav_odd>1 else _fav_p-0.5; _sin_valor=True
                                 _danger = abs(_ph-_pa)<0.04
+                                # [v2 PATCH] umbrales de confianza también subidos
                                 if _sin_valor: _conf="⚠️ SIN VALOR"; _cc_pick="#555"
                                 elif _danger:  _conf="⚡ DANGER";    _cc_pick="#ff9500"
                                 elif _p>0.68:  _conf="💎 DIAMANTE";  _cc_pick="#FFD700"
                                 elif _p>0.62:  _conf="🔥 ALTA";      _cc_pick="#00ff88"
-                                elif _p>0.56:  _conf="⚡ MEDIA";     _cc_pick="#00ccff"
+                                elif _p>0.57:  _conf="⚡ MEDIA";     _cc_pick="#00ccff"
                                 else:          _conf="📊 SEÑAL";     _cc_pick="#aaa"
-                                _edge_str=f"+{_ev*100:.1f}% EV" if _ev>0.01 else ("SIN VALOR" if _sin_valor else f"{_ev*100:.1f}%")
+                                _edge_str=f"+{_ev*100:.1f}% EV" if _ev>_EV_MIN else ("SIN VALOR" if _sin_valor else f"{_ev*100:.1f}%")
                                 fut_picks.append({"home":_m["home"],"away":_m["away"],"liga":_m.get("league",""),
                                     "hora":_m.get("hora",""),"pick":_lbl,"prob":_p,"odd":_odd,"ev":_ev,
                                     "conf":_conf,"cc":_cc_pick,"edge":_edge_str,"sin_valor":_sin_valor,
