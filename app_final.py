@@ -7529,23 +7529,34 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         _cs_anchor = _cs_home if is_home else _cs_away  # prior de goles histórico del torneo
         _cs_coef   = _cs_data.get("ref_league_coef", 0.90)  # calidad promedio de la competición
 
+        # Para CONCACAF: el anchor de visita (1.13) incluye equipos caribeños débiles
+        # Los equipos que llegan a fase final son mucho mejores → corregir anchor
+        if slug in _concacaf_slugs:
+            _cs_anchor = max(_cs_anchor, 1.28 if is_home else 1.05)
+            # Floor de calidad más alto: equipos CONCACAF fase final ≥ Liga MX nivel
+            _my_qf  = max(_my_qf,  0.80)
+            _opp_qf = max(_opp_qf, 0.78)
+
         if _form_mine:
             _xg_dom = xg_weighted(_form_mine, is_home, odds_prior=0)
-            _qratio = min(1.20, max(0.72, _my_qf / max(_opp_qf, 0.40)))
+            _qratio = min(1.25, max(0.78, _my_qf / max(_opp_qf, 0.50)))
             _xg_form = round(_xg_dom * _qratio, 3)
-            # Blend: 60% forma real del equipo + 25% anchor de torneo + 15% diferencia de calidad
-            _quality_adj = (_my_qf / max(_cs_coef, 0.5)) - 1.0  # +/- diferencia vs la media del torneo
+            # Blend: UEFA 60/25/15, CONCACAF más peso a forma propia (70/20/10)
+            _w_form = 0.65 if slug in _concacaf_slugs else 0.60
+            _w_anch = 0.20 if slug in _concacaf_slugs else 0.25
+            _w_qual = 0.15
+            _quality_adj = (_my_qf / max(_cs_coef, 0.5)) - 1.0
             _xg_base = round(
-                0.60 * _xg_form
-                + 0.25 * _cs_anchor
-                + 0.15 * (_cs_anchor * (1 + _quality_adj)),
+                _w_form * _xg_form
+                + _w_anch * _cs_anchor
+                + _w_qual * (_cs_anchor * (1 + _quality_adj)),
                 3
             )
         else:
             # Sin forma: usar anchor del torneo ajustado por calidad del equipo
             _quality_adj = (_my_qf / max(_cs_coef, 0.5)) - 1.0
             _xg_base = round(_cs_anchor * (1 + _quality_adj * 0.6), 3)
-            _xg_base = max(0.35, _xg_base)
+            _xg_base = max(0.45, _xg_base)  # floor más alto: equipos CONCACAF/UEFA son competitivos
         # Altitud para equipos MX en casa (CONCACAF)
         if slug in _concacaf_slugs and is_home:
             _hl = (_hnam or "").lower()
@@ -9084,10 +9095,10 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
     _league_stats_ens = get_league_stats(_slug_ens)
     _league_o25_rate  = _league_stats_ens["o25_rate"]
     _league_avg_goals = _league_stats_ens["avg_goals"]
-    # Para UEFA/CONCACAF: más peso a la cheat sheet (menos forma histórica confiable)
-    _intl_slugs_ens = {"uefa.champions","uefa.europa","uefa.europa.conf",
-                       "concacaf.champions","concacaf.league"}
-    _w_hist = 0.35 if _slug_ens in _intl_slugs_ens else 0.20
+    # Para UEFA: más peso a cheat sheet (datos confiables). CONCACAF: menos (más varianza)
+    _uefa_slugs_ens = {"uefa.champions","uefa.europa","uefa.europa.conf"}
+    _conc_slugs_ens = {"concacaf.champions","concacaf.league"}
+    _w_hist = 0.30 if _slug_ens in _uefa_slugs_ens else (0.15 if _slug_ens in _conc_slugs_ens else 0.20)
     # Blend: (1-w_hist) modelo propio + w_hist tasa histórica de la competición
     _blended_o25 = (1 - _w_hist) * _raw_o25 + _w_hist * _league_o25_rate
     # Over 3.5 también ajustado con la misma dirección relativa
