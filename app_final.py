@@ -5574,12 +5574,26 @@ def _villar_auto_pick(partido_db):
                 _evp = [o for o in _pool if o[3]>0]
                 return max(_evp or _pool, key=lambda o: o[3] if _evp else o[1])
 
-            # ── Pick 1: forzar Cat A (resultado) para UEFA ──
-            _cat_a_ev  = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X") and o[3]>0 and o[1]>=0.45]
+            # ── Pick 1 UEFA: resultado — ML, DO, GCM, X (umbral 35%) ──
+            # Regla extra: si DO del local tiene prob ≥ 50% → preferirlo sobre ML visitante
+            _cat_a_ev  = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X") and o[3]>0 and o[1]>=0.35]
             _cat_a_all = [o for o in _all_outcomes if o[4] in ("ML","DO","GCM","X")]
-            _p1_uefa   = (max(_cat_a_ev,  key=lambda o: o[3]) if _cat_a_ev  else
-                          max(_cat_a_all, key=lambda o: o[1]) if _cat_a_all else None)
-            if _p1_uefa and _p1_uefa[1] >= main_prob * 0.85:
+            # Candidato natural: mayor EV
+            _p1_natural = (max(_cat_a_ev, key=lambda o: o[3]) if _cat_a_ev else
+                           max(_cat_a_all, key=lambda o: o[1]) if _cat_a_all else None)
+            # DO local: buscar explícitamente
+            _do_home_cands = [o for o in _all_outcomes
+                              if o[4] == "DO" and home.lower()[:8] in o[0].lower()[:12]]
+            _do_home = max(_do_home_cands, key=lambda o: o[1]) if _do_home_cands else None
+            # Preferir DO local si prob ≥ 50% y el candidato natural es ML visitante
+            _p1_is_away_ml = (_p1_natural and _p1_natural[4]=="ML"
+                               and away.lower()[:6] in _p1_natural[0].lower())
+            if _do_home and _do_home[1] >= 0.50 and _p1_is_away_ml:
+                _p1_uefa = _do_home
+            else:
+                _p1_uefa = _p1_natural
+            # UEFA: pick1 siempre = resultado
+            if _p1_uefa:
                 main_lbl  = _p1_uefa[0]
                 main_prob = _p1_uefa[1]
                 main_odd  = _p1_uefa[2]
@@ -18754,15 +18768,15 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
-                                                        # Si viene del bridge, leer pick2 del bridge también
-                                                        _pick2_lbl_c  = (_br.get("pick2","")  if _br else "") or None
-                                                        _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or None
-                                                        # Sin bridge (o bridge sin pick2 UEFA): calcular modelo xG
-                                                        _needs_pick2_calc = (
-                                                            not _pick2_lbl_c
-                                                            and _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                        )
-                                                        if not _pick_lbl or _needs_pick2_calc:
+                                                        # Pick2 del bridge solo para NO-UEFA (UEFA siempre recalcula)
+                                                        _is_uefa_m = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
+                                                        if not _is_uefa_m:
+                                                            _pick2_lbl_c  = (_br.get("pick2","")  if _br else "") or None
+                                                            _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or None
+                                                        else:
+                                                            _pick2_lbl_c = None; _pick2_prob_c = None
+                                                        # Calcular: sin pick1, o es UEFA (recalcular pick1+pick2 siempre)
+                                                        if not _pick_lbl or _is_uefa_m:
                                                             try:
                                                                 import math as _pm
                                                                 _xg_tot = _hx2 + _ax2
@@ -18804,21 +18818,59 @@ if st.session_state["view"] == "cartelera":
                                                                 else:
                                                                     # fallback absoluto
                                                                     _best_pre = (_m["home"] + " Gana", _ph2_adj, 0, "ML")
-                                                                # Solo asignar pick1 si no venía del bridge
-                                                                if not (_br.get("pick","") if _br else ""):
-                                                                    _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
-                                                                # ── 2° pick UEFA: basado en perfil del partido ──
+                                                                # Para UEFA: pick1 SIEMPRE debe ser resultado (ML/DO/X/GCM)
                                                                 _uefa3 = {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                                if not _pick2_lbl_c:  # solo recalcular si no hay pick2 del bridge
-                                                                    _pick2_lbl_c = None; _pick2_prob_c = None
+                                                                _is_uefa_slug = _m.get("slug","") in _uefa3
+                                                                if _is_uefa_slug:
+                                                                    # Forzar pick1 = resultado (ML/DO/X/GCM), umbral 35%
+                                                                    # _opts_pre_do puede haber sido calculado arriba; si no, recalcular
+                                                                    if "_opts_pre_do" not in locals():
+                                                                        _odd_h_c2 = float(_m.get("odd_h",0) or 0)
+                                                                        _odd_d_c2 = float(_m.get("odd_d",0) or 0)
+                                                                        _do_h2    = min(0.95, _ph2_adj + _pd2)
+                                                                        _do_odd2  = (_odd_h_c2*_odd_d_c2/(_odd_h_c2+_odd_d_c2) if _odd_h_c2>1 and _odd_d_c2>1 else 1.30)
+                                                                        _opts_pre_do = list(_opts_pre) + [
+                                                                            (_m["home"]+" DO", _do_h2, _ev2(_do_h2,_do_odd2), "DO")
+                                                                        ]
+                                                                    _cat_a_pre_ev  = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM") and o[2]>0 and o[1]>=0.35]
+                                                                    _cat_a_pre_all = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM")]
+                                                                    _p1_nat2 = (max(_cat_a_pre_ev,  key=lambda o: o[2]) if _cat_a_pre_ev  else
+                                                                                max(_cat_a_pre_all, key=lambda o: o[1]) if _cat_a_pre_all else None)
+                                                                    _p1_away2 = (_p1_nat2 and _p1_nat2[3]=="ML"
+                                                                                 and _m.get("away","").lower()[:6] in _p1_nat2[0].lower())
+                                                                    _do_h3    = min(0.95, _ph2_adj + _pd2)
+                                                                    _p1_forzado = (_m["home"]+" DO", _do_h3, 1.30, _ev2(_do_h3,1.30), "DO")                                                                                   if (_do_h3>=0.50 and _p1_away2) else _p1_nat2
+                                                                    if _p1_forzado:
+                                                                        _pick_lbl  = _p1_forzado[0]
+                                                                        _pick_prob = min(0.92, _p1_forzado[1])
+                                                                else:
+                                                                    # No UEFA: solo asignar si no venía del bridge
+                                                                    if not (_br.get("pick","") if _br else ""):
+                                                                        _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
+                                                                # ── 2° pick UEFA: mejor goles por EV/prob ──
+                                                                _pick2_lbl_c = None; _pick2_prob_c = None
                                                                 if _m.get("slug","") in _uefa3:
-                                                                    # Pick 1: forzar Cat A (resultado) para UEFA
-                                                                    _cat_a_c_ev  = [o for o in _opts_pre if o[3] in ("ML","DO","X","GCM") and o[2]>0 and o[1]>=0.45]
-                                                                    _cat_a_c_all = [o for o in _opts_pre if o[3] in ("ML","DO","X","GCM")]
-                                                                    _p1_c = (max(_cat_a_c_ev,  key=lambda o: o[2]) if _cat_a_c_ev  else
-                                                                             max(_cat_a_c_all, key=lambda o: o[1]) if _cat_a_c_all else None)
-                                                                    # Solo reemplazar pick1 si no vino del bridge y la prob es cercana
-                                                                    if _p1_c and not (_br.get("pick","") if _br else "") and _p1_c[1] >= _best_pre[1] * 0.85:
+                                                                    # Pick 1 UEFA: ML/DO/X/GCM — umbral 35%
+                                                                    # Agregar DO del local al pool
+                                                                    _odd_h_c = float(_m.get("odd_h",0) or 0)
+                                                                    _odd_d_c = float(_m.get("odd_d",0) or 0)
+                                                                    _do_h_prob_c = min(0.95, _ph2_adj + _pd2)
+                                                                    _do_h_odd_c  = (_odd_h_c*_odd_d_c/(_odd_h_c+_odd_d_c)
+                                                                                    if _odd_h_c>1 and _odd_d_c>1 else 1.30)
+                                                                    _opts_pre_do = list(_opts_pre) + [
+                                                                        (_m["home"]+" DO", _do_h_prob_c,
+                                                                         _ev2(_do_h_prob_c, _do_h_odd_c), "DO")
+                                                                    ]
+                                                                    _cat_a_c_ev  = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM") and o[2]>0 and o[1]>=0.35]
+                                                                    _cat_a_c_all = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM")]
+                                                                    _p1_nat_c = (max(_cat_a_c_ev,  key=lambda o: o[2]) if _cat_a_c_ev  else
+                                                                                 max(_cat_a_c_all, key=lambda o: o[1]) if _cat_a_c_all else None)
+                                                                    # Preferir DO local si prob≥50% y candidato natural es ML visitante
+                                                                    _p1_is_away_c = (_p1_nat_c and _p1_nat_c[3]=="ML"
+                                                                                     and _m.get("away","").lower()[:6] in _p1_nat_c[0].lower())
+                                                                    _p1_c = (_m["home"]+" DO", _do_h_prob_c, _do_h_odd_c, _ev2(_do_h_prob_c,_do_h_odd_c), "DO")                                                                             if (_do_h_prob_c>=0.50 and _p1_is_away_c) else _p1_nat_c
+                                                                    # UEFA: pick1 siempre de resultado
+                                                                    if _p1_c:
                                                                         _pick_lbl  = _p1_c[0]
                                                                         _pick_prob = min(0.92, _p1_c[1])
 
@@ -18836,8 +18888,14 @@ if st.session_state["view"] == "cartelera":
                                                                             _pick2_lbl_c  = _p2_c[0]
                                                                             _pick2_prob_c = min(0.92, _p2_c[1])
                                                             except: pass
-                                                    # ── Si calculamos pick nuevo (sin bridge), guardarlo en bridge ──
-                                                    if _pick_lbl and not (_br.get("pick","") if _br else ""):
+                                                    # ── Guardar en bridge: siempre para UEFA (recalcula), si no hay para el resto ──
+                                                    _save_to_bridge = (
+                                                        _pick_lbl and (
+                                                            _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
+                                                            or not (_br.get("pick","") if _br else "")
+                                                        )
+                                                    )
+                                                    if _save_to_bridge:
                                                         try:
                                                             _bk = _m.get("id","") or f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}"
                                                             if "st" in dir() and _bk:
@@ -18855,7 +18913,9 @@ if st.session_state["view"] == "cartelera":
                                                                 }
                                                                 st.session_state["_diamond_bridge"][_bk] = _snap_data
                                                                 # Guardar en disco para que Villar lo audite después
-                                                                _snap_auto_pick(_bk, _snap_data, state=_m.get("state","pre"))
+                                                                # UEFA: force=True para sobreescribir pick antiguo (goles→resultado)
+                                                                _is_uefa_save = _snap_data.get("is_uefa", False)
+                                                                _snap_auto_pick(_bk, _snap_data, state=_m.get("state","pre"), force=_is_uefa_save)
                                                         except: pass
                                                     # ── Preparar card: border rojo en vivo, dorado pre-partido ──
                                                     _card_border = "#ff444466" if _live else ("#c9a84c55" if _pick_prob >= 0.68 else "#c9a84c1a")
