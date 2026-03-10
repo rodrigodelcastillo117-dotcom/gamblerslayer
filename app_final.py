@@ -5585,10 +5585,19 @@ def _villar_auto_pick(partido_db):
             _do_home_cands = [o for o in _all_outcomes
                               if o[4] == "DO" and home.lower()[:8] in o[0].lower()[:12]]
             _do_home = max(_do_home_cands, key=lambda o: o[1]) if _do_home_cands else None
-            # Preferir DO local si prob ≥ 50% y el candidato natural es ML visitante
-            _p1_is_away_ml = (_p1_natural and _p1_natural[4]=="ML"
-                               and away.lower()[:6] in _p1_natural[0].lower())
-            if _do_home and _do_home[1] >= 0.50 and _p1_is_away_ml:
+            # Regla DO para UEFA: DO del FAVORITO (no siempre del local)
+            # Si visitante favorito claro → DO visitante; si local favorito → DO local
+            _do_away_cands = [o for o in _all_outcomes
+                              if o[4]=="DO" and away.lower()[:8] in o[0].lower()[:12]]
+            _do_away = max(_do_away_cands, key=lambda o: o[1]) if _do_away_cands else None
+            _fav_is_away = _pa_d > _ph_d
+            _fav_is_home = _ph_d >= _pa_d
+            _ml_diff_uefa = abs(_ph_d - _pa_d)
+            if _fav_is_away and _do_away and _do_away[1] >= 0.55 and _ml_diff_uefa >= 0.05:
+                # Visitante favorito claro → DO visitante
+                _p1_uefa = _do_away
+            elif _fav_is_home and _do_home and _do_home[1] >= 0.50 and _ml_diff_uefa >= 0.0:
+                # Local favorito → DO local
                 _p1_uefa = _do_home
             else:
                 _p1_uefa = _p1_natural
@@ -18768,15 +18777,21 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
-                                                        # Pick2 del bridge solo para NO-UEFA (UEFA siempre recalcula)
                                                         _is_uefa_m = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
+                                                        # Para UEFA: recalcular SOLO si el pick del bridge es de goles (pick1 incorrecto)
+                                                        # o no hay pick2. Una vez corregido y guardado, usar el snap.
+                                                        _goles_mkts = {"Over","Under","Ambos","AA","O25","U25","O35"}
+                                                        _br_pick1 = (_br.get("pick","") if _br else "") or ""
+                                                        _br_pick1_is_goles = any(g in _br_pick1 for g in _goles_mkts)
+                                                        _br_pick2 = (_br.get("pick2","") if _br else "") or ""
+                                                        _uefa_needs_recalc = _is_uefa_m and (_br_pick1_is_goles or not _br_pick2)
                                                         if not _is_uefa_m:
                                                             _pick2_lbl_c  = (_br.get("pick2","")  if _br else "") or None
                                                             _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or None
                                                         else:
                                                             _pick2_lbl_c = None; _pick2_prob_c = None
-                                                        # Calcular: sin pick1, o es UEFA (recalcular pick1+pick2 siempre)
-                                                        if not _pick_lbl or _is_uefa_m:
+                                                        # Calcular: sin pick1, o UEFA necesita corrección
+                                                        if not _pick_lbl or _uefa_needs_recalc:
                                                             try:
                                                                 import math as _pm
                                                                 _xg_tot = _hx2 + _ax2
@@ -18836,10 +18851,22 @@ if st.session_state["view"] == "cartelera":
                                                                     _cat_a_pre_all = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM")]
                                                                     _p1_nat2 = (max(_cat_a_pre_ev,  key=lambda o: o[2]) if _cat_a_pre_ev  else
                                                                                 max(_cat_a_pre_all, key=lambda o: o[1]) if _cat_a_pre_all else None)
-                                                                    _p1_away2 = (_p1_nat2 and _p1_nat2[3]=="ML"
-                                                                                 and _m.get("away","").lower()[:6] in _p1_nat2[0].lower())
-                                                                    _do_h3    = min(0.95, _ph2_adj + _pd2)
-                                                                    _p1_forzado = (_m["home"]+" DO", _do_h3, 1.30, _ev2(_do_h3,1.30), "DO")                                                                                   if (_do_h3>=0.50 and _p1_away2) else _p1_nat2
+                                                                    # DO del favorito
+                                                                    _fav_aw2    = _pa2_adj > _ph2_adj
+                                                                    _mld2       = abs(_ph2_adj - _pa2_adj)
+                                                                    _do_h3      = min(0.95, _ph2_adj + _pd2)
+                                                                    _do_a3      = min(0.95, _pa2_adj + _pd2)
+                                                                    _odd_a_f    = float(_m.get("odd_a",0) or 0)
+                                                                    _odd_h_f    = float(_m.get("odd_h",0) or 0)
+                                                                    _odd_d_f    = float(_m.get("odd_d",0) or 0)
+                                                                    _do_a_odd_f = (_odd_a_f*_odd_d_f/(_odd_a_f+_odd_d_f) if _odd_a_f>1 and _odd_d_f>1 else 1.25)
+                                                                    _do_h_odd_f = (_odd_h_f*_odd_d_f/(_odd_h_f+_odd_d_f) if _odd_h_f>1 and _odd_d_f>1 else 1.30)
+                                                                    if _fav_aw2 and _do_a3>=0.55 and _mld2>=0.05:
+                                                                        _p1_forzado = (_m["away"]+" DO", _do_a3, _do_a_odd_f, _ev2(_do_a3,_do_a_odd_f), "DO")
+                                                                    elif not _fav_aw2 and _do_h3>=0.50:
+                                                                        _p1_forzado = (_m["home"]+" DO", _do_h3, _do_h_odd_f, _ev2(_do_h3,_do_h_odd_f), "DO")
+                                                                    else:
+                                                                        _p1_forzado = _p1_nat2
                                                                     if _p1_forzado:
                                                                         _pick_lbl  = _p1_forzado[0]
                                                                         _pick_prob = min(0.92, _p1_forzado[1])
@@ -18865,10 +18892,23 @@ if st.session_state["view"] == "cartelera":
                                                                     _cat_a_c_all = [o for o in _opts_pre_do if o[3] in ("ML","DO","X","GCM")]
                                                                     _p1_nat_c = (max(_cat_a_c_ev,  key=lambda o: o[2]) if _cat_a_c_ev  else
                                                                                  max(_cat_a_c_all, key=lambda o: o[1]) if _cat_a_c_all else None)
-                                                                    # Preferir DO local si prob≥50% y candidato natural es ML visitante
-                                                                    _p1_is_away_c = (_p1_nat_c and _p1_nat_c[3]=="ML"
-                                                                                     and _m.get("away","").lower()[:6] in _p1_nat_c[0].lower())
-                                                                    _p1_c = (_m["home"]+" DO", _do_h_prob_c, _do_h_odd_c, _ev2(_do_h_prob_c,_do_h_odd_c), "DO")                                                                             if (_do_h_prob_c>=0.50 and _p1_is_away_c) else _p1_nat_c
+                                                                    # DO del FAVORITO: visitante favorito → DO away; local favorito → DO home
+                                                                    _fav_away_c = _pa2_adj > _ph2_adj
+                                                                    _ml_diff_c  = abs(_ph2_adj - _pa2_adj)
+                                                                    _odd_a_c2   = float(_m.get("odd_a",0) or 0)
+                                                                    _do_a_prob_c = min(0.95, _pa2_adj + _pd2)
+                                                                    _do_a_odd_c  = (_odd_a_c2*_odd_d_c/(_odd_a_c2+_odd_d_c)
+                                                                                    if _odd_a_c2>1 and _odd_d_c>1 else 1.25)
+                                                                    if _fav_away_c and _do_a_prob_c >= 0.55 and _ml_diff_c >= 0.05:
+                                                                        # Visitante favorito → DO visitante
+                                                                        _p1_c = (_m["away"]+" DO", _do_a_prob_c, _do_a_odd_c,
+                                                                                 _ev2(_do_a_prob_c,_do_a_odd_c), "DO")
+                                                                    elif not _fav_away_c and _do_h_prob_c >= 0.50:
+                                                                        # Local favorito → DO local
+                                                                        _p1_c = (_m["home"]+" DO", _do_h_prob_c, _do_h_odd_c,
+                                                                                 _ev2(_do_h_prob_c,_do_h_odd_c), "DO")
+                                                                    else:
+                                                                        _p1_c = _p1_nat_c
                                                                     # UEFA: pick1 siempre de resultado
                                                                     if _p1_c:
                                                                         _pick_lbl  = _p1_c[0]
