@@ -19180,7 +19180,9 @@ if st.session_state["view"] == "cartelera":
                                                     _br = _br_val.get(_br_key)
                                                     # ── Defaults seguros para pick (evita NameError) ──
                                                     _pick_lbl  = _br.get("pick","") if _br else ""
-                                                    _pick_prob = _br.get("prob",0)  if _br else 0
+                                                    _pick_prob    = _br.get("prob",0)        if _br else 0
+                                                    _pick2_lbl_c  = (_br.get("pick2","")    if _br else "") or ""
+                                                    _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or 0.0
                                                     # Si el pick guardado es O1.5, ignorarlo y recalcular
                                                     if _pick_lbl and "1.5 Total" in _pick_lbl:
                                                         _pick_lbl = ""; _pick_prob = 0; _br = None
@@ -19287,7 +19289,7 @@ if st.session_state["view"] == "cartelera":
                                                     else:  # pre-partido: bridge → modelo xG como fallback
                                                         _pick_lbl  = _br.get("pick","") if _br else ""
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
-                                                        _pick2_lbl_c  = (_br.get("pick2","") if _br else "") or None
+                                                        _pick2_lbl_c  = (_br.get("pick2","") if _br else "") or ""
                                                         _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or 0.0
                                                         # UEFA: si pick1 es de goles o no hay pick2, recalcular
                                                         _is_uefa_m = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
