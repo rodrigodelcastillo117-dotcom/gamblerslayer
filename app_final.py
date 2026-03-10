@@ -4798,19 +4798,24 @@ def _villar_auto_pick(partido_db):
                     return _hxg if is_home else _axg
                 return 1.3 if is_home else 1.0
 
-            if hf:
+            # UEFA/CONCACAF: siempre usar _cup_enriched_xg (tiene cheat sheet + calidad)
+            if slug in _UEFA_CUP_SLUGS:
+                hxg = _cup_enriched_xg(partido_db, True,  hf, af)
+                axg = _cup_enriched_xg(partido_db, False, hf, af)
+            elif hf:
                 hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0, slug=slug)
             elif home_rec and home_rec != "5-5-5":
                 hxg = xg_from_record(home_rec, True)
             else:
                 hxg = _cup_enriched_xg(partido_db, True,  [], [])
 
-            if af:
-                axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0, slug=slug)
-            elif away_rec and away_rec != "5-5-5":
-                axg = xg_from_record(away_rec, False)
-            else:
-                axg = _cup_enriched_xg(partido_db, False, [], [])
+            if slug not in _UEFA_CUP_SLUGS:
+                if af:
+                    axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0, slug=slug)
+                elif away_rec and away_rec != "5-5-5":
+                    axg = xg_from_record(away_rec, False)
+                else:
+                    axg = _cup_enriched_xg(partido_db, False, [], [])
             mc  = mc50k(hxg, axg)
 
             p_h   = mc["ph"]
@@ -7115,6 +7120,46 @@ _TEAM_DIVISION: dict = {
     "tauro":             "pan.1",
 }
 
+# Coeficiente de calidad de liga (UEFA rankings 2024-25, base = Premier League)
+# Global para que _qlf() en _cup_enriched_xg lo pueda usar
+_LEAGUE_COEF: dict = {
+    # ── EUROPA (base UEFA) ──
+    "eng": 1.000,  # Premier League — base
+    "ger": 0.970,  # Bundesliga
+    "esp": 0.960,  # La Liga
+    "ita": 0.940,  # Serie A
+    "fra": 0.910,  # Ligue 1
+    "por": 0.870,  # Primeira Liga
+    "ned": 0.860,  # Eredivisie
+    "bel": 0.820,  # Pro League
+    "tur": 0.800,  # Süper Lig
+    "sco": 0.760,  # Scottish Premiership
+    # ── AMÉRICAS ──
+    "mex": 0.820,  # Liga MX
+    "arg": 0.870,  # Argentina
+    "bra": 0.860,  # Brasil
+    "usa": 0.760,  # MLS
+    "col": 0.640,  # Colombia
+    "chi": 0.600,  # Chile
+    "ecu": 0.580,  # Ecuador
+    "cos": 0.540,  # Costa Rica
+    "gtm": 0.480,  # Guatemala
+    "hnd": 0.480,  # Honduras
+    "slv": 0.460,  # El Salvador
+    "pan": 0.450,  # Panamá
+    # ── Medio Oriente / Asia ──
+    "sau": 0.780,  # Saudi Pro League
+    "uae": 0.640,  # UAE Pro League
+    "egy": 0.620,  # Egyptian Premier League
+    "jpn": 0.720,  # J1 League
+    "kor": 0.680,  # K League 1
+    # ── Otros europeos ──
+    "den": 0.740,  "nor": 0.720, "gre": 0.750,
+    "aut": 0.760,  "cze": 0.750, "pol": 0.730,
+    "srb": 0.700,  "cro": 0.710, "rou": 0.690,
+    "ukr": 0.760,  "rus": 0.750, "isr": 0.680,
+}
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _cup_get_form_in_league(team_id: str, team_name: str) -> dict:
     """
@@ -7168,41 +7213,6 @@ def _cup_get_form_in_league(team_id: str, team_name: str) -> dict:
 
     div_info = _DIVISION_SLUGS.get(div_slug, ("Desconocida", 0.65, 1.05))
 
-    # Coeficiente de calidad de liga (UEFA rankings 2024-25, base = Premier League)
-    # Pondera el factor de división por el nivel internacional de esa liga
-    _LEAGUE_COEF = {
-        # ── EUROPA (base UEFA) ──
-        "eng": 1.000,  # Premier League — base
-        "ger": 0.970,  # Bundesliga
-        "esp": 0.960,  # La Liga
-        "ita": 0.940,  # Serie A
-        "fra": 0.910,  # Ligue 1
-        "por": 0.870,  # Primeira Liga
-        "ned": 0.860,  # Eredivisie
-        "bel": 0.820,  # Pro League
-        "tur": 0.800,  # Süper Lig
-        "sco": 0.760,  # Scottish Premiership
-        # ── AMÉRICAS — calibrado vs CONCACAF Champions Cup ──
-        # Fuente: historial CCC + coeficientes IFFHS 2024
-        "mex": 0.820,  # Liga MX — dominante en CONCACAF (7 de 10 últimas CCC)
-        "arg": 0.870,  # Argentina — nivel sudamericano top
-        "bra": 0.860,  # Brasil — más profundo, referencia Copa Libertadores
-        "usa": 0.760,  # MLS — Seattle(2025)/Columbus(2024)/Miami(2023) Leagues Cup; Phase One 2025: MLS 28 wins vs MX 26
-        "col": 0.640,  # Colombia — Nacional/Millonarios compiten bien regionalmente
-        "chi": 0.600,  # Chile
-        "ecu": 0.580,  # Ecuador
-        "cos": 0.540,  # Costa Rica — Alajuelense/Saprissa históricos CONCACAF
-        "gtm": 0.480,  # Guatemala
-        "hnd": 0.480,  # Honduras
-        "slv": 0.460,  # El Salvador
-        "pan": 0.450,  # Panamá
-        # ── Medio Oriente ──
-        "sau": 0.780,  # Saudi Pro League
-        "uae": 0.640,  # UAE Pro League
-        "egy": 0.620,  # Egyptian Premier League
-        "jpn": 0.720,  # J1 League
-        "kor": 0.680,  # K League 1
-    }
     _country = (div_slug or "")[:3]  # "eng", "esp", "ger"...
     _league_coef = _LEAGUE_COEF.get(_country, 0.780)  # desconocido → penalizar
     _raw_factor  = div_info[1] or 0.65
@@ -13333,10 +13343,14 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 else:
                     hf = _form_cache_kr.get((home_id, slug)) if (home_id, slug) in _form_cache_kr else (get_form(home_id, slug) or [])
                     af = _form_cache_kr.get((away_id, slug)) if (away_id, slug) in _form_cache_kr else (get_form(away_id, slug) or [])
-                hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug) \
-                      if hf else _cup_enriched_xg(m, True,  hf, af)
-                axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug) \
-                      if af else _cup_enriched_xg(m, False, hf, af)
+                if slug in _UEFA_CUP_SLUGS:
+                    hxg = _cup_enriched_xg(m, True,  hf, af)
+                    axg = _cup_enriched_xg(m, False, hf, af)
+                else:
+                    hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug) \
+                          if hf else _cup_enriched_xg(m, True,  hf, af)
+                    axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug) \
+                          if af else _cup_enriched_xg(m, False, hf, af)
                 # ── Ajuste xG por tabla+GD ANTES del ensemble ──
                 _tbl_pre_kr = {}
                 try:
@@ -17597,10 +17611,17 @@ if st.session_state["view"] == "cartelera":
                                                     _sc_min = _m.get('minute', _m.get('min', 0)) or 0
                                                     _sc   = f"🔴 {_sc_min}'  {_m['score_h']}-{_m['score_a']}" if _live and _m.get('score_h') is not None else ""
                                                     try:
-                                                        _hf2 = get_form(_m["home_id"], _m["slug"])
-                                                        _af2 = get_form(_m["away_id"], _m["slug"])
-                                                        _hx2 = xg_weighted(_hf2,True,slug=_m.get("slug",""))
-                                                        _ax2 = xg_weighted(_af2,False,slug=_m.get("slug",""))
+                                                        _msl_c = _m.get("slug","")
+                                                        if _msl_c in _UEFA_CUP_SLUGS:
+                                                            _hf2 = get_form_domestic(_m["home_id"], _msl_c)
+                                                            _af2 = get_form_domestic(_m["away_id"], _msl_c)
+                                                            _hx2 = _cup_enriched_xg(_m, True,  _hf2, _af2)
+                                                            _ax2 = _cup_enriched_xg(_m, False, _hf2, _af2)
+                                                        else:
+                                                            _hf2 = get_form(_m["home_id"], _m["slug"])
+                                                            _af2 = get_form(_m["away_id"], _m["slug"])
+                                                            _hx2 = xg_weighted(_hf2,True,slug=_msl_c)
+                                                            _ax2 = xg_weighted(_af2,False,slug=_msl_c)
                                                         _mc2 = mc50k(_hx2, _ax2)
                                                         _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
                                                     except:
@@ -17868,8 +17889,13 @@ if st.session_state["view"] == "cartelera":
                         try:
                             _hf = get_form(_m["home_id"],_m["slug"]) or []
                             _af = get_form(_m["away_id"],_m["slug"]) or []
-                            _hxg = xg_weighted(_hf,True,slug=_m.get("slug","")) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
-                            _axg = xg_weighted(_af,False,slug=_m.get("slug","")) if _af else _cup_enriched_xg(_m, False, _hf, _af)
+                            _msl2 = _m.get("slug","")
+                            if _msl2 in _UEFA_CUP_SLUGS:
+                                _hxg = _cup_enriched_xg(_m, True,  _hf, _af)
+                                _axg = _cup_enriched_xg(_m, False, _hf, _af)
+                            else:
+                                _hxg = xg_weighted(_hf,True,slug=_msl2) if _hf else _cup_enriched_xg(_m, True,  _hf, _af)
+                                _axg = xg_weighted(_af,False,slug=_msl2) if _af else _cup_enriched_xg(_m, False, _hf, _af)
                             _h2h = get_h2h(_m["home_id"],_m["away_id"],_m["slug"],_m["home"],_m["away"])
                             _h2s = h2h_stats(_h2h,_m["home"],_m["away"])
                             _mc  = ensemble_football(_hxg,_axg,_h2s,_hf,_af,_m["home_id"],_m["away_id"],odd_h=_m.get("odd_h",0),odd_a=_m.get("odd_a",0),odd_d=_m.get("odd_d",0),slug=_m.get("slug",""))
