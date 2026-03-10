@@ -5049,28 +5049,30 @@ def render_resultados_tab():
     else:
         _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
         _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-        # Solo auditar picks que el usuario guardó en su historial
-        _post_map = {p["id"]: p for p in partidos if p.get("state")=="post"}
-        for _pk in pick_history:
-            _sp = _pk.get("sport", _pk.get("deporte","futbol"))
-            # Mapear sport key
-            if "nba" in str(_sp).lower():   _sp = "nba"
+        # Auditar picks del snapshot (generados en cartelera, congelados antes de empezar)
+        _snap_all  = _load_picks_snap()
+        _post_map  = {p["id"]: p for p in partidos if p.get("state")=="post"}
+        for _sid, _spk in _snap_all.items():
+            _sp = _spk.get("sport","futbol")
+            if "nba"  in str(_sp).lower(): _sp = "nba"
             elif "ten" in str(_sp).lower(): _sp = "tenis"
             else:                           _sp = "futbol"
-            # Si ya tiene resultado manual, contarlo directo
-            if _pk.get("result") == "✅":
-                _pre_ok[_sp]   = _pre_ok.get(_sp, 0) + 1
-            elif _pk.get("result") == "❌":
-                _pre_fail[_sp] = _pre_fail.get(_sp, 0) + 1
-            else:
-                # Intentar resolver automáticamente contra results_db
-                try:
-                    _res_p = _villar_find_result(_pk, list(_post_map.values()))
-                    if _res_p:
-                        _vd3, _, _ = _villar_match_pick_to_result(_pk, _res_p)
-                        if   "GANÓ"  in _vd3: _pre_ok[_sp]   = _pre_ok.get(_sp, 0) + 1
-                        elif "FALLÓ" in _vd3: _pre_fail[_sp] = _pre_fail.get(_sp, 0) + 1
-                except: pass
+            # Buscar partido finalizado que corresponda
+            _res_p = _post_map.get(_sid)
+            if not _res_p:
+                # Fallback: buscar por home+fecha
+                _sh = (_spk.get("home","") or "").lower().strip()
+                _sf = _spk.get("fecha","")
+                for _pp in _post_map.values():
+                    _ph = (_pp.get("home","") or _pp.get("p1","") or "").lower().strip()
+                    if _ph == _sh and _pp.get("fecha","") == _sf:
+                        _res_p = _pp; break
+            if not _res_p: continue  # partido no terminó aún
+            try:
+                _vd3, _, _ = _villar_match_pick_to_result(_spk, _res_p)
+                if   "GANÓ"  in _vd3: _pre_ok[_sp]  = _pre_ok.get(_sp,0) + 1
+                elif "FALLÓ" in _vd3: _pre_fail[_sp] = _pre_fail.get(_sp,0) + 1
+            except: pass
         # Cache para próximas visitas
         st.session_state[_cnt_key] = {"ok": _pre_ok, "fail": _pre_fail}
 
@@ -5342,75 +5344,35 @@ def render_resultados_tab():
                                 hc="#00ff88" if won_h else "#aaa"
                                 ac="#00ff88" if won_a else "#aaa"
 
-                            # 1. Pick manual guardado por usuario
-                            manual_pks = [pk for pk in pick_history
-                                          if _villar_find_result(pk,[p]) is not None]
-                            # 2. Pick automático — BRIDGE DIAMANTE es la fuente de verdad
+                            # Pick del snapshot (generado en cartelera, antes de empezar)
                             _mid = p.get("id","")
-                            auto_pk = None
-                            if not manual_pks:
-                                _p_state = p.get("state","pre")
-                                _bridge = st.session_state.get("_diamond_bridge", {})
-                                # Buscar por ID directo
-                                _bp = _bridge.get(_mid)
-                                # Fallback 1: home_id+away_id+fecha
-                                if not _bp:
-                                    _alt = f"{p.get('home_id','')}_{p.get('away_id','')}_{p.get('fecha','')}"
-                                    _bp = _bridge.get(_alt)
-                                # Fallback 2: nombre equipo local + fecha (IDs distintos entre ESPN endpoints)
-                                if not _bp:
-                                    _ph = (p.get("home","") or "").lower().strip()
-                                    _pf = p.get("fecha","")
-                                    for _bv in _bridge.values():
-                                        if (_bv.get("fecha","") == _pf and
-                                            _ph and _bv.get("home","").lower().strip() == _ph):
-                                            _bp = _bv
-                                            break
-                                if _bp:
-                                    auto_pk = dict(_bp)
-                                else:
-                                    # Sin bridge: partido no fue visto en cartelera — recalcular
-                                    auto_pk = _auto_pk_cache.get(_mid)
-                                    if not auto_pk:
-                                        try:
-                                            _fp2 = {k:v for k,v in p.items() if k not in ("score_h","score_a")}
-                                            _fp2["score_h"] = 0
-                                            auto_pk = _villar_auto_pick(_fp2)
-                                            if auto_pk: _auto_pk_cache[_mid] = auto_pk
-                                        except: pass
+                            _snap_all_v = _load_picks_snap()
+                            auto_pk = _snap_all_v.get(_mid)
+                            # Fallback: buscar por home+fecha en el snapshot
+                            if not auto_pk:
+                                _ph_v = (p.get("home","") or p.get("p1","") or "").lower().strip()
+                                _pf_v = p.get("fecha","")
+                                for _sv in _snap_all_v.values():
+                                    if (_sv.get("fecha","") == _pf_v and _ph_v and
+                                            (_sv.get("home","") or "").lower().strip() == _ph_v):
+                                        auto_pk = _sv; break
 
                             pick_rows = []
-                            for pk in manual_pks:
-                                vd,vc,ex = _villar_match_pick_to_result(pk, _p_fixed)
-                                prob_v = pk.get("prob",0)
-                                if prob_v<=1: prob_v*=100
+                            if auto_pk:
+                                _vd2, _vc2, _ex2 = _villar_match_pick_to_result(auto_pk, _p_fixed)
+                                _prob2 = auto_pk.get("prob", 0)
                                 pick_rows.append({
-                                    "label": pk.get("pick","?"),
-                                    "prob": prob_v, "odd": pk.get("odd",0),
-                                    "src": "💾 Tu pick", "verd": vd, "col": vc, "expl": ex,
+                                    "label":   auto_pk.get("pick","?"),
+                                    "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
+                                    "odd":     auto_pk.get("odd", 0),
+                                    "src":     auto_pk.get("src", "🤖 Cartelera"),
+                                    "verd":    _vd2, "col": _vc2, "expl": _ex2,
+                                    "is_main": True,
                                 })
                                 _fecha_p = p.get("fecha","")
                                 if _fecha_p >= _inicio_conteo_tab:
-                                    if "GANÓ" in vd: ok_sp+=1
-                                    elif "FALLÓ" in vd: fail_sp+=1
-
-                            if auto_pk:
-                                # ── Auditar SOLO el pick principal que el modelo eligió ──
-                                # Usar snap congelado si existe, si no usar auto_pk directo
-                                _snap_data = _load_picks_snap().get(p.get("id",""), {})
-                                _main_pick = auto_pk  # ya viene congelado del flujo arriba
-
-                                _vd2, _vc2, _ex2 = _villar_match_pick_to_result(_main_pick, _p_fixed)
-                                _prob2 = _main_pick.get("prob", 0)
-                                _mkt2  = _main_pick.get("mkt", "")
-                                pick_rows.append({
-                                    "label":   _main_pick.get("pick","?"),
-                                    "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
-                                    "odd":     _main_pick.get("odd", 0),
-                                    "src":     _main_pick.get("src", "🤖 Modelo"),
-                                    "verd":    _vd2, "col": _vc2, "expl": _ex2,
-                                    "is_main": False,  # modelo, no pick del usuario
-                                })
+                                    if "GANÓ"  in _vd2: ok_sp  += 1
+                                    elif "FALLÓ" in _vd2: fail_sp += 1
                                 # NO contar auto_pick en stats — solo picks del usuario cuentan
 
                             # Render card
@@ -16701,6 +16663,16 @@ if st.session_state["view"] == "cartelera":
                                         elif _nba_res["p_under"] >= 0.53:
                                             _nba_pl = f"Under {_nba_res['line']}"
                                             _nba_pp = _nba_res["p_under"]
+                                        # Snap a disco para auditoría de Villar
+                                        if _nba_pl and not live:
+                                            try:
+                                                _snap_auto_pick(g.get("id",""), {
+                                                    "pick": _nba_pl, "prob": _nba_pp,
+                                                    "home": g.get("home",""), "away": g.get("away",""),
+                                                    "sport": "nba", "fecha": g.get("fecha",""),
+                                                    "src": "🤖 Modelo NBA", "mkt": "O/U"
+                                                }, state="pre")
+                                            except: pass
                                 # En vivo: recalcular con ritmo real del partido
                                 if live:
                                     try:
@@ -17078,6 +17050,16 @@ if st.session_state["view"] == "cartelera":
                                     _ten_live = m["state"] == "in"
                                     _ten_pl = f"{m['p1']} gana" if tm["p1"]>=tm["p2"] else f"{m['p2']} gana"
                                     _ten_pp = fav_p
+                                    # Snap pre-partido a disco para Villar
+                                    if not _ten_live and _ten_pl:
+                                        try:
+                                            _snap_auto_pick(m.get("id",""), {
+                                                "pick": f"🎾 {_ten_pl}", "prob": _ten_pp,
+                                                "home": m.get("p1",""), "away": m.get("p2",""),
+                                                "sport": "tenis", "fecha": m.get("fecha",""),
+                                                "src": "🤖 Modelo Tenis", "mkt": "ML"
+                                            }, state="pre")
+                                        except: pass
                                     if _ten_live:
                                         # En vivo: ajustar prob según sets ganados
                                         try:
@@ -17484,11 +17466,14 @@ if st.session_state["view"] == "cartelera":
                                                             if "st" in dir() and _bk:
                                                                 if "_diamond_bridge" not in st.session_state:
                                                                     st.session_state["_diamond_bridge"] = {}
-                                                                st.session_state["_diamond_bridge"][_bk] = {
+                                                                _snap_data = {
                                                                     "pick":_pick_lbl,"prob":_pick_prob,
                                                                     "home":_m.get("home",""),"away":_m.get("away",""),
                                                                     "sport":"futbol","fecha":_m.get("fecha",""),
                                                                     "src":"⚡ Cartelera","mkt":"auto"}
+                                                                st.session_state["_diamond_bridge"][_bk] = _snap_data
+                                                                # Guardar en disco para que Villar lo audite después
+                                                                _snap_auto_pick(_bk, _snap_data, state=_m.get("state","pre"))
                                                         except: pass
                                                     # ── Preparar card: border rojo en vivo, dorado pre-partido ──
                                                     _card_border = "#ff444466" if _live else ("#c9a84c55" if _pick_prob >= 0.68 else "#c9a84c1a")
