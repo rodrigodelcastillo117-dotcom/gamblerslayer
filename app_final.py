@@ -77,16 +77,31 @@ def _gemini(prompt: str, system: str = "", use_search: bool = False,
         body["tools"] = [{"google_search": {}}]
 
     try:
-        r = _req.post(url, json=body, timeout=40)
+        r = _req.post(url, json=body, timeout=45)
         if r.status_code != 200:
+            # Log útil para debug
+            try:
+                _err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+            except:
+                _err = f"HTTP {r.status_code}"
             return ""
-        data  = r.json()
-        parts = (data.get("candidates",[{}])[0]
-                     .get("content",{})
-                     .get("parts",[]))
-        raw = "".join(p.get("text","") for p in parts).strip()
+        data = r.json()
+        # Gemini puede devolver múltiples candidatos con múltiples partes
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return ""
+        # Tomar el primer candidato con finish_reason != SAFETY
+        best = None
+        for cand in candidates:
+            if cand.get("finishReason","") not in ("SAFETY","RECITATION"):
+                best = cand
+                break
+        if not best:
+            best = candidates[0]
+        parts = best.get("content", {}).get("parts", [])
+        # Concatenar solo partes de texto (ignorar executable_code, etc.)
+        raw = "".join(p.get("text", "") for p in parts if "text" in p).strip()
         if json_mode:
-            # Limpiar backticks por si acaso
             raw = raw.replace("```json","").replace("```","").strip()
             i = raw.find("{"); j = raw.rfind("}") + 1
             if i >= 0 and j > i:
@@ -117,23 +132,41 @@ SPORTSDB_BASE   = "https://www.thesportsdb.com/api/v1/json/3"  # gratis, sin key
 API_FOOTBALL    = "https://v3.api-football.com"                # 100 req/día gratis (portal propio)
 
 LIGAS = {
+    # ── TOP 5 EUROPEAS ──
     "eng.1":"Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.2":"Championship 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-    "eng.fa":"FA Cup 🏆🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-    "esp.1":"La Liga 🇪🇸","esp.2":"Segunda 🇪🇸",
-    "ger.1":"Bundesliga 🇩🇪","ger.2":"2. Bundesliga 🇩🇪",
-    "ita.1":"Serie A 🇮🇹","fra.1":"Ligue 1 🇫🇷",
+    "eng.fa":"FA Cup 🏆🏴󠁧󠁢󠁥󠁮󠁧󠁿","eng.league_cup":"Carabao Cup 🏆🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "esp.1":"La Liga 🇪🇸","esp.2":"Segunda 🇪🇸","esp.copa_del_rey":"Copa del Rey 🏆🇪🇸",
+    "ger.1":"Bundesliga 🇩🇪","ger.2":"2. Bundesliga 🇩🇪","ger.dfb_pokal":"DFB Pokal 🏆🇩🇪",
+    "ita.1":"Serie A 🇮🇹","ita.2":"Serie B 🇮🇹","ita.coppa_italia":"Coppa Italia 🏆🇮🇹",
+    "fra.1":"Ligue 1 🇫🇷","fra.2":"Ligue 2 🇫🇷","fra.coupe_de_france":"Coupe de France 🏆🇫🇷",
+    # ── EUROPA MEDIA ──
     "ned.1":"Eredivisie 🇳🇱","por.1":"Primeira Liga 🇵🇹",
-    "mex.1":"Liga MX 🇲🇽","mex.2":"Expansión MX 🇲🇽",
-    "usa.1":"MLS 🇺🇸","bra.1":"Brasileirão 🇧🇷",
-    "arg.1":"Liga Argentina 🇦🇷","col.1":"Liga BetPlay 🇨🇴",
-    "chi.1":"Primera División 🇨🇱","sau.1":"Saudi Pro League 🇸🇦",
     "tur.1":"Süper Lig 🇹🇷","sco.1":"Premiership 🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    "bel.1":"Pro League 🇧🇪","den.1":"Superliga 🇩🇰","nor.1":"Eliteserien 🇳🇴",
+    "gre.1":"Super League 🇬🇷","aut.1":"Bundesliga 🇦🇹","cze.1":"Fortuna Liga 🇨🇿",
+    "pol.1":"Ekstraklasa 🇵🇱","rus.1":"Premier Liga 🇷🇺","ukr.1":"Premier Liga 🇺🇦",
+    "swe.1":"Allsvenskan 🇸🇪","sui.1":"Super League 🇨🇭","rou.1":"Liga 1 🇷🇴",
+    "scot.1":"Premiership 🏴󠁧󠁢󠁳󠁣󠁴󠁿","ser.1":"Super Liga 🇷🇸",
+    # ── UEFA + CONCACAF ──
     "uefa.champions":"Champions League 🏆","uefa.europa":"Europa League 🏆",
-    "uefa.europa.conf":"Conference League 🏆",
-    "concacaf.champions":"CONCACAF Champions Cup 🏆🌎",
-    "den.1":"Superliga 🇩🇰","nor.1":"Eliteserien 🇳🇴",
-    "bel.1":"Pro League 🇧🇪",
-    "gre.1":"Super League 🇬🇷",
+    "uefa.europa.conf":"Conference League 🏆","uefa.super_cup":"Supercopa UEFA 🏆",
+    "concacaf.champions":"CONCACAF Champions Cup 🏆🌎","concacaf.nations.league":"Nations League CONCACAF 🌎",
+    # ── AMÉRICAS ──
+    "mex.1":"Liga MX 🇲🇽","mex.2":"Expansión MX 🇲🇽","mex.copa_mx":"Copa MX 🏆🇲🇽",
+    "usa.1":"MLS 🇺🇸","usa.open":"US Open Cup 🏆🇺🇸",
+    "bra.1":"Brasileirão 🇧🇷","bra.2":"Série B 🇧🇷","bra.copa_brasil":"Copa do Brasil 🏆🇧🇷",
+    "arg.1":"Liga Argentina 🇦🇷","arg.copa":"Copa Argentina 🏆🇦🇷",
+    "col.1":"Liga BetPlay 🇨🇴","chi.1":"Primera División 🇨🇱",
+    "uru.1":"Primera División 🇺🇾","per.1":"Liga 1 🇵🇪","ecu.1":"LigaPro 🇪🇨",
+    "ven.1":"Liga Futve 🇻🇪","bol.1":"División Profesional 🇧🇴","par.1":"Apertura 🇵🇾",
+    "conmebol.libertadores":"Libertadores 🏆🌎","conmebol.sudamericana":"Sudamericana 🏆🌎",
+    # ── ASIA / MEDIO ORIENTE ──
+    "sau.1":"Saudi Pro League 🇸🇦","jpn.1":"J1 League 🇯🇵","kor.1":"K League 1 🇰🇷",
+    "chn.1":"Super League 🇨🇳","ind.1":"ISL 🇮🇳","afc.champions":"AFC Champions League 🏆",
+    # ── MUNDIAL ──
+    "fifa.world":"Mundial FIFA 🌍","concacaf.world.qualifying":"Eliminatorias CONCACAF 🌍",
+    "conmebol.world.qualifying":"Eliminatorias CONMEBOL 🌍",
+    "fifa.friendly":"Amistosos FIFA 🌍",
 }
 
 # Mapa slug → (país, bandera, orden) para agrupar cartelera
@@ -1165,9 +1198,9 @@ def get_cartelera():
 
     _all_results = []
     try:
-        with _cf_cart.ThreadPoolExecutor(max_workers=20) as _cx:
+        with _cf_cart.ThreadPoolExecutor(max_workers=30) as _cx:
             _fmap2 = {_cx.submit(_fetch_slug_date, t): t for t in _slug_date_tasks}
-            for _fk in _cf_cart.as_completed(_fmap2, timeout=20):
+            for _fk in _cf_cart.as_completed(_fmap2, timeout=35):
                 try: _all_results.append(_fk.result())
                 except: pass
     except: pass
@@ -2030,21 +2063,49 @@ def get_full_odds(home_name: str, away_name: str, league_slug: str) -> dict:
     if not _key:
         return {}
     _slug_map = {
-        "eng.1":"soccer_epl","esp.1":"soccer_spain_la_liga",
-        "ger.1":"soccer_germany_bundesliga","ita.1":"soccer_italy_serie_a",
-        "fra.1":"soccer_france_ligue_one","ned.1":"soccer_netherlands_eredivisie",
-        "por.1":"soccer_portugal_primeira_liga","mex.1":"soccer_mexico_ligamx",
-        "usa.1":"soccer_usa_mls","arg.1":"soccer_argentina_primera_division",
-        "bra.1":"soccer_brazil_campeonato","tur.1":"soccer_turkey_super_league",
-        "bel.1":"soccer_belgium_first_div","sco.1":"soccer_scotland_premiership",
-        "sau.1":"soccer_saudi_professional_league",
-        "col.1":"soccer_colombia_primera_a","chi.1":"soccer_chile_campeonato",
+        # TOP 5
+        "eng.1":"soccer_epl","eng.2":"soccer_epl2","eng.fa":"soccer_fa_cup",
+        "eng.league_cup":"soccer_league_cup",
+        "esp.1":"soccer_spain_la_liga","esp.2":"soccer_spain_segunda_division",
+        "esp.copa_del_rey":"soccer_spain_copa_del_rey",
+        "ger.1":"soccer_germany_bundesliga","ger.2":"soccer_germany_bundesliga2",
+        "ger.dfb_pokal":"soccer_germany_dfb_pokal",
+        "ita.1":"soccer_italy_serie_a","ita.2":"soccer_italy_serie_b",
+        "ita.coppa_italia":"soccer_italy_coppa_italia",
+        "fra.1":"soccer_france_ligue_one","fra.2":"soccer_france_ligue_deux",
+        "fra.coupe_de_france":"soccer_france_coupe_de_france",
+        # EUROPA MEDIA
+        "ned.1":"soccer_netherlands_eredivisie",
+        "por.1":"soccer_portugal_primeira_liga",
+        "tur.1":"soccer_turkey_super_league",
+        "sco.1":"soccer_scotland_premiership",
+        "bel.1":"soccer_belgium_first_div",
+        "gre.1":"soccer_greece_super_league",
+        "aut.1":"soccer_austria_bundesliga",
+        "cze.1":"soccer_czech_republic_liga",
+        "pol.1":"soccer_poland_ekstraklasa",
+        "swe.1":"soccer_sweden_allsvenskan",
+        "den.1":"soccer_denmark_superliga",
+        "nor.1":"soccer_norway_eliteserien",
+        "sui.1":"soccer_switzerland_superleague",
+        # UEFA + CONCACAF
         "uefa.champions":"soccer_uefa_champs_league",
         "uefa.europa":"soccer_uefa_europa_league",
         "uefa.europa.conf":"soccer_uefa_europa_conference_league",
         "concacaf.champions":"soccer_concacaf_champions_cup",
-        "eng.fa":"soccer_fa_cup","ger.1":"soccer_germany_bundesliga",
-        "ger.2":"soccer_germany_bundesliga2","eng.2":"soccer_epl2",
+        # AMÉRICAS
+        "mex.1":"soccer_mexico_ligamx","mex.2":"soccer_mexico_ligamx",
+        "usa.1":"soccer_usa_mls",
+        "bra.1":"soccer_brazil_campeonato","bra.2":"soccer_brazil_serie_b",
+        "arg.1":"soccer_argentina_primera_division",
+        "col.1":"soccer_colombia_primera_a","chi.1":"soccer_chile_campeonato",
+        "uru.1":"soccer_uruguay_primera_division",
+        "ecu.1":"soccer_ecuador_liga_pro","per.1":"soccer_peru_primera_division",
+        "conmebol.libertadores":"soccer_conmebol_copa_libertadores",
+        "conmebol.sudamericana":"soccer_conmebol_copa_sudamericana",
+        # ASIA
+        "sau.1":"soccer_saudi_professional_league",
+        "jpn.1":"soccer_japan_j_league","kor.1":"soccer_south_korea_kleague1",
     }
     sport = _slug_map.get(league_slug)
     if not sport:
@@ -3261,7 +3322,7 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
         st.markdown(
             "<div style='background:linear-gradient(135deg,#100c04,#0a0800);border:1px solid #c9a84c1a;border-radius:12px;"
             "padding:7px 9px;color:#6b5a3a;font-size:1.275rem'>"
-            "⚠️ IA no disponible. Verifica ANTHROPIC_API_KEY en Streamlit secrets."
+            "⚠️ IA no disponible. Verifica GEMINI_API_KEY en Streamlit secrets."
             "</div>", unsafe_allow_html=True)
         return
     
@@ -4260,59 +4321,86 @@ def fetch_soccer_results(days_back=4):
     seen_ids = set()
     # Slugs prioritarios para resultados (los más activos)
     _result_slugs = [
-        "esp.1","eng.1","ger.1","ita.1","fra.1","mex.1","usa.1","bra.1",
-        "arg.1","col.1","por.1","ned.1","mex.2","eng.2","ger.2",
-        "uefa.champions","uefa.europa","concacaf.champions",
-        "tur.1","sco.1","bel.1","chi.1","ecu.1",
+        # Top 5
+        "esp.1","eng.1","ger.1","ita.1","fra.1",
+        "esp.2","eng.2","ger.2","ita.2","fra.2",
+        "eng.fa","esp.copa_del_rey","ger.dfb_pokal","ita.coppa_italia",
+        # Américas
+        "mex.1","mex.2","usa.1","bra.1","bra.2",
+        "arg.1","col.1","chi.1","uru.1","ecu.1","per.1",
+        "conmebol.libertadores","conmebol.sudamericana",
+        # Europa media
+        "por.1","ned.1","tur.1","sco.1","bel.1","gre.1",
+        "aut.1","cze.1","pol.1","swe.1","den.1","nor.1",
+        # UEFA + CONCACAF
+        "uefa.champions","uefa.europa","uefa.europa.conf","concacaf.champions",
+        # Asia
+        "sau.1","jpn.1","kor.1",
     ]
-    for day_offset in range(days_back, -1, -1):
-        d  = now - timedelta(days=day_offset)
-        ds = d.strftime("%Y%m%d")
-        fd = d.strftime("%Y-%m-%d")
-        if fd < cutoff: continue
+    # Parallel fetch — todos los slugs × fechas en paralelo
+    import concurrent.futures as _cf_res2
+    _res_task_list = []
+    for _day_off_r in range(days_back, -1, -1):
+        _dr  = now - timedelta(days=_day_off_r)
+        _dsr = _dr.strftime("%Y%m%d")
+        _fdr = _dr.strftime("%Y-%m-%d")
+        if _fdr < cutoff: continue
         for slug in _result_slugs:
+            _res_task_list.append((slug, _dsr, _fdr))
+
+    def _res_fetch_one(tsk):
+        _slg, _dsr2, _fdr2 = tsk
+        return _slg, _fdr2, eg(f"{ESPN}/{_slg}/scoreboard", {"dates": _dsr2, "limit": 100})
+
+    _all_res_data = []
+    try:
+        with _cf_res2.ThreadPoolExecutor(max_workers=20) as _rex2:
+            _rfmap2 = {_rex2.submit(_res_fetch_one, t): t for t in _res_task_list}
+            for _rfk2 in _cf_res2.as_completed(_rfmap2, timeout=30):
+                try: _all_res_data.append(_rfk2.result())
+                except: pass
+    except: pass
+
+    for slug, fd, data in _all_res_data:
+        for ev in data.get("events", []):
             try:
-                data = eg(f"{ESPN}/{slug}/scoreboard", {"dates": ds, "limit": 50})
-                for ev in data.get("events", []):
-                    try:
-                        eid   = ev.get("id","")
-                        if eid in seen_ids: continue
-                        comp  = ev["competitions"][0]
-                        state = ev.get("status",{}).get("type",{}).get("state","")
-                        if state != "post": continue  # solo finalizados
-                        comps = comp["competitors"]
-                        hc = next(c for c in comps if c["homeAway"]=="home")
-                        ac = next(c for c in comps if c["homeAway"]=="away")
-                        utc_str = ev.get("date","")
-                        try:
-                            utc_dt = datetime.strptime(utc_str[:19],"%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.UTC)
-                            fecha  = utc_dt.astimezone(CDMX).strftime("%Y-%m-%d")
-                            hora   = utc_dt.astimezone(CDMX).strftime("%H:%M")
-                        except:
-                            fecha = fd; hora = "00:00"
-                        if fecha < cutoff: continue
-                        sh = parse_score(hc.get("score",0))
-                        sa = parse_score(ac.get("score",0))
-                        seen_ids.add(eid)
-                        partidos.append({
-                            "id":       eid,
-                            "deporte":  "futbol",
-                            "liga":     LIGAS.get(slug, slug),
-                            "slug":     slug,
-                            "home":     hc["team"]["displayName"],
-                            "away":     ac["team"]["displayName"],
-                            "home_id":  str(hc["team"]["id"]),
-                            "away_id":  str(ac["team"]["id"]),
-                            "home_rec": "0-0-0",
-                            "away_rec": "0-0-0",
-                            "odd_h":    0, "odd_d": 0, "odd_a": 0,
-                            "score_h":  sh,
-                            "score_a":  sa,
-                            "fecha":    fecha,
-                            "state":    "post",
-                            "hora":     hora,
-                        })
-                    except: continue
+                eid = ev.get("id","")
+                if eid in seen_ids: continue
+                comp  = ev["competitions"][0]
+                state = ev.get("status",{}).get("type",{}).get("state","")
+                if state != "post": continue  # solo finalizados
+                comps = comp["competitors"]
+                hc = next(c for c in comps if c["homeAway"]=="home")
+                ac = next(c for c in comps if c["homeAway"]=="away")
+                utc_str = ev.get("date","")
+                try:
+                    utc_dt = datetime.strptime(utc_str[:19],"%Y-%m-%dT%H:%M:%S").replace(tzinfo=pytz.UTC)
+                    fecha  = utc_dt.astimezone(CDMX).strftime("%Y-%m-%d")
+                    hora   = utc_dt.astimezone(CDMX).strftime("%H:%M")
+                except:
+                    fecha = fd; hora = "00:00"
+                if fecha < cutoff: continue
+                sh = parse_score(hc.get("score",0))
+                sa = parse_score(ac.get("score",0))
+                seen_ids.add(eid)
+                partidos.append({
+                    "id":       eid,
+                    "deporte":  "futbol",
+                    "liga":     LIGAS.get(slug, slug),
+                    "slug":     slug,
+                    "home":     hc["team"]["displayName"],
+                    "away":     ac["team"]["displayName"],
+                    "home_id":  str(hc["team"]["id"]),
+                    "away_id":  str(ac["team"]["id"]),
+                    "home_rec": "0-0-0",
+                    "away_rec": "0-0-0",
+                    "odd_h":    0, "odd_d": 0, "odd_a": 0,
+                    "score_h":  sh,
+                    "score_a":  sa,
+                    "fecha":    fecha,
+                    "state":    "post",
+                    "hora":     hora,
+                })
             except: continue
     return partidos
 
@@ -8966,28 +9054,10 @@ RESPONDE SOLO EN JSON (sin markdown, sin texto fuera del JSON):
     user_msg = f"Analiza {home} vs {away} ({league_name}, {fecha_hoy}). Busca en internet y dame el JSON completo."
 
     try:
-        resp = type("_R",(),{"status_code":200,"json":lambda self=None:{"content":[{"type":"text","text":_gemini(user_msg,system=system_prompt,use_search=True,max_tokens=3000)}]}})()
-        if False: resp = requests.post("__placeholder__",
-            headers={},
-            json={"model":"","max_tokens":3000,"system":system_prompt,
-                                "messages":[{"role":"user","content":user_msg}]
-            },
-            timeout=60   # web search tarda más
-        )
-        if resp.status_code != 200:
-            return {"error": f"API {resp.status_code}", "badrino_ok": False}
-
-        # ── Procesar respuesta (puede tener tool_use + text) ──
-        content_blocks = resp.json().get("content", [])
-        final_text = ""
-        for block in content_blocks:
-            if block.get("type") == "text":
-                final_text += block.get("text", "")
-
-        if not final_text:
-            return {"error": "Sin respuesta de texto", "badrino_ok": False}
-
-        raw = final_text.strip()
+        _gemini_raw = _gemini(user_msg, system=system_prompt, use_search=True, max_tokens=3000)
+        if not _gemini_raw:
+            return {"error": "Sin respuesta de Gemini", "badrino_ok": False}
+        raw = _gemini_raw.strip()
         raw = raw.replace("```json","").replace("```","").strip()
         # Extraer JSON si hay texto rodeándolo
         if "{" in raw:
@@ -10269,7 +10339,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
     with col_e:
         with st.spinner("🧠 Einstein..."):
             try:
-                _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_e_prompt,use_search=False,max_tokens=600)}]}})()  # gemini
+                _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_e_prompt,use_search=True,max_tokens=700)}]}})()  # gemini
                 _raw = _r.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
                 _d = _ejson.loads(_raw)
                 _einstein.update(_d)
@@ -10304,7 +10374,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                     f"\"resumen_auditoria\":\"1-2 lineas max\","
                     f"\"mejor_alternativa_papa\":\"mercado alternativo o confirmar el de Einstein\"}}"
                 )
-                _rp = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_papa_prompt,use_search=False,max_tokens=500)}]}})()  # gemini
+                _rp = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_papa_prompt,use_search=True,max_tokens=600)}]}})()  # gemini
                 _rawp = _rp.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
                 _dp = _ejson.loads(_rawp)
                 _papa.update(_dp)
@@ -11549,7 +11619,7 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
     Recibe la pregunta del usuario + contexto de la app.
     """
     if not GEMINI_API_KEY:
-        return "❌ PACH necesita ANTHROPIC_API_KEY en secrets.toml"
+        return "❌ PACH necesita GEMINI_API_KEY en secrets.toml"
 
     fecha_hoy = datetime.now(CDMX).strftime("%d/%m/%Y")
     hora_hoy  = datetime.now(CDMX).strftime("%H:%M")
@@ -13247,7 +13317,7 @@ RESPONDE SOLO JSON:
   "edge_p2": <float, edge vs momio>
 }}"""
     try:
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=800)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=True,max_tokens=900)}]}})()  # gemini
         if r.status_code!=200: return None
         raw = r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
         if "{" in raw: raw=raw[raw.find("{"):raw.rfind("}")+1]
@@ -13411,7 +13481,7 @@ def _ultra_fatiga(home, away, sport, fecha):
              f"Tenis: 3+ sets seguidos=-0.06. Viajes largos=-0.03.\n"
              f"JSON sin backticks: {{\"fatiga_h\":-0.15 a 0.0,\"fatiga_a\":-0.15 a 0.0,"
              f"\"descripcion\":\"12 palabras max\",\"alerta\":\"si hay fatiga critica o null\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("fatiga_h",0.0); d.setdefault("fatiga_a",0.0); d.setdefault("alerta","")
@@ -13433,7 +13503,7 @@ def _ultra_matchup(home, away, sport):
              f"JSON sin backticks: {{\"estilo_h\":\"tipo\",\"estilo_a\":\"tipo\","
              f"\"matchup\":\"descripcion 10 palabras\",\"ventaja\":-0.08 a +0.08,"
              f"\"favorece\":\"local|visita|neutro\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja",0.0); d.setdefault("matchup",""); return d
@@ -13454,7 +13524,7 @@ def _ultra_forma_real(home, away, sport):
              f"JSON sin backticks: {{\"forma_h\":-0.08 a +0.08,\"forma_a\":-0.08 a +0.08,"
              f"\"stat_clave_h\":\"estadistica principal\",\"stat_clave_a\":\"estadistica principal\","
              f"\"tendencia\":\"mejorando|estable|cayendo por equipo\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("forma_h",0.0); d.setdefault("forma_a",0.0); return d
@@ -13474,7 +13544,7 @@ def _ultra_ventaja_fisica(home, away, sport):
              f"Tenis: potencia servicio, resistencia, envergadura.\n"
              f"JSON sin backticks: {{\"ventaja_fisica\":-0.06 a +0.06,"
              f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ventaja_fisica",0.0); return d
@@ -13494,7 +13564,7 @@ def _ultra_localia(home, away, sport, liga):
              f"Algunos equipos suben 25-40%% en casa. Cuantificalo.\n"
              f"JSON sin backticks: {{\"bonus_local\":-0.05 a +0.12,"
              f"\"wr_local_est\":\"% estimado\",\"descripcion\":\"12 palabras max\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("bonus_local",0.0); return d
@@ -13517,7 +13587,7 @@ def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
              f"JSON sin backticks: {{\"motivacion_h\":-0.05 a +0.10,"
              f"\"motivacion_a\":-0.05 a +0.10,\"situacion\":\"descripcion 12 palabras\","
              f"\"urgencia\":\"critica|alta|media|baja\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("motivacion_h",0.0); d.setdefault("motivacion_a",0.0); return d
@@ -13538,7 +13608,7 @@ def _ultra_consistencia(home, away, sport):
              f"JSON sin backticks: {{\"consist_h\":0-1,\"consist_a\":0-1,"
              f"\"volatilidad_h\":\"alta|media|baja\",\"volatilidad_a\":\"alta|media|baja\","
              f"\"confiable\":\"local|visita|ambos|ninguno\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("consist_h",0.5); d.setdefault("consist_a",0.5); return d
@@ -13559,7 +13629,7 @@ def _ultra_presion(home, away, sport):
              f"JSON sin backticks: {{\"presion_h\":-0.08 a +0.06,\"presion_a\":-0.08 a +0.06,"
              f"\"clutch_h\":\"bueno|regular|malo\",\"clutch_a\":\"bueno|regular|malo\","
              f"\"estado_mental\":\"descripcion 10 palabras\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("presion_h",0.0); d.setdefault("presion_a",0.0); return d
@@ -13580,7 +13650,7 @@ def _ultra_ritmo_juego(home, away, sport):
              f"JSON sin backticks: {{\"ritmo_delta\":-0.07 a +0.07,"
              f"\"ritmo_h\":\"alto|medio|bajo\",\"ritmo_a\":\"alto|medio|bajo\","
              f"\"favorece\":\"local|visita|neutro\",\"descripcion\":\"10 palabras max\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("ritmo_delta",0.0); return d
@@ -13601,7 +13671,7 @@ def _ultra_dependencia_estrella(home, away, sport):
              f"JSON sin backticks: {{\"dep_h\":-0.06 a 0.0,\"dep_a\":-0.06 a 0.0,"
              f"\"estrella_h\":\"nombre si aplica o null\",\"estrella_a\":\"nombre si aplica o null\","
              f"\"riesgo\":\"alto|medio|bajo\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("dep_h",0.0); d.setdefault("dep_a",0.0); return d
@@ -13622,7 +13692,7 @@ def _ultra_adaptabilidad(home, away, sport):
              f"JSON sin backticks: {{\"adapt_h\":-0.04 a +0.05,\"adapt_a\":-0.04 a +0.05,"
              f"\"flexibilidad_h\":\"alta|media|baja\",\"flexibilidad_a\":\"alta|media|baja\","
              f"\"ventaja_coach\":\"local|visita|par\"}}")
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=80)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(p,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             d=json.loads(re.sub(r"```json|```","",r.json()["content"][0]["text"]).strip())
             d.setdefault("adapt_h",0.0); d.setdefault("adapt_a",0.0); return d
@@ -13734,7 +13804,7 @@ def _kr_situacional(home,away,sport,liga,hora):
             f"{{\"factor\": -0.10 a +0.10, \"favorece\": \"local|visita|neutro\", "
             f"\"ctx\": \"max 12 palabras\", \"urgencia\": \"alta|media|baja\"}}"
         )
-        r=type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=80)}]}})()  # gemini
+        r=type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=250)}]}})()  # gemini
         if r.status_code==200:
             txt=r.json()["content"][0]["text"].strip()
             txt=re.sub(r"```json|```","",txt).strip()
@@ -13798,7 +13868,7 @@ def _kr_analisis_combinado(home: str, away: str, sport: str, liga: str, hora: st
             "coach_h":0.0,"coach_a":0.0,"coach_score":5}
 
 def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
-    if not ANTHROPIC_API_KEY or not top5_t:
+    if not GEMINI_API_KEY or not top5_t:
         return {"idx":0,"razon":"","confianza":0.5,"alerta":None}
     try:
         ct=""
@@ -14833,7 +14903,7 @@ def _kr_ia_narracion(el_pick, bk, todos):
             + "Narra. Eres el rey del universo. Si hay brecha de tabla grande, menciona la posicion."
             + (f"\n\nDATO EN VIVO: {el_pick.get('live_ctx','')}" if el_pick.get('live_ctx') else "")
         )
-        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=200)}]}})()  # gemini
+        r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(prompt,use_search=False,max_tokens=300)}]}})()  # gemini
         if r.status_code == 200:
             return r.json()["content"][0]["text"].strip()
     except: pass
@@ -15813,7 +15883,7 @@ Responde SOLO JSON sin markdown:
 }}
 Si no detectas variables relevantes, pon 0.0 en todo y confidence=baja."""
 
-        _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_prompt,use_search=False,max_tokens=80)}]}})()  # gemini
+        _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_prompt,use_search=False,max_tokens=250)}]}})()  # gemini
         if _r.status_code == 200:
             import json as _jsd
             _txt = _r.json()["content"][0]["text"].strip()
