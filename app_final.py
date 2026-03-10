@@ -7606,35 +7606,127 @@ _LEAGUE_HISTORICAL: dict = {
     },
     # ── UEFA — Champions, Europa, Conference ──
     "uefa.champions": {
-        "o25_old": 0.545, "o25_rate": 0.582, "avg_goals": 2.98,
-        "trend": "🔥 Alta +3.7%",
-        "perfil": "Nuevo Formato Suizo (2024) generó cruces desiguales potencias vs bombos bajos → más goleadas en fase de liga. Eliminatorias siguen más cerradas.",
+        # ══════════════════════════════════════════════════════════════
+        # DATOS REALES UCL 2024-25 + 2025-26
+        # ══════════════════════════════════════════════════════════════
+        # Formato Suizo 2024: 36 equipos, todos con rivales de distinto nivel
+        # 2024-25 fase liga: 3.26 g/partido (144 partidos)
+        # 2025-26 fase liga: 3.39 g/partido (RÉCORD HISTÓRICO UCL)
+        # Eliminatorias 2024-25: ~3.0-3.1 g/partido (más cerrados)
+        # O25 rate fase liga: ~66% | Eliminatorias: ~62%
+        # xG promedio home: 1.75 | xG promedio away: 1.26
+        # AA (ambos anotan) rate: ~60% en fase liga, ~58% en eliminatorias
+        # Over 3.5 rate: ~38% en eliminatorias
+        # ── PATRÓN TÁCTICO ──
+        # Todos los equipos presionan alto → errores en salida → goles fáciles
+        # Partidos duran 100+ min por tiempo compensación
+        # Favoritos dominan posesión pero el visitante SIEMPRE tiene chances
+        # → axg mínimo real en UCL: ~1.10-1.15 incluso siendo visitante claro
+        "o25_old": 0.545, "o25_rate": 0.640, "avg_goals": 3.26,
+        "avg_goals_home": 1.75, "avg_goals_away": 1.26,
+        "aa_rate": 0.60,         # ambos anotan rate fase liga
+        "aa_rate_ko": 0.58,      # ambos anotan eliminatorias
+        "o35_rate": 0.38,        # Over 3.5 en eliminatorias
+        "clean_sheet_rate": 0.25, # baja — casi nadie mantiene portería a 0
+        "trend": "🚀 Récord histórico 2025-26 (+9.5%)",
+        "perfil": "UCL formato suizo 2024-26: récord 3.39 g/partido en 2025-26. Todos presionan alto → goles fáciles en salidas. Eliminatorias ~3.0 g/partido. O25 ~62%, AA ~58%. Visitante SIEMPRE mete (xG away mínimo ~1.10). Busca Over 2.5 y AA en favoritos, Over 3.5 en top atacantes (Bayern, City, Real Madrid).",
         "under_value": False,
-        "delta": +0.037,
+        "delta": +0.095,
         "flag": "🇪🇺",
     },
     "uefa.cl": {
-        "o25_old": 0.545, "o25_rate": 0.582, "avg_goals": 2.98,
-        "trend": "🔥 Alta +3.7%",
-        "perfil": "Champions League — Formato Suizo 2024. Más goleadas en fase de liga.",
+        "o25_old": 0.545, "o25_rate": 0.640, "avg_goals": 3.26,
+        "avg_goals_home": 1.75, "avg_goals_away": 1.26,
+        "aa_rate": 0.60, "o35_rate": 0.38,
+        "trend": "🚀 Récord histórico 2025-26 (+9.5%)",
+        "perfil": "Champions League — Formato Suizo 2024. Récord goles 2025-26.",
         "under_value": False,
-        "delta": +0.037,
+        "delta": +0.095,
         "flag": "🇪🇺",
     },
     "uefa.europa": {
-        "o25_old": 0.520, "o25_rate": 0.543, "avg_goals": 2.77,
-        "trend": "⚖️ Estable +2.3%",
-        "perfil": "Europa League — más cerrado que Champions. Equipos priorizan no rotar, juegan a no perder en eliminación directa.",
-        "under_value": False,
-        "delta": +0.023,
+        # ══════════════════════════════════════════════════════════════
+        # DATOS REALES UEL 2024-25 — tabla completa (36 equipos)
+        # ══════════════════════════════════════════════════════════════
+        # GOLES MARCADOS (por partido):
+        #   Top atacantes: Midtjylland 2.25, Lyon 2.25, Nottm Forest 1.90, Stuttgart 1.90
+        #   Celta 1.80, PAOK 1.80, Aston Villa 1.75, KRC Genk 1.70
+        #   Sólidos: Roma 1.62, Porto 1.62, Betis 1.62, Bologna 1.60, Dinamo Zagreb 1.60
+        #   Medios: Celtic 1.50, Ferencvaros 1.50, Feyenoord 1.50, Lille 1.40
+        #   Bajos: Brann 0.90, Go Ahead 0.75, Rangers 0.62, Malmö 0.50, Maccabi 0.25
+        # GOLES RECIBIDOS (por partido):
+        #   Mejores defensas: Friburgo 0.50, Viktoria Plzen 0.60, Lyon 0.62, SC Braga 0.62
+        #   Bologna 0.70, Roma 0.75, Aston Villa 0.75, Estrella Roja 0.80
+        #   Peores defensas: Dinamo Zagreb 2.20, Maccabi Tel Aviv 2.75,
+        #     Celtic 1.90, FCSB 2.00, Young Boys 2.00
+        # VALLA INVICTA (top):
+        #   SC Braga 6/8 ← MEJOR DEL TORNEO, Lyon 5/8, Nottm Forest 5/10,
+        #   Estrella Roja 5/10, Viktoria Plzen 5/10, Aston Villa 4/8, Midtjylland 4/8
+        # POSESIÓN (>55% dominadores):
+        #   Lyon 63%, Stuttgart 59%, Fenerbahce 58%, Aston Villa 58%, Lille 58%,
+        #   FC Porto 56%, Real Betis 54%, Bologna 54%, Braga 53%, Nottm Forest 53%
+        # CORNERS (por partido):
+        #   Bologna 7.9 ← líder absoluto, Lille 6.7, Stuttgart 6.6, Porto 6.0
+        #   Panathinaikos 5.6, Estrella Roja 5.5, Nottm Forest 5.4
+        # PENALES CONVERTIDOS (notable):
+        #   Nottm Forest 4/6, Ludogorets 3/3, Fenerbahce 2/2, Friburgo 2/2
+        #   Aston Villa solo 1/3 — bajo % conversión
+        # TARJETAS AMARILLAS (por partido):
+        #   Fenerbahce 3.5/p ← MÁS SUCIO DEL TORNEO, Ferencvaros 2.7, Panathinaikos 2.7
+        #   Estrella Roja 2.3, Viktoria Plzen 2.3 (+ 3 rojas)
+        #   Promedio torneo: 1.98 amarillas/equipo/partido — muy físico vs UCL
+        # TARJETAS ROJAS: Viktoria Plzen 3, Malmö 2, Rangers 2, Young Boys 2, PAOK 2
+        # ── ESTADÍSTICAS AGREGADAS ──
+        # avg_goals/partido: 2.70 (promedio equipo 1.35 marcados + 1.35 recibidos)
+        # Élite Top5 ligas: gf=1.66/p, ga=1.04/p → total partido élite vs élite ~2.70
+        # O25 rate: ~50.6% (borderline — torneo muy equilibrado)
+        # AA rate: ~54.6%
+        # Clean sheet rate top equipos: ~52% — UEL es DEFENSIVA vs UCL (25%)
+        # avg_corners/equipo: 4.66
+        # avg_yellow/equipo: 1.98 — más físico que UCL
+        # ── INSIGHTS PARA EL MODELO ──
+        # 1. UEL es SIGNIFICATIVAMENTE más cerrada que UCL (2.70 vs 3.26 g/p)
+        # 2. AA (54%) supera O25 (50.6%) → mercado de Ambos Anotan tiene valor
+        # 3. SC Braga: mejor defensa del torneo (6/8 vallas) con solo 0.62 ga/p
+        # 4. Fenerbahce: 35 amarillas en 10 partidos = cuidado en mercado tarjetas
+        # 5. Bologna lidera corners (7.9/p) pero no es el máximo goleador
+        # 6. Lyon: 2.25 gf/p + solo 0.62 ga/p = mejor ratio ataque/defensa
+        # 7. Dinamo Zagreb: defensa catastrófica (2.20 ga/p) — evitar U25 si juegan
+        # 8. Nottm Forest: 4/6 penales convertidos — alta dependencia del penal
+        "o25_old": 0.520, "o25_rate": 0.506, "avg_goals": 2.70,
+        "avg_goals_home": 1.45, "avg_goals_away": 1.25,
+        "aa_rate": 0.546,
+        "o35_rate": 0.28,         # más bajo que UCL — torneo más cerrado
+        "clean_sheet_rate": 0.52, # muy alto — defensas sólidas en UEL
+        "avg_corners_per_team": 4.66,
+        "avg_yellow_per_team": 1.98,
+        "dirty_teams": ["fenerbahce","viktoria plzen","panathinaikos","ferencvaros","estrella roja"],
+        "best_defense": ["sc braga","friburgo","lyon","viktoria plzen","bologna"],
+        "best_attack": ["midtjylland","lyon","nottingham forest","stuttgart","celta"],
+        "best_ratio": ["lyon","friburgo","sc braga","aston villa","bologna"],
+        "possession_dominators": {
+            "lyon":63,"stuttgart":59,"fenerbahce":58,"aston villa":58,"lille":58,
+            "porto":56,"real betis":54,"bologna":54,"braga":53,"nottingham":53,
+        },
+        "corners_leaders": {
+            "bologna":7.9,"lille":6.7,"stuttgart":6.6,"porto":6.0,"panathinaikos":5.6,
+        },
+        "trend": "⚖️ Borderline — O25 solo 50.6%",
+        "perfil": "UEL 2024-25: 2.70 g/partido — MUCHO más cerrada que UCL (3.26). O25 borderline 50.6%, AA tiene más valor (54.6%). Defensas muy sólidas: SC Braga 6/8 vallas, Friburgo 0.50 ga/p. Lyon es la máquina del torneo: 2.25 gf + 0.62 ga. Fenerbahce es el equipo más sucio (3.5 amarillas/p). Dinamo Zagreb y Maccabi: defensas de colador. Bologna lidera corners (7.9/p).",
+        "under_value": True,  # O25 solo 50.6% — U25 tiene valor real aquí
+        "delta": -0.014,
         "flag": "🇪🇺",
     },
     "uefa.el": {
-        "o25_old": 0.520, "o25_rate": 0.543, "avg_goals": 2.77,
-        "trend": "⚖️ Estable +2.3%",
-        "perfil": "Europa League — cerrado en fases eliminatorias.",
-        "under_value": False,
-        "delta": +0.023,
+        "o25_old": 0.520, "o25_rate": 0.506, "avg_goals": 2.70,
+        "avg_goals_home": 1.45, "avg_goals_away": 1.25,
+        "aa_rate": 0.546, "o35_rate": 0.28,
+        "clean_sheet_rate": 0.52, "avg_corners_per_team": 4.66,
+        "avg_yellow_per_team": 1.98,
+        "trend": "⚖️ Borderline — O25 solo 50.6%",
+        "perfil": "Europa League — alias uefa.el. Ver uefa.europa.",
+        "under_value": True,
+        "delta": -0.014,
         "flag": "🇪🇺",
     },
     "uefa.ecl": {
@@ -7646,11 +7738,62 @@ _LEAGUE_HISTORICAL: dict = {
         "flag": "🇪🇺",
     },
     "concacaf.champions": {
-        "o25_old": 0.518, "o25_rate": 0.560, "avg_goals": 2.82,
-        "trend": "⬆️ Subiendo +4.2%",
-        "perfil": "Expansión del torneo trajo cruces Liga MX/MLS vs defensas semi-amateurs del Caribe. Lluvia de goles en 1ra ronda. Altitud en casa (CDMX, Pachuca) impacta mucho.",
+        # ══════════════════════════════════════════════════════════════
+        # DATOS REALES CCL 2025 — tabla completa (22 equipos, 2 partidos c/u)
+        # ══════════════════════════════════════════════════════════════
+        # GOLES MARCADOS (por partido):
+        #   Élite MX/MLS: Cincinnati 6.5, Philadelphia 6.0, Cruz Azul 4.0,
+        #     LAFC 3.5, Nashville 3.5, San Diego 2.0, Tigres 2.0,
+        #     Monterrey 1.5, América 1.0, Pumas 1.0, Vancouver 1.0, LA Galaxy 0.5
+        #   Relleno CA/Caribe: Olimpia 0.5, Xelaju 0.5, Forge 0.5, Real España 0.5,
+        #     Sp.Miguelito 0.5, Ottawa 0, Cartaginés 0, Defence Force 0, O&M 0, VancFC 0
+        # GOLES RECIBIDOS (por partido):
+        #   Élite con valla invicta (2/2): Cruz Azul 0, Cincinnati 0, Nashville 0,
+        #     Philadelphia 0, Vancouver 0
+        #   Élite con mínimos recibidos: América 0.5, LAFC 0.5
+        # VALLA INVICTA: Cruz Azul, Cincinnati, Nashville, Philadelphia, Vancouver = 2/2
+        # POSESIÓN PROMEDIO POR EQUIPO:
+        #   Alta (>65%): Tigres 71%, América 71%, Vancouver 70%, LA Galaxy 70%,
+        #     Cruz Azul 69%, Monterrey 66%
+        #   Media (55-65%): Cincinnati 63%, Philadelphia 62%, San Diego 56%, LAFC 56%
+        #   Baja (<45%): Nashville 46%, Real España 44%, Pumas 44%,
+        #     relleno: DF 38%, O&M 37%, Xelaju 34%, Vancouver FC 31%,
+        #     Sp.Miguelito 30%, Cartaginés 30%, Olimpia 29%, Forge 29%
+        # CORNERS (por partido):
+        #   América 9.5, LA Galaxy 9.5, Philadelphia 8.5, Vancouver 8.5, Tigres 8.0,
+        #   Cruz Azul 7.5, LAFC 6.0, San Diego 5.5, Cincinnati 5.0, Monterrey 4.5,
+        #   Nashville 4.5
+        # PENALES: LAFC 2/2 conv, Philadelphia 2/2 conv; Cincinnati falló 1
+        # TARJETAS ROJAS: Defence Force 1, LA Galaxy 1, Pumas 1, O&M 1
+        # TARJETAS AMARILLAS por partido: Xelaju 3.0, Cartaginés 2.5, San Diego 2.5,
+        #   Vancouver Wh. 2.5, Olimpia 2.0, Cruz Azul 2.0, Defence Force 2.0
+        # ── ESTADÍSTICAS AGREGADAS ──
+        # Total goles: 70 en 22 partidos = 3.18 g/partido TORNEO COMPLETO
+        # CRÍTICO: inflado por aplastamientos 1ra ronda vs relleno
+        # Élite vs élite (cuartos/semis/final) estimado: ~2.5 g/partido
+        # O25 rate total: ~62% | Élite vs élite: ~48%
+        # Promedio corners/equipo: 4.59 | Promedio amarillas/equipo: ~2.3
+        # ── INSIGHTS PARA EL MODELO ──
+        # 1. Equipos con alta posesión (América, Tigres, Cruz Azul) dominan pero no
+        #    siempre convierten (América solo 1.0 g/partido con 71% posesión)
+        # 2. Nashville y Vancouver: valla invicta con BAJA posesión → defensas sólidas
+        # 3. Equipos físicos (muchas amarillas): San Diego, Vancouver, Cruz Azul
+        # 4. Corners vs goles: América lidera corners (9.5) pero solo 1 g/partido
+        #    → muchos corners no se convierten en goles en este torneo
+        "o25_old": 0.518, "o25_rate": 0.620, "avg_goals": 3.18,
+        "avg_goals_home": 1.55, "avg_goals_away": 1.25,
+        "avg_goals_elite": 2.50,
+        "avg_corners_per_team": 4.59,
+        "avg_yellow_per_team": 2.30,
+        "clean_sheet_rate": 0.45,   # 5 de 12 equipos élite con 2/2 vallas invictas
+        "possession_dominance": {   # equipos que dominan posesión en CCL
+            "tigres": 71, "america": 71, "vancouver": 70, "la galaxy": 70,
+            "cruz azul": 69, "monterrey": 66, "cincinnati": 63, "philadelphia": 62,
+        },
+        "trend": "⬆️ Récord goles 2025 (+10.2%)",
+        "perfil": "CCL 2025: 3.18 g/partido total PERO OJO — 1ra ronda élite vs relleno infla brutalmente (Cincinnati 6.5/p, Philly 6.0/p vs Defence Force/O&M). Cuartos/Semis élite vs élite reales ~2.5 g/partido → U25 TIENE VALOR ahí. América lidera corners (9.5/p) con solo 1 gol/partido → baja eficiencia atacante. Nashville y Vancouver: valla invicta con baja posesión = equipos muy tácticos.",
         "under_value": False,
-        "delta": +0.042,
+        "delta": +0.102,
         "flag": "🌎",
     },
     "concacaf.league": {
@@ -8226,11 +8369,13 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             # → promedios: home=1.75, away=1.26 — temporadas más goleadoras de la historia
             _anchor_h_default = 1.75; _anchor_a_default = 1.26
         elif "europa.conf" in slug or "ecl" in slug:
-            # UECL: blend 2024-25 (2.95 g/p) + 2025-26 (2.38 g/p) → 2.67 efectivo en knockout
-            _anchor_h_default = 1.50; _anchor_a_default = 1.17
+            # UECL datos reales 2024-25: 2.60 g/partido, home=1.40, away=1.20
+            # Under 2.5 gana 52% de veces en este torneo
+            _anchor_h_default = 1.40; _anchor_a_default = 1.20
         elif "europa" in slug:
-            # UEL: 2024-25 fue 2.84-2.86; 2025-26 estimado similar → 2.82 blend
-            _anchor_h_default = 1.56; _anchor_a_default = 1.26
+            # UEL datos reales 2024-25: 2.70 g/partido, home=1.45, away=1.25
+            # Más cerrado que UCL — defensas muy sólidas (Braga 6/8 vallas)
+            _anchor_h_default = 1.45; _anchor_a_default = 1.25
         else:
             _anchor_h_default = 1.62; _anchor_a_default = 1.30
         _cs_home   = _cs_data.get("avg_goals_home", _anchor_h_default)
@@ -8363,8 +8508,16 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
                     _xg_total_odds = 2.50 + _balance * 0.20  # parejo élite
                 _ratio_h_base  = 0.554
             elif _is_uefa_g:
-                _xg_total_odds = 2.60 + _balance * 0.38 + _draw_fac * 0.18
-                _ratio_h_base  = 0.558
+                if "conf" in slug or "ecl" in slug:
+                    # UECL datos reales: 2.60 g/partido, el más cerrado de los 3 UEFA
+                    # U25 gana 52% — no inflar. home ratio 1.40/2.60=0.538
+                    _xg_total_odds = 2.30 + _balance * 0.28 + _draw_fac * 0.12
+                    _ratio_h_base  = 0.538
+                else:
+                    # UEL datos reales: 2.70 g/partido, más cerrado que UCL
+                    # AA tiene más valor que O25 en UEL (54.6% vs 50.6%)
+                    _xg_total_odds = 2.45 + _balance * 0.35 + _draw_fac * 0.15
+                    _ratio_h_base  = 0.537  # home ratio real UEL (1.45/2.70)
             else:
                 _xg_total_odds = 2.45 + _balance * 0.35 + _draw_fac * 0.15
                 _ratio_h_base  = 0.565
