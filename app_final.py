@@ -8218,7 +8218,9 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         # UECL: home≈1.58, away≈1.37 (2.95 goles/partido, UEFA 2024-25)
         # CONCACAF: home≈1.47, away≈1.14 (2.61 goles/partido, Sofascore 2025)
         if slug in _concacaf_slugs:
-            _anchor_h_default = 1.47; _anchor_a_default = 1.14
+            # CONCACAF CCL fase final: equipos LigaMX+MLS → promedio real ~2.8 g/partido
+            # Away teams son también de MX/USA — no son débiles
+            _anchor_h_default = 1.55; _anchor_a_default = 1.25
         elif "champions" in slug:
             # UCL: blend 2024-25 (3.26 g/p, xG home=1.68/away=1.21) + 2025-26 (3.39 g/p)
             # → promedios: home=1.75, away=1.26 — temporadas más goleadoras de la historia
@@ -8239,7 +8241,7 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         # Para CONCACAF: el anchor de visita (1.13) incluye equipos caribeños débiles
         # Los equipos que llegan a fase final son mucho mejores → corregir anchor
         if slug in _concacaf_slugs:
-            _cs_anchor = max(_cs_anchor, 1.28 if is_home else 1.05)
+            _cs_anchor = max(_cs_anchor, 1.35 if is_home else 1.15)
             # Floor de calidad más alto: equipos CONCACAF fase final ≥ Liga MX nivel
             _my_qf  = max(_my_qf,  0.80)
             _opp_qf = max(_opp_qf, 0.78)
@@ -18799,27 +18801,53 @@ if st.session_state["view"] == "cartelera":
                                                                 _pick_lbl  = _best_ml[0]
                                                                 _pick_prob = min(0.92, _best_ml[1])
 
-                                                                # ── PICK 2: mejor mercado de goles (O/U 2.5, O3.5, AA) — TODAS las ligas ──
+                                                                # ── PICK 2: mejor mercado de goles — con odds REALES del partido ──
                                                                 _pick2_lbl_c  = None
                                                                 _pick2_prob_c = 0.0
                                                                 try:
-                                                                    _oh_g = float(_m.get("odd_h",0) or 2.0)
-                                                                    _oa_g = float(_m.get("odd_a",0) or 2.5)
-                                                                    def _ev_g(p, odd): return p*(odd-1)-(1-p)
+                                                                    _slug_g   = _m.get("slug","")
+                                                                    _is_ucl   = "champions" in _slug_g
+                                                                    _is_uel   = "europa" in _slug_g and "conf" not in _slug_g
+                                                                    _is_uecl  = "conf" in _slug_g
+                                                                    _is_cncf  = "concacaf" in _slug_g
+                                                                    _is_intl  = _is_ucl or _is_uel or _is_uecl or _is_cncf
+                                                                    # xG total del partido
+                                                                    _xg_total = _hx2 + _ax2
+                                                                    # Odds reales del partido (con fallback por competición)
+                                                                    _o25_odd_real = float(_m.get("odd_o25",0) or _m.get("odd_over25",0) or 0)
+                                                                    _u25_odd_real = float(_m.get("odd_u25",0) or _m.get("odd_under25",0) or 0)
+                                                                    # Si no hay odds reales, usar referencias por competición
+                                                                    if _o25_odd_real < 1.20:
+                                                                        if _is_ucl:
+                                                                            # UCL 2024-25: 66% O25 → cuota justa ~1.52
+                                                                            _o25_odd_real = 1.55; _u25_odd_real = 2.40
+                                                                        elif _is_uel:
+                                                                            _o25_odd_real = 1.65; _u25_odd_real = 2.20
+                                                                        elif _is_uecl:
+                                                                            _o25_odd_real = 1.70; _u25_odd_real = 2.10
+                                                                        elif _is_cncf:
+                                                                            # CONCACAF: 56% O25 → cuota ~1.79
+                                                                            _o25_odd_real = 1.80; _u25_odd_real = 2.00
+                                                                        else:
+                                                                            _o25_odd_real = 1.85; _u25_odd_real = 2.00
+                                                                    _o35_odd = float(_m.get("odd_o35",0) or (2.20 if _is_ucl else 2.50))
+                                                                    _aa_odd  = float(_m.get("odd_aa",0)  or (1.65 if _is_ucl else 1.75))
+                                                                    def _ev_g2(p, odd): return p*(odd-1)-(1-p)
                                                                     _goles_pool = [
-                                                                        ("Over 2.5",    _o25_pre,  _ev_g(_o25_pre,  1.85), "O25"),
-                                                                        ("Under 2.5",   _u25_pre,  _ev_g(_u25_pre,  2.00), "U25"),
-                                                                        ("Over 3.5",    _o35_pre,  _ev_g(_o35_pre,  2.50), "O35"),
-                                                                        ("Ambos Anotan",_btts_pre, _ev_g(_btts_pre, 1.75), "AA"),
-                                                                        ("Over 1.5",    _o15_pre,  _ev_g(_o15_pre,  1.35), "O15"),
+                                                                        ("Over 2.5",    _o25_pre,  _ev_g2(_o25_pre,  _o25_odd_real), "O25"),
+                                                                        ("Under 2.5",   _u25_pre,  _ev_g2(_u25_pre,  _u25_odd_real), "U25"),
+                                                                        ("Over 3.5",    _o35_pre,  _ev_g2(_o35_pre,  _o35_odd),      "O35"),
+                                                                        ("Ambos Anotan",_btts_pre, _ev_g2(_btts_pre, _aa_odd),       "AA"),
+                                                                        ("Over 1.5",    _o15_pre,  _ev_g2(_o15_pre,  1.35),          "O15"),
                                                                     ]
-                                                                    # Excluir O1.5 salvo que sea el único con prob ≥ 0.75
-                                                                    _g_ok   = [o for o in _goles_pool if o[1] >= 0.40 and o[3] != "O15"]
+                                                                    # Para UEFA: forzar umbral de prob más bajo (son partidos de alto xG)
+                                                                    _prob_min = 0.35 if _is_intl else 0.40
+                                                                    _g_ok   = [o for o in _goles_pool if o[1] >= _prob_min and o[3] != "O15"]
                                                                     _g_ev   = [o for o in _g_ok if o[2] > 0]
                                                                     _g_best = (max(_g_ev, key=lambda o: o[2]) if _g_ev else
                                                                                max(_g_ok, key=lambda o: o[1]) if _g_ok else None)
                                                                     if not _g_best:
-                                                                        _o15_ok = [o for o in _goles_pool if o[1] >= 0.75]
+                                                                        _o15_ok = [o for o in _goles_pool if o[1] >= 0.72]
                                                                         _g_best = _o15_ok[0] if _o15_ok else None
                                                                     if _g_best:
                                                                         _pick2_lbl_c  = _g_best[0]
