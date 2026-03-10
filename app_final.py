@@ -5543,7 +5543,10 @@ def _villar_match_pick_to_result(pk, partido_db):
 
     # ══ FÚTBOL ══
     else:
-        pick_clean = pick.replace("🏠","").replace("✈️","").replace("🔵","").replace("🟣","").replace("🤝","").replace("⚽","").replace("⚡","").strip()
+        pick_clean = pick
+        for _ec in ["🏠","✈️","🔵","🟣","🤝","⚽","⚡","🌓","🎯","🛡️","⚽⚽","🔒🔒","🔒","🏆","🔴","🔥","💎","⚡","🎯🎯"]:
+            pick_clean = pick_clean.replace(_ec, "")
+        pick_clean = pick_clean.strip()
 
         # O/U primero (más específico)
         if "over 3.5" in pick_clean or "o3.5" in pick_clean:
@@ -5592,15 +5595,24 @@ def _villar_match_pick_to_result(pk, partido_db):
         elif "gana c/mitad local" in pick_clean or "gana cualquier mitad local" in pick_clean:
             ok = won_h or draw  # aproximación sin datos de mitad
         # Team goals: equipo +0.5 (anota al menos 1)
-        elif "+0.5" in pick_clean:
+        elif "+0.5" in pick_clean or "o0.5" in pick_clean:
             if _name_in_pick(home, pick_clean): ok = sh > 0
             elif _name_in_pick(away, pick_clean): ok = sa > 0
+            else:
+                # Fallback: si ningún nombre coincide, buscar cual de los dos teams es el sujeto
+                _h_words = [w for w in home.split() if len(w)>3]
+                _a_words = [w for w in away.split() if len(w)>3]
+                _pc_lower = pick_clean.lower()
+                _h_score = sum(1 for w in _h_words if w[:5].lower() in _pc_lower)
+                _a_score = sum(1 for w in _a_words if w[:5].lower() in _pc_lower)
+                if _h_score > _a_score: ok = sh > 0
+                elif _a_score > _h_score: ok = sa > 0
         # Team goals: equipo -0.5 (no anota)
         elif "-0.5" in pick_clean or "sin gol" in pick_clean:
             if _name_in_pick(home, pick_clean): ok = sh == 0
             elif _name_in_pick(away, pick_clean): ok = sa == 0
         # Team goals: equipo +1.5 (anota al menos 2)
-        elif "+1.5" in pick_clean:
+        elif "+1.5" in pick_clean or "o1.5" in pick_clean:
             if _name_in_pick(home, pick_clean): ok = sh > 1
             elif _name_in_pick(away, pick_clean): ok = sa > 1
         # Team goals: equipo -1.5 (anota 0 o 1)
@@ -5930,26 +5942,55 @@ def _villar_auto_pick(partido_db):
         # Filtrar prob mínima
         _all_outcomes = [o for o in _all_outcomes if o[1] >= 0.08]
 
-        # ── Selección: MAYOR EV entre mercados con ≥52% prob ──
-        # DO/Under: cuota baja → requieren prob más alta para tener EV real
-        # Mínima prob para EV>0 por mercado (= 1/cuota_mercado + margen 2%)
-        _CUOTA_MIN = {"ML":0.54,"X":0.37,"O25":0.56,"U25":0.52,"O35":0.42,"U35":0.69,"AA":0.59,"DO":0.79,"GCM":0.67,"TG":0.67}
-        _ev_candidates = [o for o in _all_outcomes if o[1] >= _CUOTA_MIN.get(o[4], 0.52) and o[3] > 0.0]
-        if _ev_candidates:
-            _best = max(_ev_candidates, key=lambda o: o[3])  # mayor EV
+        # ══════════════════════════════════════════════════════════
+        # PICKS POR INTEREST SCORE
+        # Score = prob - baseline_neutro del mercado
+        # Mercados triviales (U3.5, DO, TG+0.5) tienen baseline alto
+        # → deben superar más para ser pick → picks más variados
+        # ══════════════════════════════════════════════════════════
+        _GRP = {"ML":"A","X":"A","DO":"A","O25":"B","U25":"B","AA":"B","O35":"B","U35":"B","O15":"B","U15":"B","GCM":"C","TG":"C"}
+        # Baseline = prob esperada SIN información de xG (mercado neutro)
+        _BSLN = {"ML":0.38,"X":0.26,"DO":0.64,"O25":0.52,"U25":0.52,
+                 "O35":0.30,"U35":0.70,"O15":0.76,"U15":0.24,
+                 "AA":0.48,"GCM":0.58,"TG":0.68}
+        # Umbral mínimo de prob para entrar al pool (evita picks ridículos)
+        _PTHR = {"ML":0.48,"X":0.30,"DO":0.82,"O25":0.53,"U25":0.53,
+                 "O35":0.47,"U35":0.92,"O15":0.87,"U15":0.40,
+                 "AA":0.52,"GCM":0.72,"TG":0.80}
+        def _iscore_de(prob, mkt):
+            if prob < _PTHR.get(mkt, 0.48): return -1
+            return (prob - _BSLN.get(mkt, 0.50)) * 100
+
+        # Calcular interest score para cada outcome
+        _scored_de = [(lbl, p, odd, ev, mkt, _iscore_de(p, mkt)) for lbl, p, odd, ev, mkt in _all_outcomes]
+        # Solo los que califican (score ≥ 0)
+        _qual_de   = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _scored_de if s >= 0]
+        _qual_de.sort(key=lambda x: x[5], reverse=True)
+
+        # Pick1 = mayor interest score (el más informativo que califica)
+        if _qual_de:
+            _best_de = _qual_de[0]
         else:
-            # Fallback: mayor prob entre todos (sin DO de cuota baja)
-            _pool = [o for o in _all_outcomes if o[4] not in ("DO",) and o[1] >= 0.45]
-            _best = max(_pool, key=lambda o: o[1]) if _pool else max(_all_outcomes, key=lambda o: o[1])
+            # Fallback: mayor prob excluyendo los mercados triviales
+            _fb_de = [(l,p,o,ev,m,0) for l,p,o,ev,m,_ in _scored_de
+                      if m not in ("U35","O15","DO","TG") and p >= 0.42]
+            _best_de = max(_fb_de, key=lambda x: x[1]) if _fb_de else max(
+                [(l,p,o,ev,m,0) for l,p,o,ev,m,_ in _scored_de], key=lambda x: x[1])
 
-        main_lbl, main_prob, main_odd = _best[0], _best[1], _best[2]
-        _best_ev  = _best[3]
-        _best_mkt = _best[4] if len(_best) > 4 else "ML"
+        main_lbl  = _best_de[0]; main_prob = _best_de[1]
+        main_odd  = _best_de[2]; _best_ev  = _best_de[3]; _best_mkt = _best_de[4]
+        _p1_grp   = _GRP.get(_best_mkt, "A")
 
-        # Si tiene EV positivo real → pick limpio; si no → nota informativa
-        _min_ev = 0.01
-        if _has_real_odds and _best_ev < _min_ev:
-            main_lbl = main_lbl + " (sin valor)"
+        # Pick2 = mayor interest score de grupo distinto al pick1
+        _qual2_de = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _qual_de
+                     if _GRP.get(m,"A") != _p1_grp and l != _best_de[0]]
+        _best_p2  = _qual2_de[0] if _qual2_de else None
+
+        _pick2_lbl  = _best_p2[0]  if _best_p2 else None
+        _pick2_prob = _best_p2[1]  if _best_p2 else None
+        _pick2_odd  = _best_p2[2]  if _best_p2 else None
+        _pick2_ev   = _best_p2[3]  if _best_p2 else None
+        _pick2_mkt  = _best_p2[4]  if _best_p2 else None
 
         # Construir all_picks con TODOS los mercados disponibles
         def _build_pick(lbl, prob, mkt, odd=0):
@@ -5970,44 +6011,6 @@ def _villar_auto_pick(partido_db):
             _build_pick(f"🌓 {away} gana cualquier mitad", _gcm_a,  "GCM", _o_gcma),
         ]
 
-        # ── UEFA: Pick 1 = resultado (DO favorito/local), Pick 2 = goles por EV ──
-        _uefa_only = {"uefa.champions","uefa.europa","uefa.europa.conf"}
-        _pick2_lbl = None; _pick2_prob = None; _pick2_odd = None; _pick2_ev = None
-
-        if slug in _uefa_only:
-            # DO del local y visitante (ya existen en _all_outcomes)
-            _do_h_out = next((o for o in _all_outcomes if o[4]=="DO" and home.lower()[:8] in o[0].lower()[:12]), None)
-            _do_a_out = next((o for o in _all_outcomes if o[4]=="DO" and away.lower()[:8] in o[0].lower()[:12]), None)
-            _fav_away = _pa_d > _ph_d
-            _diff_ml  = abs(_ph_d - _pa_d)
-
-            # Pick 1: DO del favorito si prob ≥ 50%, sino mejor ML/DO/X por EV
-            if _fav_away and _do_a_out and _do_a_out[1] >= 0.55 and _diff_ml >= 0.05:
-                _p1u = _do_a_out
-            elif not _fav_away and _do_h_out and _do_h_out[1] >= 0.50:
-                _p1u = _do_h_out
-            else:
-                _cat_a = [o for o in _all_outcomes if o[4] in ("ML","DO","X","GCM") and o[1]>=0.35]
-                _cat_a_ev = [o for o in _cat_a if o[3]>0]
-                _p1u = (max(_cat_a_ev, key=lambda o: o[3]) if _cat_a_ev else
-                        max(_cat_a,    key=lambda o: o[1]) if _cat_a else None)
-            if _p1u:
-                main_lbl  = _p1u[0]; main_prob = _p1u[1]
-                main_odd  = _p1u[2]; _best_ev  = _p1u[3]; _best_mkt = _p1u[4]
-
-            # Pick 2: mejor EV entre goles (O25/O35/AA/U25/TG), prob ≥ 40%
-            _gols = [o for o in _all_outcomes
-                     if o[4] in ("O25","O35","AA","U25","TG","U35")
-                     and o[1] >= 0.40 and o[0] != main_lbl]
-            if _gols:
-                _gols_ev = [o for o in _gols if o[3]>0]
-                _p2u = (max(_gols_ev, key=lambda o: o[3]) if _gols_ev
-                        else max(_gols, key=lambda o: o[1]))
-                _pick2_lbl  = _p2u[0]; _pick2_prob = _p2u[1]
-                _pick2_odd  = _p2u[2]; _pick2_ev   = _p2u[3]
-                if _has_real_odds and _pick2_ev < _min_ev:
-                    _pick2_lbl = _pick2_lbl + " (sin valor)"
-
         return {
             "pick":       main_lbl,
             "prob":       main_prob,
@@ -6016,7 +6019,6 @@ def _villar_auto_pick(partido_db):
             "away":       away,
             "src":        f"🤖 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
             "all_picks":  _all_market_picks,
-            # pick2 solo existe para UEFA champions/europa/conf
             "pick2":      _pick2_lbl,
             "pick2_prob": _pick2_prob,
             "pick2_odd":  _pick2_odd,
@@ -18900,11 +18902,13 @@ if st.session_state["view"] == "cartelera":
                             st.markdown(
                                 f"<div style='background:#040a0d;border:1px solid #1a2a3a;"
                                 f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
-                                f"<div style='font-size:0.75rem;color:#555;font-weight:700'>FT · {sf}</div>"
-                                f"<div style='font-size:0.975rem;color:{_hcn};font-weight:700'>{g['home']}</div>"
-                                f"<div style='font-size:0.825rem;color:#555;margin:1px 0'>vs</div>"
-                                f"<div style='font-size:0.975rem;color:{_acn};font-weight:700'>{g['away']}</div>"
-                                f"<div style='font-size:0.8rem;color:#FFD700;margin-top:2px'>🏆 {won_lbl}</div>"
+                                f"<div style='font-size:0.72rem;color:#555;font-weight:700;margin-bottom:3px'>FT · {sf}</div>"
+                                f"<div style='font-size:0.92rem;font-weight:700;line-height:1.4'>"
+                                f"<span style='color:{_hcn}'>{g['home']}</span>"
+                                f"<span style='color:#555;font-size:0.8rem;margin:0 4px'>vs</span>"
+                                f"<span style='color:{_acn}'>{g['away']}</span>"
+                                f"</div>"
+                                f"<div style='font-size:0.85rem;color:#FFD700;font-weight:700;margin-top:2px'>🏆 {won_lbl}</div>"
                                 f"{_pick_html_n}</div>",
                                 unsafe_allow_html=True)
                             if st.button("📊", key=f"nba_post_{_gid}", help=f"Analizar {g['home']} vs {g['away']}", use_container_width=True):
@@ -19458,11 +19462,13 @@ if st.session_state["view"] == "cartelera":
                                 st.markdown(
                                     f"<div style='background:#040d06;border:1px solid #1a2a1a;"
                                     f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
-                                    f"<div style='font-size:0.75rem;color:#555;font-weight:700'>FT · Sets {sc}</div>"
-                                    f"<div style='font-size:0.975rem;color:{_hct};font-weight:700'>{m['p1']}</div>"
-                                    f"<div style='font-size:0.825rem;color:#555;margin:1px 0'>vs</div>"
-                                    f"<div style='font-size:0.975rem;color:{_act};font-weight:700'>{m['p2']}</div>"
-                                    f"<div style='font-size:0.8rem;color:#FFD700;margin-top:2px'>🏆 {won_n}</div>"
+                                    f"<div style='font-size:0.72rem;color:#555;font-weight:700;margin-bottom:3px'>FT · {sc}</div>"
+                                    f"<div style='font-size:0.92rem;font-weight:700;line-height:1.4'>"
+                                    f"<span style='color:{_hct}'>{m['p1']}</span>"
+                                    f"<span style='color:#555;font-size:0.8rem;margin:0 4px'>vs</span>"
+                                    f"<span style='color:{_act}'>{m['p2']}</span>"
+                                    f"</div>"
+                                    f"<div style='font-size:0.85rem;color:#FFD700;font-weight:700;margin-top:2px'>🏆 {won_n}</div>"
                                     f"{_pick_html_t}</div>",
                                     unsafe_allow_html=True)
                                 if st.button("📊", key=f"ten_post_{_tid}", help=f"Analizar {m['p1']} vs {m['p2']}", use_container_width=True):
@@ -19831,18 +19837,20 @@ if st.session_state["view"] == "cartelera":
                                                       f"<div style='font-size:0.68rem;color:#555'>🤖 {_pp2d:.0f}%</div>"
                                                       f"</div></div>"
                                                   )
-                                              _hc2 = "#00ff88" if _won_h2 else ("#FFD700" if _draw2 else "#aaa")
-                                              _ac2 = "#00ff88" if not _won_h2 and not _draw2 else ("#FFD700" if _draw2 else "#aaa")
+                                              # Colores: ganador=verde, perdedor=gris, empate=dorado ambos
+                                              _hc2 = "#00ff88" if _won_h2 else ("#FFD700" if _draw2 else "#888")
+                                              _ac2 = "#00ff88" if (not _won_h2 and not _draw2) else ("#FFD700" if _draw2 else "#888")
                                               st.markdown(
                                                   f"<div style='background:#0d0900;border:1px solid #2a2010;"
                                                   f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
-                                                  f"<div style='font-size:0.75rem;color:#555;font-weight:700'>FT</div>"
-                                                  f"<div style='font-size:0.975rem;color:{_hc2};font-weight:700;"
-                                                  f"line-height:1.3;word-break:break-word'>{_m['home']}</div>"
-                                                  f"<div style='font-size:0.825rem;color:#555;margin:1px 0'>"
+                                                  f"<div style='font-size:0.72rem;color:#555;font-weight:700;margin-bottom:3px'>FT</div>"
+                                                  f"<div style='font-size:0.92rem;font-weight:700;line-height:1.4'>"
+                                                  f"<span style='color:{_hc2}'>{_m['home']}</span>"
+                                                  f"<span style='color:#555;font-size:0.8rem;margin:0 4px'>vs</span>"
+                                                  f"<span style='color:{_ac2}'>{_m['away']}</span>"
+                                                  f"</div>"
+                                                  f"<div style='font-size:0.85rem;color:#FFD700;font-weight:700;margin-top:2px'>"
                                                   f"{_sf} · {_res_ico} {_res_lbl}</div>"
-                                                  f"<div style='font-size:0.975rem;color:{_ac2};font-weight:700;"
-                                                  f"line-height:1.3;word-break:break-word'>{_m['away']}</div>"
                                                   f"{_pick_html2}</div>",
                                                   unsafe_allow_html=True)
                                               if st.button("📊", key=f"fut_post_{_mid2}", help=f"Analizar {_m['home']} vs {_m['away']}", use_container_width=True):
@@ -20035,149 +20043,114 @@ if st.session_state["view"] == "cartelera":
                                                                 _a_boost = next((v for k,v in _TEAM_BOOST.items() if k in _aname_low), 0.0)
                                                                 if _h_boost: _ph2_adj = min(0.92, _ph2_adj + _h_boost)
                                                                 if _a_boost: _pa2_adj = min(0.92, _pa2_adj + _a_boost)
-                                                                # EV = prob * (odd-1) - (1-prob)
+                                                                # ══════════════════════════════════════════════
+                                                                # PICKS BASADOS EN EV REAL — igual para toda liga
+                                                                # EV = prob*(odd-1) - (1-prob)
+                                                                # Pick1 = mayor EV del pool completo
+                                                                # Pick2 = mayor EV de categoría distinta
+                                                                # ══════════════════════════════════════════════
+                                                                import math as _pm2
+
                                                                 def _ev2(p, odd): return p*(odd-1)-(1-p)
+                                                                def _pois2(lam, k): return lam**k * _pm2.exp(-lam) / _pm2.factorial(k)
 
-                                                                # ── PICK 1: FORZOSO Doble Oportunidad del favorito ──
-                                                                _oh_p1  = float(_m.get("odd_h",0) or 0)
-                                                                _oa_p1  = float(_m.get("odd_a",0) or 0)
-                                                                _od_p1  = float(_m.get("odd_d",0) or 0)
-                                                                # Probabilidad DO = P(local gana) + P(empate)  ó  P(visita) + P(empate)
-                                                                _do_h_p = min(0.95, _ph2_adj + _pd2)
-                                                                _do_a_p = min(0.95, _pa2_adj + _pd2)
-                                                                # Cuota DO = cuota implícita de mercado (product formula)
-                                                                _do_h_o = (_oh_p1*_od_p1/(_oh_p1+_od_p1) if _oh_p1>1 and _od_p1>1 else 1.30)
-                                                                _do_a_o = (_oa_p1*_od_p1/(_oa_p1+_od_p1) if _oa_p1>1 and _od_p1>1 else 1.25)
-                                                                # Elegir DO del equipo con mayor probabilidad
-                                                                if _do_h_p >= _do_a_p:
-                                                                    _pick_lbl  = f"🔵 {_m['home']} DO"
-                                                                    _pick_prob = min(0.92, _do_h_p)
-                                                                    _pick_do_odd = _do_h_o
+                                                                _oh_p1 = float(_m.get("odd_h",0) or 0)
+                                                                _oa_p1 = float(_m.get("odd_a",0) or 0)
+                                                                _od_p1 = float(_m.get("odd_d",0) or 0)
+                                                                _slug_g = _m.get("slug","")
+
+                                                                # Probabilidades del modelo
+                                                                _xg_tot  = _hx2 + _ax2
+                                                                _o25_p   = float(_mc2.get("o25",  1 - sum(_pois2(_xg_tot,k) for k in range(3))))
+                                                                _u25_p   = 1.0 - _o25_p
+                                                                _o35_p   = float(_mc2.get("o35",  1 - sum(_pois2(_xg_tot,k) for k in range(4))))
+                                                                _o15_p   = 1 - sum(_pois2(_xg_tot,k) for k in range(2))
+                                                                _aa_p    = float(_mc2.get("btts",  (1-_pm2.exp(-_hx2))*(1-_pm2.exp(-_ax2))))
+                                                                _gcm_h_p = float(_mc2.get("gcm_h", min(0.90, _ph2_adj*1.18+_pd2*0.35)))
+                                                                _gcm_a_p = float(_mc2.get("gcm_a", min(0.90, _pa2_adj*1.18+_pd2*0.35)))
+                                                                _1x_o05  = float(_mc2.get("h_o05", 1-_pm2.exp(-_hx2)))
+                                                                _1x_o15  = float(_mc2.get("h_o15", 1-_pois2(_hx2,0)-_pois2(_hx2,1)))
+                                                                _2x_o05  = float(_mc2.get("a_o05", 1-_pm2.exp(-_ax2)))
+                                                                _2x_o15  = float(_mc2.get("a_o15", 1-_pois2(_ax2,0)-_pois2(_ax2,1)))
+                                                                _do_h_p  = min(0.95, _ph2_adj + _pd2)
+                                                                _do_a_p  = min(0.95, _pa2_adj + _pd2)
+
+                                                                # Cuotas: reales si disponibles, fallback de mercado
+                                                                def _ro2(k1, k2, fb):
+                                                                    v = float(_m.get(k1,0) or _m.get(k2,0) or 0)
+                                                                    return v if v > 1.05 else fb
+                                                                _oh_r   = _ro2("odd_h","",   2.10)
+                                                                _oa_r   = _ro2("odd_a","",   2.50)
+                                                                _od_r   = _ro2("odd_d","",   3.30)
+                                                                _o25_o  = _ro2("odd_o25","odd_over25",  1.88)
+                                                                _u25_o  = _ro2("odd_u25","odd_under25", 1.95)
+                                                                _o35_o  = _ro2("odd_o35","",            2.50)
+                                                                _aa_o   = _ro2("odd_aa","",             1.75)
+                                                                _do_h_o = (_oh_r*_od_r/(_oh_r+_od_r)) if _oh_r>1 and _od_r>1 else 1.30
+                                                                _do_a_o = (_oa_r*_od_r/(_oa_r+_od_r)) if _oa_r>1 and _od_r>1 else 1.25
+                                                                _gcm_o  = 2.15
+                                                                _1x05_o = 1.35; _1x15_o = 1.90
+                                                                _2x05_o = 1.65; _2x15_o = 2.25
+
+                                                                # ══════════════════════════════════════════
+                                                                # PICKS POR INTEREST SCORE
+                                                                # Score = prob - baseline_neutro del mercado
+                                                                # Mercados triviales (U3.5, DO, TG+0.5) tienen
+                                                                # baseline alto → deben informar más para ser pick
+                                                                # ══════════════════════════════════════════
+                                                                _BSLN2 = {"ML":0.38,"X":0.26,"DO":0.64,"O25":0.52,"U25":0.52,
+                                                                          "O35":0.30,"U35":0.70,"O15":0.76,
+                                                                          "AA":0.48,"GCM":0.58,"TG":0.68}
+                                                                _PTHR2 = {"ML":0.48,"X":0.30,"DO":0.82,"O25":0.53,"U25":0.53,
+                                                                          "O35":0.47,"U35":0.92,"O15":0.87,
+                                                                          "AA":0.52,"GCM":0.72,"TG":0.80}
+                                                                def _isc2(p, m):
+                                                                    if p < _PTHR2.get(m, 0.48): return -1
+                                                                    return (p - _BSLN2.get(m, 0.50)) * 100
+
+                                                                _pool_c = [
+                                                                    (f"🏠 {_m['home']} Gana",       _ph2_adj, _oh_r,   "ML",  "A"),
+                                                                    (f"✈️ {_m['away']} Gana",       _pa2_adj, _oa_r,   "ML",  "A"),
+                                                                    ("🤝 Empate",                    _pd2,     _od_r,   "X",   "A"),
+                                                                    (f"🔵 {_m['home'][:13]} DO",     _do_h_p,  _do_h_o, "DO",  "A"),
+                                                                    (f"🔵 {_m['away'][:13]} DO",     _do_a_p,  _do_a_o, "DO",  "A"),
+                                                                    ("⚽ Over 2.5",                  _o25_p,   _o25_o,  "O25", "B"),
+                                                                    ("🔒 Under 2.5",                 _u25_p,   _u25_o,  "U25", "B"),
+                                                                    ("⚽⚽ Over 3.5",                 _o35_p,   _o35_o,  "O35", "B"),
+                                                                    ("⚡ Ambos Anotan",               _aa_p,    _aa_o,   "AA",  "B"),
+                                                                    (f"🌓 {_m['home'][:13]} c/Mitad", _gcm_h_p, _gcm_o,  "GCM", "C"),
+                                                                    (f"🌓 {_m['away'][:13]} c/Mitad", _gcm_a_p, _gcm_o,  "GCM", "C"),
+                                                                    (f"🎯 {_m['home'][:11]} +0.5",    _1x_o05,  _1x05_o, "TG",  "C"),
+                                                                    (f"🎯 {_m['home'][:11]} +1.5",    _1x_o15,  _1x15_o, "TG",  "C"),
+                                                                    (f"🎯 {_m['away'][:11]} +0.5",    _2x_o05,  _2x05_o, "TG",  "C"),
+                                                                    (f"🎯 {_m['away'][:11]} +1.5",    _2x_o15,  _2x15_o, "TG",  "C"),
+                                                                ]
+                                                                # Calcular interest score
+                                                                _sc2  = [(l,p,o,m,g,_isc2(p,m)) for l,p,o,m,g in _pool_c]
+                                                                _ql2  = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2 if s>=0]
+                                                                _ql2.sort(key=lambda x: x[5], reverse=True)
+
+                                                                # Pick1 = mayor interest score
+                                                                if _ql2:
+                                                                    _bc2 = _ql2[0]
                                                                 else:
-                                                                    _pick_lbl  = f"🔵 {_m['away']} DO"
-                                                                    _pick_prob = min(0.92, _do_a_p)
-                                                                    _pick_do_odd = _do_a_o
+                                                                    # Fallback: mayor prob sin triviales
+                                                                    _fb2 = [(l,p,o,m,g,0) for l,p,o,m,g,_ in _sc2
+                                                                            if m not in ("U35","O15","DO","TG") and p>=0.42]
+                                                                    _bc2 = max(_fb2, key=lambda x: x[1]) if _fb2 else \
+                                                                           max([(l,p,o,m,g,0) for l,p,o,m,g,_ in _sc2], key=lambda x: x[1])
 
-                                                                # ── PICK 2: menú ampliado (AA, O/U, GCM, TG por equipo) ──
-                                                                _pick2_lbl_c  = None
-                                                                _pick2_prob_c = 0.0
-                                                                try:
-                                                                    import math as _pm2
-                                                                    _slug_g   = _m.get("slug","")
-                                                                    _is_ucl   = "champions" in _slug_g
-                                                                    _is_uel   = "europa" in _slug_g and "conf" not in _slug_g
-                                                                    _is_uecl  = "conf" in _slug_g
-                                                                    _is_cncf  = "concacaf" in _slug_g
-                                                                    _is_intl  = _is_ucl or _is_uel or _is_uecl or _is_cncf
+                                                                _pick_lbl  = _bc2[0]
+                                                                _pick_prob = min(0.92, _bc2[1])
+                                                                _p1g2      = _bc2[4]  # grupo del pick1
 
-                                                                    # Probabilidades Poisson
-                                                                    _xg_tot  = _hx2 + _ax2
-                                                                    def _pois(lam, k): return lam**k * _pm2.exp(-lam) / _pm2.factorial(k)
-                                                                    _o25_p  = 1 - sum(_pois(_xg_tot, k) for k in range(3))
-                                                                    _u25_p  = 1 - _o25_p
-                                                                    _o35_p  = 1 - sum(_pois(_xg_tot, k) for k in range(4))
-                                                                    _o15_p  = 1 - sum(_pois(_xg_tot, k) for k in range(2))
-                                                                    _aa_p   = (1 - _pm2.exp(-_hx2)) * (1 - _pm2.exp(-_ax2))
-                                                                    # GCM y TG: usar datos ya calculados en mc50k (_mc2)
-                                                                    # mc50k simula 10k partidos — más preciso que Poisson simple
-                                                                    _gcm_p  = float(_mc2.get("gcm_h", min(0.88, _ph2_adj * 1.15 + 0.05)))
-                                                                    _1x_o05 = float(_mc2.get("h_o05", 1 - _pm2.exp(-_hx2)))
-                                                                    _1x_o15 = float(_mc2.get("h_o15", 1 - _pois(_hx2,0) - _pois(_hx2,1)))
-                                                                    _2x_o05 = float(_mc2.get("a_o05", 1 - _pm2.exp(-_ax2)))
-                                                                    _2x_o15 = float(_mc2.get("a_o15", 1 - _pois(_ax2,0) - _pois(_ax2,1)))
-                                                                    # Prob O25/U25/O35/AA también de mc50k cuando disponible
-                                                                    _o25_p  = float(_mc2.get("o25", _o25_p))
-                                                                    _u25_p  = 1.0 - _o25_p
-                                                                    _o35_p  = float(_mc2.get("o35", _o35_p))
-                                                                    _aa_p   = float(_mc2.get("btts", _aa_p))
+                                                                # Pick2 = mayor interest score de grupo distinto
+                                                                _ql2b = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2
+                                                                         if g != _p1g2 and l != _bc2[0]]
+                                                                _bp2  = _ql2b[0] if _ql2b else None
 
-                                                                    # Cuotas reales o fallback por competición
-                                                                    def _odd_fallback(key1, key2, fb_ucl, fb_other):
-                                                                        v = float(_m.get(key1,0) or _m.get(key2,0) or 0)
-                                                                        return v if v > 1.10 else (fb_ucl if _is_ucl else fb_other)
-                                                                    _o25_odd = _odd_fallback("odd_o25","odd_over25", 1.75, 1.82 if _is_cncf else 1.88)
-                                                                    _u25_odd = _odd_fallback("odd_u25","odd_under25", 2.10, 2.00 if _is_cncf else 1.95)
-                                                                    _o35_odd = _odd_fallback("odd_o35","",           2.30, 2.50)
-                                                                    _aa_odd  = _odd_fallback("odd_aa","",            1.72, 1.75)
-                                                                    _gcm_odd = _odd_fallback("odd_gcm","",           2.10, 2.20)
-                                                                    _1x05_odd = _odd_fallback("odd_1x_o05","",       1.30, 1.35)
-                                                                    _1x15_odd = _odd_fallback("odd_1x_o15","",       1.80, 1.90)
-                                                                    _2x05_odd = _odd_fallback("odd_2x_o05","",       1.55, 1.65)
-                                                                    _2x15_odd = _odd_fallback("odd_2x_o15","",       2.10, 2.25)
-
-                                                                    def _ev_g2(p, odd): return p*(odd-1)-(1-p)
-
-                                                                    # Pool completo de mercados alternos
-                                                                    _p2_pool = [
-                                                                        ("⚽ Ambos Anotan",        _aa_p,   _ev_g2(_aa_p,   _aa_odd),   "AA"),
-                                                                        ("⚽ Over 2.5",            _o25_p,  _ev_g2(_o25_p,  _o25_odd),  "O25"),
-                                                                        ("🔒 Under 2.5",           _u25_p,  _ev_g2(_u25_p,  _u25_odd),  "U25"),
-                                                                        ("⚽⚽ Over 3.5",           _o35_p,  _ev_g2(_o35_p,  _o35_odd),  "O35"),
-                                                                        ("🎯 1X Local O0.5",       _1x_o05, _ev_g2(_1x_o05, _1x05_odd), "TG"),
-                                                                        ("🎯 1X Local O1.5",       _1x_o15, _ev_g2(_1x_o15, _1x15_odd), "TG"),
-                                                                        ("🎯 2X Visita O0.5",      _2x_o05, _ev_g2(_2x_o05, _2x05_odd), "TG"),
-                                                                        ("🎯 2X Visita O1.5",      _2x_o15, _ev_g2(_2x_o15, _2x15_odd), "TG"),
-                                                                        ("🌓 Gana c/Mitad Local",  _gcm_p,  _ev_g2(_gcm_p,  _gcm_odd),  "GCM"),
-                                                                    ]
-                                                                    # Filtrar: prob mínima (más baja para mercados de TG), EV positivo preferido
-                                                                    _prob_min = 0.38 if _is_intl else 0.42
-                                                                    # TG O0.5: prob esperada alta (~75-85%), cuota baja — umbral diferente
-                                                                    _p2_ok = []
-                                                                    for _nm, _pp, _ev, _mk in _p2_pool:
-                                                                        if _mk in ("TG",) and _pp >= 0.62 and _ev > 0:
-                                                                            _p2_ok.append((_nm, _pp, _ev, _mk))
-                                                                        elif _mk not in ("TG",) and _pp >= _prob_min:
-                                                                            _p2_ok.append((_nm, _pp, _ev, _mk))
-                                                                    # Preferir EV positivo; si no hay, el de mayor probabilidad
-                                                                    _p2_ev_ok  = [o for o in _p2_ok if o[2] > 0]
-                                                                    _p2_best   = (max(_p2_ev_ok, key=lambda o: o[2]) if _p2_ev_ok else
-                                                                                  max(_p2_ok,    key=lambda o: o[1]) if _p2_ok else None)
-                                                                    # NO permitir que pick2 sea el mismo tipo que pick1 (ya es DO)
-                                                                    # También evitar O1.5 solo (muy fácil, poco valor)
-                                                                    if _p2_best:
-                                                                        _pick2_lbl_c  = _p2_best[0]
-                                                                        _pick2_prob_c = min(0.92, _p2_best[1])
-                                                                except: pass
-
-                                                                # ── UEFA: Pick1 = DO (doble chance del favorito), Pick2 = mejor goles ──
-                                                                _is_uefa3 = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                                if _is_uefa3:
-                                                                    try:
-                                                                        _oh_u = float(_m.get("odd_h",0) or 0)
-                                                                        _od_u = float(_m.get("odd_d",0) or 0)
-                                                                        _oa_u = float(_m.get("odd_a",0) or 0)
-                                                                        _do_h_p = min(0.95, _ph2_adj + _pd2)
-                                                                        _do_a_p = min(0.95, _pa2_adj + _pd2)
-                                                                        _do_h_o = (_oh_u*_od_u/(_oh_u+_od_u) if _oh_u>1 and _od_u>1 else 1.30)
-                                                                        _do_a_o = (_oa_u*_od_u/(_oa_u+_od_u) if _oa_u>1 and _od_u>1 else 1.25)
-                                                                        def _ev_do(p, odd): return p*(odd-1)-(1-p)
-                                                                        _ev_do_h = _ev_do(_do_h_p, _do_h_o)
-                                                                        _ev_do_a = _ev_do(_do_a_p, _do_a_o)
-                                                                        # Comparar DO vs ML: elegir la opción con mejor EV para pick1 UEFA
-                                                                        _ml_h_o = _oh_u if _oh_u > 1 else 2.00
-                                                                        _ml_a_o = _oa_u if _oa_u > 1 else 2.50
-                                                                        _ev_ml_h = _ev_do(_ph2_adj, _ml_h_o)
-                                                                        _ev_ml_a = _ev_do(_pa2_adj, _ml_a_o)
-                                                                        _uefa_pool = [
-                                                                            (_m["home"] + " DO",   _do_h_p,  _ev_do_h, "DO"),
-                                                                            (_m["away"] + " DO",   _do_a_p,  _ev_do_a, "DO"),
-                                                                            (_m["home"] + " Gana", _ph2_adj, _ev_ml_h, "ML"),
-                                                                            (_m["away"] + " Gana", _pa2_adj, _ev_ml_a, "ML"),
-                                                                        ]
-                                                                        # UEFA: pick1 ya es DO (calculado arriba)
-                                                                        # Solo sobreescribir con ML si hay favorito MUY claro (≥62%)
-                                                                        if _ph2_adj >= 0.62:
-                                                                            _pick_lbl  = f"🎯 {_m['home']} Gana"
-                                                                            _pick_prob = min(0.92, _ph2_adj)
-                                                                        elif _pa2_adj >= 0.62:
-                                                                            _pick_lbl  = f"🎯 {_m['away']} Gana"
-                                                                            _pick_prob = min(0.92, _pa2_adj)
-                                                                        # else: mantener el DO ya calculado arriba
-                                                                        # Pick2 UEFA: si no se calculó, usar O2.5 por defecto
-                                                                        if not _pick2_lbl_c:
-                                                                            _pick2_lbl_c  = "⚽ Over 2.5"
-                                                                            _pick2_prob_c = _o25_pre
-                                                                    except: pass
+                                                                _pick2_lbl_c  = _bp2[0]          if _bp2 else None
+                                                                _pick2_prob_c = min(0.92, _bp2[1]) if _bp2 else 0.0
                                                             except: pass
                                                     # ── Guardar en bridge/snap ──
                                                     _is_uefa_save = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
@@ -20192,7 +20165,14 @@ if st.session_state["view"] == "cartelera":
                                                                     "home": _m.get("home",""), "away": _m.get("away",""),
                                                                     "sport": "futbol", "fecha": _m.get("fecha",""),
                                                                     "src": "⚡ Cartelera",
-                                                                    "mkt": ("DO" if ("DO" in _pick_lbl or "🔵" in _pick_lbl) else "ML"),
+                                                                    "mkt": ("DO" if ("DO" in _pick_lbl or "🔵" in _pick_lbl) else
+                                                                            "O25" if "Over 2.5" in _pick_lbl else
+                                                                            "U25" if "Under 2.5" in _pick_lbl else
+                                                                            "O35" if "Over 3.5" in _pick_lbl else
+                                                                            "AA"  if ("Ambos" in _pick_lbl or "AA" in _pick_lbl) else
+                                                                            "GCM" if "Mitad" in _pick_lbl else
+                                                                            "TG"  if ("🎯" in _pick_lbl or "+0.5" in _pick_lbl or "+1.5" in _pick_lbl) else
+                                                                            "X"   if "Empate" in _pick_lbl else "ML"),
                                                                     "pick2": _pick2_lbl_c,
                                                                     "pick2_prob": _pick2_prob_c,
                                                                     "pick2_mkt": ("GOLES UEFA" if _is_uefa_save else "GOLES"),
