@@ -10944,10 +10944,12 @@ def diamond_engine(mc, h2h_s, hform, aform, match=None):
     s   = ph+pd+pa
     if s > 0: ph/=s; pd/=s; pa/=s
     top = max(ph,pd,pa)
-    if top >= 0.55:   conf,cc = "💎 DIAMANTE","#FFD700"
-    elif top >= 0.46: conf,cc = "🔥 ALTA","#00ff88"
-    elif top >= 0.37: conf,cc = "⚡ MEDIA","#00aaff"
-    else:             conf,cc = "⚠️ BAJA","#ff9500"
+    # v3: umbrales alineados con King Rongo — elimina doble estándar entre tabs
+    if top >= _KR_DIAMOND_THRESHOLD:   conf,cc = "💎 DIAMANTE","#FFD700"  # 0.68
+    elif top >= _KR_GOLD_THRESHOLD:    conf,cc = "🔥 ALTA","#00ff88"       # 0.61
+    elif top >= 0.55:                  conf,cc = "⚡ MEDIA","#00aaff"
+    elif top >= _KR_MIN_PROB:          conf,cc = "⚠️ BAJA","#ff9500"       # 0.53
+    else:                              conf,cc = "🔻 SIN VALOR","#ff4444"
     return {"ph":ph,"pd":pd,"pa":pa,"conf":conf,"cc":cc,"top":top}
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -13375,30 +13377,57 @@ KR_BRAIN_FILE = "/tmp/kr_god_brain.json"
 KR_ELO_FILE   = "/tmp/kr_elo_ratings.json"
 
 def _kr_brain_load():
+    # 1) Intentar /tmp/ (rápido, puede no existir tras reinicio)
     try:
         import json as _j
-        with open(KR_BRAIN_FILE) as _f: return _j.load(_f)
-    except:
-        return {"wins":0,"losses":0,"hot":0,"cold":0,
-                "sport_hist":{"futbol":[],"nba":[],"tenis":[]},"league_hist":{},
-                "last5":[],"bucket_hist":{}}
+        with open(KR_BRAIN_FILE) as _f:
+            b = _j.load(_f)
+            # Sincronizar con session_state por si /tmp/ era más nuevo
+            try: st.session_state["_kr_brain_ss"] = b
+            except: pass
+            return b
+    except: pass
+    # 2) Fallback: session_state (sobrevive reinicios de app pero no de sesión)
+    try:
+        if "_kr_brain_ss" in st.session_state:
+            return st.session_state["_kr_brain_ss"]
+    except: pass
+    return {"wins":0,"losses":0,"hot":0,"cold":0,
+            "sport_hist":{"futbol":[],"nba":[],"tenis":[]},"league_hist":{},
+            "last5":[],"bucket_hist":{}}
 
 def _kr_brain_save(b):
+    # Guardar en /tmp/ Y en session_state como respaldo
     try:
         import json as _j
         with open(KR_BRAIN_FILE,"w") as _f: _j.dump(b,_f,ensure_ascii=False)
+    except: pass
+    try:
+        st.session_state["_kr_brain_ss"] = b
     except: pass
 
 def _kr_elo_load():
     try:
         import json as _j
-        with open(KR_ELO_FILE) as _f: return _j.load(_f)
-    except: return {}
+        with open(KR_ELO_FILE) as _f:
+            e = _j.load(_f)
+            try: st.session_state["_kr_elo_ss"] = e
+            except: pass
+            return e
+    except: pass
+    try:
+        if "_kr_elo_ss" in st.session_state:
+            return st.session_state["_kr_elo_ss"]
+    except: pass
+    return {}
 
 def _kr_elo_save(e):
     try:
         import json as _j
         with open(KR_ELO_FILE,"w") as _f: _j.dump(e,_f,ensure_ascii=False)
+    except: pass
+    try:
+        st.session_state["_kr_elo_ss"] = e
     except: pass
 
 def _kr_elo_prob(r_home,r_away,home_adv=50.0):
@@ -13410,11 +13439,19 @@ def _kr_elo_update(r_win,r_los,k=28.0):
 
 def _kr_ev(prob,cuota):
     if cuota<=1.0: return {"ev_pct":-99.0,"valor":"sin_valor","justa":0.0}
-    ev=prob*(cuota-1.0)-(1-prob)*1.0-0.045
+    # Vig dinámico según tipo de cuota:
+    # Exchanges (Betfair/Smarkets): cuotas altas → vig ~1.5%
+    # Soft books (Bet365/William Hill): cuotas medias → vig ~4.5%
+    # Sharp books (Pinnacle/Betcris): cuotas competitivas → vig ~2.5%
+    if cuota >= 4.0:      vig = 0.015   # exchange o long shot sharpeado
+    elif cuota >= 2.50:   vig = 0.025   # sharp book
+    elif cuota >= 1.50:   vig = 0.040   # soft/típico bookmaker
+    else:                 vig = 0.055   # cuota baja = máximo overround
+    ev=prob*(cuota-1.0)-(1-prob)*1.0-vig
     justa=round(1/prob,3) if prob>0 else cuota
     v=("excelente" if ev>0.08 else ("bueno" if ev>0.03 else
        ("marginal" if ev>0 else "negativo")))
-    return {"ev_pct":round(ev*100,2),"valor":v,"justa":justa}
+    return {"ev_pct":round(ev*100,2),"valor":v,"justa":justa,"vig_usado":round(vig*100,1)}
 
 def _kr_momentum(team,sport,last5):
     try:
@@ -16648,16 +16685,26 @@ def render_king_rongo(matches_fut=None, nba_games=None, ten_matches=None):
                     p1_name=_tm.get("p1",""), p2_name=_tm.get("p2",""), torneo=_tm.get("torneo",""))
                                 _tp = max(_tt["p1"],_tt["p2"])
                                 _tfav = _tm.get("p1","?") if _tt["p1"]>=_tt["p2"] else _tm.get("p2","?")
+                                _t_odd = _tm.get("odd_1",0) if _tt["p1"]>=_tt["p2"] else _tm.get("odd_2",0)
+                                # Filtro de calidad tenis: prob mínima + EV real
+                                _T_PROB_MIN = 0.57   # prob mínima para pick tenis
+                                _T_EV_MIN   = 0.02   # EV mínimo (2%) vs cuota real
+                                _t_ev_d = _kr_ev(_tp, _t_odd) if _t_odd > 1 else {"ev_pct": (_tp-0.50)*100*0.9, "valor":"marginal"}
+                                _t_ev   = _t_ev_d["ev_pct"] / 100
+                                if _tp < _T_PROB_MIN: continue   # prob insuficiente
+                                if _t_odd > 1 and _t_ev < _T_EV_MIN: continue   # sin EV real
+                                _t_conf_e, _t_conf_l, _t_conf_c = _kr_conf(_tp, max(_t_ev,0), 3)
                                 _fallback_cands.append({
                                     "deporte":"🎾 Tenis","sport":"tenis",
                                     "label":f"{_tm.get('p1','?')} vs {_tm.get('p2','?')}",
                                     "liga":_tm.get("torneo","Tennis"),"hora":_tm.get("hora",""),
-                                    "pick":f"🎾 {_tfav} gana","prob":_tp,"odd":0,
+                                    "pick":f"🎾 {_tfav} gana","prob":_tp,"odd":_t_odd,
                                     "edge":_tp-0.50,"kelly_pct":0,"mkt_type":"ML",
+                                    "ev_pct":round(_t_ev*100,2),
                                     "contradiccion":False,"model_spread":5,
-                                    "conf_emoji":"⚡","conf_label":"MEDIA","conf_color":"#aaa",
+                                    "conf_emoji":_t_conf_e,"conf_label":_t_conf_l,"conf_color":_t_conf_c,
                                     "reasoning":f"Rk #{_tm.get('rank1','?')} vs #{_tm.get('rank2','?')}","match":_tm,
-                                    "score":_tp * 5,
+                                    "score":_tp * 5 + max(0,_t_ev) * 10,
                                 })
                                 break
                             except: continue
@@ -19005,7 +19052,11 @@ if st.session_state["view"] == "cartelera":
                                                             f"<span style='font-size:1.05rem;font-weight:900;color:{_pc}'>{_pick_prob*100:.0f}%</span>"
                                                             f"</div>"
                                                         )
-                                                        # Pick 2 UEFA — usa variables locales directas (sin dir())
+                                                        # Pick 2 UEFA — inicializar defensivamente por si el bloque UEFA no corrió
+                                                        try: _pick2_lbl_c
+                                                        except NameError: _pick2_lbl_c = None
+                                                        try: _pick2_prob_c
+                                                        except NameError: _pick2_prob_c = 0.0
                                                         _p2l = _pick2_lbl_c
                                                         _p2p = _pick2_prob_c
                                                         if not _p2l and _br:
