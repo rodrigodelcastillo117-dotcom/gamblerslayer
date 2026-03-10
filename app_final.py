@@ -1630,7 +1630,7 @@ def _fixture_congestion(form, n=14):
     }
 
 
-def xg_weighted(form, is_home, odds_prior=0.0, slug="", team_id=None):
+def xg_weighted(form, is_home, odds_prior=0.0, slug="", team_id=None, team_name=""):
     """
     xG con decaimiento exponencial — partidos recientes pesan MÁS.
     Si ESPN devuelve xG real lo usa; si no, usa goles como proxy.
@@ -1777,6 +1777,28 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug="", team_id=None):
     if odds_prior > 0.05:
         xg_from_odds = max(0.3, -math.log(max(0.01, 1 - odds_prior)) * 1.8)
         xg_base = 0.80 * xg_base + 0.20 * xg_from_odds
+
+    # ── _LEAGUE_HISTORICAL team_stats prior ──
+    # Usa datos reales de temporada (gf/ga por partido) como prior cuando hay pocos partidos ESPN.
+    # Peso: 30% si forma ESPN ≥3 partidos, 50% si <3 partidos (datos escasos).
+    if slug and team_name:
+        try:
+            _lh = _LEAGUE_HISTORICAL.get(slug, {})
+            _ts = _lh.get("team_stats", {})
+            _tn_norm = team_name.strip().lower()
+            _ts_match = next(
+                (v for k, v in _ts.items() if k.lower() == _tn_norm or
+                 k.lower() in _tn_norm or _tn_norm in k.lower()),
+                None
+            )
+            if _ts_match:
+                _ts_xg = float(_ts_match["gf"])
+                if not is_home:
+                    _ratio = _lh.get("ratio_h", 0.545)
+                    _ts_xg = _ts_xg * (1 - _ratio) / _ratio
+                _ts_weight = 0.30 if len(form or []) >= 3 else 0.50
+                xg_base = (1 - _ts_weight) * xg_base + _ts_weight * _ts_xg
+        except: pass
 
     # ── API-Football xG real — blend si disponible ──
     # Solo enriquece, nunca reemplaza. Si no hay key o falla → xg_base sin cambio.
@@ -5555,7 +5577,7 @@ def _villar_auto_pick(partido_db):
                 hxg = _cup_enriched_xg(partido_db, True,  hf, af)
                 axg = _cup_enriched_xg(partido_db, False, hf, af)
             elif hf:
-                hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0, slug=slug, team_id=partido_db.get("home_id",""))
+                hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0, slug=slug, team_id=partido_db.get("home_id",""), team_name=partido_db.get("home_name",""))
             elif home_rec and home_rec != "5-5-5":
                 hxg = xg_from_record(home_rec, True)
             else:
@@ -5563,7 +5585,7 @@ def _villar_auto_pick(partido_db):
 
             if slug not in _UEFA_CUP_SLUGS:
                 if af:
-                    axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0, slug=slug, team_id=partido_db.get("away_id",""))
+                    axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0, slug=slug, team_id=partido_db.get("away_id",""), team_name=partido_db.get("away_name",""))
                 elif away_rec and away_rec != "5-5-5":
                     axg = xg_from_record(away_rec, False)
                 else:
@@ -7331,12 +7353,49 @@ _LEAGUE_HISTORICAL: dict = {
 
     # ── PREMIER LEAGUE — mayor cambio de la historia ──
     "eng.1": {
-        "o25_old": 0.503, "o25_rate": 0.642, "avg_goals": 3.11,
-        "trend": "🚀 Disparada +13.9%",
-        "perfil": "El mayor cambio histórico (+13.9%). Todos juegan desde atrás → errores en salida → goles fáciles. Partidos duran 100+ min por compensación. Busca Over 3.5, el O2.5 ya está castigado (1.50).",
+        "o25_old": 0.524, "o25_rate": 0.536, "avg_goals": 2.81,
+        "trend": "⬆️ Subiendo — 2.81 g/p 2025-26 (413 goles/147 partidos)",
+        "perfil": (
+            "Premier League 2025-26 (datos reales J29-J30). xG 2.77 g/p. O25=52.4%, "
+            "AA=56.3%, O35=30.2%. CS rate=25.3%. Ratio local=0.545 (histórico). "
+            "Corners: 4.94/equipo. Tarjetas: 1.87 amarillas + 0.06 rojas/p/equipo. "
+            "Top ataque: Man City/Arsenal (2.0 gf), Chelsea (1.83), Man Utd (1.76). "
+            "Top defensa: Arsenal (0.73 ga), Man City (0.93), Everton/Villa/Chelsea (1.17). "
+            "Más vulnerables: Burnley (2.00 ga), West Ham (1.86), Wolves (1.73). "
+            "Top corners: Newcastle (6.72), Chelsea (6.07), Liverpool (6.00)."
+        ),
         "under_value": False,
-        "delta": +0.139,
+        "delta": -0.118,
         "flag": "🇬🇧",
+        "ratio_h": 0.545,
+        "aa_rate": 0.570,
+        "o35_rate": 0.315,
+        "cs_rate": 0.253,
+        "corners_avg": 4.94,
+        "yellow_avg": 1.87,
+        "red_avg": 0.06,
+        "team_stats": {
+            "Manchester City":   {"gf": 2.03, "ga": 0.93, "cs": 12, "pos": 60, "corn": 5.45},
+            "Arsenal":           {"gf": 1.97, "ga": 0.73, "cs": 14, "pos": 56, "corn": 5.77},
+            "Chelsea":           {"gf": 1.83, "ga": 1.17, "cs":  9, "pos": 58, "corn": 6.07},
+            "Manchester United": {"gf": 1.76, "ga": 1.38, "cs":  5, "pos": 53, "corn": 4.41},
+            "Liverpool":         {"gf": 1.66, "ga": 1.34, "cs":  9, "pos": 60, "corn": 6.00},
+            "Bournemouth":       {"gf": 1.52, "ga": 1.59, "cs":  8, "pos": 50, "corn": 5.62},
+            "Brentford":         {"gf": 1.52, "ga": 1.38, "cs":  7, "pos": 47, "corn": 5.00},
+            "Newcastle United":  {"gf": 1.45, "ga": 1.48, "cs":  7, "pos": 53, "corn": 6.72},
+            "Fulham":            {"gf": 1.38, "ga": 1.48, "cs":  5, "pos": 52, "corn": 4.72},
+            "Aston Villa":       {"gf": 1.34, "ga": 1.17, "cs":  8, "pos": 54, "corn": 5.31},
+            "Tottenham":         {"gf": 1.34, "ga": 1.59, "cs":  7, "pos": 50, "corn": 4.97},
+            "Brighton":          {"gf": 1.31, "ga": 1.24, "cs":  6, "pos": 53, "corn": 4.83},
+            "Leeds United":      {"gf": 1.28, "ga": 1.66, "cs":  4, "pos": 46, "corn": 4.52},
+            "West Ham United":   {"gf": 1.21, "ga": 1.86, "cs":  4, "pos": 43, "corn": 5.14},
+            "Everton":           {"gf": 1.17, "ga": 1.14, "cs": 10, "pos": 44, "corn": 4.45},
+            "Crystal Palace":    {"gf": 1.14, "ga": 1.21, "cs": 10, "pos": 45, "corn": 4.17},
+            "Burnley":           {"gf": 1.10, "ga": 2.00, "cs":  3, "pos": 42, "corn": 3.45},
+            "Sunderland":        {"gf": 1.03, "ga": 1.17, "cs":  9, "pos": 44, "corn": 3.45},
+            "Nottingham Forest": {"gf": 0.97, "ga": 1.48, "cs":  6, "pos": 48, "corn": 5.48},
+            "Wolves":            {"gf": 0.73, "ga": 1.73, "cs":  4, "pos": 43, "corn": 3.17},
+        },
     },
     # ── CHAMPIONSHIP ──
     "eng.2": {
@@ -7349,29 +7408,137 @@ _LEAGUE_HISTORICAL: dict = {
     },
     # ── LA LIGA — máquina de Unders, territorio seguro ──
     "esp.1": {
-        "o25_old": 0.445, "o25_rate": 0.478, "avg_goals": 2.53,
-        "trend": "❄️ Muy Baja +3.3%",
-        "perfil": "LaLiga = Máquina de Unders. 53% de partidos acaban con ≤2 goles. Girona/Barça joven inflan el promedio pero sigue siendo territorio Under. Seguro de vida para parlays conservadores.",
-        "under_value": True,
-        "delta": +0.033,
+        "o25_old": 0.521, "o25_rate": 0.534, "avg_goals": 2.65,
+        "trend": "⬆️ Subiendo — 2.65 g/p 2025-26 (Mbappé 23g jornada 24)",
+        "perfil": (
+            "LaLiga 2024-25 (datos reales FINAL). avg 2.62 g/p. O25=52.1%, "
+            "AA=48.2%, O35=28.1%. CS rate=24.3%. Ratio local=0.530. "
+            "Corners: 4.84/equipo. Tarjetas: 2.11 amarillas + 0.15 rojas/p/equipo. "
+            "Barça domina ataque (2.67 gf) con 69% posesión. Real Madrid el mejor defensivo (0.85 ga). "
+            "Getafe/Rayo/Osasuna líderes amarillas. Real Oviedo+Girona más expulsados."
+        ),
+        "under_value": False,
+        "delta": +0.043,
         "flag": "🇪🇸",
+        "ratio_h": 0.530,
+        "aa_rate": 0.482,
+        "o35_rate": 0.281,
+        "cs_rate": 0.243,
+        "corners_avg": 4.84,
+        "yellow_avg": 2.11,
+        "red_avg": 0.152,
+        "team_stats": {
+            "Barcelona":       {"gf": 2.67, "ga": 0.96, "cs": 11, "pos": 69, "corn": 7.44},
+            "Real Madrid":     {"gf": 2.07, "ga": 0.85, "cs": 11, "pos": 60, "corn": 6.56},
+            "Villarreal":      {"gf": 1.85, "ga": 1.19, "cs":  8, "pos": 43, "corn": 4.00},
+            "Atletico Madrid": {"gf": 1.70, "ga": 0.93, "cs": 11, "pos": 55, "corn": 6.81},
+            "Real Betis":      {"gf": 1.56, "ga": 1.26, "cs":  8, "pos": 50, "corn": 4.63},
+            "Real Sociedad":   {"gf": 1.48, "ga": 1.52, "cs":  2, "pos": 50, "corn": 5.78},
+            "Celta Vigo":      {"gf": 1.37, "ga": 1.11, "cs":  8, "pos": 50, "corn": 4.15},
+            "Elche":           {"gf": 1.30, "ga": 1.52, "cs":  6, "pos": 59, "corn": 3.74},
+            "Sevilla":         {"gf": 1.30, "ga": 1.56, "cs":  5, "pos": 54, "corn": 4.96},
+            "Espanyol":        {"gf": 1.26, "ga": 1.48, "cs":  7, "pos": 43, "corn": 4.41},
+            "Osasuna":         {"gf": 1.19, "ga": 1.19, "cs":  6, "pos": 45, "corn": 3.41},
+            "Mallorca":        {"gf": 1.15, "ga": 1.63, "cs":  3, "pos": 44, "corn": 3.30},
+            "Athletic Club":   {"gf": 1.11, "ga": 1.37, "cs":  5, "pos": 48, "corn": 5.26},
+            "Valencia":        {"gf": 1.11, "ga": 1.52, "cs":  7, "pos": 49, "corn": 5.26},
+            "Levante":         {"gf": 1.07, "ga": 1.67, "cs":  5, "pos": 42, "corn": 3.70},
+            "Girona":          {"gf": 1.04, "ga": 1.59, "cs":  4, "pos": 50, "corn": 4.26},
+            "Rayo Vallecano":  {"gf": 1.00, "ga": 1.22, "cs":  8, "pos": 53, "corn": 5.81},
+            "Alaves":          {"gf": 0.93, "ga": 1.37, "cs":  3, "pos": 50, "corn": 5.04},
+            "Getafe":          {"gf": 0.85, "ga": 1.07, "cs":  8, "pos": 40, "corn": 4.41},
+            "Oviedo":          {"gf": 0.63, "ga": 1.63, "cs":  6, "pos": 44, "corn": 3.96},
+        },
     },
     "esp.2": {
-        "o25_old": 0.462, "o25_rate": 0.488, "avg_goals": 2.54,
-        "trend": "❄️ Baja +2.6%",
-        "perfil": "Segunda española — patrón defensivo similar a LaLiga. Under tiene valor.",
+        "o25_old": 0.488, "o25_rate": 0.470, "avg_goals": 2.55,
+        "trend": "❄️ Bajando -1.8%",
+        "perfil": (
+            "Segunda División 2025-26 (datos reales J29-J30). xG 2.55 g/p. O25=47.0%, "
+            "AA=52.0%, O35=25.4%. CS rate=27.5%. Ratio local=0.545. "
+            "Corners: 4.68/equipo. Tarjetas: 2.50 amarillas + 0.15 rojas/p/equipo (más física que LaLiga). "
+            "Top ataque: Racing Santander (2.07), Almería (1.93), Castellón (1.66). "
+            "Top defensa: Las Palmas (0.76 ga), Burgos (0.90), Leganés (1.00). "
+            "Más vulnerables: Cultural Leonesa/Mirandés (1.62 ga). "
+            "Más sucios: Zaragoza (11 rojas), Castellón/Mirandés/Valladolid (7 rojas)."
+        ),
         "under_value": True,
-        "delta": +0.026,
+        "delta": -0.018,
         "flag": "🇪🇸",
+        "ratio_h": 0.545,
+        "aa_rate": 0.520,
+        "o35_rate": 0.254,
+        "cs_rate": 0.275,
+        "corners_avg": 4.68,
+        "yellow_avg": 2.50,
+        "red_avg": 0.15,
+        "team_stats": {
+            "Racing de Santander": {"gf": 2.07, "ga": 1.34, "cs":  7, "pos": 52, "corn": 5.79},
+            "UD Almería":          {"gf": 1.93, "ga": 1.37, "cs":  7, "pos": 52, "corn": 4.97},
+            "Castellón":           {"gf": 1.66, "ga": 1.14, "cs": 10, "pos": 55, "corn": 6.07},
+            "Málaga CF":           {"gf": 1.52, "ga": 1.17, "cs":  7, "pos": 52, "corn": 3.93},
+            "RC Deportivo":        {"gf": 1.52, "ga": 1.14, "cs":  8, "pos": 52, "corn": 4.79},
+            "Real Sociedad B":     {"gf": 1.48, "ga": 1.41, "cs":  7, "pos": 43, "corn": 3.38},
+            "Córdoba CF":          {"gf": 1.41, "ga": 1.41, "cs":  7, "pos": 57, "corn": 5.48},
+            "Las Palmas":          {"gf": 1.31, "ga": 0.76, "cs": 11, "pos": 56, "corn": 4.17},
+            "Sporting de Gijón":   {"gf": 1.31, "ga": 1.28, "cs":  9, "pos": 47, "corn": 4.66},
+            "Andorra CF":          {"gf": 1.31, "ga": 1.38, "cs":  5, "pos": 60, "corn": 5.03},
+            "Granada CF":          {"gf": 1.28, "ga": 1.14, "cs":  9, "pos": 49, "corn": 4.41},
+            "Ceuta":               {"gf": 1.23, "ga": 1.47, "cs":  8, "pos": 49, "corn": 4.23},
+            "Real Valladolid":     {"gf": 1.14, "ga": 1.41, "cs":  7, "pos": 50, "corn": 5.62},
+            "Albacete":            {"gf": 1.14, "ga": 1.34, "cs": 12, "pos": 44, "corn": 5.28},
+            "Burgos":              {"gf": 1.10, "ga": 0.90, "cs": 10, "pos": 48, "corn": 3.76},
+            "SD Eibar":            {"gf": 1.10, "ga": 1.03, "cs": 10, "pos": 50, "corn": 4.83},
+            "Cádiz":               {"gf": 1.03, "ga": 1.24, "cs":  9, "pos": 47, "corn": 4.97},
+            "CD Leganés":          {"gf": 1.03, "ga": 1.00, "cs": 10, "pos": 52, "corn": 4.62},
+            "CD Mirandés":         {"gf": 1.03, "ga": 1.62, "cs":  3, "pos": 42, "corn": 3.79},
+            "Huesca":              {"gf": 0.97, "ga": 1.28, "cs":  8, "pos": 47, "corn": 4.59},
+            "Cultural Leonesa":    {"gf": 0.93, "ga": 1.62, "cs":  6, "pos": 48, "corn": 3.83},
+            "Real Zaragoza":       {"gf": 0.83, "ga": 1.41, "cs":  6, "pos": 49, "corn": 4.72},
+        },
     },
     # ── BUNDESLIGA — estándar de fábrica para Over ──
     "ger.1": {
-        "o25_old": 0.605, "o25_rate": 0.621, "avg_goals": 3.14,
-        "trend": "🔥 Muy Alta +1.6%",
-        "perfil": "Estabilidad pura. Transiciones rapidísimas y presión alta. El O2.5 aquí es casi estándar de fábrica. El valor real está en buscar Over 3.5.",
+        "o25_old": 0.614, "o25_rate": 0.625, "avg_goals": 3.14,
+        "trend": "🔥 Récord — 3.14 g/p 2025-26 (liga más goleadora top 5)",
+        "perfil": (
+            "Bundesliga 2024-25 (dato oficial final). avg 3.13 g/p — 959 goles en 306 partidos. "
+            "O25~61.4%, AA=63.6%, O35=39.0%. CS rate=22.9%. Ratio local=0.545. "
+            "7ª temporada consecutiva con más de 3 g/p. Bayern campeón (99 goles, Kane 26 pichichi). "
+            "Bayern outlier: 3.68 gf/p histórico. Leverkusen único sin derrota fuera. "
+            "Top defensa: Dortmund (11 vallas, 1.04 ga). "
+            "Más vulnerables: Heidenheim (2.28 ga), Wolfsburg (2.20)."
+        ),
         "under_value": False,
-        "delta": +0.016,
+        "delta": -0.007,
         "flag": "🇩🇪",
+        "ratio_h": 0.545,
+        "aa_rate": 0.648,
+        "o35_rate": 0.400,
+        "cs_rate": 0.229,
+        "corners_avg": 4.83,
+        "yellow_avg": 1.85,
+        "red_avg": 0.08,
+        "team_stats": {
+            "Bayern Munich":            {"gf": 3.68, "ga": 0.96, "cs":  9, "pos": 67, "corn": 6.20},
+            "Borussia Dortmund":        {"gf": 2.12, "ga": 1.04, "cs": 11, "pos": 53, "corn": 5.28},
+            "Hoffenheim":               {"gf": 2.12, "ga": 1.32, "cs":  6, "pos": 54, "corn": 5.36},
+            "Stuttgart":                {"gf": 2.00, "ga": 1.36, "cs":  9, "pos": 58, "corn": 5.40},
+            "Bayer Leverkusen":         {"gf": 1.92, "ga": 1.28, "cs":  7, "pos": 60, "corn": 5.08},
+            "Eintracht Frankfurt":      {"gf": 1.92, "ga": 1.96, "cs":  6, "pos": 53, "corn": 4.32},
+            "RB Leipzig":               {"gf": 1.92, "ga": 1.36, "cs":  9, "pos": 54, "corn": 5.52},
+            "Friburgo":                 {"gf": 1.48, "ga": 1.68, "cs":  5, "pos": 47, "corn": 4.52},
+            "1. FC Köln":               {"gf": 1.36, "ga": 1.72, "cs":  3, "pos": 47, "corn": 4.52},
+            "Wolfsburg":                {"gf": 1.36, "ga": 2.20, "cs":  1, "pos": 46, "corn": 3.88},
+            "FC Augsburg":              {"gf": 1.24, "ga": 1.72, "cs":  5, "pos": 46, "corn": 4.80},
+            "Union Berlin":             {"gf": 1.20, "ga": 1.68, "cs":  5, "pos": 38, "corn": 5.08},
+            "Mainz 05":                 {"gf": 1.16, "ga": 1.64, "cs":  2, "pos": 43, "corn": 5.08},
+            "Werder Bremen":            {"gf": 1.16, "ga": 1.80, "cs":  5, "pos": 52, "corn": 4.48},
+            "Borussia Mönchengladbach": {"gf": 1.12, "ga": 1.72, "cs":  9, "pos": 45, "corn": 4.28},
+            "Hamburgo SV":              {"gf": 1.12, "ga": 1.44, "cs":  6, "pos": 47, "corn": 3.76},
+            "Heidenheim":               {"gf": 0.96, "ga": 2.28, "cs":  0, "pos": 42, "corn": 4.68},
+            "St. Pauli":                {"gf": 0.92, "ga": 1.60, "cs":  5, "pos": 44, "corn": 4.68},
+        },
     },
     "ger.2": {
         "o25_old": 0.565, "o25_rate": 0.584, "avg_goals": 2.97,
@@ -7381,14 +7548,51 @@ _LEAGUE_HISTORICAL: dict = {
         "delta": +0.019,
         "flag": "🇩🇪",
     },
-    # ── SERIE A — TRAMPA: subió por COVID, volvió a su naturaleza defensiva ──
+    # ── SERIE A — la más defensiva de las 5 grandes ligas ──
     "ita.1": {
-        "o25_old": 0.575, "o25_rate": 0.523, "avg_goals": 2.68,
-        "trend": "⚠️ Bajando -5.2%",
-        "perfil": "ESPEJISMO ITALIANO. El pico 2020-22 fue por jugar sin público (menos presión para atacantes). En 2026 volvió a su naturaleza táctica. Caza cuotas altas de Under 2.5 en Italia — el mercado SOBRESTIMA goles aquí.",
+        "o25_old": 0.430, "o25_rate": 0.440, "avg_goals": 2.56,
+        "trend": "⚖️ Estable — 2.56 g/p 2025-26, Inter lidera (O25=44%)",
+        "perfil": (
+            "Serie A 2024-25 (dato final Sofascore). avg 2.56 g/p — la más baja 5 grandes. "
+            "O25~43%, AA=49.6%, O35=22.5%. CS rate=31%+ — más alta de Europa. "
+            "Napoli campeón (Scudetto). Inter dominó primera vuelta. "
+            "Ratio local=0.545. Corners: 4.45/equipo. "
+            "Inter: 2.29 gf + 0.79 ga + 15 vallas. AC Milan mejor defensa (0.71 ga). "
+            "Más vulnerables: Torino/Verona (1.75 ga). "
+            "CAZA UNDERS: mercado sigue pagando O25 a 1.80 cuando la liga real es ~43%."
+        ),
         "under_value": True,
-        "delta": -0.052,
+        "delta": -0.093,
         "flag": "🇮🇹",
+        "ratio_h": 0.545,
+        "aa_rate": 0.496,
+        "o35_rate": 0.225,
+        "cs_rate": 0.314,
+        "corners_avg": 4.45,
+        "yellow_avg": 1.84,
+        "red_avg": 0.08,
+        "team_stats": {
+            "Inter Milan":   {"gf": 2.29, "ga": 0.79, "cs": 15, "pos": 60, "corn": 6.93},
+            "Juventus":      {"gf": 1.79, "ga": 1.00, "cs": 10, "pos": 56, "corn": 5.11},
+            "Como":          {"gf": 1.64, "ga": 0.75, "cs": 13, "pos": 61, "corn": 4.11},
+            "AC Milan":      {"gf": 1.57, "ga": 0.71, "cs": 13, "pos": 52, "corn": 4.50},
+            "Napoli":        {"gf": 1.54, "ga": 1.04, "cs":  9, "pos": 58, "corn": 5.21},
+            "Atalanta":      {"gf": 1.39, "ga": 0.93, "cs": 10, "pos": 55, "corn": 6.00},
+            "AS Roma":       {"gf": 1.36, "ga": 0.75, "cs": 12, "pos": 57, "corn": 5.11},
+            "Bologna":       {"gf": 1.32, "ga": 1.21, "cs":  8, "pos": 55, "corn": 4.64},
+            "Sassuolo":      {"gf": 1.25, "ga": 1.36, "cs":  6, "pos": 45, "corn": 3.86},
+            "Genoa":         {"gf": 1.21, "ga": 1.43, "cs":  6, "pos": 47, "corn": 3.54},
+            "Udinese":       {"gf": 1.18, "ga": 1.46, "cs":  6, "pos": 45, "corn": 4.54},
+            "Cagliari":      {"gf": 1.07, "ga": 1.36, "cs":  6, "pos": 46, "corn": 3.43},
+            "Fiorentina":    {"gf": 1.07, "ga": 1.50, "cs":  5, "pos": 53, "corn": 4.68},
+            "Lazio":         {"gf": 1.00, "ga": 1.00, "cs": 12, "pos": 51, "corn": 3.93},
+            "Torino":        {"gf": 1.00, "ga": 1.75, "cs": 10, "pos": 44, "corn": 3.96},
+            "Cremonese":     {"gf": 0.79, "ga": 1.43, "cs":  7, "pos": 45, "corn": 3.36},
+            "Hellas Verona": {"gf": 0.79, "ga": 1.75, "cs":  5, "pos": 40, "corn": 3.68},
+            "Lecce":         {"gf": 0.71, "ga": 1.32, "cs":  8, "pos": 42, "corn": 4.54},
+            "Parma":         {"gf": 0.71, "ga": 1.14, "cs": 10, "pos": 45, "corn": 3.96},
+            "Pisa":          {"gf": 0.71, "ga": 1.71, "cs":  5, "pos": 40, "corn": 3.96},
+        },
     },
     "ita.2": {
         "o25_old": 0.492, "o25_rate": 0.497, "avg_goals": 2.59,
@@ -7398,14 +7602,49 @@ _LEAGUE_HISTORICAL: dict = {
         "delta": +0.005,
         "flag": "🇮🇹",
     },
-    # ── LIGUE 1 — estancada tácticamente ──
+    # ── LIGUE 1 — subida notable en 2024-25 ──
     "fra.1": {
-        "o25_old": 0.528, "o25_rate": 0.540, "avg_goals": 2.68,
-        "trend": "⬇️ Estancada +1.2%",
-        "perfil": "Liga estancada tácticamente. Mucho músculo, empates físicos en el mediocampo. Sin PSG/Monaco el Over baja notoriamente.",
+        "o25_old": 0.548, "o25_rate": 0.570, "avg_goals": 2.96,
+        "trend": "⚖️ Estable — 2.96 g/p 2025-26, Monaco top goleador",
+        "perfil": (
+            "Ligue 1 2024-25 (dato Sofascore). avg 2.96 g/p — subida significativa. "
+            "O25~54.8%, AA=58%, O35=33%. CS rate=27%. Ratio local=0.545. "
+            "PSG campeón. Mbappé pichichi con 28 goles antes de marcharse. "
+            "Monaco el equipo más goleador (4.0 g/p promedio total). "
+            "Corners: 4.67/equipo. Tarjetas: 1.87 amarillas + 0.14 rojas/p/equipo. "
+            "PSG domina: 2.16 gf + 0.88 ga + 13 vallas. Lens mejor defensa no-PSG (0.84 ga). "
+            "Más peligrosos: Metz (2.24 ga) y Niza (1.92 ga)."
+        ),
         "under_value": True,
-        "delta": +0.012,
+        "delta": +0.008,
         "flag": "🇫🇷",
+        "ratio_h": 0.545,
+        "aa_rate": 0.580,
+        "o35_rate": 0.330,
+        "cs_rate": 0.293,
+        "corners_avg": 4.67,
+        "yellow_avg": 1.87,
+        "red_avg": 0.14,
+        "team_stats": {
+            "PSG":                {"gf": 2.16, "ga": 0.88, "cs": 13, "pos": 68, "corn": 6.08},
+            "Olympique Marsella": {"gf": 2.08, "ga": 1.32, "cs":  7, "pos": 58, "corn": 4.80},
+            "Lens":               {"gf": 1.92, "ga": 0.84, "cs": 10, "pos": 49, "corn": 5.68},
+            "Monaco":             {"gf": 1.72, "ga": 1.48, "cs":  6, "pos": 53, "corn": 4.76},
+            "Rennes":             {"gf": 1.68, "ga": 1.40, "cs":  8, "pos": 52, "corn": 5.36},
+            "Estrasburgo":        {"gf": 1.60, "ga": 1.24, "cs":  8, "pos": 53, "corn": 3.80},
+            "Lyon":               {"gf": 1.60, "ga": 1.08, "cs": 12, "pos": 54, "corn": 5.60},
+            "Lille":              {"gf": 1.52, "ga": 1.28, "cs":  8, "pos": 55, "corn": 6.20},
+            "Lorient":            {"gf": 1.40, "ga": 1.56, "cs":  5, "pos": 45, "corn": 3.32},
+            "Brest":              {"gf": 1.36, "ga": 1.36, "cs":  9, "pos": 42, "corn": 4.04},
+            "Toulouse":           {"gf": 1.32, "ga": 1.16, "cs":  8, "pos": 43, "corn": 4.92},
+            "Niza":               {"gf": 1.20, "ga": 1.92, "cs":  3, "pos": 48, "corn": 5.12},
+            "Paris FC":           {"gf": 1.16, "ga": 1.64, "cs":  6, "pos": 52, "corn": 4.20},
+            "Angers":             {"gf": 0.92, "ga": 1.20, "cs":  9, "pos": 43, "corn": 3.48},
+            "Metz":               {"gf": 0.88, "ga": 2.24, "cs":  4, "pos": 49, "corn": 4.08},
+            "Nantes":             {"gf": 0.88, "ga": 1.68, "cs":  4, "pos": 44, "corn": 3.16},
+            "Le Havre":           {"gf": 0.80, "ga": 1.28, "cs":  6, "pos": 46, "corn": 4.52},
+            "Auxerre":            {"gf": 0.76, "ga": 1.40, "cs":  6, "pos": 44, "corn": 5.00},
+        },
     },
     "fra.2": {
         "o25_old": 0.495, "o25_rate": 0.500, "avg_goals": 2.61,
@@ -7417,11 +7656,11 @@ _LEAGUE_HISTORICAL: dict = {
     },
     # ── EREDIVISIE — el paraíso del Over, cuotas castigadas ──
     "ned.1": {
-        "o25_old": 0.618, "o25_rate": 0.648, "avg_goals": 3.23,
-        "trend": "🔥 Muy Alta +3.0%",
-        "perfil": "El paraíso del Over europeo. Cuotas O2.5 abren castigadas (1.40-1.50). Poca defensa, ataque total. Mayor % Over de Europa.",
+        "o25_old": 0.576, "o25_rate": 0.700, "avg_goals": 3.15,
+        "trend": "🔥 Muy Alta — 3.15 g/p, O25=70% confirmado 2025-26",
+        "perfil": "El paraiso del Over europeo. O25=70% confirmado 2025-26. 3.15 g/p. PSV y Feyenoord (Ueda 18 goles) lideran. Cuotas O2.5 abren castigadas (1.35-1.45). Poca defensa, ataque total.",
         "under_value": False,
-        "delta": +0.030,
+        "delta": +0.124,
         "flag": "🇳🇱",
     },
     # ── NORUEGA — Eliteserien — césped sintético y filosofía ofensiva ──
@@ -7496,12 +7735,49 @@ _LEAGUE_HISTORICAL: dict = {
     },
     # ── LIGA MX — delanteros extranjeros vs defensas locales ──
     "mex.1": {
-        "o25_old": 0.485, "o25_rate": 0.541, "avg_goals": 2.78,
-        "trend": "⬆️ Subiendo +5.6%",
-        "perfil": "Formato de Play-In/Liguilla obliga a arriesgar más. Escasez de defensas élite frente a delanteros extranjeros bien pagados. Muy buen mercado para Ambos Anotan.",
+        # Apertura 2025: 521 goles / 168 partidos = 3.10 g/p (cifra oficial Liga MX)
+        # Clausura 2025: ~2.93 g/p (J1-J17). Promedio temporada 2024-25: ~3.00 g/p
+        # Apertura 2025 superó LaLiga (2.6) y Serie A (2.4) — datos Mikel Arriola ene 2026
+        "o25_old": 0.541, "o25_rate": 0.590, "avg_goals": 3.05,
+        "trend": "🔥 Récord histórico — Apertura 2025 = 3.10 g/p (+9% vs Clausura 25)",
+        "perfil": (
+            "Liga MX Apertura 2025 (datos reales oficiales). 3.10 g/p récord — supera LaLiga y Serie A. "
+            "Clausura 2025: 2.93 g/p. Promedio temporada: 3.05 g/p. O25≈59%, AA≈60%, O35≈36%. "
+            "CS rate=23%. Ventaja local notable (ratio_h=0.545). "
+            "Top ataque Ap25: Toluca 50 goles en 23p. Top Clausura 25: Toluca/Necaxa. "
+            "Campeón Clausura 25: Toluca (venció Cruz Azul 2-0 final). Campeón Ap25: Toluca. "
+            "Toluca bicampeón. Clausura 2026 en curso: Cruz Azul lidera (20 goles en 10p)."
+        ),
         "under_value": False,
-        "delta": +0.056,
+        "delta": +0.049,
         "flag": "🇲🇽",
+        "ratio_h": 0.545,
+        "aa_rate": 0.600,
+        "o35_rate": 0.360,
+        "cs_rate": 0.23,
+        "corners_avg": 4.60,
+        "yellow_avg": 2.11,
+        "red_avg": 0.151,
+        "team_stats": {
+            "Cruz Azul":  {"gf": 2.11, "ga": 1.00, "cs": 3, "pos": 48, "corn": 4.11},
+            "Pumas":      {"gf": 1.89, "ga": 1.11, "cs": 3, "pos": 51, "corn": 3.56},
+            "Toluca":     {"gf": 1.89, "ga": 0.56, "cs": 5, "pos": 59, "corn": 6.78},
+            "Tigres":     {"gf": 1.89, "ga": 1.22, "cs": 2, "pos": 56, "corn": 4.22},
+            "San Luis":   {"gf": 1.67, "ga": 1.89, "cs": 2, "pos": 51, "corn": 4.44},
+            "Chivas":     {"gf": 1.56, "ga": 1.00, "cs": 3, "pos": 58, "corn": 4.33},
+            "Juarez":     {"gf": 1.56, "ga": 1.89, "cs": 0, "pos": 49, "corn": 3.89},
+            "Atlas":      {"gf": 1.44, "ga": 1.44, "cs": 3, "pos": 49, "corn": 3.22},
+            "Monterrey":  {"gf": 1.40, "ga": 1.00, "cs": 3, "pos": 59, "corn": 5.60},
+            "Mazatlan":   {"gf": 1.30, "ga": 2.00, "cs": 1, "pos": 39, "corn": 3.60},
+            "Pachuca":    {"gf": 1.30, "ga": 0.80, "cs": 3, "pos": 45, "corn": 4.10},
+            "América":    {"gf": 1.22, "ga": 0.89, "cs": 5, "pos": 59, "corn": 4.44},
+            "León":       {"gf": 1.22, "ga": 1.67, "cs": 0, "pos": 50, "corn": 5.00},
+            "Santos":     {"gf": 1.22, "ga": 2.56, "cs": 0, "pos": 49, "corn": 4.56},
+            "Necaxa":     {"gf": 1.10, "ga": 1.60, "cs": 0, "pos": 50, "corn": 4.70},
+            "Puebla":     {"gf": 0.90, "ga": 1.30, "cs": 3, "pos": 43, "corn": 4.20},
+            "Tijuana":    {"gf": 0.89, "ga": 1.11, "cs": 2, "pos": 50, "corn": 4.33},
+            "Querétaro":  {"gf": 0.88, "ga": 1.75, "cs": 2, "pos": 35, "corn": 4.12},
+        },
     },
     "mex.2": {
         "o25_old": 0.495, "o25_rate": 0.514, "avg_goals": 2.65,
@@ -7511,14 +7787,26 @@ _LEAGUE_HISTORICAL: dict = {
         "delta": +0.019,
         "flag": "🇲🇽",
     },
-    # ── MLS — efecto Messi, defensas de bajo presupuesto ──
+    # ── MLS — efecto Messi/Son, defensas vulnerables ──
     "usa.1": {
-        "o25_old": 0.554, "o25_rate": 0.595, "avg_goals": 2.92,
-        "trend": "⬆️ Subiendo +4.1%",
-        "perfil": "Regla de oro MLS: mucho dinero en atacantes (Efecto Messi/Suárez y Jugadores Franquicia), defensas de bajo presupuesto vulnerables. En subida fuerte.",
+        # MLS 2024 (temporada completa): 3.11 g/p — 2do más alto en 20 años (tras 2018: 3.19)
+        # MLS 2023: 2.76 g/p. Liga MX Ap25 superó MLS en g/p (3.10 vs 3.01 histórico)
+        # Inter Miami campeón MLS Cup 2025. 2026: Son Heung-min a LAFC, Müller a Vancouver
+        "o25_old": 0.554, "o25_rate": 0.618, "avg_goals": 3.11,
+        "trend": "🔥 Alta — 2024 récord reciente (+12.7% vs 2023)",
+        "perfil": (
+            "MLS 2024 real: 3.11 g/p (2do más alto en 20 años). O25≈63%, BTTS≈63%, solo 7% scoreless. "
+            "Efecto Messi/Suárez Inter Miami: Supporters Shield récord 74 pts. "
+            "2026: Son Heung-min a LAFC, Thomas Müller a Vancouver — liga en alza. "
+            "CCL 2026 R1: FC Cincinnati 13-0, Philly 12-0 — élite MLS domina vs CA/Caribe."
+        ),
         "under_value": False,
-        "delta": +0.041,
+        "delta": +0.064,
         "flag": "🇺🇸",
+        "ratio_h": 0.530,
+        "aa_rate": 0.630,
+        "o35_rate": 0.380,
+        "cs_rate": 0.18,
     },
     # ── BRASILEIRÃO — cansancio por calendario brutal ──
     "bra.1": {
@@ -7607,41 +7895,50 @@ _LEAGUE_HISTORICAL: dict = {
     # ── UEFA — Champions, Europa, Conference ──
     "uefa.champions": {
         # ══════════════════════════════════════════════════════════════
-        # DATOS REALES UCL 2024-25 + 2025-26
+        # DATOS REALES UCL 2025-26 — confirmados por UEFA.com
         # ══════════════════════════════════════════════════════════════
-        # Formato Suizo 2024: 36 equipos, todos con rivales de distinto nivel
-        # 2024-25 fase liga: 3.26 g/partido (144 partidos)
-        # 2025-26 fase liga: 3.39 g/partido (RÉCORD HISTÓRICO UCL)
-        # Eliminatorias 2024-25: ~3.0-3.1 g/partido (más cerrados)
-        # O25 rate fase liga: ~66% | Eliminatorias: ~62%
-        # xG promedio home: 1.75 | xG promedio away: 1.26
-        # AA (ambos anotan) rate: ~60% en fase liga, ~58% en eliminatorias
-        # Over 3.5 rate: ~38% en eliminatorias
+        # Fase liga 2025-26: 3.38 g/partido (487 goles / 144 partidos) — RÉCORD histórico
+        # Fase liga 2024-25: 3.26 g/partido (referencia anterior)
+        # Octavos en curso (marzo 2026) — equipos R16:
+        #   Arsenal, Liverpool, Man City, Chelsea, Tottenham, Barcelona, Bayern, Leverkusen,
+        #   PSG, Real Madrid, Atlético, Atalanta, Sporting CP, Bodo/Glimt, Galatasaray, Newcastle
+        # O25 rate fase liga: ~68% | Eliminatorias estimado: ~62%
+        # xG promedio home: 1.80 | xG promedio away: 1.30 (ratio_h=0.581)
+        # AA (ambos anotan) rate: ~62% fase liga, ~58% eliminatorias
+        # Over 3.5 rate: ~42% fase liga, ~38% eliminatorias
+        # Arsenal: único equipo con pleno 24/24 puntos (W8 D0 L0)
+        # Mbappé top scorer: 13 goles en fase liga (récord UCL)
         # ── PATRÓN TÁCTICO ──
         # Todos los equipos presionan alto → errores en salida → goles fáciles
-        # Partidos duran 100+ min por tiempo compensación
-        # Favoritos dominan posesión pero el visitante SIEMPRE tiene chances
+        # Eliminatorias más cerradas: favoritos dominan, visitante SIEMPRE tiene chances
         # → axg mínimo real en UCL: ~1.10-1.15 incluso siendo visitante claro
-        "o25_old": 0.545, "o25_rate": 0.640, "avg_goals": 3.26,
-        "avg_goals_home": 1.75, "avg_goals_away": 1.26,
-        "aa_rate": 0.60,         # ambos anotan rate fase liga
-        "aa_rate_ko": 0.58,      # ambos anotan eliminatorias
-        "o35_rate": 0.38,        # Over 3.5 en eliminatorias
-        "clean_sheet_rate": 0.25, # baja — casi nadie mantiene portería a 0
-        "trend": "🚀 Récord histórico 2025-26 (+9.5%)",
-        "perfil": "UCL formato suizo 2024-26: récord 3.39 g/partido en 2025-26. Todos presionan alto → goles fáciles en salidas. Eliminatorias ~3.0 g/partido. O25 ~62%, AA ~58%. Visitante SIEMPRE mete (xG away mínimo ~1.10). Busca Over 2.5 y AA en favoritos, Over 3.5 en top atacantes (Bayern, City, Real Madrid).",
+        "o25_old": 0.545, "o25_rate": 0.660, "avg_goals": 3.38,
+        "avg_goals_home": 1.80, "avg_goals_away": 1.30,
+        "aa_rate": 0.62,          # ambos anotan rate fase liga
+        "aa_rate_ko": 0.58,       # ambos anotan eliminatorias
+        "o35_rate": 0.42,         # Over 3.5 fase liga
+        "o35_rate_ko": 0.38,      # Over 3.5 eliminatorias
+        "clean_sheet_rate": 0.23, # bajo — casi nadie mantiene portería a 0
+        "trend": "🚀 Récord histórico 2025-26 (+3.7% vs 24-25)",
+        "perfil": (
+            "UCL 2025-26: RÉCORD 3.38 g/partido (487 goles en 144). Arsenal único con 24/24. "
+            "Mbappé 13 goles (récord absoluto fase liga). Octavos en curso. "
+            "Eliminatorias ~3.0 g/partido. O25 ~62%, AA ~58% en KO. "
+            "Visitante SIEMPRE mete (xG away mínimo ~1.10). "
+            "Busca Over 2.5 y AA en favoritos, Over 3.5 en Bayern/Arsenal/Mbappé-Madrid."
+        ),
         "under_value": False,
-        "delta": +0.095,
+        "delta": +0.120,
         "flag": "🇪🇺",
     },
     "uefa.cl": {
-        "o25_old": 0.545, "o25_rate": 0.640, "avg_goals": 3.26,
-        "avg_goals_home": 1.75, "avg_goals_away": 1.26,
-        "aa_rate": 0.60, "o35_rate": 0.38,
-        "trend": "🚀 Récord histórico 2025-26 (+9.5%)",
-        "perfil": "Champions League — Formato Suizo 2024. Récord goles 2025-26.",
+        "o25_old": 0.545, "o25_rate": 0.660, "avg_goals": 3.38,
+        "avg_goals_home": 1.80, "avg_goals_away": 1.30,
+        "aa_rate": 0.62, "o35_rate": 0.42,
+        "trend": "🚀 Récord histórico 2025-26 (+3.7%)",
+        "perfil": "Champions League — alias uefa.cl. 2025-26: 3.38 g/p (récord). Ver uefa.champions.",
         "under_value": False,
-        "delta": +0.095,
+        "delta": +0.120,
         "flag": "🇪🇺",
     },
     "uefa.europa": {
@@ -7711,30 +8008,58 @@ _LEAGUE_HISTORICAL: dict = {
         "corners_leaders": {
             "bologna":7.9,"lille":6.7,"stuttgart":6.6,"porto":6.0,"panathinaikos":5.6,
         },
-        "trend": "⚖️ Borderline — O25 solo 50.6%",
-        "perfil": "UEL 2024-25: 2.70 g/partido — MUCHO más cerrada que UCL (3.26). O25 borderline 50.6%, AA tiene más valor (54.6%). Defensas muy sólidas: SC Braga 6/8 vallas, Friburgo 0.50 ga/p. Lyon es la máquina del torneo: 2.25 gf + 0.62 ga. Fenerbahce es el equipo más sucio (3.5 amarillas/p). Dinamo Zagreb y Maccabi: defensas de colador. Bologna lidera corners (7.9/p).",
-        "under_value": True,  # O25 solo 50.6% — U25 tiene valor real aquí
+        "trend": "⚖️ Estable — O25 ~50% confirmado 2025-26",
+        "perfil": (
+            "UEL 2025-26: 2.68 g/partido (confirmado UEFA.com) — idéntico a 2024-25. "
+            "Más cerrada que UCL por mucho. O25 borderline ~50%, AA tiene más valor (~54%). "
+            "R16 activos: Lyon (1°), Nottm Forest, Stuttgart, Midtjylland, Braga, Ferencváros, "
+            "Genk, Freiburg, Bologna, Roma, Lille, Aston Villa, Panathinaikos, Real Betis, "
+            "Celta, Porto. Lyon lidera posesión (61.2%). "
+            "Nottm Forest y Stuttgart top goleadores (19 goles c/u en fase liga)."
+        ),
+        "under_value": True,
         "delta": -0.014,
         "flag": "🇪🇺",
     },
     "uefa.el": {
-        "o25_old": 0.520, "o25_rate": 0.506, "avg_goals": 2.70,
+        "o25_old": 0.520, "o25_rate": 0.506, "avg_goals": 2.68,
         "avg_goals_home": 1.45, "avg_goals_away": 1.25,
         "aa_rate": 0.546, "o35_rate": 0.28,
         "clean_sheet_rate": 0.52, "avg_corners_per_team": 4.66,
         "avg_yellow_per_team": 1.98,
-        "trend": "⚖️ Borderline — O25 solo 50.6%",
-        "perfil": "Europa League — alias uefa.el. Ver uefa.europa.",
+        "trend": "⚖️ Estable — O25 ~50% confirmado 2025-26",
+        "perfil": "Europa League — alias uefa.el. 2025-26: 2.68 g/p (UEFA.com). Ver uefa.europa.",
         "under_value": True,
         "delta": -0.014,
         "flag": "🇪🇺",
     },
     "uefa.ecl": {
-        "o25_old": 0.511, "o25_rate": 0.575, "avg_goals": 2.90,
-        "trend": "⬆️ Subiendo +6.4%",
-        "perfil": "Conference League — equipos de ligas exóticas vs media tabla de Inglaterra/Italia. Diferencias de nivel provocan marcadores escandalosos.",
+        # UECL 2025-26 fase liga: 36 equipos, 6 partidos c/u = 108 partidos total
+        # MD1 (Oct 2): 48 goles en 18 partidos = 2.67 g/p
+        # MD6 (Dic 18): 41 goles en 18 partidos = 2.28 g/p
+        # Estimado total: ~2.45 g/partido (menor que el 2.90 previo — ese era por mezcla rondas)
+        # Top goleadores: Lech Poznan 15, Fiorentina 14, AEK Athens 14, Sparta Praha 12
+        # Mejor defensa: AEK Larnaca (solo 1 gol recibido en 6 partidos — récord)
+        # Top poseedor: Shakhtar 65%
+        # R16 activos (desde marzo 2026): Crystal Palace, Fiorentina, Strasbourg,
+        #   Sparta Praha, Lech Poznan, Rayo Vallecano, Shakhtar, AZ, Mainz,
+        #   Häcken, Djurgården, Noah, Raków, Drita, Samsunspor, Omonoia
+        "o25_old": 0.511, "o25_rate": 0.520, "avg_goals": 2.45,
+        "avg_goals_home": 1.35, "avg_goals_away": 1.15,
+        "aa_rate": 0.52,
+        "o35_rate": 0.27,
+        "clean_sheet_rate": 0.35,
+        "trend": "⚖️ Estable — liga de diferencias de nivel",
+        "perfil": (
+            "UECL 2025-26: ~2.45 g/partido (108 partidos fase liga). "
+            "Liga de contrastes: equipos top europeos vs clubes exóticos. "
+            "AEK Larnaca: récord 1 gol recibido en 6 partidos. "
+            "Aplastamientos frecuentes en fase liga (48 goles MD1). "
+            "KO más cerrado: ~2.2-2.3 g/p. O25 ~52%, AA ~52%. "
+            "R16 en curso: Crystal Palace, Fiorentina, Sparta Praha, Lech Poznan, Rayo."
+        ),
         "under_value": False,
-        "delta": +0.064,
+        "delta": +0.009,
         "flag": "🇪🇺",
     },
     "concacaf.champions": {
@@ -7767,31 +8092,31 @@ _LEAGUE_HISTORICAL: dict = {
         # TARJETAS ROJAS: Defence Force 1, LA Galaxy 1, Pumas 1, O&M 1
         # TARJETAS AMARILLAS por partido: Xelaju 3.0, Cartaginés 2.5, San Diego 2.5,
         #   Vancouver Wh. 2.5, Olimpia 2.0, Cruz Azul 2.0, Defence Force 2.0
-        # ── ESTADÍSTICAS AGREGADAS ──
-        # Total goles: 70 en 22 partidos = 3.18 g/partido TORNEO COMPLETO
-        # CRÍTICO: inflado por aplastamientos 1ra ronda vs relleno
-        # Élite vs élite (cuartos/semis/final) estimado: ~2.5 g/partido
-        # O25 rate total: ~62% | Élite vs élite: ~48%
-        # Promedio corners/equipo: 4.59 | Promedio amarillas/equipo: ~2.3
-        # ── INSIGHTS PARA EL MODELO ──
-        # 1. Equipos con alta posesión (América, Tigres, Cruz Azul) dominan pero no
-        #    siempre convierten (América solo 1.0 g/partido con 71% posesión)
-        # 2. Nashville y Vancouver: valla invicta con BAJA posesión → defensas sólidas
-        # 3. Equipos físicos (muchas amarillas): San Diego, Vancouver, Cruz Azul
-        # 4. Corners vs goles: América lidera corners (9.5) pero solo 1 g/partido
-        #    → muchos corners no se convierten en goles en este torneo
+        # ── CCL 2026: R1 completada feb 2026, R16 inicia 10-mar-2026 ──
+        # R1: Cincinnati 13-0, Philadelphia 12-0, Cruz Azul 8-0, LAFC 7-1, Nashville 7-0
+        # Bye R16: Toluca, Inter Miami (MLS Cup 25), Seattle, Alajuelense, Mount Pleasant
+        # R16 hoy: Philly-América, Monterrey-Cruz Azul, LAFC-Alajuelense,
+        #   Nashville-Inter Miami, San Diego-Toluca, Tigres-Cincinnati, Vancouver-Seattle
+        # Patrón idéntico CCL 2025: R1 infla vs relleno; élite vs élite ~2.5 g/p
         "o25_old": 0.518, "o25_rate": 0.620, "avg_goals": 3.18,
         "avg_goals_home": 1.55, "avg_goals_away": 1.25,
         "avg_goals_elite": 2.50,
         "avg_corners_per_team": 4.59,
         "avg_yellow_per_team": 2.30,
-        "clean_sheet_rate": 0.45,   # 5 de 12 equipos élite con 2/2 vallas invictas
-        "possession_dominance": {   # equipos que dominan posesión en CCL
+        "clean_sheet_rate": 0.45,
+        "possession_dominance": {
             "tigres": 71, "america": 71, "vancouver": 70, "la galaxy": 70,
             "cruz azul": 69, "monterrey": 66, "cincinnati": 63, "philadelphia": 62,
         },
-        "trend": "⬆️ Récord goles 2025 (+10.2%)",
-        "perfil": "CCL 2025: 3.18 g/partido total PERO OJO — 1ra ronda élite vs relleno infla brutalmente (Cincinnati 6.5/p, Philly 6.0/p vs Defence Force/O&M). Cuartos/Semis élite vs élite reales ~2.5 g/partido → U25 TIENE VALOR ahí. América lidera corners (9.5/p) con solo 1 gol/partido → baja eficiencia atacante. Nashville y Vancouver: valla invicta con baja posesión = equipos muy tácticos.",
+        "trend": "⬆️ CCL 2026 R16 en curso (10-mar) — patrón igual a 2025",
+        "perfil": (
+            "CCL 2026: R1 completa, patrón idéntico a 2025. R16 inicia 10-mar-2026. "
+            "MLS domina R1: Cincinnati 13-0, Philly 12-0, LAFC 7-1, Nashville 7-0. "
+            "MX: Cruz Azul 8-0, Toluca/Inter Miami/Seattle con bye directo. "
+            "Inter Miami con Messi (3 goles en 3 juegos MLS 2026), Son Heung-min en LAFC. "
+            "CRÍTICO: R1 infla totales vs relleno — élite vs élite R16+ ~2.5 g/p. "
+            "Cruz Azul campeón defensor CCL 2025."
+        ),
         "under_value": False,
         "delta": +0.102,
         "flag": "🌎",
@@ -7859,26 +8184,38 @@ _LEAGUE_HISTORICAL: dict = {
         "avg_goals_away": 1.24,
     },
     "uefa.europa.conf": {
-        "o25_old": 0.505, "o25_rate": 0.528, "avg_goals": 2.68,
-        "trend": "⚖️ Estable +2.3%",
-        "perfil": "Conference League — ligas medianas-bajas + equipos que no clasificaron para UEFA. Partidos más cerrados, Over 2.5 moderado. Valor en mercados alternativos (BTTS, AH).",
-        "under_value": True, "delta": +0.023, "flag": "🏆",
+        "o25_old": 0.505, "o25_rate": 0.520, "avg_goals": 2.45,
+        "trend": "⚖️ Estable 2025-26",
+        "perfil": "Conference League 2025-26 — alias. Ver uefa.ecl. ~2.45 g/p (108 partidos). R16 en curso.",
+        "under_value": False, "delta": +0.009, "flag": "🏆",
         "ref_league_coef": 0.850,
-        "avg_goals_home": 1.48,
-        "avg_goals_away": 1.20,
+        "avg_goals_home": 1.35,
+        "avg_goals_away": 1.15,
     },
 
     # ══════════════════════════════════════════════════════════════════
     # CONCACAF — Fuente: Concacaf.com / FBRef / Transfermarkt 2019-2026
     # ══════════════════════════════════════════════════════════════════
     "concacaf.champions": {
-        "o25_old": 0.498, "o25_rate": 0.512, "avg_goals": 2.61,
-        "trend": "⚖️ Estable +1.4%",
-        "perfil": "CONCACAF Champions Cup — dominio histórico de Liga MX (7 de 10 últimas ediciones). Partidos ida/vuelta muy tácticos. Ventaja de altitud para equipos MX en casa (CDMX/GDL/MTY). Under tiene valor en partidos de visita MX en Estados Unidos.",
-        "under_value": True, "delta": +0.014, "flag": "🌎",
-        "ref_league_coef": 0.820,  # promedio Liga MX (dom.) + MLS
-        "avg_goals_home": 1.48,
-        "avg_goals_away": 1.13,
+        # CCL 2026: R1 completada feb 2026. R16 primera vuelta HOY 10-mar-2026.
+        # Agregados R1: Cincinnati 13-0, Philly 12-0, Cruz Azul 8-0, LAFC 7-1, Nashville 7-0
+        # R16 hoy: Philly vs América, Monterrey vs Cruz Azul, LAFC vs Alajuelense,
+        #   Nashville vs Inter Miami (Messi), San Diego vs Toluca, Tigres vs Cincinnati
+        # MISMOS PATRONES CCL 2025: R1 infla vs relleno CA/Caribe
+        # Élite vs élite R16+: ~2.5 g/partido → Under tiene valor real
+        "o25_old": 0.512, "o25_rate": 0.620, "avg_goals": 3.10,
+        "trend": "⬆️ CCL 2026 R16 en curso hoy (10-mar-2026)",
+        "perfil": (
+            "CCL 2026: mismos patrones que 2025. R1 brutal vs relleno (Cincinnati 13-0, "
+            "Philly 12-0, Cruz Azul 8-0). R16 primera vuelta HOY — élite vs élite. "
+            "Inter Miami con Messi, Son Heung-min en LAFC, Cruz Azul campeón defensor. "
+            "Élite vs élite R16+: ~2.5 g/p → U25 valor. Toluca/Miami/Seattle tuvieron bye."
+        ),
+        "under_value": False, "delta": +0.108, "flag": "🌎",
+        "ref_league_coef": 0.820,
+        "avg_goals_home": 1.55,
+        "avg_goals_away": 1.25,
+        "avg_goals_elite": 2.50,
     },
 }
 
@@ -14427,9 +14764,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     hxg = _cup_enriched_xg(m, True,  hf, af)
                     axg = _cup_enriched_xg(m, False, hf, af)
                 else:
-                    hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug, team_id=m.get("home_id","")) \
+                    hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug, team_id=m.get("home_id",""), team_name=m.get("home","")) \
                           if hf else _cup_enriched_xg(m, True,  hf, af)
-                    axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug, team_id=m.get("away_id","")) \
+                    axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug, team_id=m.get("away_id",""), team_name=m.get("away","")) \
                           if af else _cup_enriched_xg(m, False, hf, af)
                 # ── Ajuste xG por tabla+GD ANTES del ensemble ──
                 _tbl_pre_kr = {}
