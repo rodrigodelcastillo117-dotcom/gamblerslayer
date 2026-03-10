@@ -4994,16 +4994,23 @@ def render_resultados_tab():
     """VILLAR — Auditoría automática pick vs resultado real."""
     from collections import defaultdict
 
-    # ── AUTO-AUDITORÍA — respeta throttle de 15 min, no bloquea UI ──
+    # ── AUTO-AUDITORÍA — background thread, no bloquea UI ──
     _villar_key = "villar_last_auto"
     _now_ts = datetime.now(CDMX).timestamp()
     _last   = st.session_state.get(_villar_key, 0)
     if _now_ts - _last > 900:  # cada 15 min
-        try: __import__("os").remove("/tmp/gamblers_last_update.txt")
-        except: pass
-        update_results_db(force=False)  # respeta throttle, no fuerza
-        st.session_state["results_db"] = _load_results_db()
-        st.session_state[_villar_key] = _now_ts
+        st.session_state[_villar_key] = _now_ts  # marcar inmediato para no re-lanzar
+        def _bg_villar():
+            try:
+                update_results_db(force=False)
+            except: pass
+        import threading as _thr_villar
+        _thr_villar.Thread(target=_bg_villar, daemon=True).start()
+        # Refrescar DB desde disco si ya hay algo guardado
+        if st.session_state.get("results_db"):
+            pass  # usar cache existente, bg update lo actualizará
+        else:
+            st.session_state["results_db"] = _load_results_db()
 
     st.markdown("""
     <div style='background:linear-gradient(135deg,#0a001a,#001a0a);
@@ -5021,7 +5028,7 @@ def render_resultados_tab():
         if st.button("🔄 Forzar", use_container_width=True, key="villar_force"):
             st.session_state.pop(_villar_key, None)
             st.session_state.pop("results_db", None)
-            st.rerun(scope="fragment")
+            st.rerun()
 
     db       = get_results_db()
     partidos = db.get("partidos", [])
@@ -5042,30 +5049,28 @@ def render_resultados_tab():
     else:
         _pre_ok   = {"futbol":0,"nba":0,"tenis":0}
         _pre_fail = {"futbol":0,"nba":0,"tenis":0}
-        _inicio_conteo = "2026-03-06"  # solo desde 6 marzo 2026
-        _fut_c = 0
-        for _fp in [p for p in partidos if p.get("state")=="post"]:
-            _sp = _fp.get("deporte","")
-            _fd = _fp.get("fecha","")
-            if _fd < _inicio_conteo: continue
-            if _sp == "futbol":
-                if _fut_c >= 60: continue  # cap 60 (ventana 4 días)
-                _fut_c += 1
-            if _sp == "tenis":
-                _sh2 = _fp.get("score_h", -1)
-                _sa2 = _fp.get("score_a", -1)
-                if _sh2 < 0 or _sa2 < 0: continue
-                if _sh2 == 0 and _sa2 == 0: continue
-            _has_manual = any(_villar_find_result(pk,[_fp]) is not None for pk in pick_history)
-            if _has_manual: continue
-            try:
-                _apk2 = _villar_auto_pick(_fp)
-                if not _apk2: continue
-                # No skip "sin valor" — contamos TODOS para medir precisión del modelo
-                _vd2,_,_ = _villar_match_pick_to_result(_apk2, _fp)
-                if "GANÓ"  in _vd2: _pre_ok[_sp]   = _pre_ok.get(_sp,0)+1
-                elif "FALLÓ" in _vd2: _pre_fail[_sp] = _pre_fail.get(_sp,0)+1
-            except: continue
+        # Solo auditar picks que el usuario guardó en su historial
+        _post_map = {p["id"]: p for p in partidos if p.get("state")=="post"}
+        for _pk in pick_history:
+            _sp = _pk.get("sport", _pk.get("deporte","futbol"))
+            # Mapear sport key
+            if "nba" in str(_sp).lower():   _sp = "nba"
+            elif "ten" in str(_sp).lower(): _sp = "tenis"
+            else:                           _sp = "futbol"
+            # Si ya tiene resultado manual, contarlo directo
+            if _pk.get("result") == "✅":
+                _pre_ok[_sp]   = _pre_ok.get(_sp, 0) + 1
+            elif _pk.get("result") == "❌":
+                _pre_fail[_sp] = _pre_fail.get(_sp, 0) + 1
+            else:
+                # Intentar resolver automáticamente contra results_db
+                try:
+                    _res_p = _villar_find_result(_pk, list(_post_map.values()))
+                    if _res_p:
+                        _vd3, _, _ = _villar_match_pick_to_result(_pk, _res_p)
+                        if   "GANÓ"  in _vd3: _pre_ok[_sp]   = _pre_ok.get(_sp, 0) + 1
+                        elif "FALLÓ" in _vd3: _pre_fail[_sp] = _pre_fail.get(_sp, 0) + 1
+                except: pass
         # Cache para próximas visitas
         st.session_state[_cnt_key] = {"ok": _pre_ok, "fail": _pre_fail}
 
@@ -5276,29 +5281,8 @@ def render_resultados_tab():
             dias_  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
             meses_ = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
 
-            # Pre-calcular auto_picks — corre modelos sobre todos los partidos finalizados
-            # Fútbol: hasta 30 (get_form es lento pero vale la pena para el contador)
-            # NBA/Tenis: hasta 14 días atrás
-            _catorce_dias = "2026-03-06"  # alineado con ventana de resultados
             _inicio_conteo_tab = "2026-03-06"  # solo desde 6 marzo 2026
-            _auto_pk_cache = {}
-            _fut_count = 0
-            for _fp in finalizados:
-                _mid = _fp.get("id","")
-                _fp_sport = _fp.get("deporte","")
-                if _fp_sport == "futbol":
-                    if _fut_count >= 60: continue
-                    _fut_count += 1
-                _manual = [pk for pk in pick_history if _villar_find_result(pk,[_fp]) is not None]
-                if not _manual:
-                    try:
-                        # Pasar copia sin score para que el modelo no se contamine
-                        _fp_clean = {k:v for k,v in _fp.items() if k not in ("score_h","score_a")}
-                        _fp_clean["score_h"] = 0  # _villar_auto_pick necesita score_h >= 0
-                        _apk = _villar_auto_pick(_fp_clean)
-                        _auto_pk_cache[_mid] = _apk
-                        _snap_auto_pick(_mid, _apk, state=_fp.get("state","pre"))
-                    except: _auto_pk_cache[_mid] = None
+            _auto_pk_cache = {}  # lazy — solo se calcula si se necesita
 
             for fecha in sorted(por_fecha.keys(), reverse=True):
                 dia_ps = por_fecha[fecha]
@@ -5425,12 +5409,9 @@ def render_resultados_tab():
                                     "odd":     _main_pick.get("odd", 0),
                                     "src":     _main_pick.get("src", "🤖 Modelo"),
                                     "verd":    _vd2, "col": _vc2, "expl": _ex2,
-                                    "is_main": True,
+                                    "is_main": False,  # modelo, no pick del usuario
                                 })
-                                # Contar para el contador global
-                                if p.get("fecha","") >= _inicio_conteo_tab:
-                                    if   "GANÓ"  in _vd2: ok_sp   += 1
-                                    elif "FALLÓ" in _vd2: fail_sp += 1
+                                # NO contar auto_pick en stats — solo picks del usuario cuentan
 
                             # Render card
                             has_win  = any("GANÓ"  in r["verd"] for r in pick_rows)
@@ -16659,24 +16640,25 @@ if st.session_state["view"] == "cartelera":
                     meses=["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
                     return f"🏀 {dias[d.weekday()]} {d.day} {meses[d.month]}"
                 except: return f
-            # ── Pre-computar modelos NBA en paralelo (1 vez por sesión) ──
+            # ── Pre-computar modelos NBA en background (no bloquea UI) ──
             _all_nba_gs = [g for gs in nba_por_fecha.values() for g in gs if g["state"] != "post"]
-            if _all_nba_gs and not st.session_state.get("_nba_model_cache"):
-                try:
-                    import concurrent.futures as _cf_nba
-                    def _run_nba_model(g):
-                        try: return g["id"], nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
-                        except: return g["id"], None
-                    with _cf_nba.ThreadPoolExecutor(max_workers=min(len(_all_nba_gs), 8)) as _nx:
-                        _nba_futs = {_nx.submit(_run_nba_model, g): g for g in _all_nba_gs}
-                        _nba_cache = {}
-                        for _nf in _cf_nba.as_completed(_nba_futs, timeout=15):
-                            try:
-                                _gid, _res = _nf.result()
+            if _all_nba_gs and not st.session_state.get("_nba_model_cache") and not st.session_state.get("_nba_model_computing"):
+                st.session_state["_nba_model_computing"] = True
+                def _bg_nba_models(_games=_all_nba_gs):
+                    try:
+                        import concurrent.futures as _cf_nba
+                        def _run_nba_model(g):
+                            try: return g["id"], nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                            except: return g["id"], None
+                        with _cf_nba.ThreadPoolExecutor(max_workers=min(len(_games), 8)) as _nx:
+                            _nba_cache = {}
+                            for _gid, _res in _nx.map(_run_nba_model, _games, timeout=20):
                                 if _res: _nba_cache[_gid] = _res
-                            except: pass
-                    st.session_state["_nba_model_cache"] = _nba_cache
-                except: pass
+                        st.session_state["_nba_model_cache"] = _nba_cache
+                        st.session_state["_nba_model_computing"] = False
+                    except: st.session_state["_nba_model_computing"] = False
+                import threading as _thr_nba
+                _thr_nba.Thread(target=_bg_nba_models, daemon=True).start()
 
             for fi, fecha in enumerate(sorted(nba_por_fecha.keys())):
                 gs = nba_por_fecha[fecha]
