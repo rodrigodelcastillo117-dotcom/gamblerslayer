@@ -6328,6 +6328,91 @@ def render_resultados_tab():
 # EL PICK DEFINITIVO DEL DÍA con máxima confianza.
 # ══════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SCOUTING REPORTS — UCL/UEL OCTAVOS 2024-25
+# Fuente: análisis pre-partido basado en datos fase liga + playoffs.
+# Estructura dinámica: agregar nuevos partidos al dict para rondas futuras.
+# Función _ucl_scouting_context() inyecta el reporte relevante en el prompt
+# de Einstein cuando detecta los equipos involucrados.
+# ══════════════════════════════════════════════════════════════════════════════
+_UCL_SCOUTING_DB = {
+    # Clave: frozenset de nombres clave de ambos equipos (lowercase, sin acentos)
+    # para matching flexible (parcial por apellido/ciudad)
+    "galatasaray_liverpool": {
+        "teams": ["galatasaray", "liverpool"],
+        "ronda": "Octavos UCL 2024-25 · Ida",
+        "reporte": (
+            "GALATASARAY vs LIVERPOOL — DATOS CLAVE:\n"
+            "· Galatasaray ya ganó a Liverpool en Estambul esta campaña (antecedente directo).\n"
+            "· Osimhen: 7 goles en esta Champions, incluyendo gol en playoff vs Juventus — FRENAR al nigeriano es prioridad de Liverpool según UEFA.\n"
+            "· Liverpool: 3º fase liga, 20 goles a favor y 8 en contra. Perfil de partidos ABIERTOS: 5-1 vs Frankfurt, 6-0 vs Qarabağ.\n"
+            "· Galatasaray: 9 goles hechos y 11 recibidos en fase liga — perfil CAÓTICO. Eliminó a Juventus 7-5 global en playoff.\n"
+            "· VEREDICTO PICK: Over 2.5 tiene MEJOR respaldo que el 1X Galatasaray. El doble oportunidad local es el tramo más débil — Liverpool fue más sólido globalmente.\n"
+            "· Calibración sugerida: si el pick es Over 2.5 solo → confianza ALTA. Si incluye 1X Galatasaray → bajar confianza, Liverpool es favorito por calidad global."
+        ),
+    },
+    "atalanta_bayern": {
+        "teams": ["atalanta", "bayern"],
+        "ronda": "Octavos UCL 2024-25 · Ida",
+        "reporte": (
+            "ATALANTA vs BAYERN MÜNCHEN — DATOS CLAVE:\n"
+            "· Bayern: 2º fase liga, 22 goles a favor / 8 en contra, 7W-1L, forma WWWWWW. Solo Arsenal marcó más en fase liga.\n"
+            "· Bayern en Bundesliga: 92 goles en 25 partidos — potencia ofensiva brutal.\n"
+            "· Atalanta: avanzó ante Dortmund 4-3 global, ganó la vuelta 4-1. 11 de sus 14 goles en el camino llegaron en el SEGUNDO TIEMPO — equipo que empuja hasta el final.\n"
+            "· Atalanta en casa: eliminó a Club Brugge y Chelsea en esta Champions. Ambiente alto en Bérgamo.\n"
+            "· VEREDICTO PICK: X2 Bayern es SÓLIDO — la base más fuerte del boleto. Ambos Anotan es RAZONABLE: Atalanta sí tiene cómo marcar en casa, pero Bayern es demasiado fuerte para esperar portería a cero.\n"
+            "· Calibración sugerida: Bayern o empate → confianza ALTA. Ambos Anotan → confianza MEDIA-ALTA (Atalanta lleva gol tarde, puede sorprender)."
+        ),
+    },
+    "atletico_tottenham": {
+        "teams": ["atletico", "atlético", "tottenham", "spurs"],
+        "ronda": "Octavos UCL 2024-25 · Ida",
+        "reporte": (
+            "ATLÉTICO DE MADRID vs TOTTENHAM — DATOS CLAVE:\n"
+            "· Atleti en Metropolitano: ganó sus primeros 3 partidos de local en esta Champions, 10 goles a favor / 3 en contra. FORTALEZA de casa brutal.\n"
+            "· Atleti en playoffs: 4-1 a Club Brugge en la vuelta. Llega con 24 goles totales en la competición (solo 2 equipos superaron esa cifra).\n"
+            "· Tottenham: forma reciente LLLLLD + caída 1-3 vs Crystal Palace. Llegada en baja.\n"
+            "· Tottenham tuvo 6 clean sheets en Champions — uno de los líderes en fase liga en partidos sin goles recibidos (7 en contra en 8 partidos).\n"
+            "· VEREDICTO PICK: Atleti gana tiene FUERTE respaldo — el pick más limpio de los 4 partidos. Over 2.5 tiene apoyo pero es menos seguro: Tottenham tiene capacidad defensiva real y Atleti a veces gana 1-0.\n"
+            "· Calibración sugerida: Atlético gana → confianza ALTA. Atlético gana + Over 2.5 → bajar a MEDIA, hay riesgo de 1-0 o 2-0."
+        ),
+    },
+    "newcastle_barcelona": {
+        "teams": ["newcastle", "barcelona"],
+        "ronda": "Octavos UCL 2024-25 · Ida",
+        "reporte": (
+            "NEWCASTLE vs BARCELONA — DATOS CLAVE:\n"
+            "· Antecedente directo esta temporada: Newcastle 1-2 Barcelona → ya se dio BTTS + Over 2.5 en St James' Park.\n"
+            "· Barcelona: 5º fase liga, 22 goles a favor / 14 en contra — ataque elite pero concesiones defensivas por encima de lo que Flick desearía.\n"
+            "· Newcastle: solo 4 derrotas en sus últimos 36 partidos europeos como LOCAL. Llega tras barrer a Qarabağ 9-3 global — impulso alto.\n"
+            "· VEREDICTO PICK: BTTS y Over 2.5 tienen MEJOR soporte estadístico que el 1X Newcastle. El doble oportunidad local es la parte más volátil — Barcelona ya ganó en St James' Park esta misma temporada.\n"
+            "· Calibración sugerida: BTTS → confianza ALTA. Over 2.5 → confianza ALTA. Newcastle o empate (1X) → confianza BAJA-MEDIA, Barcelona es favorito visitante con precedente de victoria allí."
+        ),
+    },
+}
+
+def _ucl_scouting_context(text_to_scan: str) -> str:
+    """
+    Escanea el texto del prompt buscando nombres de equipos.
+    Si detecta un partido del _UCL_SCOUTING_DB, devuelve el bloque de contexto
+    formateado para inyectar en el prompt de Einstein/Papa.
+    Si no hay match, devuelve string vacío.
+    Matching flexible: busca substrings lowercase sin necesidad de match exacto.
+    """
+    text_lower = text_to_scan.lower()
+    for key, data in _UCL_SCOUTING_DB.items():
+        teams = data["teams"]
+        # Requiere que AL MENOS 2 nombres del grupo estén presentes en el texto
+        matches = sum(1 for t in teams if t in text_lower)
+        if matches >= 2:
+            return (
+                f"\n\n══ SCOUTING REPORT OFICIAL — {data['ronda']} ══\n"
+                f"{data['reporte']}\n"
+                f"INSTRUCCIÓN: usa estos datos como contexto PRIORITARIO para calibrar prob_real y confianza.\n"
+                f"══════════════════════════════════════════════════════\n"
+            )
+    return ""
+
 # ── Constantes de confianza King Rongo ──
 # [v2 PATCH] Umbrales elevados para mayor calidad de picks:
 #   DIAMANTE: 0.65→0.68 (exige más certeza matemática)
@@ -6414,6 +6499,11 @@ SI ES PARTIDO UEFA (Champions, Europa, Conference League):
    - ¿Si es partido de VUELTA ('2nd leg'), Einstein consideró el resultado de la ida? Un equipo que perdió la ida NECESITA ganar → más goles → Over tiene valor extra. Equipo que ganó puede jugar más cerrado → Under/X.
    - ¿Einstein consideró el COEFICIENTE UEFA del equipo? Equipos con coef >70 tienen historial de rendimiento europeo muy superior.
 
+SCOUTING REPORTS DISPONIBLES — OCTAVOS UCL 2024-25 (usa si el partido auditado es uno de estos):
+""" + "\n".join(f"▸ {v['ronda']}:\n{v['reporte']}" for v in _UCL_SCOUTING_DB.values()) + """
+   - Si Einstein analizó uno de estos partidos, verifica que sus conclusiones sean consistentes con el scouting report.
+   - Si Einstein contradice el scouting (ej: da alta confianza a un pick que el scouting marca como frágil), penaliza la calificación.
+
 5. VERIFICA EL ESTADO DEL PARTIDO:
    - ¿El partido ya terminó y Einstein no lo detectó? (Error crítico = F automático)
    - ¿La cuota parece de partido en vivo vs pre-partido?
@@ -6484,32 +6574,50 @@ Sé brutalmente honesto. Si Einstein se equivocó, dilo claramente.
 Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad, no halagos."""
 
     try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 1500,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": imagen_b64
-                        }},
-                        {"type": "text", "text": PAPA_PROMPT}
-                    ]
-                }]
-            },
-            timeout=60
-        )
-        if r.status_code != 200: return {}
-        _raw_p = r.json()["content"][0]["text"].strip()
+        _papa_headers = {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+            "anthropic-beta": "web-search-2025-03-05",
+        }
+        _papa_tools = [{"type": "web_search_20250305", "name": "web_search",
+                        "max_uses": 3}]
+        _papa_msgs = [{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": imagen_b64}},
+            {"type": "text",  "text": PAPA_PROMPT}
+        ]}]
+        _raw_p = ""
+        for _papa_turn in range(5):
+            r = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=_papa_headers,
+                json={"model": "claude-sonnet-4-20250514", "max_tokens": 1800,
+                      "tools": _papa_tools, "messages": _papa_msgs},
+                timeout=60
+            )
+            if r.status_code != 200: return {}
+            _papa_body    = r.json()
+            _papa_content = _papa_body.get("content", [])
+            _papa_stop    = _papa_body.get("stop_reason", "")
+            for _blk in _papa_content:
+                if _blk.get("type") == "text":
+                    _raw_p = _blk["text"].strip()
+            if _papa_stop == "end_turn":
+                break
+            if _papa_stop == "tool_use":
+                _papa_msgs.append({"role": "assistant", "content": _papa_content})
+                _papa_tool_results = []
+                for _blk in _papa_content:
+                    if _blk.get("type") == "tool_use":
+                        _papa_tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": _blk["id"],
+                            "content": _blk.get("content", "") or ""
+                        })
+                if _papa_tool_results:
+                    _papa_msgs.append({"role": "user", "content": _papa_tool_results})
+            else:
+                break
         _raw_p = _raw_p.replace("```json","").replace("```","").strip()
         _j0 = _raw_p.find("{"); _j1 = _raw_p.rfind("}") + 1
         if _j0 >= 0 and _j1 > _j0: _raw_p = _raw_p[_j0:_j1]
@@ -6807,7 +6915,7 @@ def render_einstein_califica(key_sfx="fut"):
             f"style='max-height:260px;max-width:100%;border-radius:7px;border:1.5px solid #252555'/>"
             f"</div>", unsafe_allow_html=True)
 
-        with st.spinner("🧠 EINSTEIN analizando — variables visibles + ocultas + 50,000 simulaciones..."):
+        with st.spinner("🧠 EINSTEIN analizando — búsqueda web en tiempo real + 50,000 simulaciones..."):
             try:
                 EINSTEIN = (
                     "Eres EINSTEIN BETS, la IA más avanzada del mundo en análisis de apuestas deportivas. "
@@ -6837,7 +6945,17 @@ def render_einstein_califica(key_sfx="fut"):
                     "    - Equipo que ganó la ida tiene ventaja táctica (puede empatar y clasificar).\n"
                     "    - Equipo que perdió la ida DEBE ganar → ataca más → más goles → Over tiene valor extra.\n"
                     "    - En empate de ida: ambos equipos buscan el gol visitante como desempate extra.\n"
-                    "  · Calibra prob_real usando: coeficiente UEFA + forma doméstica reciente (últimos 5) + historial en competencia europea + fatiga de fixture.\n\n"
+                    "  · Calibra prob_real usando: coeficiente UEFA + forma doméstica reciente (últimos 5) + historial en competencia europea + fatiga de fixture.\n"
+                    + _ucl_scouting_context(" ".join([
+                        e["teams"][0] for e in _UCL_SCOUTING_DB.values()
+                    ] + [e["teams"][1] for e in _UCL_SCOUTING_DB.values()]))
+                    # Inyectar TODOS los scouting reports activos como bloque de referencia
+                    + "══ SCOUTING REPORTS — OCTAVOS UCL 2024-25 (usa si detectas alguno de estos partidos) ══\n"
+                    + "\n".join(
+                        f"▸ {v['ronda']}:\n{v['reporte']}\n"
+                        for v in _UCL_SCOUTING_DB.values()
+                    )
+                    + "══════════════════════════════════════════════════════\n\n"
                     "══ ESTADO DEL PARTIDO — REGLA CRÍTICA ══\n"
                     "SOLO marca estado_partido='finalizado' si ves un marcador FINAL explícito (FT, Final, Terminado, 90') en la imagen. "
                     "Si ves una hora futura (ej: '13:30', '20:00', 'Mañana') = 'pendiente'. "
@@ -6910,17 +7028,52 @@ def render_einstein_califica(key_sfx="fut"):
                     "\"alternativa_mercado\": \"\", \"alternativa_razon\": \"\", "
                     "\"kelly_pct\": 0.0, \"apostar\": false}"
                 )
-                resp = requests.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01"},
-                    json={"model":"claude-sonnet-4-20250514","max_tokens":1800,
-                          "messages":[{"role":"user","content":[
-                              {"type":"image","source":{"type":"base64","media_type":media_type,"data":b64}},
-                              {"type":"text","text":EINSTEIN}
-                          ]}]},
-                    timeout=45
-                )
-                _raw_e = resp.json()["content"][0]["text"].strip()
+                _ein_headers = {
+                    "Content-Type": "application/json",
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "anthropic-beta": "web-search-2025-03-05",
+                }
+                _ein_tools = [{"type": "web_search_20250305", "name": "web_search",
+                                "max_uses": 4}]
+                _ein_msgs  = [{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                    {"type": "text",  "text": EINSTEIN}
+                ]}]
+                # Agentic loop — el modelo puede hacer hasta 4 búsquedas antes del JSON final
+                _raw_e = ""
+                for _ein_turn in range(6):  # máx 6 iteraciones (4 búsquedas + overhead)
+                    resp = requests.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers=_ein_headers,
+                        json={"model": "claude-sonnet-4-20250514", "max_tokens": 2000,
+                              "tools": _ein_tools, "messages": _ein_msgs},
+                        timeout=60
+                    )
+                    _ein_body = resp.json()
+                    _ein_content = _ein_body.get("content", [])
+                    _stop = _ein_body.get("stop_reason", "")
+                    # Extraer texto final si terminó
+                    for _blk in _ein_content:
+                        if _blk.get("type") == "text":
+                            _raw_e = _blk["text"].strip()
+                    if _stop == "end_turn":
+                        break
+                    # Si usó tool_use, continuar el loop con los resultados
+                    if _stop == "tool_use":
+                        _ein_msgs.append({"role": "assistant", "content": _ein_content})
+                        _tool_results = []
+                        for _blk in _ein_content:
+                            if _blk.get("type") == "tool_use":
+                                _tool_results.append({
+                                    "type": "tool_result",
+                                    "tool_use_id": _blk["id"],
+                                    "content": _blk.get("content", "") or ""
+                                })
+                        if _tool_results:
+                            _ein_msgs.append({"role": "user", "content": _tool_results})
+                    else:
+                        break  # stop_reason inesperado — salir
                 _raw_e = _raw_e.replace("```json","").replace("```","").strip()
                 _j0 = _raw_e.find("{"); _j1 = _raw_e.rfind("}") + 1
                 if _j0 >= 0 and _j1 > _j0: _raw_e = _raw_e[_j0:_j1]
@@ -7050,7 +7203,7 @@ def render_einstein_califica(key_sfx="fut"):
                     "✝ EL PAPA DE EINSTEIN</div>"
                     "<div style='font-size:1.17rem;color:#555'>Meta-IA auditora — verifica, recalcula y valida cada número de Einstein.</div>"
                     "</div>", unsafe_allow_html=True)
-                with st.spinner("✝ El Papa auditando el análisis de Einstein..."):
+                with st.spinner("✝ El Papa auditando — búsqueda web independiente + verificación cruzada..."):
                     papa_audit = papa_einstein_audit(data, b64, media_type, mem_ctx)
                 render_papa_einstein(data, papa_audit, pts)
 
@@ -10329,7 +10482,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             unsafe_allow_html=True)
 
     with col_p:
-        with st.spinner("✝ Papa auditando..."):
+        with st.spinner("✝ Papa auditando con web search..."):
             try:
                 _papa_prompt = (
                     f"Eres EL PAPA DE EINSTEIN — meta-IA auditora suprema.\n"
