@@ -1519,7 +1519,7 @@ def _fixture_congestion(form, n=14):
     }
 
 
-def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
+def xg_weighted(form, is_home, odds_prior=0.0, slug="", team_id=None):
     """
     xG con decaimiento exponencial — partidos recientes pesan MÁS.
     Si ESPN devuelve xG real lo usa; si no, usa goles como proxy.
@@ -1683,6 +1683,24 @@ def xg_weighted(form, is_home, odds_prior=0.0, slug=""):
                         # 25% API-Football (temporada) + 75% forma reciente (más precisa)
                         xg_base = 0.75 * xg_base + 0.25 * _xg_api
         except: pass
+
+    # ── Night Scout blend — datos investigados por IA (últimos 5 reales) ──
+    if team_id:
+        _ns_xg_s, _ns_xg_c = _ns_get_team_xg(str(team_id), is_home)
+        if _ns_xg_s and _ns_xg_s > 0.2:
+            _ns_info_w = _ns_get_team_info(str(team_id))
+            _mom_w = (_ns_info_w.get("momentum","medio") or "medio").lower()
+            _mom_adj_w = {"alto":1.06,"medio":1.00,"bajo":0.94}.get(_mom_w, 1.0)
+            _ns_xg_adj = _ns_xg_s * _mom_adj_w
+            if is_home and slug:
+                # Aplicar ventaja local al xG del Night Scout también
+                _ha_ns = _LEAGUE_HA.get(slug, 1.08)
+                _ns_xg_adj *= (_ha_ns / 1.08)  # relativo al default 1.08
+            # Blend: 55% Night Scout (forma real investigada) + 45% ESPN (xG computado)
+            # Si la forma ESPN tiene pocos partidos (<3), dar más peso al Night Scout
+            _espn_weight = 0.45 if len(form or []) >= 3 else 0.25
+            _ns_weight   = 1 - _espn_weight
+            xg_base = round(_ns_weight * _ns_xg_adj + _espn_weight * xg_base, 3)
 
     return round(max(0.20, min(4.5, xg_base)), 3)
 
@@ -3639,7 +3657,329 @@ def render_history():
 import json as _json_mem, collections as _col
 
 MEMORY_FILE   = "/tmp/gamblers_brain.json"
+
 KR_CACHE_FILE = "/tmp/king_rongo_cache.json"
+
+# ══════════════════════════════════════════════════════════
+# NIGHT SCOUT — 4am CDMX daily form research via Claude AI
+# Investiga los últimos 5 partidos de cada equipo en cartelera
+# y guarda la información en caché para enriquecer los picks
+# ══════════════════════════════════════════════════════════
+NIGHT_FORM_FILE  = "/tmp/gamblers_night_form.json"
+NIGHT_LOG_FILE   = "/tmp/gamblers_night_log.json"
+NIGHT_SCOUT_HOUR = 4   # 4am CDMX
+NIGHT_CACHE_TTL  = 20  # horas antes de re-investigar
+
+import json as _jns
+
+def _ns_load() -> dict:
+    """Carga el caché de forma nocturna."""
+    try:
+        with open(NIGHT_FORM_FILE, "r") as f:
+            return _jns.load(f)
+    except:
+        return {}
+
+def _ns_save(data: dict):
+    try:
+        with open(NIGHT_FORM_FILE, "w") as f:
+            _jns.dump(data, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+def _ns_log(msg: str):
+    try:
+        log = []
+        try:
+            with open(NIGHT_LOG_FILE, "r") as f:
+                log = _jns.load(f)
+        except:
+            pass
+        from datetime import datetime as _dt
+        log.append({"ts": _dt.now(CDMX).isoformat(), "msg": msg})
+        log = log[-200:]  # solo últimas 200 entradas
+        with open(NIGHT_LOG_FILE, "w") as f:
+            _jns.dump(log, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+def _ns_needs_run() -> bool:
+    """
+    Devuelve True si toca investigar:
+    - Nunca se ha ejecutado, o
+    - Última ejecución fue hace >20h, o
+    - Son las 4am CDMX ± 30min y no se ejecutó hoy
+    """
+    try:
+        data = _ns_load()
+        last_run = data.get("_meta", {}).get("last_run_ts", 0)
+        from datetime import datetime as _dt
+        now = _dt.now(CDMX)
+        elapsed_h = (now.timestamp() - last_run) / 3600
+        if elapsed_h > NIGHT_CACHE_TTL:
+            return True
+        # También checar si son las 4am ± 30min y no se corrió en las últimas 2h
+        if now.hour == NIGHT_SCOUT_HOUR and elapsed_h > 2:
+            return True
+        return False
+    except:
+        return True
+
+def _ns_ask_claude(team_name: str, league: str, sport: str = "fútbol") -> dict:
+    """
+    Llama a Claude con web_search para investigar los últimos 5
+    partidos del equipo y devuelve un dict con forma estandarizada.
+    """
+    if not ANTHROPIC_API_KEY:
+        return {}
+    # Adaptar terminología por deporte
+    if sport == "NBA":
+        _unit = "partidos NBA"; _scored = "puntos anotados"; _conceded = "puntos recibidos"
+    elif sport == "tenis":
+        _unit = "partidos (sets ganados/perdidos)"; _scored = "sets ganados"; _conceded = "sets perdidos"
+    else:
+        _unit = "partidos"; _scored = "goles marcados"; _conceded = "goles recibidos"
+    prompt = f"""Investiga los ÚLTIMOS 5 {_unit.upper()} de: {team_name} ({league}) — {sport}
+
+Busca en internet los resultados más recientes de este equipo/jugador en 2025-2026.
+Responde SOLO en JSON válido, sin texto adicional ni backticks markdown.
+
+Formato exacto:
+{{
+  "team": "{team_name}",
+  "league": "{league}",
+  "last_5": [
+    {{"date": "YYYY-MM-DD", "home": "Equipo Local", "away": "Equipo Visitante", "score": "X-Y", "result": "W/D/L", "competition": "Liga/Copa"}},
+    ...
+  ],
+  "goals_scored_last5": <número total de {_scored} en últimos 5>,
+  "goals_conceded_last5": <número total de {_conceded} en últimos 5>,
+  "wins_last5": <0-5>,
+  "form_string": "<ej: WWDLW — del más antiguo al más reciente>",
+  "key_absences": "<lesionados o suspendidos importantes si los hay, o 'ninguna'>",
+  "momentum": "<alto/medio/bajo — basado en la racha reciente>",
+  "avg_goals_scored": <promedio de goles marcados por partido>,
+  "avg_goals_conceded": <promedio de goles recibidos por partido>,
+  "notes": "<dato clave de forma: racha invicta, cambio de técnico, clásico reciente, etc.>"
+}}
+
+Si no encuentras datos exactos, usa tu mejor conocimiento actualizado del equipo.
+Prioriza resultados de 2025-2026. Sé preciso con los marcadores."""
+
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "web-search-2025-03-05",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1000,
+                "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=35
+        )
+        if r.status_code != 200:
+            return {}
+        content = r.json().get("content", [])
+        # Extraer solo bloques tipo "text"
+        raw = " ".join(b.get("text","") for b in content if b.get("type") == "text").strip()
+        raw = raw.replace("```json","").replace("```","").strip()
+        # Buscar el primer { ... } JSON
+        start = raw.find("{"); end = raw.rfind("}") + 1
+        if start < 0 or end <= start:
+            return {}
+        return _jns.loads(raw[start:end])
+    except Exception as _e:
+        return {}
+
+def _ns_extract_xg_from_form(form_data: dict) -> tuple:
+    """
+    Convierte el resultado de _ns_ask_claude en (xg_scored, xg_conceded).
+    Usa avg_goals como proxy de xG — más realista que ESPN schedule parsing.
+    """
+    try:
+        scored   = float(form_data.get("avg_goals_scored", 1.2))
+        conceded = float(form_data.get("avg_goals_conceded", 1.1))
+        wins     = int(form_data.get("wins_last5", 2))
+        momentum = form_data.get("momentum", "medio").lower()
+        # Ajuste momentum
+        _m_adj = {"alto": 1.08, "medio": 1.00, "bajo": 0.92}.get(momentum, 1.0)
+        scored   = round(scored * _m_adj, 3)
+        conceded = round(conceded / _m_adj, 3)  # buena forma → concede menos
+        return max(0.30, scored), max(0.25, conceded)
+    except:
+        return 1.2, 1.1
+
+def _night_scout_run():
+    """
+    Worker del hilo nocturno. Investiga todos los equipos en cartelera
+    y guarda resultados en NIGHT_FORM_FILE.
+    Corre a las 4am CDMX diariamente.
+    """
+    import time as _time
+    from datetime import datetime as _dt
+
+    _ns_log("🌙 Night Scout iniciado")
+    cache = _ns_load()
+    cache["_meta"] = cache.get("_meta", {})
+    cache["_meta"]["last_run_ts"] = _dt.now(CDMX).timestamp()
+    cache["_meta"]["run_date"] = _dt.now(CDMX).strftime("%Y-%m-%d")
+    _ns_save(cache)  # marcar inicio
+
+    teams_done  = 0
+    teams_fail  = 0
+
+    try:
+        # ── Recopilar equipos de todos los deportes ──
+        all_teams = {}  # team_id → (team_name, league_slug)
+        # Fútbol
+        try:
+            matches = get_cartelera()
+            for m in matches:
+                slug = m.get("slug","")
+                if m.get("home_id"):
+                    all_teams[str(m["home_id"])] = (m.get("home",""), slug)
+                if m.get("away_id"):
+                    all_teams[str(m["away_id"])] = (m.get("away",""), slug)
+        except:
+            pass
+        # NBA
+        try:
+            nba_games = get_nba_cartelera()
+            for g in nba_games:
+                hid = str(g.get("home_id","") or g.get("hid","") or "")
+                aid = str(g.get("away_id","") or g.get("aid","") or "")
+                if hid: all_teams[hid] = (g.get("home",""), "nba")
+                if aid: all_teams[aid] = (g.get("away",""), "nba")
+        except:
+            pass
+        # Tenis
+        try:
+            ten_matches = get_tennis_cartelera()
+            for t in ten_matches:
+                p1 = t.get("p1","") or t.get("home","")
+                p2 = t.get("p2","") or t.get("away","")
+                i1 = str(t.get("home_id","") or t.get("p1_id","") or p1)
+                i2 = str(t.get("away_id","") or t.get("p2_id","") or p2)
+                tour = t.get("tournament","") or t.get("slug","tennis")
+                if p1 and i1: all_teams[i1] = (p1, f"tennis:{tour}")
+                if p2 and i2: all_teams[i2] = (p2, f"tennis:{tour}")
+        except:
+            pass
+
+        # ── Slug → nombre legible para el prompt ──
+        _SLUG_NAME = {
+            "mex.1":"Liga MX", "mex.2":"Liga de Expansión MX",
+            "esp.1":"La Liga", "eng.1":"Premier League",
+            "ger.1":"Bundesliga", "ita.1":"Serie A", "fra.1":"Ligue 1",
+            "usa.1":"MLS", "bra.1":"Brasileirao", "arg.1":"Liga Argentina",
+            "col.1":"Liga BetPlay", "chi.1":"Primera División Chile",
+            "por.1":"Primeira Liga", "ned.1":"Eredivisie",
+            "tur.1":"Süper Lig", "sco.1":"Scottish Premiership",
+            "sau.1":"Saudi Pro League", "bel.1":"Pro League Bélgica",
+            "den.1":"Superliga Dinamarca", "nor.1":"Eliteserien",
+            "gre.1":"Super League Grecia",
+            "uefa.champions":"UEFA Champions League",
+            "uefa.europa":"UEFA Europa League",
+            "uefa.europa.conf":"UEFA Conference League",
+            "concacaf.champions":"CONCACAF Champions Cup",
+            "nba":"NBA",
+        }
+
+        total = len(all_teams)
+        _ns_log(f"🔍 Investigando {total} equipos...")
+
+        for i, (tid, (tname, slug)) in enumerate(all_teams.items()):
+            if not tname:
+                continue
+            if slug.startswith("tennis:"):
+                league_name = slug.replace("tennis:","").strip() or "ATP/WTA"
+            else:
+                league_name = _SLUG_NAME.get(slug, slug)
+            _ns_log(f"[{i+1}/{total}] {tname} ({league_name})")
+
+            try:
+                # Adaptar prompt por deporte
+                _ns_sport = "tenis" if slug.startswith("tennis:") else ("NBA" if slug == "nba" else "fútbol")
+                form = _ns_ask_claude(tname, league_name, sport=_ns_sport)
+                if form and form.get("last_5"):
+                    xg_s, xg_c = _ns_extract_xg_from_form(form)
+                    cache[tid] = {
+                        "team":            tname,
+                        "slug":            slug,
+                        "form":            form,
+                        "xg_scored":       xg_s,
+                        "xg_conceded":     xg_c,
+                        "fetched_at":      _dt.now(CDMX).isoformat(),
+                        "form_string":     form.get("form_string","?????"),
+                        "momentum":        form.get("momentum","medio"),
+                        "key_absences":    form.get("key_absences",""),
+                        "notes":           form.get("notes",""),
+                        "wins_last5":      form.get("wins_last5",2),
+                        "goals_scored":    form.get("goals_scored_last5",6),
+                        "goals_conceded":  form.get("goals_conceded_last5",5),
+                    }
+                    teams_done += 1
+                else:
+                    teams_fail += 1
+            except:
+                teams_fail += 1
+
+            _ns_save(cache)
+            # Pausa entre llamadas para no saturar la API
+            _time.sleep(2.5)
+
+        cache["_meta"]["teams_done"]   = teams_done
+        cache["_meta"]["teams_fail"]   = teams_fail
+        cache["_meta"]["finished_at"]  = _dt.now(CDMX).isoformat()
+        _ns_save(cache)
+        _ns_log(f"✅ Night Scout completo: {teams_done} OK, {teams_fail} fallidos")
+
+    except Exception as _e:
+        _ns_log(f"❌ Night Scout error: {_e}")
+        cache["_meta"]["error"] = str(_e)
+        _ns_save(cache)
+
+def _ns_get_team_xg(team_id: str, is_home: bool) -> tuple:
+    """
+    Devuelve (xg_att, xg_def) del caché nocturno para un equipo.
+    xg_att = promedio de goles marcados
+    xg_def = promedio de goles concedidos
+    Retorna (None, None) si no hay datos.
+    """
+    try:
+        cache = _ns_load()
+        entry = cache.get(str(team_id))
+        if not entry:
+            return None, None
+        return float(entry.get("xg_scored", 1.2)), float(entry.get("xg_conceded", 1.1))
+    except:
+        return None, None
+
+def _ns_get_team_info(team_id: str) -> dict:
+    """Devuelve el dict completo de forma para un equipo del caché nocturno."""
+    try:
+        cache = _ns_load()
+        return cache.get(str(team_id), {})
+    except:
+        return {}
+
+def _ns_start_if_needed():
+    """
+    Lanza _night_scout_run() en hilo daemon si toca ejecutar.
+    Llamado desde el bootstrap de Streamlit.
+    """
+    if not _ns_needs_run():
+        return
+    import threading as _tns
+    _tns.Thread(target=_night_scout_run, daemon=True, name="NightScout").start()
+    _ns_log("🚀 Night Scout lanzado en background")
+
 
 def _load_brain():
     try:
@@ -5000,7 +5340,7 @@ def _villar_auto_pick(partido_db):
                 hxg = _cup_enriched_xg(partido_db, True,  hf, af)
                 axg = _cup_enriched_xg(partido_db, False, hf, af)
             elif hf:
-                hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0, slug=slug)
+                hxg = xg_weighted(hf, True,  1/odd_h if odd_h>1 else 0, slug=slug, team_id=partido_db.get("home_id",""))
             elif home_rec and home_rec != "5-5-5":
                 hxg = xg_from_record(home_rec, True)
             else:
@@ -5008,7 +5348,7 @@ def _villar_auto_pick(partido_db):
 
             if slug not in _UEFA_CUP_SLUGS:
                 if af:
-                    axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0, slug=slug)
+                    axg = xg_weighted(af, False, 1/odd_a if odd_a>1 else 0, slug=slug, team_id=partido_db.get("away_id",""))
                 elif away_rec and away_rec != "5-5-5":
                     axg = xg_from_record(away_rec, False)
                 else:
@@ -5155,14 +5495,42 @@ def _villar_auto_pick(partido_db):
             _build_pick(f"🌓 {away} gana cualquier mitad", _gcm_a,  "GCM", _o_gcma),
         ]
 
+        # ── Para UEFA (solo champions/europa/conf): 2 mejores picks distintos ──
+        _uefa_only = {"uefa.champions","uefa.europa","uefa.europa.conf"}
+        _pick2_lbl = None; _pick2_prob = None; _pick2_odd = None; _pick2_ev = None
+
+        if slug in _uefa_only and _ev_candidates:
+            # Segundo pick: mejor EV de un mercado diferente al primero
+            _second_pool = [o for o in _ev_candidates
+                            if o[4] != _best_mkt           # distinto tipo de mercado
+                            and o[0] != _best[0]]          # distinto label
+            if not _second_pool:
+                # relajar: buscar entre todos los de EV>0 aunque sea mismo tipo
+                _second_pool = [o for o in _all_outcomes
+                                if o[0] != _best[0] and o[3] > 0.0 and o[1] >= 0.45]
+            if _second_pool:
+                _best2 = max(_second_pool, key=lambda o: o[3])
+                _pick2_lbl  = _best2[0]
+                _pick2_prob = _best2[1]
+                _pick2_odd  = _best2[2]
+                _pick2_ev   = _best2[3]
+                if _has_real_odds and _pick2_ev < _min_ev:
+                    _pick2_lbl = _pick2_lbl + " (sin valor)"
+
         return {
-            "pick":      main_lbl,
-            "prob":      main_prob,
-            "sport":     "futbol",
-            "home":      home,
-            "away":      away,
-            "src":       f"🤖 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
-            "all_picks": _all_market_picks,
+            "pick":       main_lbl,
+            "prob":       main_prob,
+            "sport":      "futbol",
+            "home":       home,
+            "away":       away,
+            "src":        f"🤖 Diamante · {main_prob*100:.0f}% · xG {hxg:.2f}/{axg:.2f}",
+            "all_picks":  _all_market_picks,
+            # pick2 solo existe para UEFA champions/europa/conf
+            "pick2":      _pick2_lbl,
+            "pick2_prob": _pick2_prob,
+            "pick2_odd":  _pick2_odd,
+            "pick2_ev":   _pick2_ev,
+            "is_uefa":    slug in _uefa_only,
         }
     except:
         return None
@@ -7496,6 +7864,11 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
         _hnam = m.get("home",""); _anam = m.get("away","")
         _hid  = str(m.get("home_id","")); _aid  = str(m.get("away_id",""))
         _form_mine = hf if is_home else af
+        # ── Night Scout: usa forma investigada por IA si está disponible ──
+        _ns_tid = _hid if is_home else _aid
+        _ns_info = _ns_get_team_info(_ns_tid)
+        _ns_xg_s, _ns_xg_c = _ns_get_team_xg(_ns_tid, is_home)
+        _has_night_form = bool(_ns_info and _ns_xg_s)
         if not _form_mine:
             _tid2  = _hid if is_home else _aid
             _tnam2 = _hnam if is_home else _anam
@@ -7537,10 +7910,25 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             _my_qf  = max(_my_qf,  0.80)
             _opp_qf = max(_opp_qf, 0.78)
 
-        if _form_mine:
-            _xg_dom = xg_weighted(_form_mine, is_home, odds_prior=0)
-            _qratio = min(1.25, max(0.78, _my_qf / max(_opp_qf, 0.50)))
-            _xg_form = round(_xg_dom * _qratio, 3)
+        if _form_mine or _has_night_form:
+            if _has_night_form and _ns_xg_s:
+                # Night Scout disponible: usar xG real investigado por IA
+                # Ajustar por calidad relativa de rivales en la copa
+                _qratio = min(1.25, max(0.78, _my_qf / max(_opp_qf, 0.50)))
+                _xg_dom_ns = _ns_xg_s * _qratio  # goles anotados del equipo
+                _xg_form = round(_xg_dom_ns, 3)
+                # Momentum bonus: si viene en racha (alto) o penalti (bajo)
+                _mom = (_ns_info.get("momentum","medio") or "medio").lower()
+                _mom_adj = {"alto":1.06,"medio":1.00,"bajo":0.94}.get(_mom, 1.0)
+                _xg_form = round(_xg_form * _mom_adj, 3)
+                # Si TAMBIÉN hay forma ESPN: blend 60% Night Scout / 40% ESPN
+                if _form_mine:
+                    _xg_espn = xg_weighted(_form_mine, is_home, odds_prior=0)
+                    _xg_form = round(0.60 * _xg_form + 0.40 * _xg_espn * min(1.25, max(0.78, _my_qf/max(_opp_qf,0.50))), 3)
+            else:
+                _xg_dom = xg_weighted(_form_mine, is_home, odds_prior=0)
+                _qratio = min(1.25, max(0.78, _my_qf / max(_opp_qf, 0.50)))
+                _xg_form = round(_xg_dom * _qratio, 3)
             # Blend: UEFA 60/25/15, CONCACAF más peso a forma propia (70/20/10)
             _w_form = 0.65 if slug in _concacaf_slugs else 0.60
             _w_anch = 0.20 if slug in _concacaf_slugs else 0.25
@@ -7569,14 +7957,22 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
                     "leon":1.04,"club leon":1.04}
             _ab = next((v for k,v in _alt.items() if k in _hl), 1.0)
             _xg_base = round(_xg_base * _ab, 3)
-        # Mezclar con odds
+        # ── xG calibrado vs mercado: odds son el mejor prior disponible ──
+        # Para UEFA/CONCACAF los odds capturan: lesiones last-minute, viajes, contexto
+        # que la forma doméstica no ve. Peso alto a odds cuando están disponibles.
         if odd_h > 1 and odd_a > 1 and odd_d > 1:
             _tot = 1/odd_h + 1/odd_d + 1/odd_a
-            _ph  = (1/odd_h) / _tot
-            _pa  = (1/odd_a) / _tot
-            _xg_odds = max(0.30, 0.50 + (_ph if is_home else _pa) * 2.5)
-            _wf = 0.70 if _form_mine else 0.30
-            return max(0.35, round(_wf * _xg_base + (1-_wf) * _xg_odds, 3))
+            _ph_imp = (1/odd_h) / _tot   # prob implícita sin margen
+            _pa_imp = (1/odd_a) / _tot
+            # xG derivado de odds — calibrado para replicar distribución de goles real
+            # Calibración: ph≈0.46 → hxg≈1.52, ph≈0.60 → hxg≈1.91, ph≈0.30 → hxg≈1.08
+            _hxg_odds = max(0.40, 1.52 + (_ph_imp - 0.46) * 2.80)
+            _axg_odds = max(0.35, 1.10 + (_pa_imp - 0.30) * 2.50)
+            _xg_odds_mine = _hxg_odds if is_home else _axg_odds
+            # Peso odds: 65% cuando hay forma propia, 80% sin forma (odds es todo lo que tenemos)
+            # UEFA y CONCACAF se tratan igual — en ambos los odds son muy informativos
+            _w_odds = 0.65 if _form_mine else 0.80
+            return max(0.35, round(_w_odds * _xg_odds_mine + (1 - _w_odds) * _xg_base, 3))
         return max(0.35, round(_xg_base, 3))
 
     # Si no es copa o hay forma directa disponible — usar pipeline normal
@@ -13594,9 +13990,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     hxg = _cup_enriched_xg(m, True,  hf, af)
                     axg = _cup_enriched_xg(m, False, hf, af)
                 else:
-                    hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug) \
+                    hxg = xg_weighted(hf, True,  1/m["odd_h"] if m.get("odd_h",0)>1 else 0, slug=slug, team_id=m.get("home_id","")) \
                           if hf else _cup_enriched_xg(m, True,  hf, af)
-                    axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug) \
+                    axg = xg_weighted(af, False, 1/m["odd_a"] if m.get("odd_a",0)>1 else 0, slug=slug, team_id=m.get("away_id","")) \
                           if af else _cup_enriched_xg(m, False, hf, af)
                 # ── Ajuste xG por tabla+GD ANTES del ensemble ──
                 _tbl_pre_kr = {}
@@ -16551,6 +16947,15 @@ if _now_ts2 - st.session_state.get(_auto_sync_key, 0) > 600:  # cada 10 min
     import threading as _thr3
     _thr3.Thread(target=_bg_sync2, daemon=True).start()
 
+# ── NIGHT SCOUT — 4am CDMX: investigar forma de todos los equipos via Claude AI ──
+# Se activa automáticamente si: son las 4am ± 30min, o el caché tiene >20h sin actualizar
+if "night_scout_started" not in st.session_state:
+    st.session_state["night_scout_started"] = True
+    try:
+        _ns_start_if_needed()
+    except Exception as _nse:
+        pass  # silencioso — no interrumpir carga normal
+
 if deporte == "futbol":
     with st.spinner("Cargando cartelera..."):
         try:
@@ -16596,8 +17001,8 @@ if deporte == "futbol":
                         ): continue
                         _am_hf  = get_form(_am.get("home_id",""), _am.get("slug","")) or []
                         _am_af  = get_form(_am.get("away_id",""), _am.get("slug","")) or []
-                        _am_hxg = xg_weighted(_am_hf, True,  1/_am.get("odd_h",0) if _am.get("odd_h",0)>1 else 0, slug=_am.get("slug","")) if _am_hf else xg_from_record(_am.get("home_rec","5-5-5"), True)
-                        _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0, slug=_am.get("slug","")) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
+                        _am_hxg = xg_weighted(_am_hf, True,  1/_am.get("odd_h",0) if _am.get("odd_h",0)>1 else 0, slug=_am.get("slug",""), team_id=_am.get("home_id","")) if _am_hf else xg_from_record(_am.get("home_rec","5-5-5"), True)
+                        _am_axg = xg_weighted(_am_af, False, 1/_am.get("odd_a",0) if _am.get("odd_a",0)>1 else 0, slug=_am.get("slug",""), team_id=_am.get("away_id","")) if _am_af else xg_from_record(_am.get("away_rec","5-5-5"), False)
                         _am_mc  = ensemble_football(_am_hxg, _am_axg, {}, _am_hf, _am_af,
                                     _am.get("home_id",""), _am.get("away_id",""),
                                     odd_h=_am.get("odd_h",0), odd_a=_am.get("odd_a",0), odd_d=_am.get("odd_d",0), slug=_am.get("slug",""))
@@ -17417,6 +17822,46 @@ if st.session_state["view"] == "cartelera":
                        [])
             _kr_ten = (st.session_state.get("_kr_cache_ten") or
                        [])
+            # ── NIGHT SCOUT STATUS ──
+            try:
+                _ns_data = _ns_load()
+                _ns_meta = _ns_data.get("_meta", {})
+                _ns_date = _ns_meta.get("run_date", "")
+                _ns_done = _ns_meta.get("teams_done", 0)
+                _ns_fin  = _ns_meta.get("finished_at", "")
+                _ns_err  = _ns_meta.get("error", "")
+                _now_cdmx_ns = datetime.now(CDMX)
+                _ns_hour = _now_cdmx_ns.hour
+                _ns_running = _ns_meta.get("last_run_ts", 0) and not _ns_fin
+                if _ns_date == _now_cdmx_ns.strftime("%Y-%m-%d") and _ns_done > 0:
+                    _ns_color = "#00ff88"; _ns_icon = "🌙✅"
+                    _ns_label = f"Night Scout completado hoy — {_ns_done} equipos investigados"
+                elif _ns_meta.get("last_run_ts") and not _ns_fin:
+                    _ns_color = "#FFD700"; _ns_icon = "🌙⚡"
+                    _ns_label = "Night Scout en progreso..."
+                else:
+                    _ns_color = "#888"; _ns_icon = "🌙💤"
+                    _next = "4:00 AM" if _ns_hour >= 4 else f"esta noche 4:00 AM"
+                    _ns_label = f"Night Scout pendiente — próxima ejecución: {_next} CDMX"
+                # Botón para forzar ejecución manual
+                _ns_cols = st.columns([4, 1])
+                with _ns_cols[0]:
+                    st.markdown(
+                        f"<div style='background:#0d0d1a;border:1px solid {_ns_color}33;"
+                        f"border-radius:8px;padding:6px 12px;margin-bottom:6px;"
+                        f"display:flex;align-items:center;gap:8px'>"
+                        f"<span style='font-size:1.1rem'>{_ns_icon}</span>"
+                        f"<span style='color:{_ns_color};font-size:0.82rem;font-weight:700'>{_ns_label}</span>"
+                        f"</div>", unsafe_allow_html=True
+                    )
+                with _ns_cols[1]:
+                    if st.button("🌙 Scout", key="ns_force_btn", help="Forzar Night Scout ahora"):
+                        import threading as _tns2
+                        _tns2.Thread(target=_night_scout_run, daemon=True, name="NightScoutManual").start()
+                        st.toast("🌙 Night Scout iniciado manualmente", icon="🔍")
+            except:
+                pass
+
             # render_king_rongo siempre — usa cache existente, sin fetch bloqueante
             render_king_rongo(matches_fut=_kr_fut, nba_games=_kr_nba, ten_matches=_kr_ten)
 
@@ -18049,6 +18494,17 @@ if st.session_state["view"] == "cartelera":
                                                                     # fallback absoluto
                                                                     _best_pre = (_m["home"] + " Gana", _ph2_adj, 0, "ML")
                                                                 _pick_lbl, _pick_prob = _best_pre[0], min(0.92, _best_pre[1])
+                                                                # ── 2° pick para UEFA champions/europa/conf ──
+                                                                _uefa3 = {"uefa.champions","uefa.europa","uefa.europa.conf"}
+                                                                _pick2_lbl_c = None; _pick2_prob_c = None
+                                                                if _m.get("slug","") in _uefa3 and _ev_cands:
+                                                                    _p2_pool = [o for o in _ev_cands if o[0] != _best_pre[0] and o[3] != _best_pre[3]]
+                                                                    if not _p2_pool:
+                                                                        _p2_pool = [o for o in _opts_pre if o[0] != _best_pre[0] and o[2] > 0.0]
+                                                                    if _p2_pool:
+                                                                        _best2_c = max(_p2_pool, key=lambda x: x[2])
+                                                                        _pick2_lbl_c  = _best2_c[0]
+                                                                        _pick2_prob_c = min(0.92, _best2_c[1])
                                                             except: pass
                                                     # ── Si calculamos pick nuevo (sin bridge), guardarlo en bridge ──
                                                     if _pick_lbl and not (_br.get("pick","") if _br else ""):
@@ -18061,7 +18517,11 @@ if st.session_state["view"] == "cartelera":
                                                                     "pick":_pick_lbl,"prob":_pick_prob,
                                                                     "home":_m.get("home",""),"away":_m.get("away",""),
                                                                     "sport":"futbol","fecha":_m.get("fecha",""),
-                                                                    "src":"⚡ Cartelera","mkt":"auto"}
+                                                                    "src":"⚡ Cartelera","mkt":"auto",
+                                                                    "pick2": _pick2_lbl_c if "_pick2_lbl_c" in dir() else None,
+                                                                    "pick2_prob": _pick2_prob_c if "_pick2_prob_c" in dir() else None,
+                                                                    "is_uefa": _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"},
+                                                                }
                                                                 st.session_state["_diamond_bridge"][_bk] = _snap_data
                                                                 # Guardar en disco para que Villar lo audite después
                                                                 _snap_auto_pick(_bk, _snap_data, state=_m.get("state","pre"))
@@ -18099,6 +18559,23 @@ if st.session_state["view"] == "cartelera":
                                                             f"<span style='font-size:1.05rem;font-weight:900;color:{_pc}'>{_pick_prob*100:.0f}%</span>"
                                                             f"</div>"
                                                         )
+
+                                                        # ── Pick 2 para UEFA ──
+                                                        _p2l = _pick2_lbl_c if "_pick2_lbl_c" in dir() else None
+                                                        _p2p = _pick2_prob_c if "_pick2_prob_c" in dir() else None
+                                                        if _p2l and _p2p and _p2p >= 0.35:
+                                                            _pick_row += (
+                                                                f"<div style='border-top:1px solid #1a1a30;margin-top:4px;padding-top:4px;"
+                                                                f"display:flex;align-items:center;gap:6px'>"
+                                                                f"<span style='font-size:0.9rem'>2️⃣</span>"
+                                                                f"<div style='flex:1;min-width:0'>"
+                                                                f"<div style='font-size:0.58rem;color:#8855ff;font-weight:900;letter-spacing:.1em'>2° PICK UEFA</div>"
+                                                                f"<div style='font-size:0.85rem;font-weight:700;color:#cc99ff;"
+                                                                f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_p2l}</div>"
+                                                                f"</div>"
+                                                                f"<span style='font-size:0.95rem;font-weight:900;color:#8855ff'>{_p2p*100:.0f}%</span>"
+                                                                f"</div>"
+                                                            )
                                                     st.markdown(
                                                         f"<div style='background:#0d0900;border:1px solid {_card_border};"
                                                         f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
