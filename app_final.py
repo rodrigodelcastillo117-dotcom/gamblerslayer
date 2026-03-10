@@ -8335,8 +8335,19 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             _tot = 1/odd_h + 1/odd_d + 1/odd_a
             _ph_imp = (1/odd_h) / _tot
             _pa_imp = (1/odd_a) / _tot
-            _hxg_odds = max(0.40, 1.52 + (_ph_imp - 0.46) * 2.80)
-            _axg_odds = max(0.35, 1.10 + (_pa_imp - 0.30) * 2.50)
+            _hxg_odds = max(0.50, 1.52 + (_ph_imp - 0.46) * 2.80)
+            # UCL/UEFA: visitante siempre es equipo de nivel — floor más alto
+            _is_ucl_g  = "champions" in slug
+            _is_uefa_g = slug in {"uefa.champions","uefa.europa","uefa.europa.conf","uefa.cl","uefa.el","uefa.ecl"}
+            _is_cncf_g = slug in {"concacaf.champions","concacaf.league"}
+            if _is_ucl_g:
+                _axg_odds = max(1.05, 1.20 + (_pa_imp - 0.30) * 2.50)
+            elif _is_uefa_g:
+                _axg_odds = max(0.95, 1.15 + (_pa_imp - 0.30) * 2.50)
+            elif _is_cncf_g:
+                _axg_odds = max(0.90, 1.12 + (_pa_imp - 0.30) * 2.50)
+            else:
+                _axg_odds = max(0.35, 1.10 + (_pa_imp - 0.30) * 2.50)
             _xg_odds_mine = _hxg_odds if is_home else _axg_odds
             # Ponderación odds vs modelo propio:
             # - Sin forma: 80% odds (no tenemos nada más)
@@ -8354,6 +8365,11 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             else:
                 _w_odds = 0.80
             return max(0.35, round(_w_odds * _xg_odds_mine + (1 - _w_odds) * _xg_base, 3))
+        # Boost equipos top en xG — Bayern ataca más que lo que marcan las odds
+        _team_xg_boost = {"bayern":1.06,"fc bayern":1.06,"bayern munich":1.06,"bayern münchen":1.06}
+        _tname_low = ((_hnam if is_home else _anam) or "").lower()
+        _xg_mult = next((v for k,v in _team_xg_boost.items() if k in _tname_low), 1.0)
+        _xg_base = round(_xg_base * _xg_mult, 3)
         return max(0.35, round(_xg_base, 3))
 
     # Si no es copa o hay forma directa disponible — usar pipeline normal
@@ -18786,6 +18802,14 @@ if st.session_state["view"] == "cartelera":
                                                                 except: pass
                                                                 _ph2_adj = min(0.92, _ph2 + _tbl_dh)
                                                                 _pa2_adj = min(0.92, _pa2 + _tbl_da)
+                                                                # ── Boost equipos top: Bayern siempre +6% sobre el modelo ──
+                                                                _TEAM_BOOST = {"bayern":0.06,"fc bayern":0.06,"bayern munich":0.06,"bayern münchen":0.06}
+                                                                _hname_low = (_m.get("home","") or "").lower()
+                                                                _aname_low = (_m.get("away","") or "").lower()
+                                                                _h_boost = next((v for k,v in _TEAM_BOOST.items() if k in _hname_low), 0.0)
+                                                                _a_boost = next((v for k,v in _TEAM_BOOST.items() if k in _aname_low), 0.0)
+                                                                if _h_boost: _ph2_adj = min(0.92, _ph2_adj + _h_boost)
+                                                                if _a_boost: _pa2_adj = min(0.92, _pa2_adj + _a_boost)
                                                                 # EV = prob * (odd-1) - (1-prob)  con cuotas típicas de mercado
                                                                 def _ev2(p, odd): return p*(odd-1)-(1-p)
                                                                 # Todos los mercados con EV y prob mínima ≥52%
@@ -18819,19 +18843,18 @@ if st.session_state["view"] == "cartelera":
                                                                     # Si no hay odds reales, usar referencias por competición
                                                                     if _o25_odd_real < 1.20:
                                                                         if _is_ucl:
-                                                                            # UCL 2024-25: 66% O25 → cuota justa ~1.52
-                                                                            _o25_odd_real = 1.55; _u25_odd_real = 2.40
+                                                                            # UCL: O25 en mercado real ~1.75-1.85
+                                                                            _o25_odd_real = 1.75; _u25_odd_real = 2.10
                                                                         elif _is_uel:
-                                                                            _o25_odd_real = 1.65; _u25_odd_real = 2.20
+                                                                            _o25_odd_real = 1.78; _u25_odd_real = 2.05
                                                                         elif _is_uecl:
-                                                                            _o25_odd_real = 1.70; _u25_odd_real = 2.10
-                                                                        elif _is_cncf:
-                                                                            # CONCACAF: 56% O25 → cuota ~1.79
                                                                             _o25_odd_real = 1.80; _u25_odd_real = 2.00
+                                                                        elif _is_cncf:
+                                                                            _o25_odd_real = 1.82; _u25_odd_real = 2.00
                                                                         else:
                                                                             _o25_odd_real = 1.85; _u25_odd_real = 2.00
-                                                                    _o35_odd = float(_m.get("odd_o35",0) or (2.20 if _is_ucl else 2.50))
-                                                                    _aa_odd  = float(_m.get("odd_aa",0)  or (1.65 if _is_ucl else 1.75))
+                                                                    _o35_odd = float(_m.get("odd_o35",0) or (2.30 if _is_ucl else 2.50))
+                                                                    _aa_odd  = float(_m.get("odd_aa",0)  or (1.72 if _is_ucl else 1.75))
                                                                     def _ev_g2(p, odd): return p*(odd-1)-(1-p)
                                                                     _goles_pool = [
                                                                         ("Over 2.5",    _o25_pre,  _ev_g2(_o25_pre,  _o25_odd_real), "O25"),
