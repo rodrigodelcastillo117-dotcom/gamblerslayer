@@ -592,34 +592,52 @@ def get_demo_games():
          "home_score":"","away_score":"","home_record":"41-18-6","away_record":"38-22-5",
          "state":"pre","status_detail":"7:00 PM ET","date":"","venue":"Amerant Bank Arena",
          "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
-        {"id":"d9","league":"ATP","home_team":"Carlos Alcaraz","away_team":"Jannik Sinner",
+        {"id":"d9","league":"Indian Wells ATP","home_team":"Carlos Alcaraz","away_team":"Casper Ruud",
          "home_score":"","away_score":"","home_record":"","away_record":"",
-         "state":"pre","status_detail":"Indian Wells Masters · QF","date":"","venue":"Indian Wells Masters",
-         "odds":{"spread":"","over_under":"","home_ml":"-115","away_ml":"-105","home_wp":"52","away_wp":"48"}},
-        {"id":"d10","league":"WTA","home_team":"Aryna Sabalenka","away_team":"Coco Gauff",
+         "state":"pre","status_detail":"R16 · Stadium 1 · 5:00 PM","date":"","venue":"BNP Paribas Open",
+         "odds":{"spread":"","over_under":"","home_ml":"-280","away_ml":"+220","home_wp":"72","away_wp":"28"}},
+        {"id":"d10","league":"Indian Wells ATP","home_team":"Novak Djokovic","away_team":"Jack Draper",
          "home_score":"","away_score":"","home_record":"","away_record":"",
-         "state":"pre","status_detail":"Indian Wells Masters · SF","date":"","venue":"Indian Wells Masters",
-         "odds":{"spread":"","over_under":"","home_ml":"-160","away_ml":"+130","home_wp":"61","away_wp":"39"}},
+         "state":"pre","status_detail":"R16 · Stadium 1 · 9:00 PM","date":"","venue":"BNP Paribas Open",
+         "odds":{"spread":"","over_under":"","home_ml":"-145","away_ml":"+120","home_wp":"55","away_wp":"45"}},
+        {"id":"d11","league":"Indian Wells WTA","home_team":"Jessica Pegula","away_team":"Belinda Bencic",
+         "home_score":"5","away_score":"4","home_record":"","away_record":"",
+         "state":"in","status_detail":"1er Set · En vivo","date":"","venue":"BNP Paribas Open",
+         "odds":{"spread":"","over_under":"","home_ml":"-130","away_ml":"+108","home_wp":"55","away_wp":"45"}},
+        {"id":"d12","league":"Indian Wells WTA","home_team":"Elena Rybakina","away_team":"Sonay Kartal",
+         "home_score":"","away_score":"","home_record":"","away_record":"",
+         "state":"pre","status_detail":"R16 · Stadium 2 · 7:30 PM","date":"","venue":"BNP Paribas Open",
+         "odds":{"spread":"","over_under":"","home_ml":"-400","away_ml":"+300","home_wp":"78","away_wp":"22"}},
     ]
 
 @st.cache_data(ttl=300)
 def fetch_scoreboard(sport, league, tournament_id=None):
     """
-    Fetch ESPN scoreboard. For tennis tournaments, tries multiple endpoint patterns:
-      1. /tournament/{id}/scoreboard  — tournament-specific (most reliable)
-      2. /scoreboard?tournamentId={id} — query param fallback
-      3. /scoreboard                  — generic fallback
+    Fetch ESPN scoreboard.
+    Tennis requires ?dates=YYYYMMDD to get today's matches.
+    Also tries tournament-specific endpoints.
     """
-    if tournament_id:
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    base  = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+
+    if sport == "tennis":
+        urls = [
+            f"{base}?dates={today}&limit=100",          # today's matches (primary)
+            f"{base}?tournamentId={tournament_id}&dates={today}" if tournament_id else None,
+            f"{base}?tournamentId={tournament_id}&limit=100"     if tournament_id else None,
+            f"{base}?limit=100",                         # no date filter fallback
+        ]
+    elif tournament_id:
         urls = [
             f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/tournament/{tournament_id}/scoreboard",
-            f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard?tournamentId={tournament_id}",
+            f"{base}?tournamentId={tournament_id}",
             ESPN_URL.format(sport=sport, league=league),
         ]
     else:
         urls = [ESPN_URL.format(sport=sport, league=league)]
 
     for url in urls:
+        if not url: continue
         try:
             r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code == 200:
