@@ -16100,18 +16100,21 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             if _kr_state == 'in':
                 _min_kr = int(m.get('minute', 0) or 0)
                 if _min_kr < 5 or _min_kr >= 70: continue  # min<5 aún no empieza / min>=70 casi terminado
-            # Pre-partido: filtrar si la hora ya pasó hace >10min
+            # Pre-partido: solo partidos que empiezan desde ahora en adelante
             if _kr_state != 'in':
+                _hora_kr = m.get('hora','') or ''
+                if ':' not in _hora_kr:
+                    continue  # sin hora → no incluir
                 try:
                     from datetime import datetime as _dt_kr
                     import pytz as _pz_kr
                     _now_kr = _dt_kr.now(_pz_kr.timezone('America/Mexico_City'))
-                    _hora_kr = m.get('hora','') or ''
-                    if ':' in _hora_kr:
-                        _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
-                        _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
-                        if (_now_kr-_gdt_kr).total_seconds() > 600: continue
-                except: pass
+                    _hh_kr,_mm_kr = int(_hora_kr.split(':')[0]),int(_hora_kr.split(':')[1])
+                    _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
+                    if (_now_kr - _gdt_kr).total_seconds() > 0:
+                        continue  # ya empezó (estado pre pero hora pasada) → skip
+                except:
+                    continue  # error → skip por seguridad
             # King Rongo analiza todos los partidos del día (pre, in, post)
             try:
                 home_id = m.get("home_id",""); away_id = m.get("away_id",""); slug = m.get("slug","")
@@ -16491,7 +16494,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
                     _elapsed_kr = (_now_kr-_gdt_kr).total_seconds()
 
-                    if _kr_state != 'in' and _elapsed_kr > 600: continue   # pre >10min pasados
+                    if _kr_state != 'in' and _elapsed_kr > 0: continue   # pre: hora ya pasó → skip
             except: pass
             # King Rongo analiza todos los juegos del día (usa cache si existe)
             try:
@@ -16630,7 +16633,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     _gdt_kr = _now_kr.replace(hour=_hh_kr,minute=_mm_kr,second=0,microsecond=0)
                     _elapsed_kr = (_now_kr-_gdt_kr).total_seconds()
 
-                    if _kr_state != 'in' and _elapsed_kr > 600: continue   # pre >10min pasados
+                    if _kr_state != 'in' and _elapsed_kr > 0: continue   # pre: hora ya pasó → skip
             except: pass
             # King Rongo analiza todos los partidos del día
             try:
@@ -20700,30 +20703,17 @@ matches     = []
 nba_games   = []
 ten_matches = []
 
-# ── PRE-CARGA GLOBAL: warm up @st.cache_data en paralelo — no bloquea la UI ──
-# Las 3 funciones tienen @st.cache_data — la primera llamada hace HTTP, las demás son instant
-# Lanzamos en background para que el primer tab que se abra ya encuentre el cache caliente
+# ── FORCE FETCH al inicio de sesión nueva ──
+# Primera vez que el usuario entra: limpiar cache para traer partidos frescos del día
 _kr_preload_key = "_kr_preload_done"
 if not st.session_state.get(_kr_preload_key):
-    import threading as _thr
-    def _warm_caches():
-        try:
-            _fc = get_cartelera()
-            if _fc:
-                st.session_state["_kr_cache_fut"]  = _fc
-        except: pass
-        try:
-            _nc = get_nba_cartelera()
-            if _nc:
-                st.session_state["_kr_cache_nba"]  = _nc
-        except: pass
-        try:
-            _tc = get_tennis_cartelera()
-            if _tc:
-                st.session_state["_kr_cache_ten"]  = _tc
-        except: pass
-    _t = _thr.Thread(target=_warm_caches, daemon=True)
-    _t.start()
+    # Limpiar cache de carteleras para forzar fetch fresco
+    try: get_cartelera.clear()
+    except: pass
+    try: get_nba_cartelera.clear()
+    except: pass
+    try: get_tennis_cartelera.clear()
+    except: pass
     st.session_state[_kr_preload_key] = True
 
 # ── AUTO-SYNC resultados — cada 10 min + detección por hora ──
@@ -21598,8 +21588,8 @@ if st.session_state["view"] == "cartelera":
             st.markdown("<div class='shdr'>🎰 TRILAY — Todos los Deportes</div>", unsafe_allow_html=True)
             st.info("El TRILAY multi-deporte con Fútbol + NBA + Tenis está en ⚽ Fútbol → TRILAY. Aquí verás el mejor pick NBA del día:")
             _trilay3 = []
-            if st.session_state.get("_nba_trilay_loaded") or st.button("🎰 Calcular TRILAY NBA", key="load_nba_trilay", type="primary"):
-                st.session_state["_nba_trilay_loaded"] = True
+            st.session_state["_nba_trilay_loaded"] = True
+            if True:
                 with st.spinner("Calculando TRILAY NBA..."):
                     _ven_nba = _ventana_22h(nba_games or [])
                     _nba_cands = []
@@ -21634,8 +21624,8 @@ if st.session_state["view"] == "cartelera":
             st.info("Los picks unificados de todos los deportes están en ⚽ Fútbol → 🎯 Picks.")
             st.markdown("<div class='shdr'>🎯 Picks NBA del Día — O/U + ML</div>", unsafe_allow_html=True)
             nba_picks = []
-            if st.session_state.get("_nba_picks_loaded") or st.button("🎯 Calcular Picks NBA", key="load_nba_picks", type="primary"):
-                st.session_state["_nba_picks_loaded"] = True
+            st.session_state["_nba_picks_loaded"] = True
+            if True:
                 with st.spinner("🤖 IA calculando picks NBA..."):
                     nba_picks = []
                     for g in nba_games[:20]:
@@ -22176,8 +22166,8 @@ if st.session_state["view"] == "cartelera":
                                             f"<span style='font-size:1.05rem;font-weight:900;color:{_tpc}'>{_ten_pp*100:.0f}%</span>"
                                             f"</div>"
                                         )
-                                        # Pick 2: O/U sets (solo pre-partido)
-                                        if _ten_pl2 and not _ten_live:
+                                        # Pick 2: O/U juegos totales — siempre visible
+                                        if _ten_pl2:
                                             _tou_c = "#ff6600" if "Over" in _ten_pl2 else "#00ccff"
                                             _ten_pick_row += (
                                                 f"<div style='border-top:1px solid #1d2a1a;margin-top:4px;"
@@ -22221,8 +22211,8 @@ if st.session_state["view"] == "cartelera":
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY Tenis</div>", unsafe_allow_html=True)
             ten_cands = []
-            if st.session_state.get("_ten_trilay_loaded") or st.button("🎰 Calcular TRILAY Tenis", key="load_ten_trilay", type="primary"):
-                st.session_state["_ten_trilay_loaded"] = True
+            st.session_state["_ten_trilay_loaded"] = True
+            if True:
                 with st.spinner("Calculando TRILAY Tenis..."):
                     _ven_ten = _ventana_22h(ten_matches or [])
                     for _m in _ven_ten[:20]:
@@ -22250,8 +22240,8 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.markdown("<div class='shdr'>🎯 Picks Tenis del Día</div>", unsafe_allow_html=True)
             ten_picks = []
-            if st.session_state.get("_ten_picks_loaded") or st.button("🎯 Calcular Picks Tenis", key="load_ten_picks", type="primary"):
-                st.session_state["_ten_picks_loaded"] = True
+            st.session_state["_ten_picks_loaded"] = True
+            if True:
                 with st.spinner("Calculando picks tenis..."):
                     for _m in ten_matches[:30]:
                         if _m["state"] != "pre": continue
@@ -22777,23 +22767,29 @@ if st.session_state["view"] == "cartelera":
                                                                 _ql2  = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2 if s>=0]
                                                                 _ql2.sort(key=lambda x: x[5], reverse=True)
 
-                                                                # Pick1 — ML muy seguro (≥62%) siempre gana; ML firme (≥55%) prefiere sobre goles
-                                                                if _ql2:
-                                                                    _ml_str2 = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2 if m=="ML" and p>=0.62]
-                                                                    _ml_frm2 = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2 if m=="ML" and p>=0.55]
-                                                                    _top2 = _ql2[0][5]
-                                                                    if _ml_str2:
-                                                                        _bc2 = max(_ml_str2, key=lambda x: x[1])
-                                                                    elif _ml_frm2 and _ml_frm2[0][5] >= _top2 * 0.60:
-                                                                        _bc2 = _ml_frm2[0]
-                                                                    else:
-                                                                        _bc2 = _ql2[0]
+                                                                # ══ PICK 1: SIEMPRE ML ══
+                                                                # Favorito ≥55% → ML ganador | <55% → DO del favorito
+                                                                _all_ml2 = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2
+                                                                            if mk=="ML" and "Empate" not in l]
+                                                                _fav_ml2 = max(_all_ml2, key=lambda x: x[1]) if _all_ml2 else None
+                                                                _fav_p2  = _fav_ml2[1] if _fav_ml2 else 0
+
+                                                                if _fav_p2 >= 0.55 and _fav_ml2:
+                                                                    # ML claro — usar el favorito
+                                                                    _bc2 = _fav_ml2
                                                                 else:
-                                                                    # Fallback: mayor prob sin triviales
-                                                                    _fb2 = [(l,p,o,m,g,0) for l,p,o,m,g,_ in _sc2
-                                                                            if m not in ("U35","O15","DO","TG") and p>=0.42]
-                                                                    _bc2 = max(_fb2, key=lambda x: x[1]) if _fb2 else \
-                                                                           max([(l,p,o,m,g,0) for l,p,o,m,g,_ in _sc2], key=lambda x: x[1])
+                                                                    # Partido equilibrado → DO del equipo con mayor prob
+                                                                    _fav_name2  = (_fav_ml2[0] if _fav_ml2 else "").split(" Gana")[0].replace("🏠 ","").replace("✈️ ","").strip()
+                                                                    _do_opts2   = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2
+                                                                                   if mk=="DO" and _fav_name2 and _fav_name2[:8].lower() in l.lower()]
+                                                                    if not _do_opts2:  # fallback: cualquier DO
+                                                                        _do_opts2 = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2 if mk=="DO"]
+                                                                    if _do_opts2:
+                                                                        _bc2 = max(_do_opts2, key=lambda x: x[1])
+                                                                    elif _fav_ml2:
+                                                                        _bc2 = _fav_ml2  # último fallback: ML aunque sea bajo
+                                                                    else:
+                                                                        _bc2 = _sc2[0] if _sc2 else None
 
                                                                 _pick_lbl  = _bc2[0]
                                                                 _pick_prob = min(0.92, _bc2[1])
@@ -22803,36 +22799,34 @@ if st.session_state["view"] == "cartelera":
                                                                 _excl2     = _IMPLIES2.get(_p1mkt2, set())
 
                                                                 # Pick2 = mercado compatible, no el mismo tipo, no implicado lógicamente
+                                                                # ══ PICK 2: SOLO mercados de goles (AA, O2.5, U2.5) ══
+                                                                _PICK2_MKTS = {"AA", "O25", "U25"}
                                                                 _COMPAT2 = {
-                                                                    "ML":  lambda m: m not in ("ML","X","DO"),
-                                                                    "X":   lambda m: m not in ("X","ML"),
-                                                                    "DO":  lambda m: m not in ("DO","ML","X"),
-                                                                    "O25": lambda m: m not in ("O25","O15") and m not in _excl2,
-                                                                    "O35": lambda m: m not in ("O35","O25","O15"),
-                                                                    "AA":  lambda m: m not in ("AA",) and m not in _excl2,
-                                                                    "U25": lambda m: m not in ("U25","U35") and m not in _excl2,
-                                                                    "U35": lambda m: m not in ("U35","U25"),
-                                                                    "GCM": lambda m: m not in ("GCM",),
-                                                                    "TG":  lambda m: m not in ("TG",),
+                                                                    "ML":  lambda mk2: mk2 in _PICK2_MKTS,
+                                                                    "DO":  lambda mk2: mk2 in _PICK2_MKTS,
+                                                                    "X":   lambda mk2: mk2 in _PICK2_MKTS,
+                                                                    "O25": lambda mk2: mk2 in _PICK2_MKTS and mk2 != "O25",
+                                                                    "U25": lambda mk2: mk2 in _PICK2_MKTS and mk2 != "U25",
+                                                                    "AA":  lambda mk2: mk2 in _PICK2_MKTS and mk2 != "AA",
+                                                                    "O35": lambda mk2: mk2 in _PICK2_MKTS,
+                                                                    "U35": lambda mk2: mk2 in _PICK2_MKTS,
+                                                                    "GCM": lambda mk2: mk2 in _PICK2_MKTS,
+                                                                    "TG":  lambda mk2: mk2 in _PICK2_MKTS,
                                                                 }
-                                                                _p2_fn2 = _COMPAT2.get(_p1mkt2, lambda m: m != _p1mkt2)
+                                                                _p2_fn2 = _COMPAT2.get(_p1mkt2, lambda mk2: mk2 in _PICK2_MKTS)
                                                                 _ql2b_all = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2
                                                                              if _p2_fn2(m) and l != _bc2[0] and m not in _excl2]
                                                                 # Preferir grupo distinto; si no hay, aceptar mismo grupo con mkt diferente
                                                                 _ql2b_diff = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2b_all if g != _p1g2]
                                                                 _ql2b = _ql2b_diff if _ql2b_diff else _ql2b_all
                                                                 _bp2  = _ql2b[0] if _ql2b else None
-                                                                # Sin Pick2: relajar umbral (score ≥ -8, prob ≥ 0.50)
+                                                                # Sin Pick2: relajar umbral para siempre encontrar un mercado de goles
                                                                 if not _bp2:
-                                                                    _sc2_relax = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2
-                                                                                  if s >= -8.0 and _p2_fn2(m) and l != _bc2[0]
-                                                                                  and m not in _excl2 and p >= 0.50]
-                                                                    _sc2_relax.sort(key=lambda x: x[5], reverse=True)
-                                                                    if (_xgh2+_xga2) > 2.8:
-                                                                        _o35r = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2_relax if m=="O35" and p>=0.38]
-                                                                        if _o35r: _bp2 = _o35r[0]
-                                                                    if not _bp2 and _sc2_relax:
-                                                                        _bp2 = _sc2_relax[0]
+                                                                    # Buscar cualquier AA/O2.5/U2.5 sin umbral de score
+                                                                    _sc2_goles = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2
+                                                                                  if mk in _PICK2_MKTS and l != (_bc2[0] if _bc2 else "")]
+                                                                    _sc2_goles.sort(key=lambda x: x[1], reverse=True)
+                                                                    _bp2 = _sc2_goles[0] if _sc2_goles else None
 
                                                                 _pick2_lbl_c  = _bp2[0]          if _bp2 else None
                                                                 _pick2_prob_c = min(0.92, _bp2[1]) if _bp2 else 0.0
@@ -22958,8 +22952,8 @@ if st.session_state["view"] == "cartelera":
         with tab2:
             st.markdown("<div class='shdr'>🎰 TRILAY — Multi-Deporte</div>", unsafe_allow_html=True)
             trilay_picks = []
-            if st.session_state.get("_trilay_loaded") or st.button("🎰 Calcular TRILAY", key="load_trilay_fut", type="primary"):
-                st.session_state["_trilay_loaded"] = True
+            st.session_state["_trilay_loaded"] = True
+            if True:
                 with st.spinner("Calculando TRILAY..."):
                     trilay_picks = compute_trilay(all_matches or matches)
             if not trilay_picks:
@@ -22979,8 +22973,8 @@ if st.session_state["view"] == "cartelera":
         with tab3:
             st.markdown("<div class='shdr'>🦆 PATO — Under 4.5 Seguros</div>", unsafe_allow_html=True)
             pato_picks = []
-            if st.session_state.get("_pato_loaded") or st.button("🦆 Calcular PATO", key="load_pato_fut", type="primary"):
-                st.session_state["_pato_loaded"] = True
+            st.session_state["_pato_loaded"] = True
+            if True:
                 with st.spinner("🦆 Analizando partidos Under 4.5..."):
                     _pato_matches = _ventana_22h(all_matches or matches)
                     for _m in _pato_matches:
@@ -23012,8 +23006,9 @@ if st.session_state["view"] == "cartelera":
         with tab4:
             st.markdown("<div class='shdr'>🎯 Picks del Día — Fútbol</div>", unsafe_allow_html=True)
             fut_picks = st.session_state.get("_fut_picks_cache", [])
-            if st.session_state.get("_futpicks_loaded") or st.button("🎯 Calcular Picks", key="load_picks_fut", type="primary"):
-                st.session_state["_futpicks_loaded"] = True
+            # Auto-calcular sin botón
+            st.session_state["_futpicks_loaded"] = True
+            if True:
                 if not fut_picks:
                     _picks_src = [m for m in (all_matches or []) if m.get("state") == "pre"]
                     with st.spinner("🎯 Calculando picks con Diamond Engine..."):
