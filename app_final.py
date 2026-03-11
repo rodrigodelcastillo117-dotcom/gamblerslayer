@@ -2163,7 +2163,7 @@ with tab_all:
             "has_stats":     has_stats,
         }
 
-        live_games = [g for g in games if g["state"] == "in"]
+    live_games = [g for g in games if g["state"] == "in"]
     if live_games:
         st.markdown('<div class="section-heading">🔴 Picks En Vivo</div>', unsafe_allow_html=True)
         st.caption("Análisis contextual: marcador actual + minuto + probabilidades de simulación.")
