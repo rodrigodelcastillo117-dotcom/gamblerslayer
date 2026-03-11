@@ -3228,32 +3228,36 @@ with tab_reto:
             momio_fmt = p.get("momio_fmt") or (f"+{momio_p:.0f}" if momio_p > 0 else f"{momio_p:.2f}")
             nota_html = f'<div style="font-size:0.7rem;color:#3a4a3e;margin-top:2px">{p.get("nota","")}</div>' if p.get("nota") else ""
 
-            st.markdown(f'''
-            <div class="game-row" style="margin-bottom:6px">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
-                <div>
-                  <span style="color:#C9A84C;font-family:'Cinzel',serif;font-size:0.75rem">
-                    #{num}</span>
-                  <span class="game-title" style="margin-left:8px">{p.get("partido","")}</span>
-                  <span class="market-chip chip-ml" style="margin-left:6px">{p.get("mercado","ML")}</span>
-                  <div style="font-size:0.82rem;color:#E0F7F0;margin-top:3px;padding-left:2px">
-                    ▶ {p.get("pick","")}
-                  </div>
-                  {nota_html}
-                </div>
-                <div style="text-align:right">
-                  <div style="font-size:1rem;font-weight:700;color:{res_color}">
-                    {res_icon} {res.upper()}
-                  </div>
-                  <div style="font-size:0.78rem;color:{res_color}">{delta_str}</div>
-                  <div style="font-size:0.68rem;color:#6B7E6E">
-                    ${stake:,.0f} @ {momio_fmt}
-                  </div>
-                </div>
-              </div>
-              <div style="font-size:0.65rem;color:#3a4a3e;margin-top:4px">{p.get("fecha","")}</div>
-            </div>
-            ''', unsafe_allow_html=True)
+            # ── Render pick row con Streamlit nativo ──────────────────────
+            with st.container():
+                h_left, h_right = st.columns([3, 1])
+                with h_left:
+                    mercado_chip = {"ML":"🎯","O/U":"📊","BTTS":"⚽","DC":"🔄","Spread":"📐","Otro":"🎲"}.get(p.get("mercado","ML"),"🎯")
+                    st.markdown(
+                        f'<span style="color:#C9A84C;font-family:\'Cinzel\',serif;font-size:0.78rem">#{num}</span>'
+                        f' <span style="color:#E0F7F0;font-weight:600">{p.get("partido","")}</span>'
+                        f' <span style="background:rgba(201,168,76,0.15);color:#C9A84C;'
+                        f'border-radius:3px;padding:1px 6px;font-size:0.7rem;margin-left:4px">'
+                        f'{mercado_chip} {p.get("mercado","ML")}</span>',
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f'<div style="font-size:0.85rem;color:#b8c8b0;margin:2px 0">▶ {p.get("pick","")}</div>',
+                        unsafe_allow_html=True
+                    )
+                    if p.get("nota"):
+                        st.caption(p["nota"])
+                    st.caption(p.get("fecha",""))
+                with h_right:
+                    st.markdown(
+                        f'<div style="text-align:right">'
+                        f'<div style="font-size:1rem;font-weight:700;color:{res_color}">{res_icon} {res.upper()}</div>'
+                        f'<div style="font-size:0.85rem;color:{res_color};font-weight:600">{delta_str}</div>'
+                        f'<div style="font-size:0.72rem;color:#6B7E6E">${stake:,.0f} @ {momio_fmt}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                st.markdown('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.05);margin:8px 0">', unsafe_allow_html=True)
 
         st.markdown('<div class="den-divider" style="margin:16px 0"></div>', unsafe_allow_html=True)
 
