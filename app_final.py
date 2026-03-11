@@ -1372,7 +1372,8 @@ def get_cartelera():
     _odds_key = ODDS_API_KEY
     if _odds_key:
         for _m in matches:
-            if _m.get("slug") in _UEFA_BULK and not (_m.get("odd_h",0) and _m.get("odd_a",0)):
+            # UEFA: siempre usar The Odds API (ESPN da odds incorrectas para estos partidos)
+            if _m.get("slug") in _UEFA_BULK:
                 _sl = _m["slug"]
                 if _sl not in _bulk_cache:
                     try:
@@ -12206,7 +12207,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             f"\"resumen\":\"2 lineas: por qué este pick y qué dice el mercado\"}}"
         )
         # Einstein fútbol usa búsqueda web para forma reciente si no hay datos
-        _ein_use_search = not _ctx_has_data and not _is_ctx_live
+        _ein_use_search = False  # web search deshabilitado: causa tool_use blocks sin texto final
 
     elif sport == "nba":
         _is_ctx_live = _is_ctx_live or "LIVE" in context_str
@@ -12225,7 +12226,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             f"\"alternativa\":\"mercado alternativo si hay mejor opción\","
             f"\"resumen\":\"2 lineas max\"}}"
         )
-        _ein_use_search = not _is_ctx_live and len(context_str.strip()) < 100
+        _ein_use_search = False  # web search deshabilitado
 
     else:  # tenis
         _e_prompt = (
@@ -12294,7 +12295,8 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                 else:
                     _einstein_err = "ANTHROPIC_API_KEY no configurada"
                 if not _raw_ein or len(_raw_ein.strip()) < 10:
-                    _einstein_err = "Claude no devolvió respuesta"
+                    if not _einstein_err:  # no sobreescribir error HTTP real
+                        _einstein_err = "Claude no devolvió respuesta (respuesta vacía)"
                 else:
                     _d = __import__("json").loads(_raw_ein)
                     _einstein.update(_d)
@@ -12369,7 +12371,8 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                 else:
                     _papa_err = "ANTHROPIC_API_KEY no configurada"
                 if not _rawp or len(_rawp.strip()) < 10:
-                    _papa_err = "Sin respuesta de Claude"
+                    if not _papa_err:
+                        _papa_err = "Sin respuesta de Claude (respuesta vacía)"
                 else:
                     _dp = __import__("json").loads(_rawp)
                     _papa.update(_dp)
@@ -23706,9 +23709,11 @@ if st.session_state["view"] == "cartelera":
                                                         _bad_p1_kw = ("Over","Under","Ambos","AA","c/Mitad","Mitad","DO ","Doble Op")
                                                         _p1_is_bad = any(g in _pick_lbl for g in _bad_p1_kw)
                                                         _has_pick2 = bool(_br.get("pick2","") if _br else "")
-                                                        _uefa_recalc = _is_uefa_m and (_p1_is_bad or not _has_pick2)
+                                                        # UEFA pre-partido: SIEMPRE recalcular con odds actuales
+                                                        # El bridge puede tener picks de cuando las odds estaban mal
+                                                        _uefa_recalc = _is_uefa_m  # siempre recalcular en UEFA
                                                         if _uefa_recalc:
-                                                            _pick_lbl = ""  # forzar recálculo
+                                                            _pick_lbl = ""; _pick_prob = 0  # forzar recálculo con odds actuales
                                                         # Sin bridge o UEFA recalc: calcular pick con EV real
                                                         if not _pick_lbl:
                                                             try:
