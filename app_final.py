@@ -24106,7 +24106,7 @@ if st.session_state["view"] == "cartelera":
                     _dbg = st.session_state.get("_odds_debug", {})
                     if _dbg:
                         _b365d_ok = int(_dbg.get("b365data_eventos") or 0)
-                        _b365_ok  = int(_dbg.get("b365_eventos") or 0)
+                        _b365_ok  = 0  # BetsAPI desactivada
                         _b365_err = _dbg.get("b365_error","")
                         _b365d_err= st.session_state.get("_b365d_err","")
                         _con_odds = _dbg.get("partidos_con_odds", 0)
