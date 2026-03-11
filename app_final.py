@@ -610,6 +610,176 @@ def get_demo_games():
          "odds":{"spread":"","over_under":"","home_ml":"-400","away_ml":"+300","home_wp":"78","away_wp":"22"}},
     ]
 
+@st.cache_data(ttl=1800)  # Cache 30min — form doesn't change mid-day
+def fetch_recent_form(sport, league, team_id, n_games=5):
+    """
+    Fetch last N results for a team from ESPN team events API.
+    Returns form_score: float 0.0-1.0 (win rate last N games, weighted by recency).
+    Returns None if unavailable.
+
+    Endpoint: /apis/site/v2/sports/{sport}/{league}/teams/{team_id}/events
+    Works for: soccer, basketball, baseball, hockey, football
+    NOT for: tennis (no team_id concept)
+    """
+    if not team_id or not sport or not league:
+        return None
+    # Map our league names to ESPN sport/league slugs
+    SPORT_SLUG = {
+        "soccer":     ("soccer",  None),   # league slug varies
+        "basketball": ("basketball", None),
+        "baseball":   ("baseball", None),
+        "hockey":     ("hockey", None),
+        "football":   ("football", None),
+    }
+    try:
+        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+               f"{sport}/{league}/teams/{team_id}/events?limit={n_games + 3}")
+        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        events = data.get("events", [])
+        if not events:
+            return None
+
+        results = []
+        for ev in events[:n_games + 3]:
+            competitions = ev.get("competitions", [{}])
+            if not competitions:
+                continue
+            comp = competitions[0]
+            # Only completed games
+            state = ev.get("status", {}).get("type", {}).get("state", "")
+            if state != "post":
+                continue
+            comps = comp.get("competitors", [])
+            team_comp = next((c for c in comps if str(c.get("id","")) == str(team_id)), None)
+            if not team_comp:
+                continue
+            winner = team_comp.get("winner", False)
+            # Also check score for draw detection (soccer)
+            home_c = next((c for c in comps if c.get("homeAway") == "home"), None)
+            away_c = next((c for c in comps if c.get("homeAway") == "away"), None)
+            try:
+                hs = int(home_c.get("score", 0) or 0)
+                as_ = int(away_c.get("score", 0) or 0)
+                is_draw = (hs == as_)
+            except:
+                is_draw = False
+
+            if winner:
+                results.append(1.0)   # Win
+            elif is_draw:
+                results.append(0.5)   # Draw
+            else:
+                results.append(0.0)   # Loss
+
+            if len(results) >= n_games:
+                break
+
+        if not results:
+            return None
+
+        # Weighted average — more recent games count more
+        # weights: [n, n-1, n-2, ...] normalized
+        weights = [len(results) - i for i in range(len(results))]
+        total_w = sum(weights)
+        form_score = sum(r * w for r, w in zip(results, weights)) / total_w
+        return round(form_score, 4)
+
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=1800)
+def get_team_ids(sport, league_slug, team_name):
+    """
+    Look up ESPN team ID by display name.
+    Returns team_id string or None.
+    """
+    try:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league_slug}/teams?limit=100"
+        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        teams = r.json().get("sports", [{}])[0].get("leagues", [{}])[0].get("teams", [])
+        name_lower = team_name.lower().strip()
+        for t in teams:
+            t_info = t.get("team", {})
+            candidates = [
+                t_info.get("displayName", ""),
+                t_info.get("shortDisplayName", ""),
+                t_info.get("name", ""),
+                t_info.get("nickname", ""),
+            ]
+            if any(name_lower in c.lower() or c.lower() in name_lower for c in candidates if c):
+                return str(t_info.get("id", ""))
+        return None
+    except:
+        return None
+
+
+# ── FORM SCORE CACHE: game_id → (home_form, away_form) ──────────────────────
+# Populated lazily during simulation, used in compute_base_prob via game dict.
+# Each game dict gets "home_form" and "away_form" keys injected before simulate_game.
+
+def enrich_game_with_form(game):
+    """
+    Fetch recent form for both teams and inject into game dict.
+    Modifies game in-place. Safe to call multiple times (idempotent).
+    Only runs for non-tennis sports.
+    """
+    if game.get("_form_fetched"):
+        return
+    game["_form_fetched"] = True
+
+    league  = game.get("league", "")
+    lg_info = LEAGUES.get(league, {})
+    sport   = lg_info.get("sport", "")
+    group   = lg_info.get("group", "")
+
+    # Tennis has no team concept — skip
+    if group == "Tennis" or not sport:
+        return
+
+    # ESPN league slug for team lookup
+    LEAGUE_SLUGS = {
+        "NBA": ("basketball", "nba"),
+        "WNBA": ("basketball", "wnba"),
+        "NCAAB": ("basketball", "mens-college-basketball"),
+        "NFL": ("football", "nfl"),
+        "NCAAF": ("football", "college-football"),
+        "MLB": ("baseball", "mlb"),
+        "NHL": ("hockey", "nhl"),
+        "MLS": ("soccer", "usa.1"),
+        "Liga MX": ("soccer", "mex.1"),
+        "Liga de Expansión": ("soccer", "mex.2"),
+        "Premier League": ("soccer", "eng.1"),
+        "La Liga": ("soccer", "esp.1"),
+        "Bundesliga": ("soccer", "ger.1"),
+        "Serie A": ("soccer", "ita.1"),
+        "Ligue 1": ("soccer", "fra.1"),
+        "Champions League": ("soccer", "uefa.champions"),
+        "Europa League": ("soccer", "uefa.europa"),
+        "Conference League": ("soccer", "uefa.europa.conf"),
+        "CONCACAF Champions Cup": ("soccer", "concacaf.champions"),
+    }
+
+    if league not in LEAGUE_SLUGS:
+        return
+
+    sport_slug, league_slug = LEAGUE_SLUGS[league]
+
+    # Try to get team IDs from the game object itself first (parse_games stores them)
+    home_id = game.get("home_team_id") or get_team_ids(sport_slug, league_slug, game["home_team"])
+    away_id = game.get("away_team_id") or get_team_ids(sport_slug, league_slug, game["away_team"])
+
+    if home_id:
+        game["home_form"] = fetch_recent_form(sport_slug, league_slug, home_id)
+    if away_id:
+        game["away_form"] = fetch_recent_form(sport_slug, league_slug, away_id)
+
+
 @st.cache_data(ttl=300)
 def fetch_scoreboard(sport, league, tournament_id=None):
     """
@@ -1248,6 +1418,23 @@ def compute_base_prob(game):
         league_avg = LEAGUE_HOME_RATE.get(league, 0.50)
         blended = ((1 - arec) * 0.6 + league_avg * 0.4)
         signals.append(blended)
+
+    # ── Signal 4: Recent form (last 5 games, weighted by recency) ─────────────
+    # Weight 2.5 — stronger than season record (2.0), weaker than moneyline (4.0)
+    home_form = game.get("home_form")  # 0.0–1.0 win rate recent games
+    away_form = game.get("away_form")
+    if home_form is not None and away_form is not None:
+        total_form = home_form + away_form
+        if total_form > 0:
+            signals.append(home_form / total_form)
+            weights.append(2.5)
+    elif home_form is not None:
+        # Only home form available — compare against 0.5 baseline
+        signals.append((home_form + 0.5) / (home_form + 1.0))
+        weights.append(1.2)
+    elif away_form is not None:
+        signals.append(1.0 - (away_form + 0.5) / (away_form + 1.0))
+        weights.append(1.2)
         weights.append(1.2)
 
     # ── Signal 4: League historical home rate (prior / fallback) ─────────────
@@ -1592,6 +1779,11 @@ def run_all_simulations(games, n=10_000):
             f'<div style="font-family:\'DM Sans\',sans-serif;font-size:0.8rem;color:#6B7E6E;">'
             f'⚙ Simulando [{i+1}/{len(games)}] — {game["away_team"]} @ {game["home_team"]}</div>',
             unsafe_allow_html=True)
+        # Enrich with recent form before simulation (cached 30min)
+        try:
+            enrich_game_with_form(game)
+        except Exception:
+            pass
         results.append({**game,"sim":run_monte_carlo(game,n)})
         pb.progress((i+1)/len(games))
     pb.empty(); st_txt.empty()
@@ -1711,6 +1903,21 @@ def render_pick_card(r, rank=None):
     chip_html = chip(bs["market"])
     status    = r.get("status_detail", "")
 
+    # Recent form badges
+    form_html = ""
+    hf = r.get("home_form"); af = r.get("away_form")
+    def form_badge(f, team):
+        if f is None: return ""
+        pct = int(f * 100)
+        c = "#4ade80" if pct >= 60 else ("#C9A84C" if pct >= 40 else "#ef4444")
+        arrow = "▲" if pct >= 60 else ("▬" if pct >= 40 else "▼")
+        return f'<span style="font-size:0.72rem;color:{c};margin-right:8px">{arrow} {team} {pct}% forma</span>'
+    if hf is not None or af is not None:
+        form_html = ('<div style="margin-top:5px;opacity:0.85">' +
+                     form_badge(hf, r.get("home_team","Local")) +
+                     form_badge(af, r.get("away_team","Visita")) +
+                     '<span style="font-size:0.65rem;color:#3a4a3e">· últimos 5 juegos</span></div>')
+
     # ── AI Sport Analyst (only for top picks to save API calls) ──────────────
     ai_html = ""
     sport_group = LEAGUES.get(r["league"], {}).get("group", "Soccer")
@@ -1776,6 +1983,7 @@ def render_pick_card(r, rank=None):
                 '<div class="stat-item-lbl">Confianza</div>'
               '</div>'
             '</div>'
+            + form_html
             + goals_html
             + ai_html
           + '</div>'
