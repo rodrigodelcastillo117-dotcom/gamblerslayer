@@ -46,7 +46,7 @@ except:
 # Nombre _gemini() mantenido para compatibilidad.
 # ══════════════════════════════════════════════════════════════════
 def _gemini(prompt: str, system: str = "", use_search: bool = False,
-             max_tokens: int = 1000, temperature: float = 0.3,
+             max_tokens: int = 500, temperature: float = 0.3,
              json_mode: bool = False) -> str:
     """
     Motor IA central — Groq primero (gratis), Claude como fallback.
@@ -97,6 +97,30 @@ def _gemini(prompt: str, system: str = "", use_search: bool = False,
                     if json_mode:
                         raw = _clean_json(raw)
                     return raw
+            elif _r_groq.status_code == 429:
+                # Rate limit 70b → fallback a 8b-instant (límite separado)
+                try:
+                    _r_g2 = _req.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {_groq_key}",
+                                 "Content-Type": "application/json"},
+                        json={
+                            "model":       "llama-3.1-8b-instant",
+                            "max_tokens":  max(max_tokens, 512),
+                            "temperature": temperature,
+                            "messages":    _msgs_groq,
+                        }, timeout=30,
+                    )
+                    if _r_g2.status_code == 200:
+                        raw = (_r_g2.json()
+                                    .get("choices",[{}])[0]
+                                    .get("message",{})
+                                    .get("content","").strip())
+                        if raw:
+                            if json_mode:
+                                raw = _clean_json(raw)
+                            return raw
+                except: pass
         except: pass
 
     # ── INTENTO 3: Claude (fallback, requiere créditos) ───────────
@@ -133,7 +157,7 @@ def _gemini(prompt: str, system: str = "", use_search: bool = False,
 
     return ""
 def _gemini_json(prompt: str, system: str = "", use_search: bool = False,
-                  max_tokens: int = 1000) -> dict:
+                  max_tokens: int = 500) -> dict:
     """Wrapper que devuelve dict parseado, o {} si falla."""
     import json as _jj
     raw = _gemini(prompt, system=system, use_search=use_search,
@@ -11959,7 +11983,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             + f"Partido: {away} @ {home}\n"
             f"Jugada Diamante: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
-            + f"\n{context_str}\n"
+            + f"\n{context_str[:400]}\n"
             + (f"NOTA: Si el contexto anterior tiene datos reales (posición, puntos, calidad),\n"
                f"úsalos para ajustar tu análisis. Si detectas que el modelo favorece al equipo\n"
                f"más débil por forma reciente volátil, corrige a favor del equipo de mayor calidad.\n"
@@ -11978,7 +12002,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             f"Partido: {away} @ {home}\n"
             f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
-            + f"\n{context_str}\n"
+            + f"\n{context_str[:400]}\n"
             f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
             f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
@@ -11989,7 +12013,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             f"Partido: {away} vs {home}\n"
             f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
-            + f"\n{context_str}\n"
+            + f"\n{context_str[:400]}\n"
             f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
             f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
@@ -12006,21 +12030,8 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
         with st.spinner("🧠 Einstein analizando..."):
             _einstein_err = ""
             try:
-                # Paso 1: buscar contexto web (sin json_mode — incompatible con use_search)
-                _web_ctx = ""
-                try:
-                    _web_ctx = _gemini(
-                        f"Busca información actual sobre: {home} vs {away}. "
-                        f"Liga: {sport}. Dame: forma reciente, lesiones confirmadas, H2H reciente, motivación. "
-                        f"Responde en 3-4 líneas de texto plano.",
-                        use_search=True, max_tokens=400
-                    ) or ""
-                except: pass
-                # Paso 2: generar JSON con todo el contexto (sin use_search — json_mode compatible)
-                _e_prompt_final = _e_prompt
-                if _web_ctx:
-                    _e_prompt_final = _e_prompt + f"\n\nCONTEXTO WEB ACTUAL:\n{_web_ctx}"
-                _raw_ein = _gemini(_e_prompt_final, use_search=False, max_tokens=700, json_mode=True)
+                # Sin búsqueda web — usa contexto local para ahorrar tokens Groq
+                _raw_ein = _gemini(_e_prompt, use_search=False, max_tokens=250, json_mode=True)
                 if not _raw_ein or len(_raw_ein.strip()) < 10:
                     _einstein_err = "Claude no devolvió respuesta"
                 else:
@@ -12062,7 +12073,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                     f"\"resumen_auditoria\":\"1-2 lineas max\","
                     f"\"mejor_alternativa_papa\":\"mercado alternativo o confirmar el de Einstein\"}}"
                 )
-                _rawp = _gemini(_papa_prompt, use_search=False, max_tokens=600, json_mode=True)
+                _rawp = _gemini(_papa_prompt, use_search=False, max_tokens=300, json_mode=True)
                 if not _rawp or len(_rawp.strip()) < 10:
                     _papa_err = "Sin respuesta de Claude"
                 else:
@@ -13371,56 +13382,46 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
                 _queries.append(f"{pregunta} {fecha_iso} apuestas estadisticas")
 
             _web_results = []
-            for _q in _queries[:2]:  # max 2 búsquedas por llamada
-                _r_tav = _rq.post(
-                    "https://api.tavily.com/search",
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "api_key":      _tav_key,
-                        "query":        _q,
-                        "search_depth": "basic",
-                        "max_results":  4,
-                        "include_answer": True,
-                    },
-                    timeout=15,
-                )
-                if _r_tav.status_code == 200:
-                    _td = _r_tav.json()
-                    # Respuesta directa de Tavily
-                    if _td.get("answer"):
-                        _web_results.append(f"📌 {_td['answer']}")
-                    # Resultados individuales
-                    for _res in _td.get("results", [])[:3]:
-                        _title   = _res.get("title","")
-                        _snippet = _res.get("content","")[:300]
-                        _url     = _res.get("url","")
-                        if _snippet:
-                            _web_results.append(f"• {_title}: {_snippet}")
+            # 1 sola búsqueda para ahorrar tokens
+            _q1 = _queries[0] if _queries else pregunta
+            _r_tav = _rq.post(
+                "https://api.tavily.com/search",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "api_key":      _tav_key,
+                    "query":        _q1[:150],
+                    "search_depth": "basic",
+                    "max_results":  3,
+                    "include_answer": True,
+                },
+                timeout=15,
+            )
+            if _r_tav.status_code == 200:
+                _td = _r_tav.json()
+                if _td.get("answer"):
+                    _web_results.append(_td["answer"][:200])
+                for _res in _td.get("results", [])[:2]:
+                    _snip = _res.get("content","")[:120]
+                    if _snip:
+                        _web_results.append(_snip)
 
             if _web_results:
-                _web_ctx = "\n".join(_web_results[:8])
+                _web_ctx = " | ".join(_web_results[:3])
         except: pass
 
     # ── PASO 2: Groq/Claude analiza con el contexto web ──────────
+    # Prompts cortos para no quemar tokens de Groq (límite 100k/día)
     system_prompt = (
-        f"Eres PACH, analista experto de apuestas deportivas de The Gamblers Den. "
-        f"Fecha: {fecha_hoy}, hora CDMX: {hora_hoy}. Deporte: {sport_label}.\n\n"
-        f"PARTIDOS HOY:\n{partidos_txt or '  (sin datos)'}\n"
-        f"KING RONGO pick: {kr_pick or 'no disponible'}\n"
-        f"VILLAR: {villar or 'no disponible'}\n\n"
-        f"INSTRUCCIONES:\n"
-        f"1. Responde en español, directo y confiado. Máximo 6 líneas.\n"
-        f"2. Termina SIEMPRE con: VEREDICTO: [JUGAR / NO JUGAR / ESPERAR] — XX% confianza.\n"
-        f"3. NUNCA inventes estadísticas. Usa solo los datos que tienes.\n"
-        f"4. Para parlays: combina 2-3 picks con prob ≥60% cada uno.\n"
-        f"5. Prioriza EV positivo sobre cuota alta.\n"
+        f"Eres PACH, analista de apuestas. {sport_label}. {fecha_hoy}.\n"
+        f"KR pick: {(kr_pick or 'N/D')[:60]}\n"
+        f"Responde en español, máx 5 líneas. Termina: VEREDICTO: JUGAR/NO JUGAR/ESPERAR — XX%."
     )
 
+    # Contexto web recortado a 400 chars máximo
+    _web_short = _web_ctx[:400] if _web_ctx else ""
     user_msg = (
-        f"Pregunta: {pregunta}\n"
-        + (f"\nINFO WEB ACTUAL (Tavily {fecha_hoy}):\n{_web_ctx}\n" if _web_ctx else "\n[Sin búsqueda web disponible]\n")
-        + (f"\nDatos avanzados:\n{_adv_ctx}\n" if _adv_ctx else "")
-        + f"\nResponde como PACH — analista experto."
+        f"Q: {pregunta[:200]}\n"
+        + (f"Web: {_web_short}\n" if _web_short else "")
     )
 
     # Groq primero
@@ -13433,7 +13434,7 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
                          "Content-Type": "application/json"},
                 json={
                     "model": "llama-3.3-70b-versatile",
-                    "max_tokens": 1024, "temperature": 0.35,
+                    "max_tokens": 400, "temperature": 0.35,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_msg},
@@ -15783,7 +15784,7 @@ def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
             f"\n{'='*50}\nCANDIDATOS:{ct}\n{'='*50}\n"
             f"\nElige el pick de mayor valor real. JSON exacto: {_jfmt}"
         )
-        raw = _gemini(usr_p, system=sys_p, use_search=False, max_tokens=350, json_mode=True)
+        raw = _gemini(usr_p, system=sys_p, use_search=False, max_tokens=250, json_mode=True)
         if raw:
             d = json.loads(raw)
             d.setdefault("idx", 0)
