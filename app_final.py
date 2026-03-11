@@ -3267,6 +3267,31 @@ with tab_reto:
     st.markdown('<div class="den-divider" style="margin:20px 0"></div>', unsafe_allow_html=True)
 
     # ── Formulario: agregar pick ──────────────────────────────────────────────
+    # Gold labels for all form elements in this tab
+    st.markdown("""
+    <style>
+    /* Gold labels for RETO 13M form */
+    div[data-testid="stTextInput"] label,
+    div[data-testid="stNumberInput"] label,
+    div[data-testid="stSelectbox"] label,
+    div[data-testid="stRadio"] label,
+    div[data-testid="stRadio"] p,
+    div[data-testid="stTextInput"] p,
+    div[data-testid="stNumberInput"] p,
+    div[data-testid="stSelectbox"] p {
+        color: #C9A84C !important;
+        font-family: 'DM Sans', sans-serif !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.5px !important;
+    }
+    /* Radio option text */
+    div[data-testid="stRadio"] div[data-testid="stMarkdownContainer"] p {
+        color: #E0C97F !important;
+        font-size: 0.88rem !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     st.markdown('<div class="section-heading">➕ Registrar Pick</div>', unsafe_allow_html=True)
 
     with st.container():
