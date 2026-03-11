@@ -24139,6 +24139,18 @@ if st.session_state["view"] == "cartelera":
                                                         _mx = 0; _ch = "#555"; _cd = "#555"; _ca = "#555"
                                                         _bh = "400"; _bd = "400"; _ba = "400"
                                                         _pct_h = "--"; _pct_d = "--"; _pct_a = "--"
+                                                    # Badge de fuente de odds
+                                                    _osrc = _m.get("odds_src", "")
+                                                    if not _has_odds:
+                                                        _odds_src_lbl = "<span style='font-size:0.6rem;color:#555;letter-spacing:0.3px'>SIN LÍNEA</span>"
+                                                    elif _osrc == "bet365":
+                                                        _odds_src_lbl = "<span style='font-size:0.6rem;color:#2a7a2a;letter-spacing:0.3px'>● B365</span>"
+                                                    elif _osrc == "bet365_pm":
+                                                        _odds_src_lbl = "<span style='font-size:0.6rem;color:#2a7a2a;letter-spacing:0.3px'>● B365</span>"
+                                                    elif _osrc == "oddsapi":
+                                                        _odds_src_lbl = "<span style='font-size:0.6rem;color:#4a6a9a;letter-spacing:0.3px'>● ODDS</span>"
+                                                    else:
+                                                        _odds_src_lbl = "<span style='font-size:0.6rem;color:#4a6a9a;letter-spacing:0.3px'>● ESPN</span>"
                                                     _border = "#ff444466" if _live else "#c9a84c1a"
                                                     _home_short = _m["home"]
                                                     _away_short = _m["away"]
@@ -24402,7 +24414,9 @@ if st.session_state["view"] == "cartelera":
                                                         f"border-radius:4px;padding:3px 1px'>"
                                                         f"<div style='font-size:1.125rem;font-weight:{_ba};color:{_ca}'>{_pct_a}</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>✈️</div></div>"
-                                                        f"</div>{_pick_row}</div>",
+                                                        f"</div>"
+                                                        f"<div style='text-align:right;margin-top:2px;padding-right:2px'>{_odds_src_lbl}</div>"
+                                                        f"{_pick_row}</div>",
                                                         unsafe_allow_html=True)
                                                     if st.button("📊 Analizar", key=f"fut_{_m['home_id']}_{_m['away_id']}_{_fi}_{_pi}",
                                                                  use_container_width=True, help=f"Analizar {_m['home']} vs {_m['away']}"):
