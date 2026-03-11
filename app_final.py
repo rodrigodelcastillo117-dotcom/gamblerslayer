@@ -3005,6 +3005,21 @@ with tab_reto:
         st.session_state["reto_apodo"] = ""
 
     if not st.session_state["reto_apodo"]:
+        # Gold label CSS for login screen
+        st.markdown("""
+        <style>
+        div[data-testid="stTextInput"] label,
+        div[data-testid="stTextInput"] p,
+        div[data-testid="stSelectbox"] label,
+        div[data-testid="stSelectbox"] p {
+            color: #C9A84C !important;
+            font-weight: 600 !important;
+            font-size: 0.82rem !important;
+            letter-spacing: 0.5px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
         # Pantalla de selección de usuario
         existing_users = _list_reto_users()
         st.markdown('<div style="max-width:400px;margin:0 auto">', unsafe_allow_html=True)
@@ -3028,11 +3043,15 @@ with tab_reto:
                     st.warning("Escribe tu apodo para continuar.")
         with col_e2:
             if existing_users:
-                sel_existing = st.selectbox("O elige uno existente", [""] + existing_users,
-                                             key="sel_existing_user", label_visibility="collapsed")
-                if sel_existing and st.button("Cargar", key="btn_load_existing"):
-                    st.session_state["reto_apodo"] = sel_existing
-                    st.rerun()
+                sel_existing = st.selectbox(
+                    "🔍 Busca tu apodo aquí para cargar tu progreso",
+                    [""] + existing_users,
+                    key="sel_existing_user"
+                )
+                if sel_existing:
+                    if st.button("⚡ Cargar progreso", key="btn_load_existing", use_container_width=True):
+                        st.session_state["reto_apodo"] = sel_existing
+                        st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
