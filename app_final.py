@@ -5477,9 +5477,29 @@ def _villar_match_pick_to_result(pk, partido_db):
     # Para cualquier deporte: sin score → pendiente
     if sh < 0 or sa < 0:
         return "⏳ Pendiente", "#555", "Score no disponible aún"
-    # Para tenis: 0-0 imposible → score no se guardó
+    # Para tenis: intentar inferir ganador de score_p1/score_p2 si sh==sa==0
     if sport_check == "tenis" and sh == 0 and sa == 0:
-        return "⏳ Pendiente", "#555", "Score de tenis no disponible"
+        # Intentar parsear sets desde score_p1/score_p2 (strings como "7-6 6-3")
+        _sp1_raw = str(partido_db.get("score_p1","") or "")
+        _sp2_raw = str(partido_db.get("score_p2","") or "")
+        def _count_sets(s):
+            cnt = 0
+            for seg in s.split():
+                if "-" in seg:
+                    try:
+                        a,b = seg.split("-",1)
+                        if int(a) > int(b): cnt += 1
+                    except: pass
+            return cnt
+        if _sp1_raw.strip() or _sp2_raw.strip():
+            _sh2 = _count_sets(_sp1_raw)
+            _sa2 = _count_sets(_sp2_raw)
+            if _sh2 > 0 or _sa2 > 0:
+                sh, sa = _sh2, _sa2
+            else:
+                return "⏳ Pendiente", "#555", "Score de tenis no disponible"
+        else:
+            return "⏳ Pendiente", "#555", "Score de tenis no disponible"
 
     raw_pick = pk.get("pick", "")
     pick     = raw_pick.lower()
@@ -6805,48 +6825,126 @@ def render_resultados_tab():
                                         auto_pk = _sv; break
 
                             pick_rows = []
-                            # Si no hay snap: generar pick retroactivo con el modelo
+                            # ── Fallback robusto si no hay snap ──
                             if not auto_pk:
+                                # 1. Intentar _villar_auto_pick (modelo completo — puede ser lento)
                                 try:
                                     _retro = _villar_auto_pick(_p_fixed)
                                     if _retro and _retro.get("pick"):
                                         auto_pk = {
-                                            "pick": _retro["pick"],
-                                            "prob": _retro.get("prob", 0),
-                                            "odd":  _retro.get("odd", 0),
-                                            "src":  _retro.get("src", "🔁 Retroactivo"),
-                                            "home": _p_fixed.get("home",""),
-                                            "away": _p_fixed.get("away",""),
-                                            "fecha": _p_fixed.get("fecha",""),
+                                            "pick":       _retro["pick"],
+                                            "prob":       _retro.get("prob", 0),
+                                            "odd":        _retro.get("odd", 0),
+                                            "src":        _retro.get("src", "🔁 Retroactivo"),
+                                            "home":       _p_fixed.get("home",""),
+                                            "away":       _p_fixed.get("away",""),
+                                            "fecha":      _p_fixed.get("fecha",""),
+                                            "sport":      sport_key,
+                                            # Preservar pick2 para NBA (O/U)
+                                            "pick2":      _retro.get("pick2","") or (
+                                                (([x for x in _retro.get("all_picks",[]) if "over" in x.get("pick","").lower() or "under" in x.get("pick","").lower()] or [{}])[0].get("pick",""))
+                                                if _retro.get("all_picks") else ""
+                                            ),
+                                            "pick2_prob": _retro.get("pick2_prob",0) or (
+                                                (([x for x in _retro.get("all_picks",[]) if "over" in x.get("pick","").lower() or "under" in x.get("pick","").lower()] or [{}])[0].get("prob",0))
+                                                if _retro.get("all_picks") else 0
+                                            ),
+                                            "pick2_mkt":  "O/U",
                                         }
-                                        # Guardar en snap para no re-calcular
                                         try:
                                             _snap_auto_pick(_mid, auto_pk, state="post", force=False)
                                         except: pass
                                 except: pass
-                            # Último recurso: pick por odds si existen
+                            # 2. Fallback por cuotas (fútbol) — instántaneo, sin API
                             if not auto_pk and sport_key == "futbol":
                                 try:
                                     _oh = _p_fixed.get("odd_h", 0)
                                     _oa = _p_fixed.get("odd_a", 0)
                                     _od = _p_fixed.get("odd_d", 0)
                                     if _oh > 1 and _oa > 1:
+                                        _tot_margin = 1/_oh + (1/_od if _od>1 else 0) + 1/_oa
                                         _probs = {
-                                            _p_fixed.get("home","?"):  (1/_oh if _oh>1 else 0),
-                                            "Empate":                   (1/_od if _od>1 else 0),
-                                            _p_fixed.get("away","?"): (1/_oa if _oa>1 else 0),
+                                            _p_fixed.get("home","?"):  (1/_oh)/_tot_margin,
+                                            "Empate":                   ((1/_od)/_tot_margin if _od>1 else 0),
+                                            _p_fixed.get("away","?"): (1/_oa)/_tot_margin,
                                         }
                                         _best_lbl = max(_probs, key=_probs.get)
                                         _best_p   = _probs[_best_lbl]
-                                        if _best_p > 0.38:
+                                        if _best_p > 0.35:
                                             auto_pk = {
-                                                "pick": _best_lbl,
-                                                "prob": _best_p,
-                                                "src": "📊 Cuotas",
+                                                "pick": _best_lbl, "prob": _best_p,
+                                                "src": "📊 Cuotas", "sport": "futbol",
                                                 "home": _p_fixed.get("home",""),
                                                 "away": _p_fixed.get("away",""),
                                                 "fecha": _p_fixed.get("fecha",""),
                                             }
+                                except: pass
+                            # 3. Fallback NBA por cuotas ML + línea O/U de la DB
+                            if not auto_pk and sport_key == "nba":
+                                try:
+                                    _oh_n = _p_fixed.get("odd_h", 0)
+                                    _oa_n = _p_fixed.get("odd_a", 0)
+                                    _ou_n = float(_p_fixed.get("ou_line") or 0)
+                                    if _oh_n > 1 and _oa_n > 1:
+                                        _ph_n = (1/_oh_n) / (1/_oh_n + 1/_oa_n)
+                                        _pa_n = 1 - _ph_n
+                                        if _ph_n >= _pa_n:
+                                            _ml_lbl_n = f"🏀 {_p_fixed.get('home','?')} gana ML"
+                                            _ml_p_n   = _ph_n
+                                        else:
+                                            _ml_lbl_n = f"🏀 {_p_fixed.get('away','?')} gana ML"
+                                            _ml_p_n   = _pa_n
+                                        _ou_lbl_n  = f"🔥 Over {_ou_n:.0f}" if _ou_n > 50 else ""
+                                        auto_pk = {
+                                            "pick": _ml_lbl_n, "prob": _ml_p_n,
+                                            "src": "📊 Cuotas NBA", "sport": "nba",
+                                            "home": _p_fixed.get("home",""),
+                                            "away": _p_fixed.get("away",""),
+                                            "fecha": _p_fixed.get("fecha",""),
+                                            "pick2": _ou_lbl_n, "pick2_prob": 0.53 if _ou_lbl_n else 0,
+                                            "pick2_mkt": "O/U",
+                                        }
+                                    elif _ou_n > 50:
+                                        auto_pk = {
+                                            "pick": f"🔥 Over {_ou_n:.0f}", "prob": 0.53,
+                                            "src": "📊 Línea O/U", "sport": "nba",
+                                            "home": _p_fixed.get("home",""),
+                                            "away": _p_fixed.get("away",""),
+                                            "fecha": _p_fixed.get("fecha",""),
+                                        }
+                                except: pass
+                            # 4. Fallback tenis por odds/ranking
+                            if not auto_pk and sport_key == "tenis":
+                                try:
+                                    _o1_t = float(_p_fixed.get("odd_1") or _p_fixed.get("odd_h") or 0)
+                                    _o2_t = float(_p_fixed.get("odd_2") or _p_fixed.get("odd_a") or 0)
+                                    _p1_t = _p_fixed.get("p1") or _p_fixed.get("home","?")
+                                    _p2_t = _p_fixed.get("p2") or _p_fixed.get("away","?")
+                                    if _o1_t > 1 and _o2_t > 1:
+                                        _pt1 = (1/_o1_t) / (1/_o1_t + 1/_o2_t)
+                                        _pt2 = 1 - _pt1
+                                        _fav_t  = _p1_t if _pt1 >= _pt2 else _p2_t
+                                        _fav_p  = max(_pt1, _pt2)
+                                        auto_pk = {
+                                            "pick": f"🎾 {_fav_t} gana",
+                                            "prob": _fav_p, "src": "📊 Cuotas Tenis",
+                                            "sport": "tenis",
+                                            "home": _p1_t, "away": _p2_t,
+                                            "p1": _p1_t,   "p2": _p2_t,
+                                            "fecha": _p_fixed.get("fecha",""),
+                                        }
+                                    elif _p_fixed.get("rank1") or _p_fixed.get("rank2"):
+                                        _r1_t = int(_p_fixed.get("rank1") or 999)
+                                        _r2_t = int(_p_fixed.get("rank2") or 999)
+                                        _fav_t = _p1_t if _r1_t <= _r2_t else _p2_t
+                                        auto_pk = {
+                                            "pick": f"🎾 {_fav_t} gana",
+                                            "prob": 0.60, "src": f"📊 Ranking #{min(_r1_t,_r2_t)}",
+                                            "sport": "tenis",
+                                            "home": _p1_t, "away": _p2_t,
+                                            "p1": _p1_t,   "p2": _p2_t,
+                                            "fecha": _p_fixed.get("fecha",""),
+                                        }
                                 except: pass
                             if auto_pk:
                                 _vd2, _vc2, _ex2 = _villar_match_pick_to_result(auto_pk, _p_fixed)
@@ -6872,6 +6970,13 @@ def render_resultados_tab():
                                 # Pick 2 (O/U NBA/tenis, 2° UEFA fútbol)
                                 _p2_lbl  = auto_pk.get("pick2","") or auto_pk.get("pick2_lbl","")
                                 _p2_prob = auto_pk.get("pick2_prob",0)
+                                # NBA: si no hay pick2 pero hay ou_line, generar O/U vs resultado real
+                                if not _p2_lbl and sport_key == "nba":
+                                    _oul_v = float(p.get("ou_line") or 0)
+                                    if _oul_v > 50:
+                                        _tot_v = (sh or 0) + (sa or 0)
+                                        _p2_lbl  = f"🔥 Over {_oul_v:.0f}" if _tot_v > _oul_v else f"❄️ Under {_oul_v:.0f}"
+                                        _p2_prob = 0.55
                                 if _p2_lbl and _p2_prob > 0:
                                     try:
                                         _pk2_for_audit = {**auto_pk, "pick": _p2_lbl, "prob": _p2_prob,
@@ -6927,17 +7032,42 @@ def render_resultados_tab():
                                 _p1 = (p.get("p1") or p.get("home") or "").strip() or home_n
                                 _p2 = (p.get("p2") or p.get("away") or "").strip() or away_n
                                 _sh = sh; _sa = sa
+                                # Si sh==sa==0, intentar parsear score_p1/score_p2
+                                if _sh == 0 and _sa == 0:
+                                    def _cnt_sets_won(s):
+                                        c = 0
+                                        for seg in str(s or "").split():
+                                            if "-" in seg:
+                                                try:
+                                                    a,b = seg.split("-",1)
+                                                    if int(a)>int(b): c+=1
+                                                except: pass
+                                        return c
+                                    _sh = _cnt_sets_won(p.get("score_p1",""))
+                                    _sa = _cnt_sets_won(p.get("score_p2",""))
                                 if _sh > _sa:
                                     winner_n, loser_n = _p1, _p2
+                                    _score_display = f"{_sh}–{_sa} sets" if _sh > 0 else ""
                                 elif _sa > _sh:
                                     winner_n, loser_n = _p2, _p1
+                                    _score_display = f"{_sa}–{_sh} sets" if _sa > 0 else ""
                                 else:
-                                    _gano = next((r["expl"].replace("Ganó: ","") for r in pick_rows if "Ganó:" in r.get("expl","")), None)
+                                    # Último recurso: usar nombre del ganador del pick si ganó
+                                    _gano = None
+                                    for _r_ten in pick_rows:
+                                        if "GANÓ" in _r_ten.get("verd",""):
+                                            # El pick que ganó — el nombre mencionado en el pick es el ganador
+                                            _pkl = _r_ten.get("label","")
+                                            if _p1.split()[-1].lower() in _pkl.lower():
+                                                _gano = _p1
+                                            elif _p2.split()[-1].lower() in _pkl.lower():
+                                                _gano = _p2
                                     if _gano:
                                         winner_n = _gano
                                         loser_n  = _p2 if _gano == _p1 else _p1
                                     else:
                                         winner_n, loser_n = _p1, _p2
+                                    _score_display = ""
                                 _wko  = p.get("is_walkover") or p.get("walkover_note","")
                                 _note = " <span style='color:#ff9500;font-size:0.975rem'>(RET.)</span>" if _wko else ""
                                 _bc = "#00ff88" if any("GANÓ" in r.get("verd","") for r in pick_rows) else ("#ff4444" if any("FALLÓ" in r.get("verd","") for r in pick_rows) else "#1a1a40")
@@ -14599,8 +14729,15 @@ def get_tennis_cartelera():
                     "fecha": fecha,
                     "state": t_state,
                     "score_p1": sc1, "score_p2": sc2,
-                    "score_h":  int(sc1) if str(sc1).isdigit() else 0,
-                    "score_a":  int(sc2) if str(sc2).isdigit() else 0,
+                    "score_h":  (int(sc1) if str(sc1).isdigit() else
+                                 # Parsear "7-6 6-3" → contar cuántos sets ganó p1
+                                 len([s for s in str(sc1).split() if "-" in s
+                                      and int(s.split("-")[0]) > int(s.split("-")[1])])
+                                 if sc1 and str(sc1).strip() else 0),
+                    "score_a":  (int(sc2) if str(sc2).isdigit() else
+                                 len([s for s in str(sc2).split() if "-" in s
+                                      and int(s.split("-")[0]) > int(s.split("-")[1])])
+                                 if sc2 and str(sc2).strip() else 0),
                     "is_walkover": is_walkover,
                     "walkover_note": "RET." if is_walkover else "",
                     "odd_1": 0.0, "odd_2": 0.0,
@@ -21015,9 +21152,11 @@ if st.session_state["view"] == "cartelera":
                                 except: pass
                             _pick_html_n = ""
                             if _spkn:
+                                # ── Pick 1: ML ──
                                 _ppn = _spkn.get("prob",0); _ppnd = _ppn*100 if _ppn<=1 else _ppn
                                 _plbn = _spkn.get("pick","")
-                                try: _vdn, _vcn, _ = _villar_match_pick_to_result(_spkn, g)
+                                _g_compat = {**g, "deporte":"nba"}
+                                try: _vdn, _vcn, _ = _villar_match_pick_to_result(_spkn, _g_compat)
                                 except: _vdn, _vcn = "⏳", "#555"
                                 _icon = "✅" if "GANÓ" in _vdn else ("❌" if "FALLÓ" in _vdn else "⏳")
                                 _bgpn = "#00ff8812" if _icon=="✅" else ("#ff444412" if _icon=="❌" else "#1a1a3a")
@@ -21028,10 +21167,41 @@ if st.session_state["view"] == "cartelera":
                                     f"<span>{_icon}</span>"
                                     f"<div style='flex:1;min-width:0'>"
                                     f"<div style='font-size:0.78rem;font-weight:900;color:{_vcn};"
-                                    f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_plbn}</div>"
+                                    f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+                                    f"🏀 ML: {_plbn}</div>"
                                     f"<div style='font-size:0.68rem;color:#555'>🤖 {_ppnd:.0f}%</div>"
                                     f"</div></div>"
                                 )
+                                # ── Pick 2: O/U ──
+                                _p2n_lbl  = _spkn.get("pick2","")
+                                _p2n_prob = _spkn.get("pick2_prob", 0)
+                                if not _p2n_lbl:
+                                    # Generar O/U desde ou_line si existe
+                                    _oul_n = float(g.get("ou_line") or 0)
+                                    if _oul_n > 50:
+                                        _tot_n = (g.get("score_h",0) or 0) + (g.get("score_a",0) or 0)
+                                        _p2n_lbl  = f"🔥 Over {_oul_n:.0f}" if _tot_n > _oul_n else f"❄️ Under {_oul_n:.0f}"
+                                        _p2n_prob = 0.55
+                                if _p2n_lbl and _p2n_prob > 0:
+                                    _pk2n = {**_spkn, "pick": _p2n_lbl, "prob": _p2n_prob, "mkt": "O/U"}
+                                    try: _vd2n, _vc2n, _ = _villar_match_pick_to_result(_pk2n, _g_compat)
+                                    except: _vd2n, _vc2n = "⏳", "#555"
+                                    _ic2n = "✅" if "GANÓ" in _vd2n else ("❌" if "FALLÓ" in _vd2n else "⏳")
+                                    _bg2n = "#00ff8812" if _ic2n=="✅" else ("#ff444412" if _ic2n=="❌" else "#0a0a1a")
+                                    _ou_c2 = "#ff6600" if "Over" in _p2n_lbl else "#00ccff"
+                                    _p2n_pct = _p2n_prob*100 if _p2n_prob<=1 else _p2n_prob
+                                    _pick_html_n += (
+                                        f"<div style='border-top:1px solid #0a1a2a;margin-top:3px;padding-top:3px;"
+                                        f"background:{_bg2n};border-radius:5px;padding:3px 6px;"
+                                        f"display:flex;align-items:center;gap:5px'>"
+                                        f"<span>{_ic2n}</span>"
+                                        f"<div style='flex:1;min-width:0'>"
+                                        f"<div style='font-size:0.75rem;font-weight:900;color:{_ou_c2};"
+                                        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+                                        f"O/U: {_p2n_lbl}</div>"
+                                        f"<div style='font-size:0.65rem;color:#555'>🎯 {_p2n_pct:.0f}%</div>"
+                                        f"</div></div>"
+                                    )
                             st.markdown(
                                 f"<div style='background:#040a0d;border:1px solid #1a2a3a;"
                                 f"border-radius:8px;padding:7px 8px;margin-bottom:3px'>"
@@ -21494,13 +21664,27 @@ if st.session_state["view"] == "cartelera":
                         # Finalizados — card con pick del snapshot
                         _snap_ten = _load_picks_snap()
                         # Bridge Tenis: partidos terminados → results_db + brain con pick auditado
+                        def _parse_sets_won(s, fallback=-1):
+                            """Parsea sets ganados: '7-6 6-3' → 2, '2' → 2, '' → fallback."""
+                            s = str(s or "").strip()
+                            if not s: return fallback
+                            if s.isdigit(): return int(s)
+                            # Contar segmentos donde el primer número > segundo
+                            cnt = sum(1 for seg in s.split() if "-" in seg and
+                                      len(seg.split("-")) == 2 and
+                                      all(p.isdigit() for p in seg.split("-")) and
+                                      int(seg.split("-")[0]) > int(seg.split("-")[1]))
+                            return cnt if cnt > 0 else (0 if s else fallback)
+
                         for _tm in fin_ms:
                             try:
                                 _tm_id = _tm.get("id","")
                                 _sc1r = _tm.get("score_p1",""); _sc2r = _tm.get("score_p2","")
-                                try: _sh_t = int(_sc1r); _sa_t = int(_sc2r)
-                                except: _sh_t = _tm.get("score_h",-1); _sa_t = _tm.get("score_a",-1)
-                                if _sh_t >= 0 and _sa_t >= 0:
+                                _sh_t = _parse_sets_won(_sc1r, _tm.get("score_h", 0))
+                                _sa_t = _parse_sets_won(_sc2r, _tm.get("score_a", 0))
+                                if _sh_t < 0: _sh_t = 0
+                                if _sa_t < 0: _sa_t = 0
+                                if True:  # siempre guardar partidos finalizados
                                     _tm_p = {
                                         "id": _tm_id, "deporte": "tenis",
                                         "liga": _tm.get("tour","Tenis"),
@@ -21524,20 +21708,32 @@ if st.session_state["view"] == "cartelera":
                             _tcols = st.columns(len(_tpair))
                             for _tcol, m in zip(_tcols, _tpair):
                               with _tcol:
-                                sc1r = m.get("score_p1",""); sc2r = m.get("score_p2","")
-                                sc = f"{sc1r}–{sc2r}" if sc1r else "FT"
-                                # Ganador por sets (comparar como int si es posible)
-                                try: _won_p1 = int(sc1r) > int(sc2r)
-                                except: _won_p1 = sc1r > sc2r if sc1r and sc2r else False
+                                _tid = m.get("id","")
+                                sc1r = str(m.get("score_p1","") or "")
+                                sc2r = str(m.get("score_p2","") or "")
+                                # Calcular sets ganados de score_p1/score_p2
+                                _sh_disp = _parse_sets_won(sc1r, m.get("score_h", 0))
+                                _sa_disp = _parse_sets_won(sc2r, m.get("score_a", 0))
+                                # Score display: mostrar string original si existe, si no "X sets - Y sets"
+                                if sc1r and sc1r != "0" and not sc1r.isdigit():
+                                    sc = f"{sc1r} / {sc2r}" if sc2r else sc1r
+                                elif _sh_disp > 0 or _sa_disp > 0:
+                                    sc = f"{_sh_disp}–{_sa_disp} sets"
+                                else:
+                                    sc = "FT"
+                                # Ganador por sets
+                                _won_p1 = _sh_disp > _sa_disp
+                                if _sh_disp == _sa_disp and (sc1r or sc2r):
+                                    # Tiebreak: comparar strings lexicográficamente (raro pero posible)
+                                    _won_p1 = sc1r > sc2r
                                 won_n = m["p1"] if _won_p1 else m["p2"]
                                 _hct = "#00ff88" if _won_p1 else "#aaa"
                                 _act = "#00ff88" if not _won_p1 else "#aaa"
                                 # Pick del snapshot
-                                _tid = m.get("id","")
                                 _spkt = _snap_ten.get(_tid)
-                                # Buscar también con alias ten_ (IDs legacy)
                                 if not _spkt:
-                                    _spkt = _snap_ten.get(f"ten_{_tid}") or _snap_ten.get(_tid[4:] if _tid.startswith("ten_") else "")
+                                    _spkt = (_snap_ten.get(f"ten_{_tid}") or
+                                             _snap_ten.get(_tid[4:] if _tid.startswith("ten_") else f"XX_{_tid}"))
                                 if not _spkt:
                                     _p1t = (m.get("p1","") or "").lower().strip()
                                     _pft = m.get("fecha","")
@@ -21545,7 +21741,7 @@ if st.session_state["view"] == "cartelera":
                                         if (_svt.get("fecha","") == _pft and _p1t and
                                                 (_svt.get("home","") or "").lower().strip() == _p1t):
                                             _spkt = _svt; break
-                                # Si aún no hay snap: generar pick ahora con modelo y guardar
+                                # Si aún no hay snap: generar pick con modelo (retroactivo)
                                 if not _spkt and _tid:
                                     try:
                                         _r1t = m.get("rank1") or 0
@@ -21561,35 +21757,36 @@ if st.session_state["view"] == "cartelera":
                                             "prob": _pp2,
                                             "home": m.get("p1",""), "away": m.get("p2",""),
                                             "sport": "tenis", "fecha": m.get("fecha",""),
-                                            "src": f"🤖 Retroactivo #{_r1t} vs #{_r2t}", "mkt": "ML",
+                                            "src": f"🤖 Modelo #{_r1t}vs#{_r2t}", "mkt": "ML",
                                         }
                                         _snap_auto_pick(_tid, _spkt, state="post", force=False)
-                                        _snap_ten[_tid] = _spkt  # actualizar cache local
+                                        _snap_ten[_tid] = _spkt
                                     except: pass
-                                # Bridge: ahora que hay snap, conectar con brain
+                                # Bridge a results_db y brain (usa scores parseados)
                                 try:
-                                    _sc1_b = m.get("score_p1",""); _sc2_b = m.get("score_p2","")
-                                    _sh_b = int(_sc1_b) if str(_sc1_b).isdigit() else m.get("score_h",-1)
-                                    _sa_b = int(_sc2_b) if str(_sc2_b).isdigit() else m.get("score_a",-1)
-                                    if _sh_b >= 0 and _sa_b >= 0 and _tid:
-                                        _bridge_snap_to_brain(_tid, {
-                                            "id": _tid, "deporte":"tenis",
+                                    if _tid:
+                                        _br_p = {
+                                            "id": _tid, "deporte": "tenis",
                                             "home": m.get("p1",""), "away": m.get("p2",""),
                                             "p1": m.get("p1",""), "p2": m.get("p2",""),
-                                            "fecha": m.get("fecha",""),
-                                            "score_h": _sh_b, "score_a": _sa_b, "state": "post",
+                                            "fecha": m.get("fecha",""), "state": "post",
+                                            "score_h": _sh_disp, "score_a": _sa_disp,
+                                            "score_p1": sc1r, "score_p2": sc2r,
                                             "liga": m.get("tour","Tenis"),
-                                        })
+                                            "rank1": m.get("rank1",0), "rank2": m.get("rank2",0),
+                                            "odd_1": m.get("odd_1",0), "odd_2": m.get("odd_2",0),
+                                        }
+                                        _bridge_snap_to_brain(_tid, _br_p)
                                 except: pass
+                                # Render pick badge
                                 _pick_html_t = ""
                                 if _spkt:
                                     _ppt = _spkt.get("prob",0); _pptd = _ppt*100 if _ppt<=1 else _ppt
                                     _plbt = _spkt.get("pick","")
-                                    # Crear partido compatible con _villar_match_pick_to_result
                                     _m_compat = {**m, "home": m.get("p1",""), "away": m.get("p2",""),
-                                                 "score_h": m.get("score_h", int(sc1r) if sc1r and sc1r.isdigit() else -1),
-                                                 "score_a": m.get("score_a", int(sc2r) if sc2r and sc2r.isdigit() else -1),
-                                                 "deporte":"tenis"}
+                                                 "score_h": _sh_disp, "score_a": _sa_disp,
+                                                 "score_p1": sc1r, "score_p2": sc2r,
+                                                 "deporte": "tenis"}
                                     try: _vdt, _vct, _ = _villar_match_pick_to_result(_spkt, _m_compat)
                                     except: _vdt, _vct = "⏳", "#555"
                                     _icot = "✅" if "GANÓ" in _vdt else ("❌" if "FALLÓ" in _vdt else "⏳")
