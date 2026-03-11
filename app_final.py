@@ -1689,7 +1689,7 @@ with st.sidebar:
     st.markdown('<div class="sidebar-sub">Gamblers · Analytics · Edge</div>', unsafe_allow_html=True)
     st.divider()
 
-    st.markdown("**SIMULACIÓN**")
+    st.markdown("**🔮 ORÁCULO**")
     n_sims=st.select_slider("Iteraciones",options=[1_000,2_500,5_000,10_000,25_000],value=10_000,
                             label_visibility="collapsed")
     st.caption(f"⚡ {n_sims:,} iteraciones por partido")
@@ -1701,6 +1701,10 @@ with st.sidebar:
                               label_visibility="collapsed")
     avail=[n for n,cfg in LEAGUES.items() if cfg["group"] in sel_groups]
     sel_leagues=st.multiselect("Ligas",avail,default=avail,label_visibility="collapsed")
+
+    st.markdown("")
+    run_sidebar = st.button("▶  ANALIZAR AHORA", use_container_width=True,
+                            help="Corre el Oráculo para todos los partidos seleccionados")
     st.divider()
 
     use_demo=st.toggle("🧪 Modo demo",value=False)
@@ -1769,6 +1773,26 @@ if st.session_state.get("force_demo"):
 if is_demo:
     st.markdown('<div class="demo-banner">⚠ MODO DEMO — Datos ilustrativos. Desactiva el toggle en el sidebar para datos reales de ESPN.</div>',unsafe_allow_html=True)
 
+# ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
+_already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
+_leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo)
+_prev_key = st.session_state.get("_sim_key", "")
+_leagues_changed = _leagues_key != _prev_key
+
+if (not _already_simulated or _leagues_changed or run_sidebar) and games:
+    with st.spinner("🔮 El Oráculo está analizando los partidos..."):
+        import time as _time
+        _t0 = _time.time()
+        _sr = run_all_simulations(games, n=n_sims)
+        _elapsed = _time.time() - _t0
+    st.session_state["sim_results"] = _sr
+    st.session_state["last_sim_demo"] = is_demo
+    st.session_state["_sim_key"] = _leagues_key
+    _n_pos = len([r for r in _sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
+    if run_sidebar:
+        st.toast(f"✓ {len(games)*n_sims:,} sims en {_elapsed:.1f}s · {_n_pos} value bets", icon="🔮")
+    st.rerun()
+
 # Stats bar
 live_g=[g for g in games if g["state"]=="in"]
 pre_g=[g for g in games if g["state"]=="pre"]
@@ -1790,7 +1814,7 @@ st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab_picks, tab_sim, tab_parlays, tab_all = st.tabs([
     "🃏  RONGOL PICKS",
-    f"🎲  SIMULACIONES  ({n_sims:,}×)",
+    f"🔮  ORÁCULO  ({n_sims:,}×)",
     "🎰  PARLAYS",
     "📋  PARTIDOS",
 ])
@@ -1802,7 +1826,7 @@ with tab_picks:
         st.markdown("""<div class="empty-state">
           <div class="empty-icon">🎲</div>
           <div class="empty-title">Sin simulaciones</div>
-          <div>Ve al tab <b>SIMULACIONES</b> y presiona el botón para generar los picks del día.</div>
+          <div>Presiona <b>▶ ANALIZAR AHORA</b> en el sidebar o ve al tab <b>🔮 ORÁCULO</b> para generar los picks del día.</div>
         </div>""", unsafe_allow_html=True)
     else:
         all_bets=[]
@@ -1840,20 +1864,22 @@ with tab_picks:
 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_sim:
-    st.markdown(f'<div class="section-heading">🎲 Motor Monte Carlo — {len(games)} partidos × {n_sims:,}</div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="section-heading">🔮 Oráculo Monte Carlo — {len(games)} partidos × {n_sims:,}</div>',unsafe_allow_html=True)
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>',unsafe_allow_html=True)
 
-    if st.button(f"▶  CORRER  {n_sims:,}  SIMULACIONES"):
-        t0=time.time()
-        sr2=run_all_simulations(games,n=n_sims)
-        elapsed=time.time()-t0
-        st.session_state["sim_results"]=sr2
-        st.session_state["last_sim_demo"]=is_demo
-        n_pos=len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
-        st.success(f"✓ {len(games)*n_sims:,} simulaciones en {elapsed:.1f}s · {n_pos} value bets encontradas")
-        st.balloons()
-        st.rerun()
+    col_re1, col_re2 = st.columns([2,1])
+    with col_re1:
+        if st.button(f"🔄  RE-SIMULAR  ({n_sims:,}×)", use_container_width=True):
+            t0=time.time()
+            sr2=run_all_simulations(games,n=n_sims)
+            elapsed=time.time()-t0
+            st.session_state["sim_results"]=sr2
+            st.session_state["last_sim_demo"]=is_demo
+            st.session_state["_sim_key"]=""  # force re-sim
+            n_pos=len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
+            st.success(f"✓ {len(games)*n_sims:,} sims en {elapsed:.1f}s · {n_pos} value bets")
+            st.rerun()
 
     sr=st.session_state.get("sim_results",[])
     if sr:
