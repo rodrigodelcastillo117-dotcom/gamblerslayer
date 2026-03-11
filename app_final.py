@@ -2774,34 +2774,162 @@ with tab_all:
 # ══════════════════════════════════════════════════════════════════════════════
 import json, os as _os, re as _re
 
-def _reto_file(apodo):
-    safe = _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:32]
-    return _os.path.expanduser(f"~/.gamblers_den_reto_{safe}.json")
+# ── Google Sheets persistence ─────────────────────────────────────────────────
+# Requires st.secrets["gsheets"] with keys:
+#   type, project_id, private_key_id, private_key, client_email,
+#   client_id, auth_uri, token_uri, spreadsheet_id
+#
+# Each user = one sheet tab named after their apodo.
+# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
+# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
+# Row 3+ = picks
+
+def _gsheets_available():
+    """True if Google Sheets secrets are configured."""
+    try:
+        s = st.secrets.get("gsheets", {})
+        return bool(s.get("private_key") and s.get("spreadsheet_id"))
+    except:
+        return False
+
+@st.cache_resource(show_spinner=False)
+def _get_gsheet_client():
+    """Return authenticated gspread client (cached)."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    s = dict(st.secrets["gsheets"])
+    s["private_key"] = s["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(s, scopes=scopes)
+    return gspread.authorize(creds)
+
+def _safe_apodo(apodo):
+    return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
+
+def _get_or_create_tab(gc, spreadsheet_id, apodo):
+    """Get or create a worksheet tab for this apodo."""
+    sh = gc.open_by_key(spreadsheet_id)
+    safe = _safe_apodo(apodo)
+    try:
+        ws = sh.worksheet(safe)
+    except:
+        ws = sh.add_worksheet(title=safe, rows=1000, cols=12)
+        # Write headers
+        ws.update("A1:J1", [["num","fecha","partido","pick","mercado",
+                              "momio","momio_fmt","monto","resultado","nota"]])
+        # Config row (bank_inicial, meta)
+        ws.update("A2:B2", [[2000.0, 13000000.0]])
+    return ws
 
 def _load_reto(apodo):
+    """Load reto data. Google Sheets if configured, else local JSON fallback."""
+    default = {"bank_inicial": 2000.0, "meta": 13_000_000.0, "picks": [], "apodo": apodo}
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            ws = _get_or_create_tab(gc, sid, apodo)
+            rows = ws.get_all_values()
+            if len(rows) < 2:
+                return default
+            # Row 2 = config
+            try:
+                bank_inicial = float(rows[1][0]) if rows[1][0] else 2000.0
+                meta         = float(rows[1][1]) if len(rows[1]) > 1 and rows[1][1] else 13_000_000.0
+            except:
+                bank_inicial, meta = 2000.0, 13_000_000.0
+            # Rows 3+ = picks (index 2+)
+            picks = []
+            for row in rows[2:]:
+                if not any(row):
+                    continue
+                def cell(i, default=""):
+                    return row[i] if i < len(row) else default
+                try:
+                    picks.append({
+                        "num":       int(cell(0, 0)) if cell(0) else len(picks)+1,
+                        "fecha":     cell(1),
+                        "partido":   cell(2),
+                        "pick":      cell(3),
+                        "mercado":   cell(4, "ML"),
+                        "momio":     float(cell(5, 1.909)),
+                        "momio_fmt": cell(6),
+                        "monto":     float(cell(7, 0)),
+                        "resultado": cell(8, "pendiente"),
+                        "nota":      cell(9),
+                    })
+                except:
+                    continue
+            return {"bank_inicial": bank_inicial, "meta": meta, "picks": picks, "apodo": apodo}
+        except Exception as e:
+            st.warning(f"⚠ Google Sheets no disponible: {e}. Usando almacenamiento local.")
+    # Fallback: local JSON
     try:
-        with open(_reto_file(apodo), "r") as f:
+        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
+        with open(path, "r") as f:
             return json.load(f)
     except:
-        return {"bank_inicial": 2000.0, "meta": 13_000_000.0, "picks": [], "apodo": apodo}
+        return default
 
 def _save_reto(data, apodo):
+    """Save reto data to Google Sheets (or local JSON fallback)."""
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            ws = _get_or_create_tab(gc, sid, apodo)
+            # Config row
+            ws.update("A2:B2", [[data.get("bank_inicial", 2000.0), data.get("meta", 13_000_000.0)]])
+            # Clear old pick rows and rewrite
+            picks = data.get("picks", [])
+            if picks:
+                rows = []
+                for p in picks:
+                    rows.append([
+                        p.get("num",""), p.get("fecha",""), p.get("partido",""),
+                        p.get("pick",""), p.get("mercado","ML"),
+                        p.get("momio",""), p.get("momio_fmt",""),
+                        p.get("monto",""), p.get("resultado","pendiente"),
+                        p.get("nota",""),
+                    ])
+                # Clear from row 3 down then write
+                last_row = len(picks) + 10
+                ws.batch_clear([f"A3:J{last_row}"])
+                ws.update(f"A3:J{len(picks)+2}", rows)
+            else:
+                ws.batch_clear(["A3:J1000"])
+            return True
+        except Exception as e:
+            st.warning(f"⚠ Error guardando en Sheets: {e}")
+    # Fallback: local JSON
     try:
-        with open(_reto_file(apodo), "w") as f:
+        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
+        with open(path, "w") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except:
         return False
 
 def _list_reto_users():
-    """List all apodos that have a saved reto file."""
+    """List all users from Google Sheets tabs or local files."""
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            sh = gc.open_by_key(sid)
+            return sorted([ws.title for ws in sh.worksheets()])
+        except:
+            pass
+    # Fallback: local files
     home = _os.path.expanduser("~")
     users = []
     try:
         for fn in _os.listdir(home):
             if fn.startswith(".gamblers_den_reto_") and fn.endswith(".json"):
-                apodo = fn.replace(".gamblers_den_reto_","").replace(".json","")
-                users.append(apodo)
+                users.append(fn.replace(".gamblers_den_reto_","").replace(".json",""))
     except:
         pass
     return sorted(users)
