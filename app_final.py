@@ -1415,21 +1415,11 @@ def run_monte_carlo(game, n=10_000):
         if prob is not None and ev is not None and ev>best_ev_v:
             best_ev_v=ev; best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
 
+    # intra-parlay candidates stored for use by build_parlays()
+    best_parlay=None  # will be set by build_parlays() in run_all_simulations
     pos_legs=[(mtype,label,prob,ev,ml) for mtype,label,prob,ev,ml,k in candidates
               if prob is not None and ev is not None and ev>0 and mtype not in ("DC",)]
     pos_legs.sort(key=lambda x:x[3],reverse=True)
-    best_parlay=None
-    if len(pos_legs)>=2:
-        leg1,leg2=pos_legs[0],pos_legs[1]
-        parlay_prob=leg1[2]*leg2[2]
-        def ml_dec(ml):
-            try:
-                ml=float(str(ml).replace("+",""))
-                return (ml/100+1) if ml>0 else (100/abs(ml)+1)
-            except: return 1.909
-        payout=(ml_dec(leg1[4])*ml_dec(leg2[4])-1)*100
-        parlay_ev=round(parlay_prob*payout-(1-parlay_prob)*100,2)
-        best_parlay={"legs":[leg1,leg2],"prob":parlay_prob,"ev":parlay_ev,"payout":round(payout,1)}
 
     return {
         "home_pct":round(sh*100,1),"away_pct":round(sa*100,1),"draw_pct":round(sd*100,1),
@@ -1446,9 +1436,128 @@ def run_monte_carlo(game, n=10_000):
         "p_dc_1x":round(p_dc_1x*100,1),"dc_1x_ev":dc_1x_ev,
         "p_dc_x2":round(p_dc_x2*100,1),"dc_x2_ev":dc_x2_ev,
         "p_dc_12":round(p_dc_12*100,1),"dc_12_ev":dc_12_ev,
-        "best_single":best_single,"best_parlay":best_parlay,
+        "best_single":best_single,"best_parlay":best_parlay,"pos_legs":pos_legs,
         "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
     }
+
+def _ml_dec(ml):
+    """Convert American moneyline to decimal odds."""
+    try:
+        ml = float(str(ml).replace("+",""))
+        return (ml/100+1) if ml>0 else (100/abs(ml)+1)
+    except:
+        return 1.909
+
+
+def build_parlays(results):
+    """
+    Build best parlays across all simulated games.
+    - Only uses games from TODAY (UTC date filter).
+    - Inter-partido (2+ games): best EV+ leg per game, ML preferred (+0.5 boost).
+      Tries all pairs in top-5 legs, picks highest parlay EV.
+    - Intra-partido fallback (1 game): best 2 legs of same game, ML preferred.
+    """
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    def is_today(r):
+        """Return True if the game is scheduled for today or has no date (live/unknown)."""
+        d = (r.get("date") or "")[:10]  # "2026-03-11T20:00:00Z" → "2026-03-11"
+        return d == "" or d == today_str
+
+    # Only consider today's games
+    results_today = [r for r in results if is_today(r)]
+
+    def parlay_ev(l1, l2):
+        prob = l1["prob"] * l2["prob"]
+        pay  = (_ml_dec(l1["ml"]) * _ml_dec(l2["ml"]) - 1) * 100
+        ev   = round(prob * pay - (1 - prob) * 100, 2)
+        return prob, pay, ev
+
+    ML_BONUS = 0.5
+
+    def best_leg_for_game(r):
+        legs = r["sim"].get("pos_legs", [])
+        if not legs:
+            return None
+        scored = sorted(legs,
+                        key=lambda x: x[3] + (ML_BONUS if x[0]=="ML" else 0),
+                        reverse=True)
+        mtype, label, prob, ev, ml = scored[0]
+        return {
+            "game_id":  r.get("id",""),
+            "matchup":  f"{r['away_team']} @ {r['home_team']}",
+            "league":   r["league"],
+            "mtype":    mtype,
+            "label":    label,
+            "prob":     prob,
+            "ev":       ev,
+            "ml":       ml,
+            "_r":       r,
+        }
+
+    # Collect best EV+ leg per game (today only)
+    game_legs = []
+    for r in results_today:
+        leg = best_leg_for_game(r)
+        if leg and leg["ev"] > 0:
+            game_legs.append(leg)
+
+    # ── Inter-partido ─────────────────────────────────────────────────────────
+    if len(game_legs) >= 2:
+        game_legs.sort(key=lambda x: x["ev"], reverse=True)
+        top = game_legs[:5]
+        best_combo = None
+        best_combo_ev = -999
+        for i in range(len(top)):
+            for j in range(i+1, len(top)):
+                l1, l2 = top[i], top[j]
+                if l1["game_id"] == l2["game_id"]:
+                    continue
+                prob, pay, ev = parlay_ev(l1, l2)
+                if ev > best_combo_ev:
+                    best_combo_ev = ev
+                    best_combo = (l1, l2, prob, pay, ev)
+
+        if best_combo:
+            l1, l2, prob, pay, ev = best_combo
+            parlay = {
+                "legs": [
+                    (l1["mtype"], f"{l1['matchup']} · {l1['label']}", l1["prob"], l1["ev"], l1["ml"]),
+                    (l2["mtype"], f"{l2['matchup']} · {l2['label']}", l2["prob"], l2["ev"], l2["ml"]),
+                ],
+                "prob":   round(prob, 4),
+                "ev":     ev,
+                "payout": round(pay, 1),
+                "type":   "inter",
+            }
+            target = l1["_r"] if l1["ev"] >= l2["ev"] else l2["_r"]
+            target["sim"]["best_parlay"] = parlay
+            return results
+
+    # ── Intra-partido fallback ────────────────────────────────────────────────
+    for r in results_today:
+        legs = r["sim"].get("pos_legs", [])
+        if len(legs) >= 2:
+            scored = sorted(legs,
+                            key=lambda x: x[3] + (ML_BONUS if x[0]=="ML" else 0),
+                            reverse=True)
+            l1, l2 = scored[0], scored[1]
+            d1 = {"prob": l1[2], "ml": l1[4]}
+            d2 = {"prob": l2[2], "ml": l2[4]}
+            prob, pay, ev = parlay_ev(d1, d2)
+            if ev > 0:
+                r["sim"]["best_parlay"] = {
+                    "legs": [
+                        (l1[0], l1[1], l1[2], l1[3], l1[4]),
+                        (l2[0], l2[1], l2[2], l2[3], l2[4]),
+                    ],
+                    "prob":   round(prob, 4),
+                    "ev":     ev,
+                    "payout": round(pay, 1),
+                    "type":   "intra",
+                }
+    return results
+
 
 def run_all_simulations(games, n=10_000):
     results=[]; pb=st.progress(0); st_txt=st.empty()
@@ -1460,8 +1569,8 @@ def run_all_simulations(games, n=10_000):
         results.append({**game,"sim":run_monte_carlo(game,n)})
         pb.progress((i+1)/len(games))
     pb.empty(); st_txt.empty()
+    results = build_parlays(results)
     return results
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # RENDER HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1638,26 +1747,54 @@ def render_parlay_card(r):
     sim=r["sim"]; bp=sim["best_parlay"]
     if not bp or bp["ev"]<=0: return ""
     conf=conf_badge(bp["ev"],sim["data_quality"])
+    is_inter = bp.get("type","intra") == "inter"
+
     legs_html=""
     for i,leg in enumerate(bp["legs"]):
-        legs_html+=(
-            '<div class="parlay-leg">'
-            + chip(leg[0])
-            + '<span style="font-family:\'Cinzel\',sans-serif;font-size:0.95rem;color:#E0F7F0;margin-left:8px">' + leg[1] + '</span>'
-            + '<span style="color:#2EE8C0;margin-left:auto;font-family:\'Cinzel\',serif;font-weight:700">' + str(round(leg[2]*100,1)) + '%</span>'
+        mtype, label, prob, ev, ml = leg
+        if is_inter and " · " in label:
+            matchup_part, pick_part = label.split(" · ", 1)
+            leg_display = (
+                '<div style="display:flex;flex-direction:column;gap:2px;flex:1;margin-left:8px">'
+                '<span style="font-size:0.7rem;color:#6B7E6E;letter-spacing:1px">' + matchup_part + '</span>'
+                '<span style="font-family:\'Cinzel\',sans-serif;font-size:0.92rem;color:#E0F7F0">' + pick_part + '</span>'
+                '</div>'
+            )
+        else:
+            leg_display = (
+                '<span style="font-family:\'Cinzel\',sans-serif;font-size:0.95rem;'
+                'color:#E0F7F0;margin-left:8px;flex:1">' + label + '</span>'
+            )
+        ev_color = "#4ade80" if ev >= 10 else "#C9A84C"
+        legs_html += (
+            '<div class="parlay-leg" style="align-items:flex-start">'
+            + chip(mtype)
+            + leg_display
+            + '<div style="text-align:right;min-width:70px">'
+              '<div style="color:#2EE8C0;font-family:\'Cinzel\',serif;font-weight:700">' + str(round(prob*100,1)) + '%</div>'
+              '<div style="font-size:0.68rem;color:' + ev_color + '">EV +' + str(round(ev,1)) + '</div>'
+              '</div>'
             + '</div>'
         )
-        if i<len(bp["legs"])-1:
-            legs_html+='<div class="parlay-connector" style="color:#1ABC9C;font-size:0.75rem;text-align:center;padding:4px 0;letter-spacing:3px">⊕ COMBINADA ⊕</div>'
+        if i < len(bp["legs"])-1:
+            legs_html += '<div class="parlay-connector" style="color:#1ABC9C;font-size:0.75rem;text-align:center;padding:4px 0;letter-spacing:3px">⊕ COMBINADA ⊕</div>'
 
+    parlay_type_badge = (
+        '<span style="font-size:0.65rem;color:#2EE8C0;letter-spacing:2px;'
+        'background:rgba(26,188,156,0.1);padding:2px 8px;border-radius:3px;margin-left:8px">'
+        + ("INTER-PARTIDO" if is_inter else "COMBO") + '</span>'
+    )
     dq_warn_html = ('<div class="warn-banner" style="margin-top:8px">'
                     '⚠ DQ 0% — Sin cuotas reales. Verifica precios antes de apostar.</div>'
                     if sim["data_quality"]==0 else "")
+    header_title = "🎰 &nbsp;PARLAY" + parlay_type_badge
+    if not is_inter:
+        header_title += ' &nbsp;·&nbsp; ' + r["away_team"] + ' @ ' + r["home_team"] + ' &nbsp;·&nbsp; ' + r["league"]
     return (
         '<div class="parlay-card">'
           '<div class="parlay-header">'
-            '🎰 &nbsp;PARLAY &nbsp;·&nbsp; ' + r["away_team"] + ' @ ' + r["home_team"] + ' &nbsp;·&nbsp; ' + r["league"]
-          + '</div>'
+            + header_title +
+          '</div>'
           '<div class="parlay-body">'
             + legs_html
             + '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px;padding-top:12px;'
@@ -1680,7 +1817,6 @@ def render_parlay_card(r):
           + '</div>'
         '</div>'
     )
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1815,7 +1951,7 @@ st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 tab_picks, tab_sim, tab_parlays, tab_all = st.tabs([
     "🃏  RONGOL PICKS",
     f"🔮  ORÁCULO  ({n_sims:,}×)",
-    "🎰  PARLAYS",
+    "🎰  PARLAYS DEL DÍA",
     "📋  PARTIDOS",
 ])
 
@@ -1829,27 +1965,82 @@ with tab_picks:
           <div>Presiona <b>▶ ANALIZAR AHORA</b> en el sidebar o ve al tab <b>🔮 ORÁCULO</b> para generar los picks del día.</div>
         </div>""", unsafe_allow_html=True)
     else:
+        # ── Detectar picks terminados ─────────────────────────────────────────────
+        pick_game_ids = {r.get("id","") for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0}
+        finished_pick_games  = [g for g in games if g.get("id","") in pick_game_ids and g["state"]=="post"]
+        pending_games_picks  = [g for g in games if g["state"] in ("pre","in")]
+
+        _needs_regen_picks = (
+            len(finished_pick_games) > 0
+            and len(pending_games_picks) > 0
+            and not st.session_state.get("_picks_regen_done", False)
+        )
+        _picks_regen_key = f"picks_{len(finished_pick_games)}_{len(pending_games_picks)}"
+        if st.session_state.get("_picks_regen_key") != _picks_regen_key:
+            st.session_state["_picks_regen_done"] = False
+            st.session_state["_picks_regen_key"] = _picks_regen_key
+
+        # ── Banner de alerta ──────────────────────────────────────────────────────
+        if finished_pick_games:
+            finished_names = " · ".join(
+                f"{g['away_team']} @ {g['home_team']}" for g in finished_pick_games[:3]
+            )
+            st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #4ade80;background:rgba(74,222,128,0.08)">
+                ✅ <b>Pick(s) terminados:</b> {finished_names}<br>
+                <span style="color:#6B7E6E;font-size:0.8rem">{len(pending_games_picks)} partidos pendientes disponibles.</span>
+            </div>''', unsafe_allow_html=True)
+
+        # ── Botón manual ──────────────────────────────────────────────────────────
+        col_rp1, col_rp2 = st.columns([3,1])
+        with col_rp2:
+            regen_picks_clicked = st.button(
+                "🔄 Nuevos Picks", use_container_width=True,
+                disabled=len(pending_games_picks)==0,
+                help="Re-simula con los partidos pendientes del día",
+                key="btn_regen_picks"
+            )
+
+        # ── Ejecutar regeneración (auto o manual) ─────────────────────────────────
+        if (_needs_regen_picks or regen_picks_clicked) and pending_games_picks:
+            with st.spinner(f"🃏 Generando nuevos picks con {len(pending_games_picks)} partidos pendientes..."):
+                new_sr_picks = run_all_simulations(pending_games_picks, n=n_sims)
+            st.session_state["sim_results"] = new_sr_picks
+            st.session_state["_picks_regen_done"] = True
+            n_new = len([r for r in new_sr_picks if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
+            st.toast(f"✓ Nuevos picks generados · {n_new} EV+", icon="🃏")
+            st.rerun()
+
+        # ── Mostrar picks ─────────────────────────────────────────────────────────
+        sr_cur = st.session_state.get("sim_results", [])
         all_bets=[]
-        for r in sr:
+        for r in sr_cur:
             bs=r["sim"].get("best_single")
             if bs and bs["ev"]>0: all_bets.append(r)
         all_bets.sort(key=lambda x: x["sim"]["best_single"]["ev"],reverse=True)
 
+        # Indicador de estado
+        n_post_p = len([g for g in games if g["state"]=="post"])
+        n_live_p = len([g for g in games if g["state"]=="in"])
+        n_pre_p  = len([g for g in games if g["state"]=="pre"])
+        st.markdown(
+            f'<div style="font-size:0.72rem;color:#6B7E6E;margin-bottom:8px">' +
+            (f'<span style="color:#4ade80">⚡ {n_live_p} en vivo</span> · ' if n_live_p else "") +
+            f'{n_pre_p} próximos · {n_post_p} terminados</div>',
+            unsafe_allow_html=True
+        )
+
         if not all_bets:
-            st.markdown('<div class="warn-banner">No se encontraron apuestas con EV positivo hoy. Intenta con más ligas o espera actualización de cuotas.</div>',unsafe_allow_html=True)
+            st.markdown('<div class="warn-banner">No se encontraron apuestas con EV positivo. Intenta con más ligas o espera más partidos.</div>',unsafe_allow_html=True)
         else:
-            # TOP PICK
             st.markdown('<div class="section-heading">💎 PICK DIAMANTE</div>', unsafe_allow_html=True)
             st.markdown(render_pick_card(all_bets[0]), unsafe_allow_html=True)
-
-            # REST
             if len(all_bets)>1:
                 st.markdown(f'<div class="section-heading">🔥 PICKS FUEGO ({len(all_bets)-1})</div>', unsafe_allow_html=True)
                 for i,r in enumerate(all_bets[1:7],2):
                     st.markdown(render_pick_card(r,rank=i), unsafe_allow_html=True)
 
         # Avoid
-        avoid=[r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
+        avoid=[r for r in sr_cur if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
         avoid.sort(key=lambda x:x["sim"]["best_single"]["ev"])
         if avoid:
             st.markdown('<div class="section-heading">♦ Evitar</div>', unsafe_allow_html=True)
@@ -1858,10 +2049,10 @@ with tab_picks:
                 st.markdown(f'<div class="game-row"><span class="game-title" style="color:#ef4444">✗ {r["away_team"]} @ {r["home_team"]}</span><span class="game-meta">{r["league"]} · EV {bs["ev"]:.1f} · {bs["label"]}</span></div>',unsafe_allow_html=True)
 
         st.markdown('<div class="den-divider" style="margin:16px 0"></div>',unsafe_allow_html=True)
-        today=datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
-        total_sims=len(sr)*sr[0]["sim"]["n_simulations"]
-        st.markdown(f'<div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:0.72rem;color:#3a4a3e">📅 {today} · {total_sims:,} simulaciones · {"DEMO" if is_demo else "ESPN Live"}</div>',unsafe_allow_html=True)
-
+        today_str=datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+        total_sims=len(sr_cur)*sr_cur[0]["sim"]["n_simulations"] if sr_cur else 0
+        _src = "DEMO" if is_demo else "ESPN Live"
+        st.markdown(f'<div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:0.72rem;color:#3a4a3e">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_sim:
     st.markdown(f'<div class="section-heading">🔮 Oráculo Monte Carlo — {len(games)} partidos × {n_sims:,}</div>',unsafe_allow_html=True)
@@ -2002,7 +2193,8 @@ with tab_parlays:
         # ── Botón manual + auto-regen ─────────────────────────────────────────────
         col_p1, col_p2 = st.columns([3, 1])
         with col_p1:
-            st.markdown(f'<div class="section-heading">🎰 Parlays del día</div>', unsafe_allow_html=True)
+            today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
+        st.markdown(f'<div class="section-heading">🎰 Parlays del Día · {today_label}</div>', unsafe_allow_html=True)
         with col_p2:
             regen_clicked = st.button("🔄 Nuevo Parlay", use_container_width=True,
                                       disabled=len(pending_games)==0,
