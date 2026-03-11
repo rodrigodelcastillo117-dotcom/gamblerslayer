@@ -9,6 +9,7 @@ import requests
 import random
 import math
 import time
+import os
 from datetime import datetime, timezone
 
 st.set_page_config(
@@ -125,21 +126,33 @@ st.markdown("""
 
 /* ── PICK CARD (THE MAIN ATTRACTION) ── */
 .pick-card {
-  background: linear-gradient(145deg, #0A1E0F 0%, #071610 50%, #0D2010 100%);
-  border: 1px solid var(--gold);
-  border-radius: 8px;
+  background: linear-gradient(145deg, #0F2A14 0%, #0A1E10 50%, #112615 100%);
+  border: 2px solid var(--gold);
+  border-radius: 10px;
   padding: 0;
-  margin: 12px 0;
+  margin: 14px 0;
   overflow: hidden;
-  box-shadow: 0 0 60px rgba(201,168,76,0.08), inset 0 1px 0 rgba(201,168,76,0.15);
+  box-shadow:
+    0 0 0 1px rgba(201,168,76,0.15),
+    0 0 40px rgba(201,168,76,0.18),
+    0 0 80px rgba(201,168,76,0.08),
+    inset 0 1px 0 rgba(201,168,76,0.25);
   position: relative;
 }
 .pick-card::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--gold), var(--gold2), var(--gold), transparent);
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, var(--gold) 20%, #FFE87C 50%, var(--gold) 80%, transparent 100%);
+  box-shadow: 0 0 12px rgba(240,208,128,0.8);
+}
+.pick-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201,168,76,0.4), transparent);
 }
 .pick-header {
   padding: 16px 20px 10px;
@@ -171,20 +184,31 @@ st.markdown("""
 
 .pick-action {
   font-family: 'Cinzel', serif;
-  font-size: 1.6rem;
+  font-size: 1.9rem;
   font-weight: 900;
-  color: var(--gold2);
-  text-shadow: 0 0 20px rgba(240,208,128,0.4);
-  letter-spacing: 2px;
-  margin: 8px 0;
+  color: #FFE87C;
+  text-shadow:
+    0 0 20px rgba(255,232,124,0.7),
+    0 0 40px rgba(201,168,76,0.4),
+    0 2px 4px rgba(0,0,0,0.8);
+  letter-spacing: 3px;
+  margin: 10px 0 6px 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(201,168,76,0.2);
 }
 .pick-action-arrow {
-  color: var(--gold);
-  font-size: 1.8rem;
+  color: #FFE87C;
+  font-size: 2rem;
+  filter: drop-shadow(0 0 8px rgba(255,232,124,0.8));
+  animation: pulse-arrow 2s ease-in-out infinite;
+}
+@keyframes pulse-arrow {
+  0%, 100% { opacity: 1; transform: translateX(0); }
+  50% { opacity: 0.7; transform: translateX(4px); }
 }
 
 .market-chip {
@@ -266,23 +290,36 @@ st.markdown("""
 
 /* ── PARLAY CARD ── */
 .parlay-card {
-  background: linear-gradient(145deg, #071510 0%, #0A1E18 100%);
-  border: 1px solid rgba(26,188,156,0.5);
-  border-radius: 8px;
+  background: linear-gradient(145deg, #061A14 0%, #091F1A 50%, #071815 100%);
+  border: 2px solid rgba(26,188,156,0.8);
+  border-radius: 10px;
   padding: 0;
-  margin: 10px 0;
+  margin: 14px 0;
   overflow: hidden;
-  box-shadow: 0 0 30px rgba(26,188,156,0.06);
+  box-shadow:
+    0 0 0 1px rgba(26,188,156,0.12),
+    0 0 40px rgba(26,188,156,0.20),
+    0 0 80px rgba(26,188,156,0.08);
+  position: relative;
+}
+.parlay-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #1ABC9C, #7FFFD4, #1ABC9C, transparent);
+  box-shadow: 0 0 12px rgba(26,188,156,0.9);
 }
 .parlay-header {
-  background: rgba(26,188,156,0.08);
-  border-bottom: 1px solid rgba(26,188,156,0.2);
-  padding: 10px 16px;
+  background: linear-gradient(90deg, rgba(26,188,156,0.15), rgba(26,188,156,0.05));
+  border-bottom: 1px solid rgba(26,188,156,0.25);
+  padding: 14px 20px;
   font-family: 'Cinzel', serif;
-  font-size: 0.85rem;
-  color: #1ABC9C;
-  letter-spacing: 2px;
+  font-size: 1rem;
+  color: #2EE8C0;
+  letter-spacing: 3px;
   text-transform: uppercase;
+  text-shadow: 0 0 16px rgba(26,188,156,0.6);
 }
 .parlay-body { padding: 14px 16px; }
 .parlay-leg {
@@ -562,6 +599,51 @@ def fetch_scoreboard(sport, league):
     except: pass
     return {}
 
+def parse_tennis(data, league_name):
+    """Tennis ESPN API has a different JSON structure — competitors don't have homeAway."""
+    games = []
+    for event in data.get("events", []):
+        try:
+            comp   = event.get("competitions", [{}])[0]
+            comps  = comp.get("competitors", [])
+            if len(comps) < 2: continue
+            # Tennis: no homeAway field — competitor[0] = player1, competitor[1] = player2
+            p1 = comps[0]; p2 = comps[1]
+            def player_name(c):
+                ath = c.get("athlete", {})
+                return ath.get("displayName", "") or c.get("team", {}).get("displayName", "Player")
+            status = event.get("status", {})
+            odds_info = {}
+            ol = comp.get("odds", [])
+            if ol:
+                o = ol[0]
+                odds_info = {
+                    "spread": "", "over_under": "",
+                    "home_ml": o.get("homeTeamOdds", {}).get("moneyLine", "") or o.get("team1Odds", {}).get("moneyLine", ""),
+                    "away_ml": o.get("awayTeamOdds", {}).get("moneyLine", "") or o.get("team2Odds", {}).get("moneyLine", ""),
+                    "home_wp": o.get("homeTeamOdds", {}).get("winPercentage", ""),
+                    "away_wp": o.get("awayTeamOdds", {}).get("winPercentage", ""),
+                }
+            tournament = event.get("tournament", {}).get("displayName", "") or comp.get("tournament", {}).get("displayName", "")
+            venue = tournament or comp.get("venue", {}).get("fullName", "")
+            games.append({
+                "id":           event.get("id", ""),
+                "league":       league_name,
+                "home_team":    player_name(p1),   # p1 = "home" for display
+                "away_team":    player_name(p2),   # p2 = "away" for display
+                "home_score":   p1.get("score", ""),
+                "away_score":   p2.get("score", ""),
+                "home_record":  "",
+                "away_record":  "",
+                "state":        status.get("type", {}).get("state", "pre"),
+                "status_detail":status.get("type", {}).get("shortDetail", ""),
+                "date":         event.get("date", ""),
+                "venue":        venue,
+                "odds":         odds_info,
+            })
+        except: continue
+    return games
+
 def parse_games(data, league_name):
     games = []
     for event in data.get("events",[]):
@@ -601,9 +683,165 @@ def get_all_games(leagues):
         cfg=LEAGUES[name]
         try:
             data=fetch_scoreboard(cfg["sport"],cfg["league"])
-            result.extend(parse_games(data,name))
+            # Tennis uses a different JSON structure — dedicated parser
+            if cfg["group"] == "Tennis":
+                parsed = parse_tennis(data, name)
+                # Fallback: if tennis parser got nothing, try generic parser
+                if not parsed:
+                    parsed = parse_games(data, name)
+            else:
+                parsed = parse_games(data, name)
+            result.extend(parsed)
         except Exception as e: errors.append(f"{name}: {e}")
     return result, errors
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI SPORT ANALYSTS — Claude specialist per sport
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SPORT_SYSTEM_PROMPTS = {
+    "Basketball": """You are an elite NBA/basketball betting analyst with 15 years of experience.
+You specialize in: pace-adjusted metrics, rest/travel disadvantage, home-court factor in playoffs vs regular season,
+back-to-back fatigue, point differential trends, ATS (against the spread) patterns, and total points (O/U) analysis.
+Key edge areas: teams playing 2nd game of back-to-back, large home favorites covering less than 60%, pace mismatches.
+Respond in 2-3 sharp sentences. Lead with the single most important insight. Be direct, no fluff.""",
+
+    "Soccer": """You are a sharp soccer betting analyst covering global leagues (Liga MX, Premier League, UCL, La Liga, etc.).
+You specialize in: xG (expected goals) patterns, home/away form splits, European competition fatigue, 
+managerial tactics, set-piece efficiency, clean sheet rates, and value in BTTS and Asian handicap markets.
+Key edge areas: mid-table teams in dead rubbers, massive underdogs in cup ties, draw value in evenly matched derbies.
+Respond in 2-3 sharp sentences. Lead with the single most important factor affecting the market. Be direct.""",
+
+    "Football": """You are a sharp NFL/college football betting analyst.
+You specialize in: DVOA efficiency metrics, quarterback matchups, offensive line vs defensive front performance,
+weather impact on totals, division games (tighter spreads), home field primetime effect, and playoff seeding motivation.
+Key edge areas: home dogs in divisional games, bad weather collapsing totals, public money inflating favorites.
+Respond in 2-3 sharp sentences. Lead with the single biggest factor. Be direct, no fluff.""",
+
+    "Tennis": """You are a professional tennis betting analyst covering ATP and WTA tours.
+You specialize in: surface matchups (clay/grass/hard court specialists), head-to-head patterns,
+current form (last 10 matches), serve dominance (ace rate, 1st serve %), return game quality,
+tournament round fatigue, and ranking-implied win probabilities vs market odds.
+Key edge areas: H2H dominance overriding ranking, surface specialists, tired favorites deep in tournaments.
+Respond in 2-3 sharp sentences. Lead with the most decisive factor (surface? H2H? form?). Be direct.""",
+
+    "Hockey": """You are a sharp NHL betting analyst.
+You specialize in: goaltender matchup quality, 5-on-5 expected goals differential, power play efficiency,
+back-to-back and travel fatigue, home ice advantage in divisional games, and puck line vs moneyline value.
+Key edge areas: elite goalie starting after rest vs tired starter, low total games under 5.5, home dogs with top-10 goalie.
+Respond in 2-3 sharp sentences. Lead with the most important factor. Be direct.""",
+
+    "Baseball": """You are a sharp MLB betting analyst.
+You specialize in: starting pitcher ERA/FIP/xFIP differential, bullpen availability (recent workload),
+platoon advantages (L vs R matchups), park factors, day/night splits, and run line vs moneyline value.
+Key edge areas: elite SP heavy favorite where the bullpen becomes a liability, road dogs with ace starters, 
+high totals in launching pad parks.
+Respond in 2-3 sharp sentences. Lead with the pitching matchup insight. Be direct.""",
+}
+
+def get_sport_group(league_name):
+    return LEAGUES.get(league_name, {}).get("group", "Soccer")
+
+def get_ai_analysis(away_team, home_team, league, sport_group,
+                    away_rec, home_rec, best_label, ev, prob_pct,
+                    home_pct, away_pct, draw_pct, dq):
+    """
+    Rule-based sport analyst — generates sharp contextual insight
+    from the numbers without any external API call.
+    Each sport has its own logic tree.
+    """
+    fav    = home_team if home_pct > away_pct else away_team
+    dog    = away_team if home_pct > away_pct else home_team
+    fav_p  = max(home_pct, away_pct)
+    dog_p  = min(home_pct, away_pct)
+    spread = fav_p - dog_p          # how lopsided
+    is_home_fav = home_pct > away_pct
+    pick_is_home = home_team in best_label
+    pick_is_dog  = dog in best_label
+
+    # ── Basketball ────────────────────────────────────────────────────────────
+    if sport_group == "Basketball":
+        if ev > 20:
+            note = f"El modelo detecta edge significativo (+{ev:.0f} EV) — probable ineficiencia de línea o valor real en {best_label}."
+        elif spread > 30:
+            note = f"{fav} domina con {fav_p:.0f}% de probabilidad. Con spreads tan grandes, busca el puck line o handicap alternativo para mejor valor."
+        elif pick_is_dog and dog_p > 35:
+            note = f"{dog} como underdog a {dog_p:.0f}% — los equipos de visitante con más del 35% de probabilidad suelen tener valor real en el moneyline."
+        elif dq < 30:
+            note = f"DQ baja ({dq:.0f}%) — sin líneas ESPN. Modelo basado en récords de temporada. Confirma el spread actual en tu casa antes de apostar."
+        else:
+            note = f"Partido equilibrado ({home_team} {home_pct:.0f}% / {away_team} {away_pct:.0f}%). El valor está en {best_label} con EV simulado de +{ev:.1f}."
+
+    # ── Soccer ────────────────────────────────────────────────────────────────
+    elif sport_group == "Soccer":
+        if "Ambos Anotan" in best_label:
+            if prob_pct > 70:
+                note = f"BTTS a {prob_pct:.0f}% — ambos equipos tienen tendencia ofensiva. El mercado de goles es más predecible que el resultado."
+            else:
+                note = f"BTTS a {prob_pct:.0f}% con EV +{ev:.1f}. Considera que equipos defensivos pueden cambiar la dinámica si hay motivación táctica."
+        elif "Over 2.5" in best_label:
+            note = f"Modelo proyecta partido con >2.5 goles ({prob_pct:.0f}%). El encuentro {away_team} @ {home_team} favorece líneas ofensivas según simulación Poisson."
+        elif "Over 1.5" in best_label:
+            note = f"Over 1.5 a {prob_pct:.0f}% — línea conservadora pero sólida. Solo un empate 0-0 o 1-0 lo arruina. Útil como leg de parlay."
+        elif draw_pct > 27 and not pick_is_home:
+            note = f"Empate en {draw_pct:.0f}% — partidos con equipos tan parejos frecuentemente terminan igualados. Considera la doble oportunidad como cobertura."
+        elif spread < 12:
+            note = f"Partido muy parejo ({home_team} {home_pct:.0f}% / {away_team} {away_pct:.0f}%). Alta probabilidad de empate ({draw_pct:.0f}%) — el mercado de goles puede tener mejor valor."
+        else:
+            note = f"{fav} favorito con {fav_p:.0f}% de probabilidad. {'Ventaja de local significativa.' if is_home_fav else 'El visitante llega con mejor forma según registros.'}"
+
+    # ── Football ──────────────────────────────────────────────────────────────
+    elif sport_group == "Football":
+        if spread > 35:
+            note = f"{fav} es favorito masivo ({fav_p:.0f}%). En NFL, cubrir spreads grandes es difícil — considera el total de puntos como mercado alternativo."
+        elif pick_is_dog and dog_p > 30:
+            note = f"{dog} como underdog ({dog_p:.0f}%) tiene valor histórico — los equipos de casa con más del 30% de prob. contra favoritos cubren ATS con mayor frecuencia."
+        elif dq < 30:
+            note = f"Sin líneas ESPN disponibles (DQ {dq:.0f}%). El modelo usa récords de temporada. Verifica el spread oficial en DraftKings o FanDuel."
+        else:
+            note = f"Modelo da {fav} como favorito ({fav_p:.0f}% vs {dog_p:.0f}%). EV de +{ev:.1f} sugiere que la línea actual subestima ligeramente a {fav if pick_is_home == is_home_fav else dog}."
+
+    # ── Tennis ────────────────────────────────────────────────────────────────
+    elif sport_group == "Tennis":
+        if spread > 40:
+            note = f"{fav} domina con {fav_p:.0f}% — diferencia de ranking importante. En tenis, favoritos tan marcados suelen ganar en sets directos."
+        elif spread < 10:
+            note = f"Partido muy parejo ({home_pct:.0f}% / {away_pct:.0f}%). En tenis H2H y superficie son determinantes — el EV de +{ev:.1f} sugiere ineficiencia de línea."
+        elif pick_is_dog:
+            note = f"{dog} como underdog a {dog_p:.0f}% — upsets en tenis son comunes (30%+ de prob.). Moneyline de underdog puede tener valor real si la superficie favorece su juego."
+        elif dq < 30:
+            note = f"Sin momios ESPN para tenis (DQ {dq:.0f}%). Modelo basado en probabilidades estimadas. Confirma en Bet365 o Pinnacle antes de apostar."
+        else:
+            note = f"{fav} favorito ({fav_p:.0f}%). En tenis el servicio y la superficie son decisivos — verifica récords en la superficie actual del torneo."
+
+    # ── Hockey ────────────────────────────────────────────────────────────────
+    elif sport_group == "Hockey":
+        if "ML" in best_label and fav_p > 65:
+            note = f"{fav} favorito sólido ({fav_p:.0f}%). En NHL considera el puck line (-1.5) si hay diferencia clara de goalie — mejor valor que el moneyline puro."
+        elif spread < 15:
+            note = f"NHL es el deporte más parejo ({home_pct:.0f}%/{away_pct:.0f}%). Con líneas tan cerradas, el goalie titular es el factor más importante — verifica los lineups."
+        elif dq < 30:
+            note = f"Sin líneas ESPN para hockey (DQ {dq:.0f}%). Verifica momios y el goalie confirmado antes de apostar — cambia todo el cálculo."
+        else:
+            note = f"{fav} con {fav_p:.0f}% de prob. El modelo EV de +{ev:.1f} asume cuotas estándar. Compara contra líneas reales de tu casa para confirmar el edge."
+
+    # ── Baseball ─────────────────────────────────────────────────────────────
+    elif sport_group == "Baseball":
+        if spread > 25:
+            note = f"{fav} favorito claro ({fav_p:.0f}%). En MLB esto suele reflejar una ventaja de pitcheo — verifica el abridor confirmado antes de hacer la apuesta."
+        elif spread < 10:
+            note = f"Partido muy parejo en béisbol ({home_pct:.0f}%/{away_pct:.0f}%). El run line (-1.5) del underdog puede tener valor si el bullpen del favorito es débil."
+        elif dq < 30:
+            note = f"Sin líneas ESPN disponibles (DQ {dq:.0f}%). El resultado en MLB depende 60%+ del pitcheo — confirma los abridores antes de apostar."
+        else:
+            note = f"EV de +{ev:.1f} en {best_label}. En béisbol el abridor y el park factor son clave — partido en estadio ofensivo aumenta valor de totales altos."
+
+    # ── Fallback ──────────────────────────────────────────────────────────────
+    else:
+        note = f"Modelo simulado: {fav} {fav_p:.0f}% vs {dog} {dog_p:.0f}%. Pick recomendado: {best_label} con EV +{ev:.1f}."
+
+    return note
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MATH ENGINE
@@ -615,10 +853,41 @@ def ml_to_prob(ml):
     except: return 0.5
 
 def win_pct(rec):
+    """Parse W-L or W-L-D record, return win% or None if insufficient data."""
     try:
-        p=rec.strip().split("-"); w,l=int(p[0]),int(p[1])
-        return w/(w+l) if (w+l)>=5 else None
-    except: return None
+        p = rec.strip().split("-")
+        w, l = int(p[0]), int(p[1])
+        # For soccer W-L-D records, include draws as 0.5 wins
+        d = int(p[2]) if len(p) >= 3 else 0
+        total = w + l + d
+        return (w + d * 0.5) / total if total >= 5 else None
+    except:
+        return None
+
+def win_pct_strict(rec):
+    """Parse W-L only (no draws), return win% or None."""
+    try:
+        p = rec.strip().split("-")
+        w, l = int(p[0]), int(p[1])
+        return w / (w + l) if (w + l) >= 5 else None
+    except:
+        return None
+
+# ── League-level historical home win rates (used when no record data available)
+# Source: multi-season averages. Home advantage is real but varies by sport.
+LEAGUE_HOME_RATE = {
+    "NBA": 0.595, "WNBA": 0.570, "NCAAB": 0.620,
+    "MLB": 0.540, "NCAA Baseball": 0.540,
+    "NFL": 0.570, "NCAAF": 0.610,
+    "NHL": 0.550,
+    "MLS": 0.480, "Liga MX": 0.485,
+    "Premier League": 0.460, "La Liga": 0.470, "Bundesliga": 0.465,
+    "Serie A": 0.455, "Ligue 1": 0.455,
+    "Champions League": 0.475, "Europa League": 0.465,
+    "Conference League": 0.460, "CONCACAF Champions Cup": 0.480,
+    "Liga de Expansión": 0.480,
+    "ATP": 0.500, "WTA": 0.500,  # No home court in tennis
+}
 
 def calc_ev(prob, ml):
     try:
@@ -642,42 +911,136 @@ def poisson_sample(lam, rng):
     return k-1
 
 def compute_base_prob(game):
-    signals,weights=[],[]
-    odds=game["odds"]; league=game["league"]
-    is_soccer=LEAGUES.get(league,{}).get("group")=="Soccer"
-    hwp=odds.get("home_wp",""); awp=odds.get("away_wp","")
+    """
+    Multi-signal probability estimator. Signals by descending reliability:
+      1. Moneyline (vig-adjusted)         weight 4.0  — best signal, market consensus
+      2. ESPN win% (from odds block)      weight 3.0  — ESPN's own model
+      3. Record ratio (W-L-D)             weight 2.0  — season performance
+      4. League home rate prior           weight 0.6  — fallback when no data
+
+    DQ (data quality) = how much hard evidence we have, 0-100%.
+    When DQ is low, Monte Carlo uncertainty (sigma) is higher.
+    """
+    signals, weights = [], []
+    odds   = game["odds"]
+    league = game["league"]
+    is_soccer = LEAGUES.get(league, {}).get("group") == "Soccer"
+    is_tennis = LEAGUES.get(league, {}).get("group") == "Tennis"
+
+    # ── Signal 1: Moneyline (strongest — vig-adjusted market probability) ──────
+    hml = odds.get("home_ml", ""); aml = odds.get("away_ml", "")
+    if hml and aml:
+        hp = ml_to_prob(hml); ap = ml_to_prob(aml); vig = hp + ap
+        if 1.0 < vig < 1.30:
+            signals.append(hp / vig)
+            weights.append(4.0)
+
+    # ── Signal 2: ESPN win probability (their model) ──────────────────────────
+    hwp = odds.get("home_wp", ""); awp = odds.get("away_wp", "")
     if hwp and awp:
         try:
-            hw=float(str(hwp).replace("%",""))/100; aw=float(str(awp).replace("%",""))/100
-            if 0<hw<1 and 0<aw<1: signals.append(hw/(hw+aw)); weights.append(3.0)
+            hw = float(str(hwp).replace("%", "")) / 100
+            aw = float(str(awp).replace("%", "")) / 100
+            if 0 < hw < 1 and 0 < aw < 1:
+                signals.append(hw / (hw + aw))
+                weights.append(3.0)
         except: pass
-    hml=odds.get("home_ml",""); aml=odds.get("away_ml","")
-    if hml and aml:
-        hp=ml_to_prob(hml); ap=ml_to_prob(aml); vig=hp+ap
-        if 1.0<vig<1.25: signals.append(hp/vig); weights.append(4.0)
-    hrec=win_pct(game.get("home_record","")); arec=win_pct(game.get("away_record",""))
+
+    # ── Signal 3: Season records ──────────────────────────────────────────────
+    hrec_raw = game.get("home_record", "")
+    arec_raw = game.get("away_record", "")
+    hrec = win_pct(hrec_raw)
+    arec = win_pct(arec_raw)
+
     if hrec is not None and arec is not None:
-        t=hrec+arec
-        if t>0: signals.append(hrec/t); weights.append(1.5)
-    elif hrec is not None: signals.append(hrec); weights.append(0.8)
-    elif arec is not None: signals.append(1-arec); weights.append(0.8)
-    home_p=sum(s*w for s,w in zip(signals,weights))/sum(weights) if signals else 0.5
-    home_p=min(0.95,max(0.05,home_p+HOME_BOOST.get(league,0.03)))
-    dq=min(1.0,sum(weights)/8.0)
+        total = hrec + arec
+        if total > 0:
+            signals.append(hrec / total)
+            weights.append(2.0)
+    elif hrec is not None:
+        # Only have home team record — compare against league average
+        league_avg = LEAGUE_HOME_RATE.get(league, 0.50)
+        # Blend team record with league home rate
+        blended = (hrec * 0.6 + league_avg * 0.4)
+        signals.append(blended)
+        weights.append(1.2)
+    elif arec is not None:
+        league_avg = LEAGUE_HOME_RATE.get(league, 0.50)
+        blended = ((1 - arec) * 0.6 + league_avg * 0.4)
+        signals.append(blended)
+        weights.append(1.2)
+
+    # ── Signal 4: League historical home rate (prior / fallback) ─────────────
+    # Always add as a weak anchor — prevents wild swings when data is thin
+    league_prior = LEAGUE_HOME_RATE.get(league, 0.50)
+    signals.append(league_prior)
+    weights.append(0.6)  # Low weight — just a prior, not evidence
+
+    # ── Combine signals ───────────────────────────────────────────────────────
+    home_p = sum(s * w for s, w in zip(signals, weights)) / sum(weights)
+
+    # Apply home field boost (on top of signal blend)
+    # Don't double-count if ML already includes home advantage
+    has_ml = bool(hml and aml)
+    boost = HOME_BOOST.get(league, 0.03) * (0.3 if has_ml else 1.0)
+    home_p = min(0.95, max(0.05, home_p + boost))
+
+    # ── Data Quality ──────────────────────────────────────────────────────────
+    # DQ = fraction of "hard evidence" weight vs ideal (ML=4 + ESPN=3 + record=2 = 9)
+    hard_weight = sum(w for s, w in zip(signals, weights)
+                      if w >= 1.2)  # exclude the weak prior
+    dq = min(1.0, hard_weight / 9.0)
+
+    # ── Soccer: model draw probability ───────────────────────────────────────
     if is_soccer:
-        bd=max(0.10,min(0.35,0.28-abs(home_p-0.5)*0.3)); rem=1-bd
-        return {"home_prob":home_p*rem,"away_prob":(1-home_p)*rem,"draw_prob":bd,"dq":dq,"is_soccer":True}
-    return {"home_prob":home_p,"away_prob":1-home_p,"draw_prob":0.0,"dq":dq,"is_soccer":False}
+        # Draw probability: higher when teams are balanced, lower when one dominates
+        balance = 1.0 - abs(home_p - 0.5) * 2  # 0=total mismatch, 1=50/50
+        draw_p  = max(0.10, min(0.32, 0.22 + balance * 0.10))
+        rem     = 1.0 - draw_p
+        return {
+            "home_prob":  home_p * rem,
+            "away_prob":  (1 - home_p) * rem,
+            "draw_prob":  draw_p,
+            "dq":         dq,
+            "is_soccer":  True,
+        }
+
+    return {
+        "home_prob":  home_p,
+        "away_prob":  1.0 - home_p,
+        "draw_prob":  0.0,
+        "dq":         dq,
+        "is_soccer":  False,
+    }
 
 def get_lambda(game):
-    league=game["league"]; avg=LEAGUE_AVG_GOALS.get(league)
-    if avg is None: return None,None
-    ou=game["odds"].get("over_under","")
-    try: total=float(str(ou))
-    except: total=avg*2
-    base=compute_base_prob(game); hp=base["home_prob"]; ap=base["away_prob"]
-    home_share=(hp+0.52)/(hp+ap+1.04)
-    return total*home_share, total*(1-home_share)
+    """
+    Estimate expected goals per team using Poisson model.
+    Uses O/U line when available, otherwise falls back to league historical average.
+    Home team gets slightly more share (home advantage in scoring).
+    """
+    league = game["league"]
+    avg    = LEAGUE_AVG_GOALS.get(league)
+    if avg is None: return None, None  # Tennis / non-goal sport
+
+    ou = game["odds"].get("over_under", "")
+    try:
+        total = float(str(ou))
+        # Sanity check — O/U line sometimes comes in weird formats
+        if total <= 0 or total > 300: raise ValueError
+    except:
+        # No O/U line: use league historical average
+        # Slight noise so identical games get different lambdas
+        total = avg * 2
+
+    base       = compute_base_prob(game)
+    hp         = base["home_prob"]
+    ap         = base["away_prob"]
+    # Home team scores more on average (home advantage in attack)
+    home_share = (hp + 0.52) / (hp + ap + 1.04)
+    lam_home   = max(0.1, total * home_share)
+    lam_away   = max(0.1, total * (1.0 - home_share))
+    return lam_home, lam_away
 
 def run_monte_carlo(game, n=10_000):
     base=compute_base_prob(game)
@@ -843,9 +1206,14 @@ def conf_badge(ev, dq):
     return '<span class="conf-badge conf-low">◆ BAJA</span>'
 
 def dq_warn(dq):
-    if dq==0: return '<span class="market-chip chip-warn">⚠ SIN CUOTAS</span>'
-    if dq<40: return '<span class="market-chip chip-warn">⚠ DATA BAJA</span>'
-    return ""
+    """Show data quality indicator. Only warn when DQ is concerning."""
+    if dq == 0:
+        return '<span class="market-chip chip-warn">⚠ SIN CUOTAS</span>'
+    if dq < 25:
+        return '<span class="market-chip chip-warn">⚠ SOLO RÉCORDS</span>'
+    if dq < 50:
+        return '<span class="market-chip" style="background:rgba(201,168,76,0.15);color:#C9A84C;border:1px solid rgba(201,168,76,0.3)">◈ DQ MEDIA</span>'
+    return ""  # DQ >= 50%: no warning needed
 
 def edge(prob_sim, ml):
     try: return round((prob_sim-ml_to_prob(float(str(ml).replace("+",""))))*100,1)
@@ -925,6 +1293,31 @@ def render_pick_card(r, rank=None):
     chip_html = chip(bs["market"])
     status    = r.get("status_detail", "")
 
+    # ── AI Sport Analyst (only for top picks to save API calls) ──────────────
+    ai_html = ""
+    sport_group = LEAGUES.get(r["league"], {}).get("group", "Soccer")
+    ai_text = get_ai_analysis(
+        away_team=r["away_team"], home_team=r["home_team"],
+        league=r["league"], sport_group=sport_group,
+        away_rec=r.get("away_record",""), home_rec=r.get("home_record",""),
+        best_label=bs["label"], ev=ev_val, prob_pct=prob_pct,
+        home_pct=sim.get("home_pct", 50), away_pct=sim.get("away_pct", 50),
+        draw_pct=sim.get("draw_pct", 0), dq=dq,
+    )
+    if ai_text:
+        sport_icon = {"Basketball":"🏀","Soccer":"⚽","Football":"🏈","Tennis":"🎾","Hockey":"🏒","Baseball":"⚾"}.get(sport_group,"🎯")
+        ai_html = (
+            '<div style="margin-top:10px;padding:10px 14px;'
+            'background:rgba(201,168,76,0.06);border-left:3px solid rgba(201,168,76,0.5);'
+            'border-radius:0 6px 6px 0">'
+            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.65rem;'
+            'color:rgba(201,168,76,0.6);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px">'
+            + sport_icon + ' Análisis ' + sport_group + ' · Claude</div>'
+            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.82rem;'
+            'color:#b8c8b0;line-height:1.65">' + ai_text + '</div>'
+            '</div>'
+        )
+
     return (
         '<div class="pick-card">'
           '<div class="pick-header">'
@@ -966,6 +1359,7 @@ def render_pick_card(r, rank=None):
               '</div>'
             '</div>'
             + goals_html
+            + ai_html
           + '</div>'
         '</div>'
     )
@@ -977,22 +1371,46 @@ def render_parlay_card(r):
     conf=conf_badge(bp["ev"],sim["data_quality"])
     legs_html=""
     for i,leg in enumerate(bp["legs"]):
-        legs_html+=f'<div class="parlay-leg">{chip(leg[0])}<span>{leg[1]}</span><span style="color:#4ade80;margin-left:auto">{leg[2]*100:.1f}%</span></div>'
+        legs_html+=(
+            '<div class="parlay-leg">'
+            + chip(leg[0])
+            + '<span style="font-family:\'Cinzel\',sans-serif;font-size:0.95rem;color:#E0F7F0;margin-left:8px">' + leg[1] + '</span>'
+            + '<span style="color:#2EE8C0;margin-left:auto;font-family:\'Cinzel\',serif;font-weight:700">' + str(round(leg[2]*100,1)) + '%</span>'
+            + '</div>'
+        )
         if i<len(bp["legs"])-1:
-            legs_html+='<div class="parlay-connector">+ COMBINADA +</div>'
-    return f"""<div class="parlay-card">
-      <div class="parlay-header">🎰 PARLAY — {r['away_team']} @ {r['home_team']} · {r['league']}</div>
-      <div class="parlay-body">
-        {legs_html}
-        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid rgba(26,188,156,0.15)">
-          <div class="stat-item"><div class="stat-item-val val-green">{bp['prob']*100:.1f}%</div><div class="stat-item-lbl">Prob. Combo</div></div>
-          <div class="stat-item"><div class="stat-item-val val-cyan">+{bp['payout']:.0f}</div><div class="stat-item-lbl">Pago / $100</div></div>
-          <div class="stat-item"><div class="stat-item-val val-gold">+{bp['ev']:.1f}</div><div class="stat-item-lbl">EV / $100</div></div>
-          <div class="stat-item">{conf}</div>
-        </div>
-        {"<div class='warn-banner' style='margin-top:8px'>⚠ DQ 0% — Sin cuotas reales. Verifica precios en tu casa antes de apostar.</div>" if sim["data_quality"]==0 else ""}
-      </div>
-    </div>"""
+            legs_html+='<div class="parlay-connector" style="color:#1ABC9C;font-size:0.75rem;text-align:center;padding:4px 0;letter-spacing:3px">⊕ COMBINADA ⊕</div>'
+
+    dq_warn_html = ('<div class="warn-banner" style="margin-top:8px">'
+                    '⚠ DQ 0% — Sin cuotas reales. Verifica precios antes de apostar.</div>'
+                    if sim["data_quality"]==0 else "")
+    return (
+        '<div class="parlay-card">'
+          '<div class="parlay-header">'
+            '🎰 &nbsp;PARLAY &nbsp;·&nbsp; ' + r["away_team"] + ' @ ' + r["home_team"] + ' &nbsp;·&nbsp; ' + r["league"]
+          + '</div>'
+          '<div class="parlay-body">'
+            + legs_html
+            + '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px;padding-top:12px;'
+              'border-top:1px solid rgba(26,188,156,0.2)">'
+              '<div class="stat-item">'
+                '<div class="stat-item-val" style="color:#2EE8C0;font-size:1.4rem">' + str(round(bp["prob"]*100,1)) + '%</div>'
+                '<div class="stat-item-lbl">Prob. Combo</div>'
+              '</div>'
+              '<div class="stat-item">'
+                '<div class="stat-item-val val-cyan" style="font-size:1.4rem">+' + str(round(bp["payout"],0))[:-2] + '</div>'
+                '<div class="stat-item-lbl">Pago / $100</div>'
+              '</div>'
+              '<div class="stat-item">'
+                '<div class="stat-item-val val-gold" style="font-size:1.4rem">+' + str(round(bp["ev"],1)) + '</div>'
+                '<div class="stat-item-lbl">EV / $100</div>'
+              '</div>'
+              '<div class="stat-item">' + conf + '</div>'
+            '</div>'
+            + dq_warn_html
+          + '</div>'
+        '</div>'
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR
@@ -1184,7 +1602,8 @@ with tab_sim:
             if sim["use_goals"] and sim.get("p_btts") is not None:
                 btc="#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
                 o2c="#C9A84C" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
-                goals_line=f'<div style="font-size:0.72rem;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap"><span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span><span style="color:{o2c}">📊 O2.5 {sim["p_o25"]}%</span><span style="color:#6B7E6E">O1.5 {sim["p_o15"]}%</span><span style="color:#6B7E6E">O3.5 {sim["p_o35"]}%</span></div>'
+                dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
+            goals_line=f'<div style="font-size:0.72rem;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap"><span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span><span style="color:{o2c}">📊 O2.5 {sim["p_o25"]}%</span><span style="color:#6B7E6E">O1.5 {sim["p_o15"]}%</span><span style="color:#6B7E6E">O3.5 {sim["p_o35"]}%</span><span style="color:#3a4a3e;margin-left:auto">fuente: {dq_src}</span></div>'
 
             st.markdown(f"""<div class="{card_cls}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
