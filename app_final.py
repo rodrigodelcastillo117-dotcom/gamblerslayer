@@ -832,21 +832,121 @@ def parse_games(data, league_name):
         except: continue
     return games
 
+@st.cache_data(ttl=300)
+def fetch_tsdb_tennis():
+    """
+    TheSportsDB fallback for tennis — no API key needed (uses public key '3').
+    Returns list of normalized game dicts compatible with the rest of the app.
+    Endpoint: /api/v1/json/3/eventsday.php?d=YYYY-MM-DD&s=Tennis
+    Fields used: strHomeTeam, strAwayTeam, intHomeScore, intAwayScore,
+                 strStatus, strTime, strLeague, idEvent
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    url   = f"https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d={today}&s=Tennis"
+    try:
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return []
+        events = r.json().get("events") or []
+    except:
+        return []
+
+    games = []
+    for ev in events:
+        try:
+            league_raw = ev.get("strLeague", "")
+            # Map TSDB league names → our league names
+            if "WTA" in league_raw or "Women" in league_raw.lower():
+                league_name = "Indian Wells WTA" if "Indian Wells" in league_raw or "BNP" in league_raw else "WTA"
+            else:
+                league_name = "Indian Wells ATP" if "Indian Wells" in league_raw or "BNP" in league_raw else "ATP"
+
+            status_raw = (ev.get("strStatus") or "").lower()
+            if status_raw in ("finished", "ft", "aet", "pen"):
+                state = "post"
+            elif status_raw in ("live", "in progress", "1st set", "2nd set", "3rd set", "4th set", "5th set"):
+                state = "in"
+            else:
+                state = "pre"
+
+            hs = ev.get("intHomeScore") or ""
+            as_ = ev.get("intAwayScore") or ""
+            detail = ev.get("strStatus") or ev.get("strTime") or ""
+            round_info = ev.get("strRound") or ev.get("intRound") or ""
+            if round_info:
+                detail = f"R{round_info} · {detail}" if detail else f"R{round_info}"
+
+            games.append({
+                "id":            ev.get("idEvent", ""),
+                "league":        league_name,
+                "home_team":     ev.get("strHomeTeam", "Player 1"),
+                "away_team":     ev.get("strAwayTeam", "Player 2"),
+                "home_score":    str(hs) if hs != "" else "",
+                "away_score":    str(as_) if as_ != "" else "",
+                "home_record":   "",
+                "away_record":   "",
+                "state":         state,
+                "status_detail": detail,
+                "date":          ev.get("dateEvent", ""),
+                "venue":         ev.get("strVenue") or ev.get("strCountry") or "",
+                "odds":          {},
+                "live_stats":    None,
+                "source":        "tsdb",
+            })
+        except:
+            continue
+    return games
+
+
 def get_all_games(leagues):
     result=[]; errors=[]
-    for name in leagues:
+    tennis_leagues = [n for n in leagues if LEAGUES[n]["group"] == "Tennis"]
+    other_leagues  = [n for n in leagues if LEAGUES[n]["group"] != "Tennis"]
+
+    # ── Non-tennis leagues via ESPN ───────────────────────────────────────────
+    for name in other_leagues:
+        cfg=LEAGUES[name]
+        try:
+            data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=cfg.get("tournament_id"))
+            result.extend(parse_games(data, name))
+        except Exception as e: errors.append(f"{name}: {e}")
+
+    # ── Tennis: ESPN first, TheSportsDB as fallback ───────────────────────────
+    tennis_found = []
+    for name in tennis_leagues:
         cfg=LEAGUES[name]
         try:
             tid  = cfg.get("tournament_id")
             data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=tid)
-            if cfg["group"] == "Tennis":
-                parsed = parse_tennis(data, name)
-                if not parsed:
-                    parsed = parse_games(data, name)
-            else:
-                parsed = parse_games(data, name)
-            result.extend(parsed)
-        except Exception as e: errors.append(f"{name}: {e}")
+            parsed = parse_tennis(data, name) or parse_games(data, name)
+            tennis_found.extend(parsed)
+        except Exception as e:
+            errors.append(f"{name} (ESPN): {e}")
+
+    if not tennis_found and tennis_leagues:
+        # ESPN returned nothing for any tennis league → try TheSportsDB
+        try:
+            tsdb_games = fetch_tsdb_tennis()
+            # Filter to only leagues we have configured
+            configured = set(tennis_leagues)
+            for g in tsdb_games:
+                # Accept if league matches or if we have generic ATP/WTA configured
+                if g["league"] in configured:
+                    tennis_found.append(g)
+                elif "ATP" in g["league"] and any("ATP" in n for n in configured):
+                    # Remap to first matching ATP league
+                    g["league"] = next(n for n in configured if "ATP" in n)
+                    tennis_found.append(g)
+                elif "WTA" in g["league"] and any("WTA" in n for n in configured):
+                    g["league"] = next(n for n in configured if "WTA" in n)
+                    tennis_found.append(g)
+            if tsdb_games and not tennis_found:
+                # Accept all tsdb games even if league doesn't match
+                tennis_found = tsdb_games
+        except Exception as e:
+            errors.append(f"TheSportsDB tennis fallback: {e}")
+
+    result.extend(tennis_found)
     return result, errors
 
 
