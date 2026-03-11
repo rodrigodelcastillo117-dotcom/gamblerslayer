@@ -898,6 +898,28 @@ def fetch_tsdb_tennis():
     return games
 
 
+SOCCER_KEYWORDS = {
+    "fc", "cf", "sc", "ac", "as", "rc", "sd", "cd", "ud", "real", "atletico",
+    "united", "city", "wanderers", "victory", "rovers", "athletic", "sporting",
+    "dynamo", "dynamo", "olympic", "olimpia", "deportivo", "county", "rangers",
+    "hotspur", "rovers", "albion", "wednesday", "palace", "villa", "forest",
+    "wednesday", "county", "wanderers", "rovers", "celtic", "arsenal", "chelsea",
+}
+
+def _is_tennis_match(home, away):
+    """Return True if both names look like tennis players (not soccer clubs)."""
+    def looks_like_player(name):
+        parts = name.lower().split()
+        # Reject if any word is a known club keyword
+        if any(p in SOCCER_KEYWORDS for p in parts):
+            return False
+        # Reject names longer than 4 words (team names tend to be long)
+        if len(parts) > 4:
+            return False
+        return True
+    return looks_like_player(home) and looks_like_player(away)
+
+
 def get_all_games(leagues):
     result=[]; errors=[]
     tennis_leagues = [n for n in leagues if LEAGUES[n]["group"] == "Tennis"]
@@ -911,42 +933,44 @@ def get_all_games(leagues):
             result.extend(parse_games(data, name))
         except Exception as e: errors.append(f"{name}: {e}")
 
-    # ── Tennis: ESPN first, TheSportsDB as fallback ───────────────────────────
-    tennis_found = []
+    # ── Tennis: ESPN first ────────────────────────────────────────────────────
+    tennis_espn = []
     for name in tennis_leagues:
         cfg=LEAGUES[name]
         try:
             tid  = cfg.get("tournament_id")
             data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=tid)
-            parsed = parse_tennis(data, name) or parse_games(data, name)
-            tennis_found.extend(parsed)
+            # NEVER fall back to parse_games for tennis — it would parse soccer
+            parsed = parse_tennis(data, name)
+            # Extra guard: filter out any non-tennis names that slipped through
+            parsed = [g for g in parsed if _is_tennis_match(g["home_team"], g["away_team"])]
+            tennis_espn.extend(parsed)
         except Exception as e:
             errors.append(f"{name} (ESPN): {e}")
 
-    if not tennis_found and tennis_leagues:
-        # ESPN returned nothing for any tennis league → try TheSportsDB
+    # ── TheSportsDB fallback — ALWAYS try if ESPN gave us nothing ─────────────
+    if not tennis_espn and tennis_leagues:
         try:
             tsdb_games = fetch_tsdb_tennis()
-            # Filter to only leagues we have configured
             configured = set(tennis_leagues)
             for g in tsdb_games:
-                # Accept if league matches or if we have generic ATP/WTA configured
+                if not _is_tennis_match(g["home_team"], g["away_team"]):
+                    continue
                 if g["league"] in configured:
-                    tennis_found.append(g)
+                    tennis_espn.append(g)
                 elif "ATP" in g["league"] and any("ATP" in n for n in configured):
-                    # Remap to first matching ATP league
                     g["league"] = next(n for n in configured if "ATP" in n)
-                    tennis_found.append(g)
+                    tennis_espn.append(g)
                 elif "WTA" in g["league"] and any("WTA" in n for n in configured):
                     g["league"] = next(n for n in configured if "WTA" in n)
-                    tennis_found.append(g)
-            if tsdb_games and not tennis_found:
-                # Accept all tsdb games even if league doesn't match
-                tennis_found = tsdb_games
+                    tennis_espn.append(g)
+            # If still nothing matched by league, accept all validated TSDB games
+            if tsdb_games and not tennis_espn:
+                tennis_espn = [g for g in tsdb_games if _is_tennis_match(g["home_team"], g["away_team"])]
         except Exception as e:
             errors.append(f"TheSportsDB tennis fallback: {e}")
 
-    result.extend(tennis_found)
+    result.extend(tennis_espn)
     return result, errors
 
 
@@ -1765,7 +1789,7 @@ st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab_picks, tab_sim, tab_parlays, tab_all = st.tabs([
-    "🎯  PICKS DEL DÍA",
+    "🃏  RONGOL PICKS",
     f"🎲  SIMULACIONES  ({n_sims:,}×)",
     "🎰  PARLAYS",
     "📋  PARTIDOS",
@@ -1791,12 +1815,12 @@ with tab_picks:
             st.markdown('<div class="warn-banner">No se encontraron apuestas con EV positivo hoy. Intenta con más ligas o espera actualización de cuotas.</div>',unsafe_allow_html=True)
         else:
             # TOP PICK
-            st.markdown('<div class="section-heading">♠ Pick Principal</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading">💎 PICK DIAMANTE</div>', unsafe_allow_html=True)
             st.markdown(render_pick_card(all_bets[0]), unsafe_allow_html=True)
 
             # REST
             if len(all_bets)>1:
-                st.markdown(f'<div class="section-heading">♣ Value Bets ({len(all_bets)-1})</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="section-heading">🔥 PICKS FUEGO ({len(all_bets)-1})</div>', unsafe_allow_html=True)
                 for i,r in enumerate(all_bets[1:7],2):
                     st.markdown(render_pick_card(r,rank=i), unsafe_allow_html=True)
 
