@@ -130,7 +130,7 @@ def _gemini(prompt: str, system: str = "", use_search: bool = False,
     if _cl_key:
         try:
             _body_c = {
-                "model":       "claude-sonnet-4-20250514",
+                "model":       "claude-sonnet-4-6",
                 "max_tokens":  max(max_tokens, 512),
                 "temperature": temperature,
                 "messages":    [{"role": "user", "content": prompt}],
@@ -7421,7 +7421,7 @@ Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad,
         _cl_key = ANTHROPIC_API_KEY
         if not _cl_key: return {}
         _body_p = {
-            "model":      "claude-sonnet-4-20250514",
+            "model":      "claude-sonnet-4-6",
             "max_tokens": 1600,
             "temperature": 0.3,
             "messages": [{
@@ -7860,7 +7860,7 @@ def render_einstein_califica(key_sfx="fut"):
                 _cl_key_e = ANTHROPIC_API_KEY
                 if not _cl_key_e: raise ValueError("Sin ANTHROPIC_API_KEY")
                 _ein_body = {
-                    "model": "claude-sonnet-4-20250514",
+                    "model": "claude-sonnet-4-6",
                     "max_tokens": 1900,
                     "temperature": 0.3,
                     "messages": [{"role": "user", "content": [
@@ -11515,21 +11515,56 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
         _frm_ph = dc["ph"]; _frm_pd = dc["pd"]; _frm_pa = dc["pa"]
         _has_frm = False
 
-    # ── Pesos dinámicos — ahora 5 modelos reales ──
-    if has_mkt and h2h_valid and _has_frm:
-        w = {"dc":0.28,"bvp":0.20,"elo":0.12,"h2h":0.13,"mkt":0.15,"frm":0.12}
+    # ── MODELO 6: Bet365 no-vig — el mercado más sharp disponible ──
+    # Peso 0.20 cuando está disponible — es la señal más informada porque
+    # refleja miles de apostadores + modelos sharp de Bet365.
+    _b365_ph = _b365_pd = _b365_pa = 0.0
+    _has_b365 = False
+    try:
+        _b365_data = _b365_market_consensus(home, away, sport_id=1)
+        if _b365_data.get("found"):
+            _b365_ph = _b365_data["ph_novig"]
+            _b365_pd = _b365_data["pd_novig"]
+            _b365_pa = _b365_data["pa_novig"]
+            _has_b365 = _b365_ph > 0 and _b365_pa > 0
+            # xG implícito del mercado → mezclar con xG del modelo
+            _b365_xg_h = _b365_data.get("xg_home_impl", 0)
+            _b365_xg_a = _b365_data.get("xg_away_impl", 0)
+            if _b365_xg_h > 0 and _b365_xg_a > 0:
+                hxg = hxg * 0.60 + _b365_xg_h * 0.40
+                axg = axg * 0.60 + _b365_xg_a * 0.40
+    except: pass
+
+    # ── Pesos dinámicos — 6 modelos: DC, BVP, ELO, H2H, MKT, FRM, B365 ──
+    # B365 peso 0.20 cuando está — señal más informada del mercado real.
+    if _has_b365 and has_mkt and h2h_valid and _has_frm:
+        w = {"dc":0.18,"bvp":0.13,"elo":0.09,"h2h":0.10,"mkt":0.10,"frm":0.10,"b365":0.20}
+    elif _has_b365 and has_mkt and _has_frm:
+        w = {"dc":0.18,"bvp":0.14,"elo":0.10,"h2h":0.05,"mkt":0.10,"frm":0.10,"b365":0.20}
+    elif _has_b365 and _has_frm:
+        w = {"dc":0.20,"bvp":0.15,"elo":0.10,"h2h":0.05,"mkt":0.00,"frm":0.12,"b365":0.20}
+    elif _has_b365 and has_mkt:
+        w = {"dc":0.20,"bvp":0.15,"elo":0.10,"h2h":0.08,"mkt":0.08,"frm":0.00,"b365":0.20}
+    elif _has_b365:
+        w = {"dc":0.22,"bvp":0.16,"elo":0.12,"h2h":0.08,"mkt":0.00,"frm":0.05,"b365":0.20}
+    elif has_mkt and h2h_valid and _has_frm:
+        w = {"dc":0.28,"bvp":0.20,"elo":0.12,"h2h":0.13,"mkt":0.15,"frm":0.12,"b365":0.00}
     elif has_mkt and _has_frm:
-        w = {"dc":0.28,"bvp":0.22,"elo":0.13,"h2h":0.08,"mkt":0.15,"frm":0.14}
+        w = {"dc":0.28,"bvp":0.22,"elo":0.13,"h2h":0.08,"mkt":0.15,"frm":0.14,"b365":0.00}
     elif has_mkt and h2h_valid:
-        w = {"dc":0.30,"bvp":0.22,"elo":0.13,"h2h":0.15,"mkt":0.15,"frm":0.05}
+        w = {"dc":0.30,"bvp":0.22,"elo":0.13,"h2h":0.15,"mkt":0.15,"frm":0.05,"b365":0.00}
     elif h2h_valid and _has_frm:
-        w = {"dc":0.30,"bvp":0.22,"elo":0.13,"h2h":0.15,"mkt":0.00,"frm":0.20}
+        w = {"dc":0.30,"bvp":0.22,"elo":0.13,"h2h":0.15,"mkt":0.00,"frm":0.20,"b365":0.00}
     elif _has_frm:
-        w = {"dc":0.32,"bvp":0.24,"elo":0.14,"h2h":0.08,"mkt":0.00,"frm":0.22}
+        w = {"dc":0.32,"bvp":0.24,"elo":0.14,"h2h":0.08,"mkt":0.00,"frm":0.22,"b365":0.00}
     elif has_mkt:
-        w = {"dc":0.35,"bvp":0.25,"elo":0.15,"h2h":0.10,"mkt":0.15,"frm":0.00}
+        w = {"dc":0.35,"bvp":0.25,"elo":0.15,"h2h":0.10,"mkt":0.15,"frm":0.00,"b365":0.00}
     else:
-        w = {"dc":0.40,"bvp":0.28,"elo":0.16,"h2h":0.10,"mkt":0.00,"frm":0.06}
+        w = {"dc":0.40,"bvp":0.28,"elo":0.16,"h2h":0.10,"mkt":0.00,"frm":0.06,"b365":0.00}
+
+    # Normalizar pesos a 1.0
+    _wt = sum(w.values())
+    if _wt > 0: w = {k: v/_wt for k,v in w.items()}
 
     # Calibración dinámica basada en Brier Score del historial de picks
     try:
@@ -11539,14 +11574,17 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
     except: pass
 
     ph = (w["dc"]*dc["ph"] + w["bvp"]*bvp["ph"] + w["elo"]*elo_ph
-          + w["h2h"]*h2h_ph + w["mkt"]*mkt_ph + w["frm"]*_frm_ph)
+          + w["h2h"]*h2h_ph + w["mkt"]*mkt_ph + w["frm"]*_frm_ph
+          + w.get("b365",0)*_b365_ph)
     pd = (w["dc"]*dc["pd"] + w["bvp"]*bvp["pd"]
-          + w["h2h"]*h2h_pd + w["mkt"]*mkt_pd + w["frm"]*_frm_pd)
+          + w["h2h"]*h2h_pd + w["mkt"]*mkt_pd + w["frm"]*_frm_pd
+          + w.get("b365",0)*_b365_pd)
     pa = max(0.01, 1-ph-pd)
     s  = ph+pd+pa; ph/=s; pd/=s; pa/=s
 
     all_phs = [dc["ph"], bvp["ph"], elo_ph, h2h_ph]
-    if has_mkt: all_phs.append(mkt_ph)
+    if has_mkt:  all_phs.append(mkt_ph)
+    if _has_b365: all_phs.append(_b365_ph)
     std = float(np.std(all_phs))
     consensus = "🟢 ALTO" if std<0.04 else ("🟡 MEDIO" if std<0.08 else "🔴 BAJO")
 
@@ -12006,53 +12044,78 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
     import json as _ejson
     # ── EINSTEIN prompt by sport ──
     _is_ctx_live = "EN VIVO" in context_str or "🔴" in context_str  # aplica a todos
+
+    # ── Señal Bet365 no-vig si está disponible en context_str ──────
+    _b365_ctx = ""
+    if "B365" in context_str or "Bet365" in context_str or "novig" in context_str.lower():
+        _b365_ctx = "\n[Señal Bet365 incluida en contexto — prioriza estas probabilidades de mercado]\n"
+
     if sport == "futbol":
         _ctx_has_data = len(context_str.strip()) > 40
         _e_prompt = (
-            f"Eres Einstein, analista de fútbol de élite. Tu análisis se basa en DATOS REALES,\n"
-            f"priorizando: 1) posición en tabla y puntos acumulados, 2) calidad histórica del equipo,\n"
-            f"3) forma reciente. IMPORTANTE: la forma reciente puede ser engañosa por rotaciones,\n"
-            f"lesiones temporales o partidos sin importancia. Un equipo de mayor calidad objetiva\n"
-            f"(mejor posición, más puntos, mejor plantilla) SIEMPRE tiene ventaja estructural.\n"
+            f"Eres Einstein, analista de fútbol de élite con acceso a datos de mercado.\n"
+            f"REGLAS CRÍTICAS:\n"
+            f"1. Las cuotas de Bet365 reflejan la PROBABILIDAD REAL del mercado — son tu ancla principal.\n"
+            f"2. La forma reciente de los últimos 5-10 partidos es la señal más importante de momentum.\n"
+            f"3. Lesiones de titulares clave, suspensiones, y alineaciones confirmadas son decisivas.\n"
+            f"4. Un equipo históricamente fuerte con MALA forma reciente (últimos 5 partidos) NO es favorito.\n"
+            f"5. Si Bet365 dice que A es favorito con alta probabilidad, tu prob NO debe alejarse >10% de eso.\n"
             + (f"PARTIDO EN CURSO — analiza con los datos en vivo abajo.\n" if _is_ctx_live else "")
-            + f"Partido: {away} @ {home}\n"
-            f"Jugada Diamante: {pick_lbl} ({pick_prob*100:.1f}%)"
+            + f"\nPartido: {away} @ {home}\n"
+            f"Pick del modelo: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
-            + f"\n{context_str[:400]}\n"
-            + (f"NOTA: Si el contexto anterior tiene datos reales (posición, puntos, calidad),\n"
-               f"úsalos para ajustar tu análisis. Si detectas que el modelo favorece al equipo\n"
-               f"más débil por forma reciente volátil, corrige a favor del equipo de mayor calidad.\n"
-               if _ctx_has_data else
-               f"NOTA: Datos ESPN limitados. Usa tu conocimiento del {away} y {home} esta temporada.\n")
-            + (f"Con los datos en vivo, sigue siendo válido el pick {pick_lbl}? "
-               f"Si el marcador cambió la situación, ajusta tu pick y prob.\n" if _is_ctx_live else "")
-            + f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            + f"\n\nCONTEXTO COMPLETO (xG, forma, tabla, Bet365):\n{context_str[:800]}\n"
+            + _b365_ctx
+            + (f"\nNOTA: Datos ESPN limitados. Usa tu conocimiento actualizado de {away} y {home} "
+               f"incluyendo su forma en los últimos 10 partidos, lesiones y alineaciones recientes.\n"
+               if not _ctx_has_data else "")
+            + (f"\nPARTIDO EN VIVO: Con el marcador actual, ¿sigue siendo válido {pick_lbl}? "
+               f"Ajusta pick y prob según la situación actual.\n" if _is_ctx_live else "")
+            + f"\nResponde SOLO en JSON puro sin texto extra:\n"
+            f"{{\"pick\":\"{pick_lbl}\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
-            f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
+            f"\"alternativa\":\"mercado alternativo si hay mejor opción\","
+            f"\"resumen\":\"2 lineas: por qué este pick y qué dice el mercado\"}}"
         )
+        # Einstein fútbol usa búsqueda web para forma reciente si no hay datos
+        _ein_use_search = not _ctx_has_data and not _is_ctx_live
+
     elif sport == "nba":
         _is_ctx_live = _is_ctx_live or "LIVE" in context_str
         _e_prompt = (
             f"Eres Einstein NBA, analista de baloncesto de élite.\n"
+            f"REGLAS: Las cuotas de Bet365 son tu ancla. La forma reciente (últimos 10 partidos), "
+            f"jugadores lesionados/ausentes y back-to-backs son factores críticos.\n"
             f"Partido: {away} @ {home}\n"
             f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
-            + f"\n{context_str[:400]}\n"
-            f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            + f"\n\nCONTEXTO:\n{context_str[:800]}\n"
+            + _b365_ctx
+            + f"\nResponde SOLO en JSON puro sin texto extra:\n"
+            f"{{\"pick\":\"{pick_lbl}\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
-            f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
+            f"\"alternativa\":\"mercado alternativo si hay mejor opción\","
+            f"\"resumen\":\"2 lineas max\"}}"
         )
+        _ein_use_search = not _is_ctx_live and len(context_str.strip()) < 100
+
     else:  # tenis
         _e_prompt = (
             f"Eres Einstein Tenis, analista de tenis de élite.\n"
+            f"REGLAS: Las cuotas reflejan la probabilidad real. Forma reciente en superficie actual, "
+            f"historial H2H, y estado físico son factores clave.\n"
             f"Partido: {away} vs {home}\n"
             f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
-            + f"\n{context_str[:400]}\n"
-            f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            + f"\n\nCONTEXTO:\n{context_str[:800]}\n"
+            + _b365_ctx
+            + f"\nResponde SOLO en JSON puro sin texto extra:\n"
+            f"{{\"pick\":\"{pick_lbl}\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
-            f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
+            f"\"alternativa\":\"mercado alternativo si hay mejor opción\","
+            f"\"resumen\":\"2 lineas max\"}}"
         )
+        _ein_use_search = False
 
     _einstein = {"pick": pick_lbl, "prob": pick_prob*100, "conf": "Media",
                  "riesgo": "MEDIO", "alternativa": "", "resumen": ""}
@@ -12066,7 +12129,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             _einstein_err = ""
             try:
                 # Sin búsqueda web — usa contexto local para ahorrar tokens Groq
-                _raw_ein = _gemini(_e_prompt, use_search=False, max_tokens=250, json_mode=True)
+                _raw_ein = _gemini(_e_prompt, use_search=_ein_use_search, max_tokens=400, json_mode=True)
                 if not _raw_ein or len(_raw_ein.strip()) < 10:
                     _einstein_err = "Claude no devolvió respuesta"
                 else:
@@ -13499,7 +13562,7 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
                 headers={"x-api-key": _cl_key, "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
                 json={
-                    "model": "claude-sonnet-4-20250514", "max_tokens": 1024,
+                    "model": "claude-sonnet-4-6", "max_tokens": 1024,
                     "temperature": 0.35, "system": system_prompt,
                     "messages": [{"role": "user", "content": user_msg}],
                 }, timeout=60,
@@ -16937,6 +17000,90 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             if _c.get("sport","futbol") == "futbol":
                 try:
                     _b365 = _b365_market_consensus(_home_c, _away_c, sport_id=1)
+
+                    # ── FALLBACK IA: si Bet365 no encontró el partido ──────
+                    if not _b365.get("found"):
+                        try:
+                            _fb_hxg   = _c.get("hxg", 1.2)
+                            _fb_axg   = _c.get("axg", 1.0)
+                            _fb_prob  = _c.get("prob", 0.50)
+                            _fb_mkt   = _c.get("mkt_type", "ML")
+                            _fb_liga  = _c.get("liga", "")
+                            _fb_score = _c.get("score", 5.0)
+                            _fb_models = _c.get("models", {})
+                            _fb_reasoning = _c.get("reasoning","")
+
+                            _fb_prompt = f"""Partido de fútbol: {_home_c} vs {_away_c}
+Liga: {_fb_liga}
+Mercado del pick: {_fb_mkt}
+Probabilidad modelo: {_fb_prob:.1%}
+xG Local: {_fb_hxg:.2f} | xG Visita: {_fb_axg:.2f}
+xG Total: {_fb_hxg+_fb_axg:.2f}
+Score KR actual: {_fb_score:.1f}/10
+Modelos internos: {_fb_models}
+Contexto: {_fb_reasoning[:120]}
+
+Basándote en estos datos estadísticos, estima las siguientes probabilidades de mercado (sin vig):
+Responde SOLO con JSON exactamente así:
+{{"ph_novig":0.00,"pd_novig":0.00,"pa_novig":0.00,"ou25_over_novig":0.00,"btts_yes_novig":0.00,"ah_line":0.0,"xg_total_impl":0.0,"xg_home_impl":0.0,"xg_away_impl":0.0,"confianza":"alta|media|baja"}}
+
+Reglas:
+- ph+pd+pa deben sumar exactamente 1.0
+- ou25_over_novig: prob de que el partido tenga más de 2.5 goles
+- btts_yes_novig: prob de que ambos equipos anoten
+- ah_line: línea del hándicap asiático (negativo si local favorito)
+- xg_total_impl debe ser consistente con ou25_over_novig via Poisson
+- confianza: alta si xG claro (diff>0.5), media si equilibrado, baja si sin datos"""
+
+                            _fb_raw = _gemini(_fb_prompt, json_mode=True, max_tokens=200, temperature=0.1)
+                            _fb_d = {}
+                            try:
+                                import json as _json
+                                _fb_d = _json.loads(_fb_raw) if isinstance(_fb_raw, str) else (_fb_raw if isinstance(_fb_raw, dict) else {})
+                            except: pass
+
+                            if _fb_d and "ph_novig" in _fb_d:
+                                # Normalizar que sumen 1
+                                _s3 = _fb_d.get("ph_novig",0) + _fb_d.get("pd_novig",0) + _fb_d.get("pa_novig",0)
+                                if _s3 > 0:
+                                    _fb_d["ph_novig"] = round(_fb_d["ph_novig"]/_s3, 4)
+                                    _fb_d["pd_novig"] = round(_fb_d.get("pd_novig",0)/_s3, 4)
+                                    _fb_d["pa_novig"] = round(_fb_d["pa_novig"]/_s3, 4)
+
+                                # Construir b365 sintético con flag de origen
+                                _b365 = {
+                                    "found": True,
+                                    "ph_novig":          float(_fb_d.get("ph_novig", _fb_prob)),
+                                    "pd_novig":          float(_fb_d.get("pd_novig", 0.27)),
+                                    "pa_novig":          float(_fb_d.get("pa_novig", 1-_fb_prob-0.27)),
+                                    "ou25_over_novig":   float(_fb_d.get("ou25_over_novig", 0.55)),
+                                    "ou25_under_novig":  round(1 - float(_fb_d.get("ou25_over_novig", 0.55)), 4),
+                                    "ou_lines":          {},
+                                    "btts_yes_novig":    float(_fb_d.get("btts_yes_novig", 0.50)),
+                                    "btts_no_novig":     round(1 - float(_fb_d.get("btts_yes_novig", 0.50)), 4),
+                                    "dnb_home_novig":    0.0,
+                                    "dnb_away_novig":    0.0,
+                                    "dc_1x_novig":       0.0, "dc_x2_novig": 0.0, "dc_12_novig": 0.0,
+                                    "ht_home_novig":     0.0, "ht_draw_novig": 0.0, "ht_away_novig": 0.0,
+                                    "ht_ou_over_novig":  0.0,
+                                    "xg_home_impl":      float(_fb_d.get("xg_home_impl", _fb_hxg)),
+                                    "xg_away_impl":      float(_fb_d.get("xg_away_impl", _fb_axg)),
+                                    "xg_total_impl":     float(_fb_d.get("xg_total_impl", _fb_hxg+_fb_axg)),
+                                    "ah_line":           float(_fb_d.get("ah_line", 0.0)),
+                                    "ah_home_novig":     0.0, "ah_away_novig": 0.0,
+                                    "corners_line":      0.0, "corners_over_novig": 0.0,
+                                    "cards_line":        0.0, "cards_over_novig":   0.0,
+                                    "combo_1x2_ou":      {},
+                                    "market_favorite":   "home" if _fb_d.get("ph_novig",0) >= _fb_d.get("pa_novig",0) else "away",
+                                    "market_fav_prob":   max(_fb_d.get("ph_novig",0), _fb_d.get("pa_novig",0)),
+                                    "market_open_game":  _fb_d.get("ou25_over_novig",0) >= 0.58 and _fb_d.get("btts_yes_novig",0) >= 0.55,
+                                    "b365_raw":          {},
+                                    "source_txt":        f"🤖 IA estimada ({_fb_d.get('confianza','?')}) — Bet365 no disponible",
+                                    "_is_ai_estimated":  True,   # flag para distinguir en UI
+                                    "_ai_confidence":    _fb_d.get("confianza","media"),
+                                }
+                                _c["b365_estimated"] = True
+                        except: pass
                     if _b365.get("found"):
                         _mkt_h   = _b365["ph_novig"]
                         _mkt_a   = _b365["pa_novig"]
@@ -16972,22 +17119,33 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                         _delta_mkt = _mod_prob - _mkt_prob_pick
                         _b365_parts = []
 
+                        # Factor de peso: datos reales de Bet365 pesan más que estimación IA
+                        _is_estimated = _b365.get("_is_estimated") or _c.get("b365_estimated", False)
+                        _ai_conf = _b365.get("_ai_confidence", "media")
+                        _weight = 0.6 if _is_estimated and _ai_conf == "baja" else \
+                                  0.8 if _is_estimated else 1.0
+
                         # ── 1. Confluencia modelo vs mercado 1X2 ──────────────
                         if _mkt_prob_pick > 0:
                             if _delta_mkt >= 0.05:
-                                _b365_bonus = min(1.5, _delta_mkt * 12)
+                                _b365_bonus = min(1.5, _delta_mkt * 12) * _weight
                                 _c["score"] = min(10.0, _c["score"] + _b365_bonus)
-                                _b365_parts.append(f"🎯 Modelo>{_mkt_prob_pick:.0%} mkt(+{_b365_bonus:.1f})")
+                                _src = "🤖" if _is_estimated else "🎯"
+                                _b365_parts.append(f"{_src} Modelo>{_mkt_prob_pick:.0%} mkt(+{_b365_bonus:.1f})")
                             elif abs(_delta_mkt) <= 0.04:
+
                                 _c["score"] = min(10.0, _c["score"] + 0.5)
-                                _b365_parts.append(f"✅ Confluencia B365 {_mkt_prob_pick:.0%}")
+                                _b365_parts.append(f"{'🤖' if _is_estimated else '✅'} Confluencia {'est' if _is_estimated else 'B365'} {_mkt_prob_pick:.0%}")
                             elif _delta_mkt <= -0.08:
-                                _blend = _mod_prob * 0.65 + _mkt_prob_pick * 0.35
+                                # Solo penalizar fuerte si es dato real, suave si es IA
+                                _pen = 0.4 * _weight
+                                _blend = _mod_prob * (0.65 + 0.15*(1-_weight)) + _mkt_prob_pick * (0.35 - 0.15*(1-_weight))
                                 _c["prob"] = min(0.92, _blend)
-                                _c["score"] = max(0.0, _c["score"] - 0.4)
+                                _c["score"] = max(0.0, _c["score"] - _pen)
                                 _b365_parts.append(f"⚠️ Mkt={_mkt_prob_pick:.0%}≠mod={_mod_prob:.0%}")
                             else:
-                                _b365_parts.append(f"🎰 B365:{_mkt_prob_pick:.0%}")
+                                _src2 = "🤖est" if _is_estimated else "🎰 B365"
+                                _b365_parts.append(f"{_src2}:{_mkt_prob_pick:.0%}")
 
                         # ── 2. xG implícito vs nuestro xG ────────────────────
                         _xg_mkt = _b365["xg_total_impl"]
@@ -16995,22 +17153,19 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                         if _xg_mkt > 0 and _xg_mod > 0:
                             _xg_delta = _xg_mkt - _xg_mod
                             if abs(_xg_delta) >= 0.6:
-                                # Mercado espera más/menos goles que nuestro modelo
-                                # Ajustar prob O/U del pick si aplica
                                 if any(w in _pick_lbl2 for w in ["over","más","o2"]):
-                                    _xg_adj = min(0.4, abs(_xg_delta) * 0.15) * (1 if _xg_delta > 0 else -1)
+                                    _xg_adj = min(0.4, abs(_xg_delta) * 0.15 * _weight) * (1 if _xg_delta > 0 else -1)
                                     _c["score"] = min(10.0, max(0.0, _c["score"] + _xg_adj))
-                                _b365_parts.append(f"xG_mkt={_xg_mkt:.1f}(mod={_xg_mod:.1f})")
+                                _b365_parts.append(f"xG={'est' if _is_estimated else 'mkt'}={_xg_mkt:.1f}(mod={_xg_mod:.1f})")
 
                         # ── 3. Asian Handicap — margen de victoria esperado ───
                         _ah_line = _b365["ah_line"]
                         if _ah_line != 0.0:
-                            # AH negativo = favorito local con ventaja
                             if _ah_line <= -1.5 and any(w in _pick_lbl2 for w in ["local","home","gana"]):
-                                _c["score"] = min(10.0, _c["score"] + 0.3)
+                                _c["score"] = min(10.0, _c["score"] + 0.3 * _weight)
                                 _b365_parts.append(f"AH={_ah_line:+.1f}🔥")
                             elif _ah_line >= 1.5 and any(w in _pick_lbl2 for w in ["visit","away","visita"]):
-                                _c["score"] = min(10.0, _c["score"] + 0.3)
+                                _c["score"] = min(10.0, _c["score"] + 0.3 * _weight)
                                 _b365_parts.append(f"AH={_ah_line:+.1f}🔥")
                             else:
                                 _b365_parts.append(f"AH={_ah_line:+.1f}")
@@ -17018,28 +17173,28 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                         # ── 4. BTTS — señal de partido abierto ───────────────
                         _btts = _b365["btts_yes_novig"]
                         if _btts >= 0.62 and any(w in _pick_lbl2 for w in ["over","más","btts","ambos"]):
-                            _c["score"] = min(10.0, _c["score"] + 0.25)
+                            _c["score"] = min(10.0, _c["score"] + 0.25 * _weight)
                             _b365_parts.append(f"BTTS={_btts:.0%}✅")
                         elif _btts <= 0.35 and any(w in _pick_lbl2 for w in ["under","menos"]):
-                            _c["score"] = min(10.0, _c["score"] + 0.25)
+                            _c["score"] = min(10.0, _c["score"] + 0.25 * _weight)
                             _b365_parts.append(f"BTTS={_btts:.0%}✅")
 
                         # ── 5. Partido abierto → favorear picks dinámicos ────
                         if _b365["market_open_game"]:
                             if any(w in _pick_lbl2 for w in ["over","más","btts","ambos","o2","o3"]):
-                                _c["score"] = min(10.0, _c["score"] + 0.3)
+                                _c["score"] = min(10.0, _c["score"] + 0.3 * _weight)
                                 _b365_parts.append("🔓partido_abierto")
 
                         # ── 6. Draw No Bet — fuerza real del favorito ────────
                         if _dnb_adj >= 0.72 and any(w in _pick_lbl2 for w in ["local","home","gana","visit","away","visita"]):
-                            _c["score"] = min(10.0, _c["score"] + 0.2)
+                            _c["score"] = min(10.0, _c["score"] + 0.2 * _weight)
                             _b365_parts.append(f"DNB={_dnb_adj:.0%}")
 
                         # ── 7. Córners — señal de presión/posesión ───────────
                         _corn_over = _b365["corners_over_novig"]
                         _corn_line = _b365["corners_line"]
                         if _corn_over >= 0.65 and any(w in _pick_lbl2 for w in ["corner","córner","corn"]):
-                            _c["score"] = min(10.0, _c["score"] + 0.3)
+                            _c["score"] = min(10.0, _c["score"] + 0.3 * _weight)
                             _b365_parts.append(f"Corn>{_corn_line:.0f}={_corn_over:.0%}")
 
                         _c["b365_signal"] = " · ".join(_b365_parts[:3])  # max 3 señales
