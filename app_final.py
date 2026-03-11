@@ -24139,21 +24139,42 @@ if st.session_state["view"] == "cartelera":
                     # ── Panel de diagnóstico de odds ──
                     _dbg = st.session_state.get("_odds_debug", {})
                     if _dbg:
+                        _b365d_ok = int(_dbg.get("b365data_eventos") or 0)
                         _b365_ok  = int(_dbg.get("b365_eventos") or 0)
                         _b365_err = _dbg.get("b365_error","")
+                        _b365d_err= st.session_state.get("_b365d_err","")
                         _con_odds = _dbg.get("partidos_con_odds", 0)
                         _total_p  = _dbg.get("partidos_total", 0)
-                        _status_ico = "✅" if _b365_ok > 0 and not _b365_err else "❌"
-                        with st.expander(f"{_status_ico} Odds: {_con_odds}/{_total_p} partidos cubiertos  •  B365 eventos: {_b365_ok}", expanded=False):
-                            if _b365_err:
-                                st.error(f"BetsAPI error: {_b365_err}")
+                        _any_ok   = _b365d_ok > 0 or _b365_ok > 0
+                        _status_ico = "✅" if _con_odds > 0 else "❌"
+                        with st.expander(f"{_status_ico} Odds: {_con_odds}/{_total_p} partidos cubiertos", expanded=(_con_odds==0)):
+                            # Bet365Data status
+                            if _b365d_err and _b365d_ok == 0:
+                                st.error(f"**Bet365Data:** {_b365d_err}")
+                            elif _b365d_ok > 0:
+                                st.success(f"**Bet365Data:** ✅ {_b365d_ok} partidos con odds")
                             else:
-                                st.success(f"BetsAPI cargó {_b365_ok} eventos del día")
-                            st.caption("Fuente por partido:")
+                                st.warning("**Bet365Data:** 0 partidos — posible error de estructura")
+                            # BetsAPI status
+                            if _b365_err and _b365_ok == 0:
+                                st.error(f"**BetsAPI:** {_b365_err}")
+                            elif _b365_ok > 0:
+                                st.success(f"**BetsAPI:** ✅ {_b365_ok} eventos cargados")
+                            else:
+                                st.warning(f"**BetsAPI:** 0 eventos — posible error o rate limit")
+                            # The Odds API status
+                            _oddsapi_cnt = sum(1 for v in _dbg.get("fuentes",{}).values() if v == "oddsapi")
+                            if _oddsapi_cnt > 0:
+                                st.info(f"**The Odds API:** ✅ {_oddsapi_cnt} partidos")
+                            # ESPN status
+                            _espn_cnt = sum(1 for v in _dbg.get("fuentes",{}).values() if not v or v == "espn/0")
+                            st.caption(f"ESPN (sin odds externas): {_espn_cnt} partidos")
+                            st.divider()
+                            st.caption("Detalle por partido:")
                             _src_map = _dbg.get("fuentes", {})
-                            for _pname, _psrc in list(_src_map.items())[:20]:
-                                _ico = "🟢" if "bet365" in str(_psrc) else ("🔵" if "odds" in str(_psrc) else ("⚪" if _psrc else "🔴"))
-                                st.caption(f"{_ico} {_pname} → {_psrc or 'sin línea'}")
+                            for _pname, _psrc in list(_src_map.items())[:25]:
+                                _ico = "🟢" if "bet365" in str(_psrc) or "b365" in str(_psrc) else ("🔵" if "odds" in str(_psrc) else ("⚪" if _psrc and _psrc != "espn/0" else "🔴"))
+                                st.caption(f"{_ico} {_pname} → {_psrc or 'SIN LÍNEA'}")
 
                 for _fi, _fecha in enumerate(sorted(fut_por_fecha.keys())):
                     _paises_dict = fut_por_fecha[_fecha]
