@@ -30,6 +30,7 @@ try:
     API_FOOTBALL_KEY  = st.secrets.get("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = st.secrets.get("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
     BETSAPI_KEY       = st.secrets.get("BETSAPI_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
+    BET365DATA_KEY    = st.secrets.get("BET365DATA_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
     OPENAI_API_KEY    = st.secrets.get("OPENAI_API_KEY", "")
     GROK_API_KEY      = st.secrets.get("GROK_API_KEY", "")
 except:
@@ -42,6 +43,7 @@ except:
     API_FOOTBALL_KEY  = os.getenv("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = os.getenv("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
     BETSAPI_KEY       = os.getenv("BETSAPI_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
+    BET365DATA_KEY    = os.getenv("BET365DATA_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
     OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
     GROK_API_KEY      = os.getenv("GROK_API_KEY", "")
 
@@ -1253,22 +1255,166 @@ def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
 
 
 
+
+# ══════════════════════════════════════════════════════════════════
+# Bet365Data API — odds directas por liga (bet365data.p.rapidapi.com)
+# Ventaja: odds vienen CON los eventos — sin segunda llamada
+# ══════════════════════════════════════════════════════════════════
+def _bet365data_bulk_odds() -> dict:
+    """
+    Trae TODOS los eventos de fútbol de Bet365Data con odds 1X2 incluidas.
+    Una llamada por liga activa → odds directas sin round-trip extra.
+    Caché 10 min en session_state.
+    Retorna: { "clave": {"odd_h": x, "odd_d": x, "odd_a": x, "home": n, "away": n} }
+    """
+    import time as _t3, unicodedata as _ud3, requests as _rq3
+    _ck = "_b365d_cache"; _ts = "_b365d_ts"; _cnt = "_b365d_cnt"; _err = "_b365d_err"
+    _ss = st.session_state
+    _now = _t3.time()
+    if _ck in _ss and (_now - _ss.get(_ts, 0)) < 600:
+        return _ss[_ck]
+    if not BET365DATA_KEY:
+        _ss[_err] = "Sin BET365DATA_KEY"; return {}
+
+    _HDR = {
+        "x-rapidapi-host": "bet365data.p.rapidapi.com",
+        "x-rapidapi-key":  BET365DATA_KEY,
+    }
+
+    def _norm(s):
+        s = s.lower().strip()
+        s = _ud3.normalize("NFD", s)
+        s = "".join(c for c in s if _ud3.category(c) != "Mn")
+        return s.replace(".", "").replace("-", " ").strip()
+
+    def _idx(res, h, a, entry):
+        for kl in [3, 4, 5, 6, 8]:
+            k = f"{h[:kl]}|{a[:kl]}"
+            if k not in res: res[k] = entry
+        res[f"{h}|{a}"] = entry
+
+    _result = {}; _total = 0; _err_msg = ""
+    try:
+        # Paso 1: traer ligas activas de fútbol
+        _r_lg = _rq3.get(
+            "https://bet365data.p.rapidapi.com/leagues",
+            headers=_HDR,
+            params={"take": 1000, "from": 0, "sport": "soccer"},
+            timeout=12
+        )
+        if _r_lg.status_code != 200:
+            _err_msg = f"❌ Bet365Data /leagues HTTP {_r_lg.status_code}"
+            _ss[_ck] = _result; _ss[_ts] = _now; _ss[_cnt] = 0; _ss[_err] = _err_msg
+            return _result
+
+        _leagues = _r_lg.json()
+        # El response puede ser lista directa o {"data": [...]}
+        if isinstance(_leagues, list):
+            _lg_list = _leagues
+        elif isinstance(_leagues, dict):
+            _lg_list = _leagues.get("data") or _leagues.get("results") or _leagues.get("leagues") or []
+        else:
+            _lg_list = []
+
+        if not _lg_list:
+            _err_msg = "⚠️ Bet365Data: 0 ligas recibidas"
+            _ss[_ck] = _result; _ss[_ts] = _now; _ss[_cnt] = 0; _ss[_err] = _err_msg
+            return _result
+
+        # Paso 2: traer eventos de cada liga (limitado a 50 ligas para no exceder rate limit)
+        _processed = 0
+        for _lg in _lg_list[:50]:
+            _lg_id = _lg.get("id") or _lg.get("leagueId") or _lg.get("FI") or ""
+            if not _lg_id: continue
+            try:
+                _r_ev = _rq3.get(
+                    f"https://bet365data.p.rapidapi.com/soccer/events/{_lg_id}",
+                    headers=_HDR,
+                    timeout=8
+                )
+                if _r_ev.status_code != 200: continue
+                _ev_data = _r_ev.json()
+                # Normalizar respuesta
+                if isinstance(_ev_data, list):
+                    _events = _ev_data
+                elif isinstance(_ev_data, dict):
+                    _events = _ev_data.get("data") or _ev_data.get("results") or _ev_data.get("events") or []
+                else:
+                    continue
+
+                for _ev in _events:
+                    _h_raw = (_ev.get("home") or _ev.get("homeName") or _ev.get("home_name") or
+                              (_ev.get("homeTeam") or {}).get("name") or "")
+                    _a_raw = (_ev.get("away") or _ev.get("awayName") or _ev.get("away_name") or
+                              (_ev.get("awayTeam") or {}).get("name") or "")
+                    if not _h_raw or not _a_raw: continue
+
+                    _h = _norm(str(_h_raw)); _a = _norm(str(_a_raw))
+
+                    # Extraer odds 1X2 — Bet365Data puede tener varios formatos
+                    _oh = _oa = _od = 0.0
+                    # Formato A: campos directos
+                    _oh = float(_ev.get("homeOdds") or _ev.get("home_odds") or
+                                _ev.get("odds_1") or _ev.get("odd_1") or
+                                _ev.get("home_od") or 0)
+                    _od = float(_ev.get("drawOdds") or _ev.get("draw_odds") or
+                                _ev.get("odds_x") or _ev.get("odd_x") or
+                                _ev.get("draw_od") or 0)
+                    _oa = float(_ev.get("awayOdds") or _ev.get("away_odds") or
+                                _ev.get("odds_2") or _ev.get("odd_2") or
+                                _ev.get("away_od") or 0)
+
+                    # Formato B: lista de odds [{name, price}]
+                    if _oh == 0 or _oa == 0:
+                        _odds_list = (_ev.get("odds") or _ev.get("markets") or [])
+                        if isinstance(_odds_list, list):
+                            for _o in _odds_list:
+                                _on = str(_o.get("name") or _o.get("outcome") or "").lower()
+                                _ov = float(_o.get("price") or _o.get("odds") or _o.get("value") or 0)
+                                if _ov <= 1: continue
+                                if any(t in _on for t in ["home","1","local"]): _oh = _ov
+                                elif any(t in _on for t in ["draw","x","empate"]): _od = _ov
+                                elif any(t in _on for t in ["away","2","visit"]): _oa = _ov
+
+                    if _oh > 1 and _oa > 1:
+                        _entry = {
+                            "odd_h": round(_oh, 2),
+                            "odd_d": round(_od, 2) if _od > 1 else 3.5,
+                            "odd_a": round(_oa, 2),
+                            "home":  _h, "away": _a,
+                        }
+                        _idx(_result, _h, _a, _entry)
+                        _total += 1
+                _processed += 1
+            except: continue
+
+        if _total == 0 and not _err_msg:
+            _err_msg = f"⚠️ Bet365Data: procesadas {_processed} ligas pero 0 odds extraídas (revisar estructura de respuesta)"
+
+    except Exception as _ex:
+        _err_msg = f"❌ Excepción Bet365Data: {str(_ex)[:100]}"
+
+    _ss[_ck] = _result; _ss[_ts] = _now; _ss[_cnt] = _total; _ss[_err] = _err_msg
+    return _result
+
 def _b365_bulk_upcoming_odds() -> dict:
     """
-    UNA sola llamada a BetsAPI upcoming → dict de odds 1X2 para todos los partidos.
-    Retorna: { "home_key|away_key": {"odd_h": x, "odd_d": x, "odd_a": x, "fi": id} }
-    Cacheable en session_state por 10 min.
+    Trae todos los eventos upcoming de Bet365 con su FI.
+    Indexa por múltiples variantes de nombre para matching robusto.
+    Caché 10 min en session_state.
+    Retorna: { "clave": {"fi": id, "odd_h": x, "odd_d": x, "odd_a": x, "home": n, "away": n} }
     """
     import time as _t2
     _cache_key = "_b365_bulk_cache"
     _cache_ts   = "_b365_bulk_ts"
+    _cache_cnt  = "_b365_bulk_cnt"   # para debug: cuántos eventos se cargaron
+    _cache_err  = "_b365_bulk_err"   # para debug: error si hubo
     _ss = st.session_state
     _now = _t2.time()
-    # Devolver caché si tiene menos de 10 min
     if _cache_key in _ss and (_now - _ss.get(_cache_ts, 0)) < 600:
         return _ss[_cache_key]
-
     if not BETSAPI_KEY:
+        _ss[_cache_err] = "Sin BETSAPI_KEY"
         return {}
 
     _HEADERS = {
@@ -1276,68 +1422,97 @@ def _b365_bulk_upcoming_odds() -> dict:
         "x-rapidapi-key":  BETSAPI_KEY,
     }
 
-    def _novig3(h, d, a):
-        t = h + d + a
-        if t <= 0: return 0.0, 0.0, 0.0
-        return round(h/t, 4), round(d/t, 4), round(a/t, 4)
+    def _norm(s):
+        """Normalizar nombre: minúsculas, sin acentos básicos, sin puntos."""
+        import unicodedata
+        s = s.lower().strip()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+        s = s.replace(".", "").replace("-", " ").replace("  ", " ")
+        return s.strip()
 
-    def _impl(dec):
-        try: return 1.0/float(dec) if float(dec) > 1 else 0.0
-        except: return 0.0
+    def _index_entry(result, h, a, entry):
+        """Indexar por múltiples variantes de nombre."""
+        for klen in [3, 4, 5, 6, 8]:
+            k = f"{h[:klen]}|{a[:klen]}"
+            if k not in result:  # no sobrescribir entradas previas
+                result[k] = entry
+        # Índice completo también
+        result[f"{h}|{a}"] = entry
 
     _result = {}
+    _total = 0
+    _err_msg = ""
     try:
         import requests as _rq2
-        # Traer hasta 3 páginas de partidos próximos de fútbol (sport_id=1)
-        for _pg in range(1, 4):
+        for _pg in range(1, 5):  # hasta 4 páginas
             _r = _rq2.get(
                 "https://betsapi2.p.rapidapi.com/v1/bet365/upcoming",
                 headers=_HEADERS,
                 params={"sport_id": 1, "page": _pg},
-                timeout=10
+                timeout=12
             )
-            if _r.status_code != 200: break
-            _evs = _r.json().get("results", [])
-            if not _evs: break
+            if _r.status_code == 401:
+                _err_msg = "❌ API Key inválida (401)"
+                break
+            if _r.status_code == 429:
+                _err_msg = "⚠️ Rate limit BetsAPI (429)"
+                break
+            if _r.status_code != 200:
+                _err_msg = f"⚠️ BetsAPI HTTP {_r.status_code}"
+                break
+
+            _data = _r.json()
+            _evs = _data.get("results", [])
+            if not _evs:
+                break
 
             for _ev in _evs:
-                # Nombre del evento
-                _name = (_ev.get("name") or "").lower()
-                _parts = _name.replace(" vs ", "|").replace(" v ", "|").split("|")
-                _h = (_ev.get("home", {}).get("name") or (_parts[0].strip() if _parts else "")).lower()
-                _a = (_ev.get("away", {}).get("name") or (_parts[1].strip() if len(_parts) > 1 else "")).lower()
-                if not _h or not _a: continue
+                # Extraer nombres — BetsAPI puede dar "home"/"away" objects o solo "name"
+                _raw_name = (_ev.get("name") or "")
+                _home_obj = _ev.get("home") or {}
+                _away_obj = _ev.get("away") or {}
+                _h_raw = (_home_obj.get("name") or _home_obj.get("Name") or "")
+                _a_raw = (_away_obj.get("name") or _away_obj.get("Name") or "")
 
+                # Si no hay home/away objects, parsear desde "name"
+                if not _h_raw or not _a_raw:
+                    _parts = _raw_name.replace(" vs ", "|").replace(" v ", "|").split("|")
+                    _h_raw = _parts[0].strip() if _parts else ""
+                    _a_raw = _parts[1].strip() if len(_parts) > 1 else ""
+
+                if not _h_raw or not _a_raw:
+                    continue
+
+                _h = _norm(_h_raw)
+                _a = _norm(_a_raw)
                 _fi = str(_ev.get("id") or _ev.get("FI") or "")
-                if not _fi: continue
+                if not _fi:
+                    continue
 
-                # Odds 1X2 si vienen en el upcoming (a veces las incluye)
-                _oh = _impl(_ev.get("home_od") or _ev.get("odds_home") or 0)
-                _od = _impl(_ev.get("draw_od") or _ev.get("odds_draw") or 0)
-                _oa = _impl(_ev.get("away_od") or _ev.get("odds_away") or 0)
-                _oh_d = float(_ev.get("home_od") or _ev.get("odds_home") or 0)
-                _od_d = float(_ev.get("draw_od") or _ev.get("odds_draw") or 0)
-                _oa_d = float(_ev.get("away_od") or _ev.get("odds_away") or 0)
-
-                # Clave de búsqueda: primeros 6 chars de cada equipo
-                _key = f"{_h[:6]}|{_a[:6]}"
-                _result[_key] = {
-                    "odd_h": round(_oh_d, 2),
-                    "odd_d": round(_od_d, 2),
-                    "odd_a": round(_oa_d, 2),
+                # Las odds NO vienen en el upcoming — solo el FI
+                # odd_h/d/a se llenarán después via prematch
+                _entry = {
                     "fi":    _fi,
+                    "odd_h": 0.0,
+                    "odd_d": 0.0,
+                    "odd_a": 0.0,
                     "home":  _h,
                     "away":  _a,
                 }
-                # También indexar por primeros 8 chars para mejor matching
-                _key2 = f"{_h[:8]}|{_a[:8]}"
-                _result[_key2] = _result[_key]
+                _index_entry(_result, _h, _a, _entry)
+                _total += 1
 
-    except Exception as _e:
-        pass  # Silencioso — no bloquear cartelera
+        if not _err_msg and _total == 0:
+            _err_msg = "⚠️ BetsAPI devolvió 0 eventos"
+
+    except Exception as _ex:
+        _err_msg = f"❌ Excepción BetsAPI: {str(_ex)[:80]}"
 
     _ss[_cache_key] = _result
     _ss[_cache_ts]  = _now
+    _ss[_cache_cnt] = _total
+    _ss[_cache_err] = _err_msg
     return _result
 
 
@@ -1403,30 +1578,79 @@ def _refresh_odds_inplace(matches: list) -> list:
         return matches
 
     # ══════════════════════════════════════════════════════════════════
+    # PASO 0: Bet365Data — odds directas por liga (más rápida, sin round-trip)
+    # ══════════════════════════════════════════════════════════════════
+    if BET365DATA_KEY:
+        _b365d_idx = _bet365data_bulk_odds()
+        import unicodedata as _ud0
+        def _norm0(s):
+            s = s.lower().strip()
+            s = _ud0.normalize("NFD", s)
+            s = "".join(c for c in s if _ud0.category(c) != "Mn")
+            return s.replace(".", "").replace("-", " ").strip()
+        def _fuzzy0(idx, mh, ma):
+            mh = _norm0(mh); ma = _norm0(ma)
+            for kl in [8, 6, 5, 4, 3]:
+                k = f"{mh[:kl]}|{ma[:kl]}"
+                if k in idx: return idx[k]
+            mh5 = mh[:5]; ma5 = ma[:5]
+            for _e in idx.values():
+                eh = _e.get("home",""); ea = _e.get("away","")
+                if mh5 and mh5 in eh and ma5 and ma5 in ea: return _e
+            return None
+        for _m in matches:
+            if _m.get("state") == "post": continue
+            if float(_m.get("odd_h") or 0) > 1: continue  # ya tiene odds
+            _ef = _fuzzy0(_b365d_idx, _m["home"], _m["away"])
+            if _ef and float(_ef.get("odd_h") or 0) > 1 and float(_ef.get("odd_a") or 0) > 1:
+                _m["odd_h"] = _ef["odd_h"]
+                _m["odd_d"] = _ef.get("odd_d") or 3.5
+                _m["odd_a"] = _ef["odd_a"]
+                _m["odds_src"] = "b365data"
+
+    # ══════════════════════════════════════════════════════════════════
     # PASO 1: BetsAPI Bet365 — cobertura global (Liga MX, CONCACAF, todo)
     # Una sola llamada cacheada trae todos los partidos del día
     # ══════════════════════════════════════════════════════════════════
     if BETSAPI_KEY:
         _b365_idx = _b365_bulk_upcoming_odds()
 
+        import unicodedata as _ud
+        def _norm_b(s):
+            s = s.lower().strip()
+            s = _ud.normalize("NFD", s)
+            s = "".join(c for c in s if _ud.category(c) != "Mn")
+            s = s.replace(".", "").replace("-", " ").replace("  ", " ")
+            return s.strip()
+
+        def _fuzzy_find(idx, mh, ma):
+            """Buscar en índice por múltiples longitudes y también búsqueda lineal."""
+            mh = _norm_b(mh); ma = _norm_b(ma)
+            # Intento exacto por prefijos
+            for klen in [8, 6, 5, 4, 3]:
+                k = f"{mh[:klen]}|{ma[:klen]}"
+                if k in idx:
+                    return idx[k]
+            # Búsqueda lineal fuzzy como último recurso
+            mh5 = mh[:5]; ma5 = ma[:5]
+            for _entry in idx.values():
+                eh = _entry.get("home",""); ea = _entry.get("away","")
+                if (mh5 and mh5 in eh and ma5 and ma5 in ea):
+                    return _entry
+                if (eh[:5] and eh[:5] in mh and ea[:5] and ea[:5] in ma):
+                    return _entry
+            return None
+
         for _m in matches:
             if _m.get("state") == "post": continue
-            _mh = _m["home"].lower().strip()
-            _ma = _m["away"].lower().strip()
+            _entry_f = _fuzzy_find(_b365_idx, _m["home"], _m["away"])
+            if not _entry_f:
+                continue
 
-            _fi_found = None
-            _oh_f = _od_f = _oa_f = 0.0
-
-            # Buscar por nombre fuzzy: 8, 6, 5 chars
-            for _klen in [8, 6, 5]:
-                _search_key = f"{_mh[:_klen]}|{_ma[:_klen]}"
-                if _search_key in _b365_idx:
-                    _entry = _b365_idx[_search_key]
-                    _fi_found = _entry.get("fi")
-                    _oh_f = float(_entry.get("odd_h") or 0)
-                    _od_f = float(_entry.get("odd_d") or 0)
-                    _oa_f = float(_entry.get("odd_a") or 0)
-                    break
+            _fi_found = _entry_f.get("fi")
+            _oh_f = float(_entry_f.get("odd_h") or 0)
+            _od_f = float(_entry_f.get("odd_d") or 0)
+            _oa_f = float(_entry_f.get("odd_a") or 0)
 
             # Odds directas del bulk → usarlas
             if _fi_found and _oh_f > 1 and _oa_f > 1:
@@ -1436,7 +1660,7 @@ def _refresh_odds_inplace(matches: list) -> list:
                 _m["odds_src"] = "bet365"
                 continue
 
-            # Solo FI sin odds → llamar prematch para ese partido
+            # FI encontrado → llamar prematch para obtener odds reales
             if _fi_found:
                 _oh_p, _od_p, _oa_p = _b365_get_prematch_1x2(_fi_found)
                 if _oh_p > 1 and _oa_p > 1:
@@ -22263,10 +22487,28 @@ if deporte == "futbol":
     with st.spinner("Cargando cartelera..."):
         try:
             all_matches = get_cartelera()
-            # Odds frescas de The Odds API (sin caché)
+            # Odds frescas: BetsAPI primero → The Odds API complemento
             try:
                 all_matches = _refresh_odds_inplace(all_matches)
-            except: pass
+                # ── Debug info en session_state para panel de diagnóstico ──
+                _b365_cnt  = st.session_state.get("_b365_bulk_cnt", "?")
+                _b365_err  = st.session_state.get("_b365_bulk_err", "")
+                _with_odds = sum(1 for _mx in all_matches if float(_mx.get("odd_h") or 0) > 1)
+                _total_m   = len([_mx for _mx in all_matches if _mx.get("state") != "post"])
+                st.session_state["_odds_debug"] = {
+                    "b365data_eventos": st.session_state.get("_b365d_cnt", "?"),
+                    "b365_eventos": _b365_cnt,
+                    "b365_error":   _b365_err,
+                    "partidos_con_odds": _with_odds,
+                    "partidos_total":    _total_m,
+                    "fuentes": {
+                        _mx["home"][:12]+" vs "+_mx["away"][:12]: _mx.get("odds_src","espn/0")
+                        for _mx in all_matches
+                        if _mx.get("state") != "post"
+                    }
+                }
+            except Exception as _re:
+                st.session_state["_odds_debug"] = {"b365_error": str(_re)}
         except Exception as _e:
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
@@ -23888,8 +24130,30 @@ if st.session_state["view"] == "cartelera":
                         st.session_state["_diamond_bridge"] = _new_br3
                         for _kk in [k for k in list(st.session_state.keys()) if k.startswith("_xg_cache_")]:
                             del st.session_state[_kk]
+                        # Limpiar caché BetsAPI para forzar recarga
+                        for _kk in ["_b365_bulk_cache","_b365_bulk_ts","_b365_bulk_cnt","_b365_bulk_err"]:
+                            if _kk in st.session_state: del st.session_state[_kk]
                         st.session_state["_cart_last_refresh"] = 0
                         st.rerun()
+
+                    # ── Panel de diagnóstico de odds ──
+                    _dbg = st.session_state.get("_odds_debug", {})
+                    if _dbg:
+                        _b365_ok  = int(_dbg.get("b365_eventos") or 0)
+                        _b365_err = _dbg.get("b365_error","")
+                        _con_odds = _dbg.get("partidos_con_odds", 0)
+                        _total_p  = _dbg.get("partidos_total", 0)
+                        _status_ico = "✅" if _b365_ok > 0 and not _b365_err else "❌"
+                        with st.expander(f"{_status_ico} Odds: {_con_odds}/{_total_p} partidos cubiertos  •  B365 eventos: {_b365_ok}", expanded=False):
+                            if _b365_err:
+                                st.error(f"BetsAPI error: {_b365_err}")
+                            else:
+                                st.success(f"BetsAPI cargó {_b365_ok} eventos del día")
+                            st.caption("Fuente por partido:")
+                            _src_map = _dbg.get("fuentes", {})
+                            for _pname, _psrc in list(_src_map.items())[:20]:
+                                _ico = "🟢" if "bet365" in str(_psrc) else ("🔵" if "odds" in str(_psrc) else ("⚪" if _psrc else "🔴"))
+                                st.caption(f"{_ico} {_pname} → {_psrc or 'sin línea'}")
 
                 for _fi, _fecha in enumerate(sorted(fut_por_fecha.keys())):
                     _paises_dict = fut_por_fecha[_fecha]
@@ -24143,7 +24407,7 @@ if st.session_state["view"] == "cartelera":
                                                     _osrc = _m.get("odds_src", "")
                                                     if not _has_odds:
                                                         _odds_src_lbl = "<span style='font-size:0.6rem;color:#555;letter-spacing:0.3px'>SIN LÍNEA</span>"
-                                                    elif _osrc == "bet365":
+                                                    elif _osrc in ("bet365", "b365data", "bet365_pm"):
                                                         _odds_src_lbl = "<span style='font-size:0.6rem;color:#2a7a2a;letter-spacing:0.3px'>● B365</span>"
                                                     elif _osrc == "bet365_pm":
                                                         _odds_src_lbl = "<span style='font-size:0.6rem;color:#2a7a2a;letter-spacing:0.3px'>● B365</span>"
