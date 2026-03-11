@@ -24,7 +24,8 @@ try:
     BOT_TOKEN         = st.secrets["BOT_TOKEN"]
     CHAT_ID           = st.secrets["CHAT_ID"]
     ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", "")
-    GEMINI_API_KEY    = st.secrets.get("GEMINI_API_KEY", "AIzaSyAaVFGFTzD818-s5wI6JPibHmwK3uUE7R8")
+    GROQ_API_KEY      = st.secrets.get("GROQ_API_KEY", "")
+    TAVILY_API_KEY    = st.secrets.get("TAVILY_API_KEY", "")
     TENNIS_API_KEY    = st.secrets.get("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
     API_FOOTBALL_KEY  = st.secrets.get("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = st.secrets.get("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
@@ -32,85 +33,105 @@ except:
     BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
     CHAT_ID           = os.getenv("CHAT_ID", "")
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-    GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "AIzaSyAaVFGFTzD818-s5wI6JPibHmwK3uUE7R8")
+    GROQ_API_KEY      = os.getenv("GROQ_API_KEY", "")
+    TAVILY_API_KEY    = os.getenv("TAVILY_API_KEY", "")
     TENNIS_API_KEY    = os.getenv("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
     API_FOOTBALL_KEY  = os.getenv("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = os.getenv("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
 
 # ══════════════════════════════════════════════════════════════════
-# CAPA GEMINI — reemplaza todas las llamadas a Anthropic/Claude
-# Todos los bots (Einstein, Papá, KR, Night Scout, Villar, IAs)
-# pasan por aquí. Grounding = Google Search nativo en Gemini.
+# CAPA IA — motor central de la app
+# Prioridad: 1) Groq (gratis, llama-3.3-70b)
+#            2) Claude (fallback, requiere créditos)
+# Nombre _gemini() mantenido para compatibilidad.
 # ══════════════════════════════════════════════════════════════════
 def _gemini(prompt: str, system: str = "", use_search: bool = False,
              max_tokens: int = 1000, temperature: float = 0.3,
              json_mode: bool = False) -> str:
     """
-    Llamada central a Gemini 2.0 Flash con opción de grounding Google Search.
-    Devuelve el texto de la respuesta, o "" si falla.
-    use_search=True → habilita Google Search grounding (para Night Scout,
-    Einstein, Papá de Einstein, KR, IAs de contexto).
-    json_mode=True → solicita respuesta JSON limpia (sin backticks).
+    Motor IA central — Groq primero (gratis), Claude como fallback.
+    json_mode=True → pide JSON limpio.
+    use_search=True → ignorado (Groq no tiene web search nativo).
     """
-    import requests as _req
-    key = GEMINI_API_KEY
-    if not key:
-        return ""
-    model = "gemini-2.0-flash"
-    url   = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    import requests as _req, json as _jmod
 
-    contents = []
-    if system:
-        contents.append({"role": "user", "parts": [{"text": "[INSTRUCCIONES DEL SISTEMA]\n" + system}]})
-        contents.append({"role": "model", "parts": [{"text": "Entendido. Procedo."}]})
-    contents.append({"role": "user", "parts": [{"text": prompt}]})
+    _sys = system or ""
+    if json_mode:
+        _sys += ("\nResponde SOLO con JSON válido, sin markdown, sin texto extra, "
+                 "sin backticks. Solo el objeto JSON.")
 
-    body = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature":     temperature,
-            "maxOutputTokens": max_tokens,
-            "responseMimeType": "application/json" if json_mode else "text/plain",
-        }
-    }
-    if use_search:
-        body["tools"] = [{"google_search": {}}]
-
-    try:
-        r = _req.post(url, json=body, timeout=45)
-        if r.status_code != 200:
-            # Log útil para debug
-            try:
-                _err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
-            except:
-                _err = f"HTTP {r.status_code}"
-            return ""
-        data = r.json()
-        # Gemini puede devolver múltiples candidatos con múltiples partes
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return ""
-        # Tomar el primer candidato con finish_reason != SAFETY
-        best = None
-        for cand in candidates:
-            if cand.get("finishReason","") not in ("SAFETY","RECITATION"):
-                best = cand
-                break
-        if not best:
-            best = candidates[0]
-        parts = best.get("content", {}).get("parts", [])
-        # Concatenar solo partes de texto (ignorar executable_code, etc.)
-        raw = "".join(p.get("text", "") for p in parts if "text" in p).strip()
-        if json_mode:
-            raw = raw.replace("```json","").replace("```","").strip()
-            i = raw.find("{"); j = raw.rfind("}") + 1
-            if i >= 0 and j > i:
-                raw = raw[i:j]
+    def _clean_json(raw):
+        raw = raw.replace("```json","").replace("```","").strip()
+        i = raw.find("{"); j = raw.rfind("}") + 1
+        if i >= 0 and j > i:
+            raw = raw[i:j]
         return raw
-    except:
-        return ""
 
+    # ── INTENTO 1: Groq llama-3.3-70b (gratis) ──────────────────
+    _groq_key = GROQ_API_KEY
+    if _groq_key:
+        try:
+            _msgs_groq = []
+            if _sys.strip():
+                _msgs_groq.append({"role": "system", "content": _sys.strip()})
+            _msgs_groq.append({"role": "user", "content": prompt})
 
+            _r_groq = _req.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {_groq_key}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model":       "llama-3.3-70b-versatile",
+                    "max_tokens":  max(max_tokens, 512),
+                    "temperature": temperature,
+                    "messages":    _msgs_groq,
+                },
+                timeout=45,
+            )
+            if _r_groq.status_code == 200:
+                raw = (_r_groq.json()
+                              .get("choices",[{}])[0]
+                              .get("message",{})
+                              .get("content","").strip())
+                if raw:
+                    if json_mode:
+                        raw = _clean_json(raw)
+                    return raw
+        except: pass
+
+    # ── INTENTO 3: Claude (fallback, requiere créditos) ───────────
+    _cl_key = ANTHROPIC_API_KEY
+    if _cl_key:
+        try:
+            _body_c = {
+                "model":       "claude-sonnet-4-20250514",
+                "max_tokens":  max(max_tokens, 512),
+                "temperature": temperature,
+                "messages":    [{"role": "user", "content": prompt}],
+            }
+            if _sys.strip():
+                _body_c["system"] = _sys.strip()
+            if use_search:
+                _body_c["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
+
+            _r_c = _req.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": _cl_key, "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json=_body_c, timeout=55,
+            )
+            if _r_c.status_code == 200:
+                raw = "\n".join(
+                    blk.get("text","") for blk in _r_c.json().get("content",[])
+                    if blk.get("type") == "text" and blk.get("text","").strip()
+                ).strip()
+                if raw:
+                    if json_mode:
+                        raw = _clean_json(raw)
+                    return raw
+        except: pass
+
+    return ""
 def _gemini_json(prompt: str, system: str = "", use_search: bool = False,
                   max_tokens: int = 1000) -> dict:
     """Wrapper que devuelve dict parseado, o {} si falla."""
@@ -3260,7 +3281,7 @@ def ai_investigate_match(sport, home, away, league_slug, league_name,
     4. Estimación de sharp money cuando no hay datos directos
     5. Veredicto final con nivel de confianza
     """
-    if not GEMINI_API_KEY: return {}
+    if not ANTHROPIC_API_KEY: return {}
     
     prompt = f"""Eres un analista de integridad deportiva y mercados de apuestas. 
 Investiga este partido y responde SOLO en JSON válido sin texto adicional ni backticks.
@@ -3352,7 +3373,7 @@ def render_ai_investigation(sport, home, away, league_slug, league_name,
         st.markdown(
             "<div style='background:linear-gradient(135deg,#100c04,#0a0800);border:1px solid #c9a84c1a;border-radius:12px;"
             "padding:7px 9px;color:#6b5a3a;font-size:1.275rem'>"
-            "⚠️ IA no disponible. Verifica GEMINI_API_KEY en Streamlit secrets."
+            "⚠️ IA no disponible. Verifica ANTHROPIC_API_KEY en Streamlit secrets."
             "</div>", unsafe_allow_html=True)
         return
     
@@ -3882,7 +3903,7 @@ def _ns_ask_claude(team_name: str, league: str, sport: str = "fútbol",
     Llama a Claude con web_search para investigar forma reciente del equipo.
     Para UEFA: investiga también rendimiento como visitante en Europa.
     """
-    if not GEMINI_API_KEY:
+    if not ANTHROPIC_API_KEY:
         return {}
     if sport == "NBA":
         _unit = "partidos NBA"; _scored = "puntos anotados"; _conceded = "puntos recibidos"
@@ -4591,7 +4612,7 @@ def fetch_tennis_results(days_back=14):
     # ── FUENTE 3: Claude web_search — ATP + WTA — PRIORIDAD MÁXIMA ──
     # Web search va PRIMERO. Los seeds son solo fallback para lo que la web no encontró.
     _web_pairs = set()  # jugadores ya cubiertos por web search (para no sobreescribir con seeds)
-    if GEMINI_API_KEY:
+    if ANTHROPIC_API_KEY:
         web_results = _fetch_tennis_results_web(desde, hoy)
         for wr in web_results:
             eid = f"ten_web_{wr['p1'][:6]}_{wr['p2'][:6]}_{wr['fecha']}"
@@ -4730,7 +4751,7 @@ def _fetch_tennis_results_web(desde, hoy):
     en Streamlit Cloud porque el servidor no tiene acceso directo a internet.
     Hace dos llamadas: una para ATP Indian Wells, otra para WTA del día.
     """
-    if not GEMINI_API_KEY:
+    if not ANTHROPIC_API_KEY:
         return []
 
     import json as _j, re as _re
@@ -4739,7 +4760,7 @@ def _fetch_tennis_results_web(desde, hoy):
     now_str = datetime.now(CDMX).strftime("%Y-%m-%d")
 
     def _call_claude(user_msg):
-        """Llama a Gemini con Google Search grounding."""
+        """Llama a Claude con web_search grounding."""
         try:
             txt = _gemini(user_msg, use_search=True, max_tokens=4000, temperature=0.2)
             st.session_state.pop("_tennis_api_error", None)
@@ -7189,10 +7210,10 @@ def render_resultados_tab():
 # ══════════════════════════════════════════════════════════════════════════
 
 # ── Constantes de confianza King Rongo ──
-_KR_DIAMOND_THRESHOLD = 0.65   # pick diamante
-_KR_GOLD_THRESHOLD    = 0.58   # pick oro
+_KR_DIAMOND_THRESHOLD = 0.68   # pick diamante (subido de 0.65)
+_KR_GOLD_THRESHOLD    = 0.62   # pick oro (subido de 0.58)
 _KR_MIN_EDGE          = 0.00   # sin edge mínimo — KR decide
-_KR_MIN_PROB          = 0.52   # prob mínima para aparecer (subido de 0.50 — evita ruido)
+_KR_MIN_PROB          = 0.56   # prob mínima para aparecer (subido de 0.52 — calidad > cantidad)
 _KR_CONFLICT_SPREAD   = 0.22   # dispersión modelos → conflicto
 
 
@@ -7219,7 +7240,7 @@ def papa_einstein_audit(einstein_data, imagen_b64, media_type, mem_ctx="",
     El Papa de Einstein — meta-IA que audita el análisis de Einstein.
     adv_stats_ctx: bloque de datos avanzados de FBref/Understat/etc.
     """
-    if not GEMINI_API_KEY: return {}
+    if not ANTHROPIC_API_KEY: return {}
     
     einstein_json = __import__("json").dumps(einstein_data, ensure_ascii=False, indent=2)
     
@@ -7336,27 +7357,35 @@ Sé brutalmente honesto. Si Einstein se equivocó, dilo claramente.
 Si Einstein acertó, confírmalo con evidencia. El apostador necesita la verdad, no halagos."""
 
     try:
-        # Gemini: enviar imagen como inline_data + prompt
+        # Claude: enviar imagen como base64 + prompt
         import requests as _req2, json as _jj
-        key = GEMINI_API_KEY
-        if not key: return {}
-        model = "gemini-2.0-flash"
-        url   = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-        body = {
-            "contents": [{
+        _cl_key = ANTHROPIC_API_KEY
+        if not _cl_key: return {}
+        _body_p = {
+            "model":      "claude-sonnet-4-20250514",
+            "max_tokens": 1600,
+            "temperature": 0.3,
+            "messages": [{
                 "role": "user",
-                "parts": [
-                    {"inline_data": {"mime_type": media_type, "data": imagen_b64}},
-                    {"text": PAPA_PROMPT}
+                "content": [
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": media_type, "data": imagen_b64
+                    }},
+                    {"type": "text", "text": PAPA_PROMPT}
                 ]
-            }],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1600}
+            }]
         }
-        _r2 = _req2.post(url, json=body, timeout=60)
+        _r2 = _req2.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": _cl_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json=_body_p, timeout=60
+        )
         if _r2.status_code != 200: return {}
-        _raw_p = (_r2.json().get("candidates",[{}])[0]
-                      .get("content",{}).get("parts",[{}])[0]
-                      .get("text","")).strip()
+        _raw_p = "\n".join(
+            blk.get("text","") for blk in _r2.json().get("content",[])
+            if blk.get("type") == "text"
+        ).strip()
         _raw_p = _raw_p.replace("```json","").replace("```","").strip()
         _j0 = _raw_p.find("{"); _j1 = _raw_p.rfind("}") + 1
         if _j0 >= 0 and _j1 > _j0: _raw_p = _raw_p[_j0:_j1]
@@ -7767,20 +7796,32 @@ def render_einstein_califica(key_sfx="fut"):
                     "\"alternativa_mercado\": \"\", \"alternativa_razon\": \"\", "
                     "\"kelly_pct\": 0.0, \"apostar\": false}"
                 )
-                # Einstein vía Gemini con imagen
+                # Einstein vía Claude con imagen
                 import requests as _req_e, json as _je2
-                _gem_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-                _gem_body = {
-                    "contents": [{"role":"user","parts":[
-                        {"inline_data":{"mime_type":media_type,"data":b64}},
-                        {"text":EINSTEIN}
-                    ]}],
-                    "generationConfig":{"temperature":0.3,"maxOutputTokens":1900}
+                _cl_key_e = ANTHROPIC_API_KEY
+                if not _cl_key_e: raise ValueError("Sin ANTHROPIC_API_KEY")
+                _ein_body = {
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1900,
+                    "temperature": 0.3,
+                    "messages": [{"role": "user", "content": [
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": media_type, "data": b64
+                        }},
+                        {"type": "text", "text": EINSTEIN}
+                    ]}]
                 }
-                _resp_e = _req_e.post(_gem_url, json=_gem_body, timeout=50)
-                _raw_e = (_resp_e.json().get("candidates",[{}])[0]
-                              .get("content",{}).get("parts",[{}])[0]
-                              .get("text","")).strip()
+                _resp_e = _req_e.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": _cl_key_e, "anthropic-version": "2023-06-01",
+                             "content-type": "application/json"},
+                    json=_ein_body, timeout=55
+                )
+                if _resp_e.status_code != 200: raise ValueError(f"HTTP {_resp_e.status_code}")
+                _raw_e = "\n".join(
+                    blk.get("text","") for blk in _resp_e.json().get("content",[])
+                    if blk.get("type") == "text"
+                ).strip()
                 _raw_e = _raw_e.replace("```json","").replace("```","").strip()
                 _j0 = _raw_e.find("{"); _j1 = _raw_e.rfind("}") + 1
                 if _j0 >= 0 and _j1 > _j0: _raw_e = _raw_e[_j0:_j1]
@@ -9785,7 +9826,7 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
 # team_slugs = fragmentos del nombre de equipo para detectar automáticamente
 _STAR_PROFILES = {
     # ══════════════════════════════════════════
-    # FÚTBOL — TOP 100 (Gemini 2025)
+    # FÚTBOL — TOP 100 (Claude 2025)
     # xg = expected goals por partido jugado
     # ast = contribución de asistencias (× 0.35 para xG equivalente)
     # teams = fragmentos de nombre de equipo/selección para detección automática
@@ -10499,12 +10540,12 @@ def badrino_web_search(sport, home, away, league_name, hora_partido="",
                         full_intel_ctx=""):
     """
     🤖 BADRINO — core function.
-    Usa web_search tool de Gemini para buscar en internet
+    Usa web_search tool de Claude para buscar en internet
     alineaciones, lesiones, rumores y ajustar el modelo.
     full_intel_ctx: contexto cuantitativo pre-calculado (Sharp/Arbitro/FBref/Sofascore).
     TTL = 30 min (cache para no gastar llamadas repetidas).
     """
-    if not GEMINI_API_KEY:
+    if not ANTHROPIC_API_KEY:
         return {"error": "Sin API key", "badrino_ok": False}
 
     mins = _badrino_minutes_to_kickoff(hora_partido) if hora_partido else 999
@@ -10644,7 +10685,7 @@ RESPONDE SOLO EN JSON (sin markdown, sin texto fuera del JSON):
     try:
         _gemini_raw = _gemini(user_msg, system=system_prompt, use_search=True, max_tokens=3000)
         if not _gemini_raw:
-            return {"error": "Sin respuesta de Gemini", "badrino_ok": False}
+            return {"error": "Sin respuesta de Claude", "badrino_ok": False}
         raw = _gemini_raw.strip()
         raw = raw.replace("```json","").replace("```","").strip()
         # Extraer JSON si hay texto rodeándolo
@@ -11854,7 +11895,7 @@ def _claude_enrich_context(home: str, away: str, league: str,
     Busca con web_search: posición en tabla, calidad real, forma reciente,
     lesiones conocidas, última temporada. Devuelve string de contexto.
     """
-    if not GEMINI_API_KEY:
+    if not ANTHROPIC_API_KEY:
         return ""
     try:
         import json as _ej
@@ -11981,7 +12022,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                     _e_prompt_final = _e_prompt + f"\n\nCONTEXTO WEB ACTUAL:\n{_web_ctx}"
                 _raw_ein = _gemini(_e_prompt_final, use_search=False, max_tokens=700, json_mode=True)
                 if not _raw_ein or len(_raw_ein.strip()) < 10:
-                    _einstein_err = "Gemini no devolvió respuesta"
+                    _einstein_err = "Claude no devolvió respuesta"
                 else:
                     _d = __import__("json").loads(_raw_ein)
                     _einstein.update(_d)
@@ -12023,7 +12064,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                 )
                 _rawp = _gemini(_papa_prompt, use_search=False, max_tokens=600, json_mode=True)
                 if not _rawp or len(_rawp.strip()) < 10:
-                    _papa_err = "Sin respuesta de Gemini"
+                    _papa_err = "Sin respuesta de Claude"
                 else:
                     _dp = __import__("json").loads(_rawp)
                     _papa.update(_dp)
@@ -13268,17 +13309,24 @@ def escanear_tenis_y_enviar(matches):
 
 def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
     """
-    PACH — AI analyst. Llama a Gemini 2.0 Flash con Google Search grounding.
-    Parser robusto que extrae texto aunque Gemini use grounding interno.
+    PACH — AI analyst con búsqueda web real.
+    Stack: Tavily (búsqueda) + Groq (análisis) — 100% gratis.
+    Fallback análisis: Claude si está disponible.
     """
-    if not GEMINI_API_KEY:
-        return "❌ PACH necesita GEMINI_API_KEY en secrets.toml"
-
     import requests as _rq
+
+    _tav_key  = TAVILY_API_KEY
+    _groq_key = GROQ_API_KEY
+    _cl_key   = ANTHROPIC_API_KEY
+
+    if not _groq_key and not _cl_key:
+        return "❌ PACH necesita GROQ_API_KEY en Streamlit secrets (gratis en groq.com)"
+
     fecha_hoy = datetime.now(CDMX).strftime("%d/%m/%Y")
     hora_hoy  = datetime.now(CDMX).strftime("%H:%M")
     fecha_iso = datetime.now(CDMX).strftime("%Y-%m-%d")
 
+    # ── Contexto de partidos del día ──
     partidos_txt = ""
     for p in context_data.get("partidos", [])[:10]:
         try:
@@ -13290,118 +13338,144 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
     kr_pick = context_data.get("kr_pick", "")
     villar  = context_data.get("villar", "")
 
-    system_txt = (
-        f"Eres PACH, analista experto de apuestas deportivas de The Gamblers Den.\n"
-        f"Fecha actual: {fecha_hoy} ({fecha_iso}), hora CDMX: {hora_hoy}.\n"
-        f"Deporte activo: {sport_label}.\n\n"
-        f"PARTIDOS HOY:\n{partidos_txt or '  (sin datos)'}\n"
-        f"KING RONGO: {kr_pick or 'no disponible'}\n"
-        f"VILLAR: {villar or 'no disponible'}\n\n"
-        f"INSTRUCCIONES:\n"
-        f"1. SIEMPRE usa Google Search para buscar info ACTUAL de hoy: lesiones, alineaciones, forma, H2H, clima.\n"
-        f"2. Adicionalmente, el sistema ya consultó FBref, Understat, Transfermarkt, SoccerStats y Sofascore — usa esos datos si están disponibles en el contexto.\n"
-        f"3. Responde en español, directo y confiado. Máximo 6 líneas.\n"
-        f"4. Termina SIEMPRE con: VEREDICTO: [JUGAR / NO JUGAR / ESPERAR] — XX% confianza.\n"
-        f"5. NUNCA inventes estadísticas. Si no encuentras info real, dilo.\n"
-        f"6. Cubre: handicaps, spreads, O/U sets, player props, corners, tarjetas, parlays.\n"
-        f"7. Prioriza xG real sobre goles anotados. Si hay PPDA bajo = equipo presiona = favorece Over. Si hay xGA alto = defensa débil.\n"
-    )
-
-    # Prompt al usuario con la pregunta + instrucción explícita de buscar
-    # Intentar extraer equipo del query para buscar datos avanzados
+    # ── Stats avanzados del partido mencionado ──
     _adv_ctx = ""
     try:
         _q_lower = pregunta.lower()
         _p_list  = context_data.get("partidos", [])
-        _match_p = None
         for _p in _p_list:
             _ph = _p.get("home","").lower(); _pa = _p.get("away","").lower()
             if _ph and (_ph in _q_lower or any(w in _q_lower for w in _ph.split() if len(w)>3)):
-                _match_p = _p; break
+                _sport_k = {"⚽ Fútbol":"futbol","🏀 NBA":"nba","🎾 Tenis":"tenis"}.get(sport_label,"futbol")
+                _adv_ctx = _fetch_advanced_stats_for_match(_p.get("home",""), _p.get("away",""), _sport_k, _p.get("slug",""))
+                break
             if _pa and (_pa in _q_lower or any(w in _q_lower for w in _pa.split() if len(w)>3)):
-                _match_p = _p; break
-        if _match_p:
-            _sport_k = {"⚽ Fútbol":"futbol","🏀 NBA":"nba","🎾 Tenis":"tenis"}.get(sport_label, "futbol")
-            _adv_ctx = _fetch_advanced_stats_for_match(
-                _match_p.get("home",""), _match_p.get("away",""),
-                _sport_k, _match_p.get("slug",""))
+                _sport_k = {"⚽ Fútbol":"futbol","🏀 NBA":"nba","🎾 Tenis":"tenis"}.get(sport_label,"futbol")
+                _adv_ctx = _fetch_advanced_stats_for_match(_p.get("home",""), _p.get("away",""), _sport_k, _p.get("slug",""))
+                break
     except: pass
 
-    user_txt = (
-        f"Pregunta del apostador (hoy {fecha_hoy}): {pregunta}\n\n"
-        + (f"{_adv_ctx}\n\n" if _adv_ctx else "")
-        + f"IMPORTANTE: Busca en Google información actualizada de HOY antes de responder. "
-        f"Usa los datos avanzados de arriba (xG, PPDA, lesiones) si están disponibles. "
-        f"Incluye fuente de los datos que uses."
+    # ── PASO 1: Tavily busca info actual en internet ──────────────
+    _web_ctx = ""
+    if _tav_key:
+        try:
+            # Construir queries inteligentes según la pregunta
+            _queries = [pregunta]
+            # Agregar query de lesiones/alineaciones si aplica
+            _q_lower = pregunta.lower()
+            if any(w in _q_lower for w in ["lesion","alineacion","lineup","baja","titular"]):
+                _queries.append(f"lesiones alineaciones {pregunta} hoy {fecha_iso}")
+            elif any(w in _q_lower for w in ["parlay","combinada","multi"]):
+                _queries.append(f"mejores picks apuestas {sport_label} hoy {fecha_iso}")
+            else:
+                _queries.append(f"{pregunta} {fecha_iso} apuestas estadisticas")
+
+            _web_results = []
+            for _q in _queries[:2]:  # max 2 búsquedas por llamada
+                _r_tav = _rq.post(
+                    "https://api.tavily.com/search",
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "api_key":      _tav_key,
+                        "query":        _q,
+                        "search_depth": "basic",
+                        "max_results":  4,
+                        "include_answer": True,
+                    },
+                    timeout=15,
+                )
+                if _r_tav.status_code == 200:
+                    _td = _r_tav.json()
+                    # Respuesta directa de Tavily
+                    if _td.get("answer"):
+                        _web_results.append(f"📌 {_td['answer']}")
+                    # Resultados individuales
+                    for _res in _td.get("results", [])[:3]:
+                        _title   = _res.get("title","")
+                        _snippet = _res.get("content","")[:300]
+                        _url     = _res.get("url","")
+                        if _snippet:
+                            _web_results.append(f"• {_title}: {_snippet}")
+
+            if _web_results:
+                _web_ctx = "\n".join(_web_results[:8])
+        except: pass
+
+    # ── PASO 2: Groq/Claude analiza con el contexto web ──────────
+    system_prompt = (
+        f"Eres PACH, analista experto de apuestas deportivas de The Gamblers Den. "
+        f"Fecha: {fecha_hoy}, hora CDMX: {hora_hoy}. Deporte: {sport_label}.\n\n"
+        f"PARTIDOS HOY:\n{partidos_txt or '  (sin datos)'}\n"
+        f"KING RONGO pick: {kr_pick or 'no disponible'}\n"
+        f"VILLAR: {villar or 'no disponible'}\n\n"
+        f"INSTRUCCIONES:\n"
+        f"1. Responde en español, directo y confiado. Máximo 6 líneas.\n"
+        f"2. Termina SIEMPRE con: VEREDICTO: [JUGAR / NO JUGAR / ESPERAR] — XX% confianza.\n"
+        f"3. NUNCA inventes estadísticas. Usa solo los datos que tienes.\n"
+        f"4. Para parlays: combina 2-3 picks con prob ≥60% cada uno.\n"
+        f"5. Prioriza EV positivo sobre cuota alta.\n"
     )
 
-    contents = [
-        {"role": "user",  "parts": [{"text": "[SISTEMA] " + system_txt}]},
-        {"role": "model", "parts": [{"text": "Entendido. Buscaré información actual antes de responder."}]},
-        {"role": "user",  "parts": [{"text": user_txt}]},
-    ]
+    user_msg = (
+        f"Pregunta: {pregunta}\n"
+        + (f"\nINFO WEB ACTUAL (Tavily {fecha_hoy}):\n{_web_ctx}\n" if _web_ctx else "\n[Sin búsqueda web disponible]\n")
+        + (f"\nDatos avanzados:\n{_adv_ctx}\n" if _adv_ctx else "")
+        + f"\nResponde como PACH — analista experto."
+    )
 
-    body = {
-        "contents": contents,
-        "tools": [{"google_search": {}}],
-        "generationConfig": {
-            "temperature":     0.35,
-            "maxOutputTokens": 900,
-        }
-    }
+    # Groq primero
+    if _groq_key:
+        try:
+            _r_groq = _rq.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {_groq_key}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "max_tokens": 1024, "temperature": 0.35,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": user_msg},
+                    ],
+                }, timeout=45,
+            )
+            if _r_groq.status_code == 200:
+                _txt = (_r_groq.json().get("choices",[{}])[0]
+                               .get("message",{}).get("content","").strip())
+                if _txt:
+                    _src = "🔍 Tavily + Groq" if _web_ctx else "🤖 Groq"
+                    return f"{_txt}\n\n_Fuente: {_src}_"
+        except: pass
 
-    def _extract_text(data):
-        """Extrae todo el texto de la respuesta Gemini, incluyendo partes de grounding."""
-        candidates = data.get("candidates", [])
-        if not candidates: return ""
-        # Intentar todos los candidatos
-        for cand in candidates:
-            if cand.get("finishReason","") in ("SAFETY","RECITATION"): continue
-            parts = cand.get("content", {}).get("parts", [])
-            # Concatenar todas las partes de texto (grounding puede dividir en múltiples)
-            txt = "".join(p.get("text","") for p in parts if "text" in p).strip()
-            if txt: return txt
-        # Fallback: primer candidato sea cual sea
-        parts = candidates[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text","") for p in parts if "text" in p).strip()
+    # Claude fallback
+    if _cl_key:
+        try:
+            _r_cl = _rq.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": _cl_key, "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json={
+                    "model": "claude-sonnet-4-20250514", "max_tokens": 1024,
+                    "temperature": 0.35, "system": system_prompt,
+                    "messages": [{"role": "user", "content": user_msg}],
+                }, timeout=60,
+            )
+            if _r_cl.status_code == 200:
+                txt = "\n".join(
+                    blk.get("text","") for blk in _r_cl.json().get("content",[])
+                    if blk.get("type") == "text" and blk.get("text","").strip()
+                ).strip()
+                if txt:
+                    return f"{txt}\n\n_Fuente: Tavily + Claude_"
+        except: pass
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-
-    try:
-        r = _rq.post(url, json=body, timeout=50)
-        if r.status_code == 200:
-            txt = _extract_text(r.json())
-            if txt: return txt.strip()
-            # Si vino vacío: puede ser bug de grounding — reintentar sin search
-            body2 = dict(body); body2.pop("tools", None)
-            r2 = _rq.post(url, json=body2, timeout=40)
-            if r2.status_code == 200:
-                txt2 = _extract_text(r2.json())
-                if txt2: return txt2.strip() + "\n\n_(búsqueda web no disponible en este intento)_"
-            return "⚠️ PACH no obtuvo respuesta del modelo. Intenta de nuevo."
-        else:
-            try:
-                _err = r.json().get("error",{}).get("message", f"HTTP {r.status_code}")
-            except:
-                _err = f"HTTP {r.status_code}"
-            # Fallback a gemini-1.5-flash si 2.0 falla
-            url15 = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-            body15 = dict(body); body15.pop("tools", None)
-            r15 = _rq.post(url15, json=body15, timeout=40)
-            if r15.status_code == 200:
-                txt15 = _extract_text(r15.json())
-                if txt15: return txt15.strip() + "\n\n_(modelo 1.5 — sin búsqueda web)_"
-            return f"⚠️ Error Gemini: {_err[:100]}"
-    except Exception as e:
-        return f"⚠️ PACH error de conexión: {str(e)[:120]}"
-
-
+    return "⚠️ PACH sin respuesta. Verifica GROQ_API_KEY en Streamlit secrets."
 def render_pach(sport_label: str, context_data: dict):
     """
     🤖 PACH — Chat AI analista integrado en el tab de Bot.
     1 pregunta a la vez, respuesta con web_search en vivo.
     """
-    api_ok = bool(GEMINI_API_KEY)
+    api_ok = bool(GROQ_API_KEY or TAVILY_API_KEY or ANTHROPIC_API_KEY)
 
     st.markdown(f"""
     <div style='background:linear-gradient(135deg,#0a0020,#001a10);
@@ -13410,7 +13484,7 @@ def render_pach(sport_label: str, context_data: dict):
         <div style='font-size:2.4rem'>🤖</div>
         <div style='flex:1'>
           <div style='font-size:1.56rem;font-weight:900;color:#cc44ff;letter-spacing:.08em'>PACH</div>
-          <div style='font-size:1.08rem;color:#888'>Analista AI · Powered by Gemini · Busca en internet en tiempo real</div>
+          <div style='font-size:1.08rem;color:#888'>Analista AI · Powered by Groq + Tavily · Busca en internet en tiempo real</div>
         </div>
         <div style='font-size:0.975rem;padding:4px 10px;border-radius:8px;
         background:{"#00ff8820" if api_ok else "#ff000020"};
@@ -13438,7 +13512,7 @@ def render_pach(sport_label: str, context_data: dict):
     </div>""", unsafe_allow_html=True)
 
     if not api_ok:
-        st.warning("Agrega `GEMINI_API_KEY` en Streamlit secrets para activar PACH.")
+        st.warning("Agrega `GROQ_API_KEY` en Streamlit secrets para activar PACH (gratis en groq.com).")
         return
 
     # Historial de la sesión (solo últimas 6 para no saturar UI)
@@ -13495,7 +13569,7 @@ def render_pach(sport_label: str, context_data: dict):
     pregunta = st.chat_input("Pregúntale a PACH — Ej: Over 2.5 City vs Arsenal · Alcaraz -1.5 sets...", key=_fk)
 
     if pregunta and pregunta.strip():
-        with st.spinner(f"🌐 PACH buscando en Google: \"{pregunta.strip()[:40]}{'...' if len(pregunta)>40 else ''}\""):
+        with st.spinner("🌐 PACH buscando info..."):
             respuesta = _pach_call(pregunta.strip(), sport_label, context_data)
         st.session_state[hist_key].append({"q": pregunta.strip(), "a": respuesta})
         # NO rerun — mostrar respuesta directamente sin perder el tab activo
@@ -14615,13 +14689,14 @@ def _resolve_rank(player_name: str, api_ranks: dict) -> int:
 def get_tennis_cartelera():
     now  = datetime.now(CDMX)
     hoy  = now.strftime("%Y-%m-%d")
+    ayer = (now - timedelta(days=1)).strftime("%Y-%m-%d")
     fin  = (now + timedelta(days=4)).strftime("%Y-%m-%d")
     matches = []
     try:
         r = requests.get(TENNIS_API, params={
             "method":     "get_fixtures",
             "APIkey":     TENNIS_API_KEY,
-            "date_start": hoy,
+            "date_start": ayer,   # incluir ayer para partidos finalizados nocturnos
             "date_stop":  fin,
         }, headers=H, timeout=12)
         data = r.json() if r.status_code == 200 else {}
@@ -14636,7 +14711,7 @@ def get_tennis_cartelera():
                     hora  = cdmx_t.strftime("%H:%M")
                     fecha = cdmx_t.strftime("%Y-%m-%d")  # convertir fecha UTC→CDMX
                 except: pass
-                if fecha < hoy or fecha > fin: continue
+                if fecha < ayer or fecha > fin: continue
                 tour_type   = ev.get("event_type_type","").upper()
                 tour_name   = ev.get("tournament_name","").upper()
                 league_name = ev.get("league_name","").upper()
@@ -15044,7 +15119,7 @@ def _tennis_expert_analysis_raw(p1_name, p2_name, rank1, rank2, odd_1, odd_2,
     - Lesiones conocidas, fatiga
     - Da probabilidades REALES, no siempre 58/42
     """
-    if not GEMINI_API_KEY: return None
+    if not ANTHROPIC_API_KEY: return None
     prompt = f"""Eres EINSTEIN TENIS, el analista de tenis más avanzado del mundo.
 Analiza en PROFUNDIDAD este partido ATP/WTA y da probabilidades REALES.
 
@@ -15243,7 +15318,7 @@ def _ultra_fatiga(home, away, sport, fecha):
     1. INDICE DE FATIGA REAL — uno de los mas poderosos.
     Soccer: 3 partidos en 7 dias. NBA: back-to-back. Tenis: 3 sets seguidos.
     """
-    if not GEMINI_API_KEY: return {"fatiga_h":0.0,"fatiga_a":0.0,"alerta":""}
+    if not ANTHROPIC_API_KEY: return {"fatiga_h":0.0,"fatiga_a":0.0,"alerta":""}
     try:
         p = (f"Analiza fatiga para {home} vs {away} ({sport}, {fecha}).\n"
              f"Soccer: 3+ partidos en 7 dias=-0.10. NBA: back-to-back=-0.08. "
@@ -15264,7 +15339,7 @@ def _ultra_matchup(home, away, sport):
     2. MATCHUP ESTILO VS ESTILO — algunos estilos siempre pierden contra otros.
     Soccer: posesion vs presion. NBA: pequenos vs pivots. Tenis: defensor vs sacador.
     """
-    if not GEMINI_API_KEY: return {"ventaja":0.0,"estilo_h":"","estilo_a":"","matchup":""}
+    if not ANTHROPIC_API_KEY: return {"ventaja":0.0,"estilo_h":"","estilo_a":"","matchup":""}
     try:
         p = (f"Analiza matchup tactico {home} vs {away} ({sport}).\n"
              f"Clasifica estilos: Soccer(posesion|contragolpe|presion|bloque), "
@@ -15285,7 +15360,7 @@ def _ultra_forma_real(home, away, sport):
     3. FORMA REAL (estadisticas, no resultados).
     Soccer: xG, tiros, posesion. NBA: OffRtg, DefRtg. Tenis: % puntos servicio/resto.
     """
-    if not GEMINI_API_KEY: return {"forma_h":0.0,"forma_a":0.0,"descripcion":""}
+    if not ANTHROPIC_API_KEY: return {"forma_h":0.0,"forma_a":0.0,"descripcion":""}
     try:
         p = (f"Analiza forma real (estadisticas, no resultados) {home} vs {away} ({sport}).\n"
              f"Soccer: xG ultimos 5, tiros. NBA: OffRtg/DefRtg reciente. Tenis: % servicio/resto.\n"
@@ -15306,7 +15381,7 @@ def _ultra_ventaja_fisica(home, away, sport):
     4. VENTAJA FISICA.
     NBA: altura, rebotes. Soccer: velocidad extremos, duelos aereos. Tenis: potencia servicio.
     """
-    if not GEMINI_API_KEY: return {"ventaja_fisica":0.0,"descripcion":""}
+    if not ANTHROPIC_API_KEY: return {"ventaja_fisica":0.0,"descripcion":""}
     try:
         p = (f"Analiza ventaja fisica {home} vs {away} ({sport}).\n"
              f"NBA: altura promedio, dominio pintura. Soccer: velocidad, duelos aereos, fisico.\n"
@@ -15326,7 +15401,7 @@ def _ultra_localia(home, away, sport, liga):
     5. LOCALIA PROFUNDA — no solo 'juega en casa'.
     % real victorias local, goles a favor/contra, presion del estadio.
     """
-    if not GEMINI_API_KEY: return {"bonus_local":0.0,"descripcion":""}
+    if not ANTHROPIC_API_KEY: return {"bonus_local":0.0,"descripcion":""}
     try:
         p = (f"Analiza ventaja de localia profunda: {home} (local) vs {away} ({sport}, {liga}).\n"
              f"% real victorias en casa, diferencia goles/puntos local vs visita, presion estadio.\n"
@@ -15346,7 +15421,7 @@ def _ultra_motivacion(home, away, sport, liga, tabla_ctx: str = ""):
     6. MOTIVACION COMPETITIVA — una de las variables mas fuertes.
     Descenso, playoffs, eliminacion, rivalidad historica. Posicion en tabla = urgencia real.
     """
-    if not GEMINI_API_KEY: return {"motivacion_h":0.0,"motivacion_a":0.0,"situacion":""}
+    if not ANTHROPIC_API_KEY: return {"motivacion_h":0.0,"motivacion_a":0.0,"situacion":""}
     try:
         _tbl_line = (f" | Posicion tabla: {tabla_ctx}" if tabla_ctx else "")
         p = (f"Analiza motivacion competitiva {home} vs {away} ({sport}, {liga}){_tbl_line}.\n"
@@ -15369,7 +15444,7 @@ def _ultra_consistencia(home, away, sport):
     7+10. INDICE DE CONSISTENCIA (desviacion estandar de rendimiento).
     Equipo volatil = riesgo alto. Equipo consistente = apuesta mas segura.
     """
-    if not GEMINI_API_KEY: return {"consist_h":0.5,"consist_a":0.5,"descripcion":""}
+    if not ANTHROPIC_API_KEY: return {"consist_h":0.5,"consist_a":0.5,"descripcion":""}
     try:
         p = (f"Mide consistencia de rendimiento (NO resultados) de {home} y {away} ({sport}).\n"
              f"Consistencia = estabilidad estadistica. Volatilidad = alternancia extrema.\n"
@@ -15390,7 +15465,7 @@ def _ultra_presion(home, away, sport):
     1+7(KR). EFICIENCIA BAJO PRESION + DESCANSO MENTAL.
     Clutch stats, break points, partido empatado. Rebote mental post-derrota.
     """
-    if not GEMINI_API_KEY: return {"presion_h":0.0,"presion_a":0.0,"descripcion":""}
+    if not ANTHROPIC_API_KEY: return {"presion_h":0.0,"presion_a":0.0,"descripcion":""}
     try:
         p = (f"Analiza eficiencia bajo presion y estado mental de {home} y {away} ({sport}).\n"
              f"Soccer: rendimiento en empates, rachas recientes. NBA: clutch stats ultimos 5min.\n"
@@ -15411,7 +15486,7 @@ def _ultra_ritmo_juego(home, away, sport):
     9+8(KR). RITMO DE JUEGO + EFICIENCIA EN TRANSICION.
     NBA pace, Soccer lento vs rapido, contraataques, fast breaks.
     """
-    if not GEMINI_API_KEY: return {"ritmo_delta":0.0,"descripcion":""}
+    if not ANTHROPIC_API_KEY: return {"ritmo_delta":0.0,"descripcion":""}
     try:
         p = (f"Analiza ritmo de juego y eficiencia en transicion {home} vs {away} ({sport}).\n"
              f"NBA: pace preferido (alto vs bajo). Soccer: equipo lento vs rapido, contraataque.\n"
@@ -15432,7 +15507,7 @@ def _ultra_dependencia_estrella(home, away, sport):
     7(KR). INDICE DE DEPENDENCIA DE ESTRELLA.
     NBA: jugador produce 40%+ del ataque. Soccer: goleador unico. Tenis: servicio.
     """
-    if not GEMINI_API_KEY: return {"dep_h":0.0,"dep_a":0.0,"estrella_h":"","estrella_a":""}
+    if not ANTHROPIC_API_KEY: return {"dep_h":0.0,"dep_a":0.0,"estrella_h":"","estrella_a":""}
     try:
         p = (f"Analiza dependencia de estrella en {home} y {away} ({sport}).\n"
              f"Si el equipo depende de 1 jugador -> vulnerabilidad si lo neutralizan.\n"
@@ -15453,7 +15528,7 @@ def _ultra_adaptabilidad(home, away, sport):
     6(KR). ADAPTABILIDAD TACTICA + EFICIENCIA DEL ENTRENADOR.
     Equipos que cambian sistema vs equipos de un solo sistema.
     """
-    if not GEMINI_API_KEY: return {"adapt_h":0.0,"adapt_a":0.0,"descripcion":""}
+    if not ANTHROPIC_API_KEY: return {"adapt_h":0.0,"adapt_a":0.0,"descripcion":""}
     try:
         p = (f"Analiza adaptabilidad tactica y calidad del entrenador {home} vs {away} ({sport}).\n"
              f"Equipo flexible = puede ajustar plan. Dependiente = vulnerables a cambios.\n"
@@ -15479,7 +15554,7 @@ def _ultra_rival_similar(home: str, away: str, sport: str) -> dict:
     TTL=1800s.
     """
     _d = {"rival_h": 0.0, "rival_a": 0.0, "nivel": "similar", "descripcion": ""}
-    if not GEMINI_API_KEY: return _d
+    if not ANTHROPIC_API_KEY: return _d
     try:
         sport_ctx = {
             "futbol": "analiza rendimiento vs top 5 vs media tabla vs relegación",
@@ -15507,7 +15582,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
     Ultra Intelligence: UNA sola llamada Haiku que reemplaza 12 llamadas paralelas.
     Retorna: {delta_h, delta_a, score_ultra, flags, context_str, raw}
     """
-    if not GEMINI_API_KEY:
+    if not ANTHROPIC_API_KEY:
         return {"delta_h":0.0,"delta_a":0.0,"score_ultra":5.0,"flags":[],"context_str":"","raw":{}}
     try:
         prompt = (
@@ -15564,7 +15639,7 @@ def _ultra_intel_full(home, away, sport, liga, fecha, tabla_ctx: str = ""):
     return {"delta_h":0.0,"delta_a":0.0,"score_ultra":5.0,"flags":[],"context_str":"","raw":{}}
 
 def _kr_situacional(home,away,sport,liga,hora):
-    if not GEMINI_API_KEY: return {"factor":0.0,"ctx":""}
+    if not ANTHROPIC_API_KEY: return {"factor":0.0,"ctx":""}
     try:
         prompt=(
             f"Partido: {home} vs {away} | {sport} | {liga}\n"
@@ -15610,7 +15685,7 @@ def _kr_analisis_combinado(home: str, away: str, sport: str, liga: str, hora: st
     UNA sola llamada Haiku que reemplaza _kr_situacional + _kr_transicion + _kr_entrenador.
     3 llamadas → 1 llamada. Misma información, 3× más rápido.
     """
-    if not GEMINI_API_KEY:
+    if not ANTHROPIC_API_KEY:
         return {"factor":0.0,"ctx":"","trans_h":0.0,"trans_a":0.0,"trans_score":5,
                 "coach_h":0.0,"coach_a":0.0,"coach_score":5}
     try:
@@ -15637,33 +15712,63 @@ def _kr_analisis_combinado(home: str, away: str, sport: str, liga: str, hora: st
             "coach_h":0.0,"coach_a":0.0,"coach_score":5}
 
 def _kr_god_brain_call(top5_t,b_wins,b_loss,b_hot,b_cold,last5_s):
-    if not GEMINI_API_KEY or not top5_t:
+    if not ANTHROPIC_API_KEY or not top5_t:
         return {"idx":0,"razon":"","confianza":0.5,"alerta":None}
     try:
-        ct=""
-        for i,c in enumerate(top5_t[:5],1):
-            ct+=(f"\nC{i}: {c[0]} | {c[1]}\n"
-                 f"  Prob:{c[2]*100:.1f}% Cuota:{c[3]:.2f} GODscore:{c[4]:.2f}\n"
-                 f"  EV:{c[5]:+.1f}% Ctx:{c[6]} Contra:{'SI' if c[7] else 'NO'}\n")
-            # Agregar señales externas si el candidato las tiene
-            if len(c) > 8 and c[8]:  # rxg_source o rten_source
-                ct += f"  FuentesExt:{str(c[8])[:80]}\n"
-        sys_p=("Eres KING RONGO GOD MODE, el mejor cerebro de apuestas con IA del mundo. "
-               "Datos: ELO, Monte Carlo 50k, EV real, Kelly, momentum, calibracion Brier, "
-               "xG real FBref/Understat, Sharp money Pinnacle, alineaciones Sofascore, arbitro, NBA BRef, Tennis Abstract. "
-               "JERARQUIA: 1)Sharp money confirmado 2)xG real alto+EV+ 3)Alineaciones completas 4)GODscore alto. "
-               "Si un candidato tiene [SHARP_home/away] en FuentesExt, ese lado gana salvo contradiccion clara. "
-               "Elige EL mejor pick. SOLO JSON sin backticks, sin texto extra.")
-        _jfmt = '{"idx":0-4,"confianza":0-1,"razon":"3 frases","alerta":"o null"}'
-        usr_p = (f"Historial:{b_wins}W-{b_loss}L Hot:{b_hot} Cold:{b_cold}\n"
-                 f"Ultimos5:{last5_s}\n{ct}\n"
-                 f"Elige el mejor. JSON: {_jfmt}")
-        r=type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(usr_p,use_search=False,max_tokens=150)}]}})()  # gemini
-        if r.status_code==200:
-            txt=r.json()["content"][0]["text"].strip()
-            txt=re.sub(r"```json|```","",txt).strip()
-            d=json.loads(txt)
-            d.setdefault("idx",0); d.setdefault("confianza",0.5); d.setdefault("razon","")
+        # ── Construir tabla detallada de candidatos ──
+        ct = ""
+        for i, c in enumerate(top5_t[:5], 1):
+            label, pick, prob, odd, score, ev_pct, ctx, contra = c[0],c[1],c[2],c[3],c[4],c[5],c[6],c[7]
+            ext_src = str(c[8])[:120] if len(c) > 8 and c[8] else ""
+            _ev_real = prob*(odd-1)-(1-prob) if odd > 1 else ev_pct/100
+            ct += (
+                f"\nC{i}: {label}\n"
+                f"  PICK: {pick}\n"
+                f"  Prob:{prob*100:.1f}% | Cuota:{odd:.2f} | EV:{_ev_real*100:+.1f}% | GODscore:{score:.2f}\n"
+                f"  Contradiccion:{'⚠️ SI — modelos dividen opinion' if contra else '✅ NO'}\n"
+                f"  Contexto: {ctx[:120]}\n"
+                + (f"  Fuentes externas: {ext_src}\n" if ext_src else "")
+            )
+
+        # ── Fecha/hora actual ──
+        from datetime import datetime as _dtgb
+        import pytz as _pygb
+        _now_gb = _dtgb.now(_pygb.timezone("America/Mexico_City")).strftime("%d/%m/%Y %H:%M")
+
+        sys_p = (
+            "Eres KING RONGO GOD BRAIN — el sistema de decisión final de The Gamblers Den. "
+            "Tu trabajo: elegir el pick de mayor valor esperado REAL entre los candidatos. "
+            "\n\nJERARQUÍA DE DECISIÓN (en orden de importancia):"
+            "\n1. EV positivo Y cuota > 1.60 — apuesta con valor real"
+            "\n2. Sharp money confirmado ([SHARP_home] o [SHARP_away] en fuentes externas)"
+            "\n3. xG real de FBref/Understat confirma el pick"
+            "\n4. GODscore alto SIN contradicción de modelos"
+            "\n5. Prob ≥ 62% en mercado principal (ML/1X2)"
+            "\n\nREGLAS ABSOLUTAS — si se violan, cambia el pick:"
+            "\n- NUNCA elegir candidato con EV negativo si hay alternativa con EV positivo"
+            "\n- NUNCA elegir candidato con contradicción=SI si hay uno sin contradicción con EV+"
+            "\n- NUNCA elegir GCM (gana con mitad) ni DO (doble oportunidad) sobre ML/OU si hay ML con EV+"
+            "\n- Si todos tienen EV negativo, elegir el menor EV negativo y emitir alerta"
+            "\n\nRESPONDE SOLO JSON SIN MARKDOWN:"
+        )
+        _jfmt = (
+            '{"idx":0,"confianza":0.0,"razon":"explicacion clara de 2-3 frases por qué este pick tiene valor real",'
+            '"alerta":"advertencia importante o null","ev_pick":0.0}'
+        )
+        usr_p = (
+            f"Fecha/hora CDMX: {_now_gb}\n"
+            f"Historial KR: {b_wins}W-{b_loss}L | Racha caliente:{b_hot} fría:{b_cold}\n"
+            f"Últimos 5: {last5_s}\n"
+            f"\n{'='*50}\nCANDIDATOS:{ct}\n{'='*50}\n"
+            f"\nElige el pick de mayor valor real. JSON exacto: {_jfmt}"
+        )
+        raw = _gemini(usr_p, system=sys_p, use_search=False, max_tokens=350, json_mode=True)
+        if raw:
+            d = json.loads(raw)
+            d.setdefault("idx", 0)
+            d.setdefault("confianza", 0.5)
+            d.setdefault("razon", "")
+            d["idx"] = max(0, min(int(d["idx"]), len(top5_t)-1))
             return d
     except: pass
     return {"idx":0,"razon":"","confianza":0.5,"alerta":None}
@@ -16179,50 +16284,36 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 _kr_all_mkts = [(l,p,o,g) for l,p,o,g in _kr_all_mkts if p >= 0.10]
                 if not _kr_all_mkts: continue
 
-                # ── Selección KR: EV para mercados core, prob para el resto ──
-                # EV real = prob*(odd-1) - (1-prob)   — solo para: ML(1X2), AA, O2.5, U2.5
-                # Prob pura — para: DO, GCM, TG, O1.5, O3.5, U3.5 (cuotas más difíciles de obtener real)
-                _EV_MKTS = {"1X2", "AA"}  # siempre EV
-                def _kr_ev(p, o): return p*(o-1) - (1-p)
+                # ── Selección KR: 100% por probabilidad ──
+                # El pick es siempre el mercado con mayor % de probabilidad.
+                # Umbrales mínimos por tipo de mercado para evitar picks flojos.
                 def _is_o25_u25(lbl): return ("Over 2.5" in lbl or "Under 2.5" in lbl)
 
                 _kr_valid = [(l,p,o,mk) for l,p,o,mk in _kr_all_mkts if p>0.01 and o>1.0]
                 if not _kr_valid: _kr_valid = _kr_all_mkts
 
-                # Pool elegible: prob ≥45%, sin O1.5 salvo altísima prob
+                # Pool elegible: umbrales mínimos por mercado
                 _kr_pool = []
                 for l,p,o,mk in _kr_valid:
-                    if "1.5 Total" in l and p < 0.80: continue  # O1.5 solo si casi seguro
-                    if p < 0.45: continue
-                    # Score de selección
-                    if mk in _EV_MKTS or _is_o25_u25(l):
-                        # Mercados core: score = EV real (requiere EV+)
-                        _ev_val = _kr_ev(p, o)
-                        if _ev_val > 0:
-                            _kr_pool.append((l, p, o, mk, _ev_val, "EV"))
-                    else:
-                        # Resto: score = prob (acepta cualquier p≥0.45)
-                        _kr_pool.append((l, p, o, mk, p, "PROB"))
+                    if "1.5 Total" in l and p < 0.80: continue  # O1.5 solo si muy seguro
+                    if mk in ("1X2","AA") and p < 0.52: continue
+                    if mk in ("OU",)      and p < 0.54: continue
+                    if mk in ("DO","GCM") and p < 0.60: continue
+                    if mk in ("TG",)      and p < 0.58: continue
+                    if p < 0.50: continue
+                    _kr_pool.append((l, p, o, mk))
 
                 if _kr_pool:
-                    # Elegir el de mayor score — EV y PROB en la misma escala no compiten igual,
-                    # pero la selección es dentro de cada mercado: primero EV_MKTS si hay candidatos
-                    _ev_candidates  = [(l,p,o,mk,sc) for l,p,o,mk,sc,tp in _kr_pool if tp=="EV"]
-                    _prob_candidates = [(l,p,o,mk,sc) for l,p,o,mk,sc,tp in _kr_pool if tp=="PROB"]
-                    if _ev_candidates:
-                        # Entre mercados EV: elegir mayor EV
-                        _best_kr_raw = max(_ev_candidates, key=lambda x: x[4])
-                    else:
-                        # Sin EV+: mejor por prob entre DO/GCM/TG
-                        _best_kr_raw = max(_prob_candidates, key=lambda x: x[4])
-                    lbl, prob, odd, mkt = _best_kr_raw[0], _best_kr_raw[1], _best_kr_raw[2], _best_kr_raw[3]
+                    # Elegir siempre el de MAYOR PROBABILIDAD
+                    _best_kr_raw = max(_kr_pool, key=lambda x: x[1])
+                    lbl, prob, odd, mkt = _best_kr_raw
                 else:
-                    # Sin candidatos elegibles: fallback a mayor prob del pool válido, sin O1.5
-                    _kr_no15 = [(l,p,o,mk) for l,p,o,mk in _kr_valid if "1.5 Total" not in l and p>=0.40]
+                    # Fallback: mayor prob del pool válido sin O1.5
+                    _kr_no15 = [(l,p,o,mk) for l,p,o,mk in _kr_valid if "1.5 Total" not in l and p>=0.50]
                     _fallback = max(_kr_no15, key=lambda x: x[1]) if _kr_no15 else max(_kr_valid, key=lambda x: x[1])
                     lbl, prob, odd, mkt = _fallback[0], _fallback[1], _fallback[2], _fallback[3]
 
-                if prob < 0.40: continue  # umbral mínimo razonable
+                if prob < 0.52: continue  # umbral mínimo absoluto
                 edge   = _kr_edge(prob, odd)
                 kelly  = _kr_kelly(prob, odd)
                 mv     = [mc.get("dc_ph",0.5), mc.get("bvp_ph",0.5),
@@ -16401,23 +16492,15 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
 
                 # ── Generar DOS candidatos independientes: mejor O/U + mejor ML por EV ──
                 def _nba_ev(p, o): return p*(o-1) - (1-p)
-                _nba_ou_opts = [(l,p,o,t) for l,p,o,t in _kr_nba_all if t=="O/U" and p>=0.43]
-                _nba_ml_opts = [(l,p,o,t) for l,p,o,t in _kr_nba_all if t=="ML"  and p>=0.43]
+                _nba_ou_opts = [(l,p,o,t) for l,p,o,t in _kr_nba_all if t=="O/U" and p>=0.52]
+                _nba_ml_opts = [(l,p,o,t) for l,p,o,t in _kr_nba_all if t=="ML"  and p>=0.54]
                 _nba_picks = []
-                # O/U: elegir por EV positivo; si ninguno tiene EV+, el de mayor prob
+                # O/U: elegir por mayor probabilidad
                 if _nba_ou_opts:
-                    _ou_ev_ok = [x for x in _nba_ou_opts if _nba_ev(x[1],x[2]) > 0]
-                    _nba_picks.append(
-                        max(_ou_ev_ok, key=lambda x: _nba_ev(x[1],x[2])) if _ou_ev_ok
-                        else max(_nba_ou_opts, key=lambda x: x[1])
-                    )
-                # ML: elegir por EV positivo; si ninguno tiene EV+, el de mayor prob
+                    _nba_picks.append(max(_nba_ou_opts, key=lambda x: x[1]))
+                # ML: elegir por mayor probabilidad
                 if _nba_ml_opts:
-                    _ml_ev_ok = [x for x in _nba_ml_opts if _nba_ev(x[1],x[2]) > 0]
-                    _nba_picks.append(
-                        max(_ml_ev_ok, key=lambda x: _nba_ev(x[1],x[2])) if _ml_ev_ok
-                        else max(_nba_ml_opts, key=lambda x: x[1])
-                    )
+                    _nba_picks.append(max(_nba_ml_opts, key=lambda x: x[1]))
                 if not _nba_picks: continue
 
                 for lbl, prob, odd, mkt in _nba_picks:
@@ -16602,7 +16685,7 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                         r1, r2, p1_name, p2_name, srf, _tour_kr,
                         odd_1=odd_1, odd_2=odd_2
                     )
-                    if _gou and _gou.get("prob", 0) >= 0.44 and _gou.get("ev", -1) > -0.05:
+                    if _gou and _gou.get("prob", 0) >= 0.54:
                         _g_edge   = _kr_edge(_gou["prob"], _gou["odd"])
                         _g_kelly  = _kr_kelly(_gou["prob"], _gou["odd"])
                         _g_ce, _g_cl, _g_cc = _kr_conf(_gou["prob"], _g_edge, 18)
@@ -16762,19 +16845,21 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
     candidates.sort(key=lambda x: -x.get("score",0))
     contras = [c for c in candidates if c.get("contradiccion")]
 
-    # Regla de probabilidad dominante: si hay candidato ≥70%, no elegir ninguno <60%
-    _high_prob = [c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.70]
-    _normal    = [c for c in candidates if not c.get("contradiccion")]
-    _pool      = _high_prob if _high_prob else _normal
+    # Regla de probabilidad dominante: si hay candidato ≥70%, no elegir ninguno <62%
+    _high_prob  = [c for c in candidates if not c.get("contradiccion") and c.get("prob",0) >= 0.70]
+    _normal     = [c for c in candidates if not c.get("contradiccion")]
+    _pool       = _high_prob if _high_prob else _normal
 
-    # Cascada — siempre retorna algo si hay candidatos
+    # Cascada mejorada — prioriza EV+ real, luego prob alta, luego lo que haya
+    _prob_solid = [c for c in _pool if c.get("prob",0) >= 0.62]
+    _prob_ok    = [c for c in _pool if c.get("prob",0) >= 0.54]
     el_pick = (
-        next((c for c in _pool if c.get("edge",0) > 0), None) or
-        next((c for c in _pool if c.get("prob",0) >= 0.55), None) or
-        next((c for c in _pool), None) or
+        (max(_prob_solid, key=lambda c: c.get("prob",0)) if _prob_solid else None) or
+        (max(_prob_ok,    key=lambda c: c.get("prob",0)) if _prob_ok    else None) or
+        (max(_pool,       key=lambda c: c.get("prob",0)) if _pool       else None) or
         (candidates[0] if candidates else None)
     )
-    # GOD BRAIN: Gemini decide el pick final con datos externos incluidos
+    # GOD BRAIN: Claude decide el pick final con datos externos incluidos
     try:
         _t5 = tuple((c.get("label",""),c.get("pick",""),c.get("prob",0.5),
                      c.get("odd",0.0),c.get("score",5.0),c.get("ev_pct",0.0),
@@ -16840,7 +16925,7 @@ def _kr_parlay_del_rey(todos):
     sin contradicción, máxima prob combinada.
     Retorna lista de hasta 3 candidatos o [] si no hay suficientes.
     """
-    sin_contra = [c for c in todos if not c.get("contradiccion") and c.get("prob",0) >= 0.58]
+    sin_contra = [c for c in todos if not c.get("contradiccion") and c.get("prob",0) >= 0.63]
     # Un pick por deporte
     usados_deportes = set()
     parlay = []
@@ -16919,10 +17004,10 @@ def _king_rongo_bankroll_advice(pick_history):
 
 def _kr_ia_narracion(el_pick, bk, todos):
     """
-    Llama a Gemini para que King Rongo narre el pick en primera persona.
+    Llama a Claude para que King Rongo narre el pick en primera persona.
     Conciso, poderoso, con personalidad. Incluye datos avanzados de fuentes externas.
     """
-    if not GEMINI_API_KEY: return ""
+    if not ANTHROPIC_API_KEY: return ""
     try:
         modelos_txt = " | ".join(f"{k}: {v}%" for k,v in el_pick.get("models",{}).items())
         parlay      = _kr_parlay_del_rey(todos)
@@ -21506,7 +21591,7 @@ if st.session_state["view"] == "cartelera":
                     # Add ML picks via AI for top 6 games
                     try:
                         _top_games = [g for g in nba_games[:6] if g["state"]=="pre"]
-                        if _top_games and GEMINI_API_KEY:
+                        if _top_games and ANTHROPIC_API_KEY:
                             import json as _j
                             _games_txt = "\n".join([f"{g['away']} @ {g['home']}" for g in _top_games])
                             _ml_prompt = "NBA ML picks experto. Para estos partidos da solo los que tengan valor real (prob >= 58%). Responde SOLO en JSON array: [{teams, ml_pick, prob, razon}]. Partidos:\n" + _games_txt
@@ -21778,28 +21863,93 @@ if st.session_state["view"] == "cartelera":
                                         }
                                         _bridge_snap_to_brain(_tid, _br_p)
                                 except: pass
-                                # Render pick badge
-                                _pick_html_t = ""
+                                # Render picks finalizados — ML verde/rojo + O/U de juegos
+                                _m_compat_t = {**m, "home": m.get("p1",""), "away": m.get("p2",""),
+                                               "score_h": _sh_disp, "score_a": _sa_disp,
+                                               "score_p1": sc1r, "score_p2": sc2r,
+                                               "deporte": "tenis"}
+                                _picks_html_block = ""
+
+                                # ── Pick ML ──
                                 if _spkt:
-                                    _ppt = _spkt.get("prob",0); _pptd = _ppt*100 if _ppt<=1 else _ppt
+                                    _ppt  = _spkt.get("prob",0)
+                                    _pptd = _ppt*100 if _ppt<=1 else _ppt
                                     _plbt = _spkt.get("pick","")
-                                    _m_compat = {**m, "home": m.get("p1",""), "away": m.get("p2",""),
-                                                 "score_h": _sh_disp, "score_a": _sa_disp,
-                                                 "score_p1": sc1r, "score_p2": sc2r,
-                                                 "deporte": "tenis"}
-                                    try: _vdt, _vct, _ = _villar_match_pick_to_result(_spkt, _m_compat)
-                                    except: _vdt, _vct = "⏳", "#555"
-                                    _icot = "✅" if "GANÓ" in _vdt else ("❌" if "FALLÓ" in _vdt else "⏳")
-                                    _bgpt = "#00ff8812" if _icot=="✅" else ("#ff444412" if _icot=="❌" else "#1a1a3a")
-                                    _pick_html_t = (
-                                        f"<div style='border-top:1px solid #1a2a1a;margin-top:5px;padding-top:4px;"
-                                        f"background:{_bgpt};border-radius:5px;padding:4px 6px;"
+                                    try: _vdt, _vct, _ = _villar_match_pick_to_result(_spkt, _m_compat_t)
+                                    except: _vdt, _vct = "⏳", "#888"
+                                    _won_pick = "GANÓ" in _vdt
+                                    _lost_pick = "FALLÓ" in _vdt
+                                    _icot  = "✅" if _won_pick else ("❌" if _lost_pick else "⏳")
+                                    # Colores fuertes: verde brillante si ganó, rojo si perdió
+                                    _pk_bg   = "#003311" if _won_pick else ("#1a0000" if _lost_pick else "#0d0d1a")
+                                    _pk_brd  = "#00ff88" if _won_pick else ("#ff3333" if _lost_pick else "#1a2a1a")
+                                    _pk_tc   = "#00ff88" if _won_pick else ("#ff4444" if _lost_pick else "#aaa")
+                                    _picks_html_block += (
+                                        f"<div style='border:1px solid {_pk_brd};margin-top:5px;"
+                                        f"background:{_pk_bg};border-radius:5px;padding:4px 7px;"
                                         f"display:flex;align-items:center;gap:5px'>"
-                                        f"<span>{_icot}</span>"
+                                        f"<span style='font-size:1rem'>{_icot}</span>"
                                         f"<div style='flex:1;min-width:0'>"
-                                        f"<div style='font-size:0.78rem;font-weight:900;color:{_vct};"
+                                        f"<div style='font-size:0.58rem;color:{_pk_tc};font-weight:900;"
+                                        f"letter-spacing:.08em'>ML · {_pptd:.0f}%</div>"
+                                        f"<div style='font-size:0.82rem;font-weight:900;color:{_pk_tc};"
                                         f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_plbt}</div>"
-                                        f"<div style='font-size:0.68rem;color:#555'>🤖 {_pptd:.0f}%</div>"
+                                        f"</div></div>"
+                                    )
+
+                                # ── Pick O/U juegos ──
+                                _spkt_ou_t = _spkt.get("pick2","") if _spkt else ""
+                                _spkt_ou_p = _spkt.get("pick2_prob",0) if _spkt else 0
+                                # Si no hay O/U en snap, generarlo desde modelo local
+                                if not _spkt_ou_t:
+                                    try:
+                                        _r1ot = m.get("rank1",150) or 150
+                                        _r2ot = m.get("rank2",150) or 150
+                                        _tgp2 = _tennis_games_pick(
+                                            _r1ot, _r2ot, m.get("p1",""), m.get("p2",""),
+                                            surface=m.get("surface","hard"),
+                                            tour=m.get("tour","ATP"),
+                                            odd_1=m.get("odd_1",0), odd_2=m.get("odd_2",0)
+                                        )
+                                        if _tgp2 and _tgp2.get("pick"):
+                                            _spkt_ou_t = _tgp2["pick"]
+                                            _spkt_ou_p = _tgp2.get("prob",0.55)
+                                    except: pass
+                                if _spkt_ou_t and _spkt_ou_p > 0:
+                                    # Calcular total juegos reales del partido
+                                    _total_games_real = 0
+                                    try:
+                                        # score_p1 puede ser "7-6 6-3" → sumar todos los números
+                                        import re as _re_t
+                                        _all_nums = list(map(int, _re_t.findall(r'\d+', str(sc1r)+" "+str(sc2r))))
+                                        _total_games_real = sum(_all_nums)
+                                    except: pass
+                                    # Verificar resultado O/U si tenemos el total real
+                                    _ou_line_t = 0.0
+                                    try:
+                                        _ou_line_t = float(_re_t.findall(r'[\d.]+', _spkt_ou_t)[-1])
+                                    except: pass
+                                    _ou_won = _ou_lost = False
+                                    if _total_games_real > 0 and _ou_line_t > 0:
+                                        _is_over_pick = "Over" in _spkt_ou_t or "over" in _spkt_ou_t
+                                        _ou_won  = (_is_over_pick and _total_games_real > _ou_line_t) or                                                    (not _is_over_pick and _total_games_real < _ou_line_t)
+                                        _ou_lost = not _ou_won
+                                    _ou_ico  = "✅" if _ou_won else ("❌" if _ou_lost else "⏳")
+                                    _ou_bg   = "#003311" if _ou_won else ("#1a0000" if _ou_lost else "#0a0a14")
+                                    _ou_brd  = "#00ff88" if _ou_won else ("#ff3333" if _ou_lost else "#1a2a3a")
+                                    _ou_c    = "#ff6600" if ("Over" in _spkt_ou_t) else "#00ccff"
+                                    _ou_pctd = _spkt_ou_p*100 if _spkt_ou_p<=1 else _spkt_ou_p
+                                    _real_lbl = f" · {_total_games_real} reales" if _total_games_real > 0 else ""
+                                    _picks_html_block += (
+                                        f"<div style='border:1px solid {_ou_brd};margin-top:3px;"
+                                        f"background:{_ou_bg};border-radius:5px;padding:4px 7px;"
+                                        f"display:flex;align-items:center;gap:5px'>"
+                                        f"<span style='font-size:1rem'>{_ou_ico}</span>"
+                                        f"<div style='flex:1;min-width:0'>"
+                                        f"<div style='font-size:0.58rem;color:{_ou_c};font-weight:900;"
+                                        f"letter-spacing:.08em'>O/U JUEGOS · {_ou_pctd:.0f}%{_real_lbl}</div>"
+                                        f"<div style='font-size:0.82rem;font-weight:900;color:{_ou_c};"
+                                        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_spkt_ou_t}</div>"
                                         f"</div></div>"
                                     )
                                 st.markdown(
@@ -21812,7 +21962,7 @@ if st.session_state["view"] == "cartelera":
                                     f"<span style='color:{_act}'>{m['p2']}</span>"
                                     f"</div>"
                                     f"<div style='font-size:0.85rem;color:#FFD700;font-weight:700;margin-top:2px'>🏆 {won_n}</div>"
-                                    f"{_pick_html_t}</div>",
+                                    f"{_picks_html_block}</div>",
                                     unsafe_allow_html=True)
                                 if st.button("📊", key=f"ten_post_{_tid}", help=f"Analizar {m['p1']} vs {m['p2']}", use_container_width=True):
                                     sel_m = {**m,
@@ -21845,7 +21995,7 @@ if st.session_state["view"] == "cartelera":
                                     _ten_pl = f"{m['p1']} gana" if tm["p1"]>=tm["p2"] else f"{m['p2']} gana"
                                     _ten_pp = fav_p
                                     _ten_pl2 = ""; _ten_pp2 = 0.0  # se calcula en snap block abajo
-                                    # O/U juegos totales — Gemini busca la línea real del matchup específico
+                                    # O/U juegos totales — Claude busca la línea real del matchup específico
                                     _ten_ou_p   = 0.0
                                     _ten_ou_lbl = ""
                                     try:
@@ -21885,6 +22035,21 @@ if st.session_state["view"] == "cartelera":
                                                 _ten_ou_p   = _gprob
                                                 st.session_state[_ten_ou_cache_key] = {"lbl": _ten_ou_lbl, "prob": _ten_ou_p}
                                     except: pass
+                                    # Fallback O/U: si Claude falló, usar _tennis_games_pick local
+                                    if not _ten_ou_lbl:
+                                        try:
+                                            _tgp = _tennis_games_pick(
+                                                m.get("rank1",150), m.get("rank2",150),
+                                                m.get("p1",""), m.get("p2",""),
+                                                surface=m.get("surface","hard"),
+                                                tour=m.get("tour","ATP"),
+                                                odd_1=m.get("odd_1",0), odd_2=m.get("odd_2",0)
+                                            )
+                                            if _tgp and _tgp.get("pick"):
+                                                _ten_ou_lbl = _tgp["pick"]
+                                                _ten_ou_p   = _tgp.get("prob", 0.55)
+                                                st.session_state[_ten_ou_cache_key] = {"lbl": _ten_ou_lbl, "prob": _ten_ou_p}
+                                        except: pass
                                     # Snap pre-partido a disco para Villar: ML principal + O/U sets
                                     if not _ten_live and _ten_pl:
                                         try:
@@ -21911,8 +22076,24 @@ if st.session_state["view"] == "cartelera":
                                         except: pass
                                     # ── Tennis Card: matchup + 2 pick rows (ML + O/U sets) ──
                                     # pick2: O/U sets viene del bloque de snap de arriba
-                                    _ten_pl2 = locals().get("_ten_ou_lbl","") or (_snap_ten.get(m.get("id",""),{}).get("pick2","") if "_snap_ten" in dir() else "")
-                                    _ten_pp2 = locals().get("_ten_ou_p",0.0) or (_snap_ten.get(m.get("id",""),{}).get("pick2_prob",0) if "_snap_ten" in dir() else 0)
+                                    # O/U pre-partido: tomar del cache Claude o fallback modelo
+                                    _ten_pl2 = _ten_ou_lbl or _snap_ten.get(m.get("id",""),{}).get("pick2","")
+                                    _ten_pp2 = _ten_ou_p   or _snap_ten.get(m.get("id",""),{}).get("pick2_prob",0)
+                                    # Último fallback: modelo local directo
+                                    if not _ten_pl2:
+                                        try:
+                                            _r1fb = m.get("rank1",150) or 150
+                                            _r2fb = m.get("rank2",150) or 150
+                                            _tgpfb = _tennis_games_pick(
+                                                _r1fb, _r2fb, m.get("p1",""), m.get("p2",""),
+                                                surface=m.get("surface","hard"),
+                                                tour=m.get("tour","ATP"),
+                                                odd_1=m.get("odd_1",0), odd_2=m.get("odd_2",0)
+                                            )
+                                            if _tgpfb and _tgpfb.get("pick"):
+                                                _ten_pl2 = _tgpfb["pick"]
+                                                _ten_pp2 = _tgpfb.get("prob",0.55)
+                                        except: pass
                                     _ten_pick_row = ""
                                     if _ten_pl and _ten_pp >= 0.46:
                                         if _ten_pp >= 0.68:    _tpe,_tpc,_tpt = "💎","#00ccff","DIAMANTE"
