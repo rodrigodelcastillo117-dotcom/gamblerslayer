@@ -12257,7 +12257,42 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             _einstein_err = ""
             try:
                 # Sin búsqueda web — usa contexto local para ahorrar tokens Groq
-                _raw_ein = _gemini(_e_prompt, use_search=_ein_use_search, max_tokens=400, json_mode=True)
+                # Llamada directa a Claude (Einstein siempre usa Claude, no Groq)
+                import requests as _ein_req, json as _ein_json
+                _ein_cl_key = ANTHROPIC_API_KEY
+                _raw_ein = ""
+                if _ein_cl_key:
+                    try:
+                        _ein_body = {
+                            "model": "claude-sonnet-4-6",
+                            "max_tokens": 500,
+                            "temperature": 0.25,
+                            "system": "Eres Einstein, analista deportivo. Responde SOLO con JSON válido sin texto extra ni backticks.",
+                            "messages": [{"role": "user", "content": _e_prompt}],
+                        }
+                        if _ein_use_search:
+                            _ein_body["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
+                        _ein_r = _ein_req.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={"x-api-key": _ein_cl_key,
+                                     "anthropic-version": "2023-06-01",
+                                     "content-type": "application/json"},
+                            json=_ein_body, timeout=55,
+                        )
+                        if _ein_r.status_code == 200:
+                            _raw_ein = "\n".join(
+                                b.get("text","") for b in _ein_r.json().get("content",[])
+                                if b.get("type")=="text" and b.get("text","").strip()
+                            ).strip()
+                            _raw_ein = _raw_ein.replace("```json","").replace("```","").strip()
+                            _i0 = _raw_ein.find("{"); _i1 = _raw_ein.rfind("}")+1
+                            if _i0 >= 0 and _i1 > _i0: _raw_ein = _raw_ein[_i0:_i1]
+                        else:
+                            _einstein_err = f"Claude HTTP {_ein_r.status_code}: {_ein_r.text[:120]}"
+                    except Exception as _ein_ex:
+                        _einstein_err = f"Excepción Einstein: {str(_ein_ex)[:120]}"
+                else:
+                    _einstein_err = "ANTHROPIC_API_KEY no configurada"
                 if not _raw_ein or len(_raw_ein.strip()) < 10:
                     _einstein_err = "Claude no devolvió respuesta"
                 else:
@@ -12299,7 +12334,40 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                     f"\"resumen_auditoria\":\"1-2 lineas max\","
                     f"\"mejor_alternativa_papa\":\"mercado alternativo o confirmar el de Einstein\"}}"
                 )
-                _rawp = _gemini(_papa_prompt, use_search=False, max_tokens=300, json_mode=True)
+                # Papa usa Claude directamente
+                import requests as _papa_req
+                _rawp = ""
+                _papa_cl_key = ANTHROPIC_API_KEY
+                if _papa_cl_key:
+                    try:
+                        _papa_b = {
+                            "model": "claude-sonnet-4-6",
+                            "max_tokens": 400,
+                            "temperature": 0.20,
+                            "system": "Eres el Papa de Einstein, auditor supremo. Responde SOLO con JSON válido sin texto extra ni backticks.",
+                            "messages": [{"role": "user", "content": _papa_prompt}],
+                        }
+                        _papa_res = _papa_req.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={"x-api-key": _papa_cl_key,
+                                     "anthropic-version": "2023-06-01",
+                                     "content-type": "application/json"},
+                            json=_papa_b, timeout=50,
+                        )
+                        if _papa_res.status_code == 200:
+                            _rawp = "\n".join(
+                                b.get("text","") for b in _papa_res.json().get("content",[])
+                                if b.get("type")=="text" and b.get("text","").strip()
+                            ).strip()
+                            _rawp = _rawp.replace("```json","").replace("```","").strip()
+                            _p0 = _rawp.find("{"); _p1 = _rawp.rfind("}")+1
+                            if _p0 >= 0 and _p1 > _p0: _rawp = _rawp[_p0:_p1]
+                        else:
+                            _papa_err = f"Claude HTTP {_papa_res.status_code}: {_papa_res.text[:120]}"
+                    except Exception as _papa_ex:
+                        _papa_err = f"Excepción Papa: {str(_papa_ex)[:120]}"
+                else:
+                    _papa_err = "ANTHROPIC_API_KEY no configurada"
                 if not _rawp or len(_rawp.strip()) < 10:
                     _papa_err = "Sin respuesta de Claude"
                 else:
@@ -13210,6 +13278,64 @@ def tg_send(msg):
         return r.ok
     except: return False
 
+def _soccer_pick_selector(markets, ph, pa, odd_h=0, odd_a=0, odd_d=0):
+    """
+    FUNCIÓN CENTRAL de selección de picks para fútbol.
+    Usada por cartelera, KR y Telegram — misma lógica en todos lados.
+
+    Regla única:
+      • Si ML favorito ≥ 57%  → Pick 1 = ML favorito
+      • Si ML favorito < 57%  → Pick 1 = DO favorito
+      • Pick 2 = mejor mercado alternativo (OU, AA, GCM, TG) con prob ≥ 55%
+                 que NO sea el mismo tipo que Pick 1
+
+    markets: lista de (label, prob, odd, grupo)
+      grupos: "1X2", "DO", "OU", "AA", "GCM", "TG"
+    ph, pa: probabilidad home/away del modelo
+    """
+    _ML_THRESHOLD = 0.57   # ML solo si favorito tiene ≥57%
+
+    # Favorito ML (home o away, excluir empate)
+    _ml_opts = [(l,p,o,mk) for l,p,o,mk in markets if mk == "1X2" and "Empate" not in l and "Draw" not in l]
+    _fav_ml  = max(_ml_opts, key=lambda x: x[1]) if _ml_opts else None
+    _fav_p   = _fav_ml[1] if _fav_ml else 0
+    _fav_lbl = _fav_ml[0] if _fav_ml else ""
+    _fav_is_home = (ph >= pa)
+
+    # DO del favorito (mismo equipo que el favorito ML)
+    _do_tag = "🔵 DO" if _fav_is_home else "🟣 DO"
+    _do_fav = next(((l,p,o,mk) for l,p,o,mk in markets
+                    if mk == "DO" and _do_tag in l), None)
+
+    # ── PICK 1: regla ML vs DO ──
+    if _fav_p >= _ML_THRESHOLD:
+        pick1 = _fav_ml   # ML porque el favorito es suficientemente claro
+    elif _do_fav and _do_fav[1] >= 0.55:
+        pick1 = _do_fav   # DO porque el partido está más equilibrado
+    elif _fav_ml:
+        pick1 = _fav_ml   # fallback ML aunque esté bajo el threshold
+    else:
+        pick1 = max(markets, key=lambda x: x[1]) if markets else None
+
+    # ── PICK 2: mejor mercado alternativo (distinto tipo al Pick 1) ──
+    _p1_grupo = pick1[3] if pick1 else ""
+    # Candidatos alternativos: no del mismo grupo que pick1, prob ≥ 55%
+    # Prioridad: OU > AA > GCM > TG > 1X2 > DO
+    _alt_priority = ["OU", "AA", "GCM", "TG", "1X2", "DO"]
+    _alt_pool = [(l,p,o,mk) for l,p,o,mk in markets
+                 if mk != _p1_grupo and p >= 0.55
+                 and not ("Over 1.5" in l and p < 0.80)]  # O1.5 solo si ≥80%
+    pick2 = None
+    for grp in _alt_priority:
+        if grp == _p1_grupo: continue
+        _cands = [(l,p,o,mk) for l,p,o,mk in _alt_pool if mk == grp]
+        if _cands:
+            pick2 = max(_cands, key=lambda x: x[1])
+            break
+
+    return pick1, pick2
+
+
 def _best_market_soccer(m, dp, mc):
     """
     Evalúa todos los mercados con cuotas REALES de Odds API (fallback fijas -22%).
@@ -13281,7 +13407,26 @@ def escanear_y_enviar(matches):
         _mc50k_extra = mc50k(hxg, axg)
         mc = {**_mc50k_extra, **mc}  # ensemble wins on overlapping keys (ph/pd/pa/o25)
         dp  = diamond_engine(mc, h2s, hf, af)
-        best = _best_market_soccer(m, dp, mc)
+        # Construir tabla de mercados y usar función central de picks
+        _dp2 = dp; _mc2 = mc
+        _ph2 = _dp2["ph"]; _pa2 = _dp2["pa"]
+        _tg_markets = [
+            (f"🏠 {m['home'][:15]} gana",   _ph2,              m.get("odd_h",0) or 3.0,  "1X2"),
+            (f"✈️ {m['away'][:15]} gana",    _pa2,              m.get("odd_a",0) or 3.0,  "1X2"),
+            ("🤝 Empate",                      _dp2.get("pd",0.25), m.get("odd_d",0) or 3.4, "1X2"),
+            (f"🔵 DO {m['home'][:13]}",      min(0.95,_ph2+_dp2.get("pd",0.25)), 1.30, "DO"),
+            (f"🟣 DO {m['away'][:13]}",      min(0.95,_pa2+_dp2.get("pd",0.25)), 1.50, "DO"),
+            ("⚽ Over 2.5",                   _mc2["o25"],  1.85, "OU"),
+            ("🔒 Under 2.5",                  1-_mc2["o25"], 2.00, "OU"),
+            ("⚡ Ambos Anotan",                _mc2["btts"], 1.75, "AA"),
+        ]
+        _tg_markets = [(l,p,o,g) for l,p,o,g in _tg_markets if p >= 0.10]
+        _tg_p1, _tg_p2 = _soccer_pick_selector(_tg_markets, _ph2, _pa2,
+            odd_h=m.get("odd_h",0), odd_a=m.get("odd_a",0), odd_d=m.get("odd_d",0))
+        best = _tg_p1  # pick principal para Telegram
+        if best:
+            _tg_edge = best[1] - (1/best[2]) if best[2] > 1 else 0.05
+            best = (best[0], best[1], best[2], _tg_edge)  # (lbl, prob, odd, edge)
         if best and best[3] >= 0.05:  # edge mínimo 5%
             p = best[1]; b = (best[2]-1) if best[2]>1 else 1
             kelly = max(0, (b*p-(1-p))/b*100) if b>0 else 0
@@ -16620,38 +16765,12 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 _do_opts_fav = [(l,p,o,mk) for l,p,o,mk in _kr_valid
                                 if mk == "DO" and _do_fav_lbl[:8] in l]
 
-                # Candidatos por categoría con umbral propio
-                # Regla principal:
-                #   ≥55% favorito → ML (muy favorito, vale la cuota)
-                #   <55% favorito → DO del favorito (partido equilibrado, ML muy arriesgado)
-                _cat_ml  = [(l,p,o,mk) for l,p,o,mk in _kr_valid
-                            if mk == "1X2" and "Empate" not in l and p >= 0.55]
-                _cat_do  = [(l,p,o,mk) for l,p,o,mk in _do_opts_fav if p >= 0.60]
-                _cat_ou  = [(l,p,o,mk) for l,p,o,mk in _kr_valid
-                            if mk == "OU" and p >= 0.60
-                            and not ("1.5 Total" in l and p < 0.82)]
-                _cat_aa  = [(l,p,o,mk) for l,p,o,mk in _kr_valid if mk == "AA" and p >= 0.62]
-                _cat_gcm = [(l,p,o,mk) for l,p,o,mk in _kr_valid if mk in ("GCM","TG") and p >= 0.63]
-
-                _best_kr_raw = None
-                if _cat_ml:
-                    # Favorito claro ≥55% → ML directo
-                    _best_kr_raw = max(_cat_ml, key=lambda x: x[1])
-                elif _cat_do:
-                    # Partido equilibrado (<55%) → DO del favorito (más seguro)
-                    _best_kr_raw = max(_cat_do, key=lambda x: x[1])
-                elif _cat_ou:
-                    _best_kr_raw = max(_cat_ou, key=lambda x: x[1])
-                elif _cat_aa:
-                    _best_kr_raw = max(_cat_aa, key=lambda x: x[1])
-                elif _cat_gcm:
-                    _best_kr_raw = max(_cat_gcm, key=lambda x: x[1])
-                else:
-                    _fb_pool = [(l,p,o,mk) for l,p,o,mk in _kr_valid
-                                if p >= 0.52 and not ("1.5 Total" in l and p < 0.80)]
-                    if _fb_pool:
-                        _best_kr_raw = max(_fb_pool, key=lambda x: x[1])
-
+                # ── KR Pick 1 y Pick 2 — misma regla que cartelera (función central) ──
+                _kr_pick1, _kr_pick2 = _soccer_pick_selector(
+                    _kr_all_mkts, _ph, _pa,
+                    odd_h=m.get("odd_h",0), odd_a=m.get("odd_a",0), odd_d=m.get("odd_d",0)
+                )
+                _best_kr_raw = _kr_pick1
                 if _best_kr_raw is None: continue
                 lbl, prob, odd, mkt = _best_kr_raw
 
@@ -23420,6 +23539,38 @@ if st.session_state["view"] == "cartelera":
                                                             _ax2 = xg_weighted(_af2,False,slug=_msl_c)
                                                         _mc2 = mc50k(_hx2, _ax2)
                                                         _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
+                                                        # ══ OVERRIDE MERCADO en cartelera ══
+                                                        # Si las odds dicen que un equipo tiene ≥55% de ganar,
+                                                        # las probs del modelo se corrigen para reflejarlo.
+                                                        # Esto evita que el local salga favorito cuando el mercado dice lo contrario.
+                                                        try:
+                                                            _oh_ov = float(_m.get("odd_h",0) or 0)
+                                                            _oa_ov = float(_m.get("odd_a",0) or 0)
+                                                            _od_ov = float(_m.get("odd_d",0) or 0)
+                                                            if _oh_ov > 1 and _oa_ov > 1 and _od_ov > 1:
+                                                                _vig_c = 1/_oh_ov + 1/_od_ov + 1/_oa_ov
+                                                                _mkt_ph_c = (1/_oh_ov) / _vig_c
+                                                                _mkt_pd_c = (1/_od_ov) / _vig_c
+                                                                _mkt_pa_c = (1/_oa_ov) / _vig_c
+                                                                # Visitante favorito claro → override xG
+                                                                if _mkt_pa_c > _mkt_ph_c + 0.08:
+                                                                    _xgt_c = _hx2 + _ax2
+                                                                    _fav_c = max(_mkt_ph_c, _mkt_pa_c)
+                                                                    _fst_c = max(0.0, (_fav_c - 0.50) / 0.50)
+                                                                    _mw_c  = min(0.85, 0.55 + _fst_c * 0.30)
+                                                                    _fh_c  = _xgt_c * _mkt_ph_c / (_mkt_ph_c + _mkt_pa_c)
+                                                                    _fa_c  = _xgt_c * _mkt_pa_c / (_mkt_ph_c + _mkt_pa_c)
+                                                                    _hx2 = round((1-_mw_c)*_hx2 + _mw_c*_fh_c, 3)
+                                                                    _ax2 = round((1-_mw_c)*_ax2 + _mw_c*_fa_c, 3)
+                                                                    _mc2_ov = mc50k(_hx2, _ax2)
+                                                                    _ph2 = _mc2_ov["ph"]
+                                                                    _pd2 = _mc2_ov.get("pd", max(0,1-_ph2-_mc2_ov.get("pa",0)))
+                                                                    _pa2 = _mc2_ov.get("pa", 1-_ph2-_pd2)
+                                                                # Blend final con mercado (25% mercado)
+                                                                _ph2 = round(0.75*_ph2 + 0.25*_mkt_ph_c, 4)
+                                                                _pa2 = round(0.75*_pa2 + 0.25*_mkt_pa_c, 4)
+                                                                _pd2 = round(max(0.05, 1-_ph2-_pa2), 4)
+                                                        except: pass
                                                     except:
                                                         _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
                                                         _hx2 = 1.2; _ax2 = 1.0  # defaults para Poisson en vivo
@@ -24618,11 +24769,13 @@ else:
         _all_markets_full = [(l,p,o,gr) for l,p,o,gr in _all_markets_full if p >= 0.08]
         _all_markets = [(l,p,o) for l,p,o,gr in _all_markets_full]
 
-        # ── Pick principal = MAYOR PROBABILIDAD ──
-        _fav_ml_lbl = f"🏠 {_hn} gana" if _ph_d >= _pa_d else f"✈️ {_an} gana"
-        _fav_ml_p   = max(_ph_d, _pa_d)
-        _fav_ml_odd = g.get("odd_h",0) if _ph_d >= _pa_d else g.get("odd_a",0)
-        main_mkt = max(_all_markets_full, key=lambda x: x[1])
+        # ── Pick principal — regla centralizada ML vs DO ──
+        # ML si favorito ≥57%, DO si <57%. Pick 2 = mejor alternativo.
+        _pick1_sel, _pick2_sel = _soccer_pick_selector(
+            _all_markets_full, _ph_d, _pa_d,
+            odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0), odd_d=g.get("odd_d",0)
+        )
+        main_mkt  = _pick1_sel if _pick1_sel else max(_all_markets_full, key=lambda x: x[1])
         main_lbl, main_prob, main_odd, _ = main_mkt
 
         # ── Tabla elegante de mercados ordenada por prob ──
