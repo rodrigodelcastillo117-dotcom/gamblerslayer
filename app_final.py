@@ -6041,28 +6041,32 @@ def _villar_auto_pick(partido_db):
         _avg_g   = _lg_hist.get("avg_goals", 2.8)
         _aa_rate = _lg_hist.get("aa_rate",   0.52)
         _o35_rate = _lg_hist.get("o35_rate", 0.32)
-        # Ajuste dinámico de baselines según perfil real de la liga
-        _bsln_o25 = max(0.40, min(0.65, _avg_g / 2 * 0.36))   # proporcional a goles
+        # ── Baselines dinámicos por liga ──
+        # Cap ajustado: avg_goals muy alto (UCL 3.38) no debe elevar tanto el baseline
+        # que ningún mercado de goles califique (score < 0 para todos)
+        _bsln_o25 = max(0.42, min(0.60, _avg_g / 2 * 0.34))   # cap bajado de 0.65→0.60
         _bsln_u25 = 1 - _bsln_o25
-        _bsln_o35 = max(0.20, min(0.50, _o35_rate))
+        _bsln_o35 = max(0.20, min(0.46, _o35_rate))            # cap bajado de 0.50→0.46
         _bsln_u35 = 1 - _bsln_o35
-        _bsln_aa  = max(0.42, min(0.62, _aa_rate))
+        _bsln_aa  = max(0.42, min(0.60, _aa_rate))             # cap bajado de 0.62→0.60
 
         _BSLN = {"ML":0.38,"X":0.26,"DO":0.64,
                  "O25":_bsln_o25, "U25":_bsln_u25,
                  "O35":_bsln_o35, "U35":_bsln_u35,
                  "O15":0.76, "U15":0.24,
-                 "AA":_bsln_aa, "GCM":0.58, "TG":0.68}
+                 "AA":_bsln_aa, "GCM":0.55, "TG":0.65}
 
         # ── Umbrales mínimos ajustados por liga ──
-        # Liga goleadora sube thr de U25/U35, baja thr de O25/O35
-        _pthr_u25 = min(0.68, 0.53 + max(0, _avg_g - 2.8) * 0.08)
-        _pthr_o25 = max(0.48, 0.53 - max(0, 2.8 - _avg_g) * 0.05)
-        _pthr_aa  = max(0.50, min(0.58, 0.52 + (_aa_rate - 0.52) * 0.5))
-        _PTHR = {"ML":0.48,"X":0.33,"DO":0.82,
+        # Ligas muy goleadoras (UCL 3.38): U25 es legítimo si prob >= 0.50 (no 0.58)
+        # Ligas defensivas: U25 requiere más confirmación (prob >= 0.58)
+        _pthr_u25 = min(0.60, 0.52 + max(0, _avg_g - 3.0) * 0.04)  # cap 0.60 (antes 0.68)
+        _pthr_o25 = max(0.46, 0.52 - max(0, 2.8 - _avg_g) * 0.04)
+        _pthr_aa  = max(0.49, min(0.56, 0.51 + (_aa_rate - 0.52) * 0.4))
+        _pthr_gcm = max(0.60, min(0.70, 0.62 + (_avg_g - 2.8) * 0.02))  # dinámico
+        _PTHR = {"ML":0.47,"X":0.32,"DO":0.80,
                  "O25":_pthr_o25, "U25":_pthr_u25,
-                 "O35":0.44, "U35":0.90, "O15":0.87, "U15":0.40,
-                 "AA":_pthr_aa, "GCM":0.72, "TG":0.80}
+                 "O35":0.42, "U35":0.88, "O15":0.85, "U15":0.38,
+                 "AA":_pthr_aa, "GCM":_pthr_gcm, "TG":0.75}
 
         # ── Señales contextuales (sin APIs adicionales) ──
         # 1. Form streak: ¿el mejor equipo está en racha?
@@ -6122,7 +6126,9 @@ def _villar_auto_pick(partido_db):
             elif mkt == "AA":
                 # AA es mejor cuando AMBOS equipos tienen xG decente (no solo uno)
                 _min_xg = min(hxg, axg)
-                xg_bonus = (_min_xg - 0.8) * 8 if _min_xg > 0.8 else -5.0  # penaliza si un equipo no ataca
+                if _min_xg >= 0.90:    xg_bonus = (_min_xg - 0.8) * 10    # fuerte señal
+                elif _min_xg >= 0.75:  xg_bonus = (_min_xg - 0.75) * 6    # señal moderada
+                else:                  xg_bonus = -8.0  # muy baja xG de un equipo → penalizar más
             elif mkt == "GCM":
                 # GCM es mejor cuando hay un favorito claro con xG alto consistente
                 xg_bonus = _xg_strength * 6
@@ -6139,20 +6145,30 @@ def _villar_auto_pick(partido_db):
                 # Goles benefician si ambos equipos están en forma (atacando bien)
                 ctx_bonus = min(5.0, (_h_streak + _a_streak - 15) / 15 * 6)
 
-            # ── Component 5: Penalizaciones duras por inconsistencia lógica ──
+            # ── Component 5: Penalizaciones por inconsistencia lógica ──
             penalty = 0.0
-            # DO pick débil cuando nadie domina claramente (partido muy equilibrado)
+            # DO pick débil cuando nadie domina claramente
             if mkt == "DO" and abs(_ph_d - _pa_d) < 0.08:
-                penalty = -10.0  # DO en empate técnico: fuerza el pick, no informa nada
-            # AA penalizada si algún equipo tiene xG muy bajo (equipo defensive extremo)
-            if mkt == "AA" and min(hxg, axg) < 0.65:
-                penalty = -15.0  # uno de los dos no ataca → AA es pura esperanza
-            # U3.5 solo es interesante si hay señal real de defensas, no por default
-            if mkt == "U35" and (hxg + axg) > 2.2:
-                penalty = -20.0  # partido proyecta goles, U3.5 es contra el modelo
-            # Over 1.5 es casi siempre seguro (76% base) — ignorar como pick principal
+                penalty = -10.0
+            # AA penalizada si algún equipo tiene xG muy bajo
+            if mkt == "AA" and min(hxg, axg) < 0.70:
+                penalty = -12.0  # ajustado de 0.65→0.70 y de -15→-12
+            # U3.5 solo interesante cuando hay señal FUERTE de defensas
+            if mkt == "U35" and (hxg + axg) > 2.4:   # subido de 2.2→2.4
+                penalty = -18.0  # ajustado de -20→-18
+            # Over 1.5 ignorar como Pick principal
             if mkt == "O15" and prob < 0.92:
-                penalty = -25.0  # O15 no aporta información hasta que es casi certeza
+                penalty = -25.0
+            # U2.5 en liga muy goleadora (>3.2 g/p) — penalizar levemente
+            if mkt == "U25" and _avg_g > 3.2 and prob < 0.55:
+                penalty = -8.0  # U25 con prob < 55% en liga goleadora → poco valor
+            # O35 en liga defensiva (<2.4 g/p) — penalizar si prob baja
+            if mkt == "O35" and _avg_g < 2.4 and prob < 0.30:
+                penalty = -6.0
+            # GCM y TG son mercados derivados/correlacionados de ML
+            # Solo tienen valor como Pick2, nunca como Pick1
+            if mkt in ("GCM", "TG"):
+                penalty += -30.0  # penalización fuerte: GCM/TG no pueden ser Pick1
 
             total = base_isc + ev_bonus + xg_bonus + ctx_bonus + penalty
             return total
@@ -6164,9 +6180,24 @@ def _villar_auto_pick(partido_db):
         _qual_de   = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _scored_de if s >= 0]
         _qual_de.sort(key=lambda x: x[5], reverse=True)
 
-        # Pick1 = mayor score contextual
+        # Pick1 — prioridad:
+        #  1. ML muy seguro (prob ≥ 0.62) con score positivo → siempre es Pick1
+        #  2. ML fuerte (prob ≥ 0.55) con score ≥ top_score*0.65 → prefiere ML sobre goles
+        #  3. Mayor score contextual entre todos
         if _qual_de:
-            _best_de = _qual_de[0]
+            _ml_strong = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _qual_de
+                          if m == "ML" and p >= 0.62]
+            _ml_firm   = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _qual_de
+                          if m == "ML" and p >= 0.55]
+            _top_score = _qual_de[0][5]
+            if _ml_strong:
+                # ML muy seguro → siempre Pick1, aunque score de goles sea mayor
+                _best_de = max(_ml_strong, key=lambda x: x[1])
+            elif _ml_firm and _ml_firm[0][5] >= _top_score * 0.60:
+                # ML firme con score razonable → prefiere ML sobre mercados de goles
+                _best_de = _ml_firm[0]
+            else:
+                _best_de = _qual_de[0]
         else:
             # Fallback: mayor prob excluyendo triviales
             _fb_de = [(l,p,o,ev,m,0) for l,p,o,ev,m,_ in _scored_de
@@ -6191,12 +6222,46 @@ def _villar_auto_pick(partido_db):
         }
         _excluded_by_p1 = _IMPLIES.get(_best_mkt, set())
 
-        # Pick2 = mayor score contextual de grupo distinto + sin inclusión lógica
+        # Pick2 = mayor score contextual de MERCADO distinto + sin inclusión lógica
+        # Regla nueva: mismo grupo sí puede ser Pick2 si el MERCADO es diferente
+        # Excepción: si Pick1 y Pick2 son del mismo grupo B (goles), deben ser complementarios
+        _same_grp_b_ok = {"O25","O35","AA","U25","U35"}  # dentro de B, combos válidos
+        _COMPAT_P2 = {
+            "ML":  lambda m: m not in ("ML","X","DO"),          # ML → complementar con goles
+            "X":   lambda m: m not in ("X","ML"),
+            "DO":  lambda m: m not in ("DO","ML","X"),
+            "O25": lambda m: m not in ("O25","O15") and m not in _excluded_by_p1,
+            "O35": lambda m: m not in ("O35","O25","O15"),       # O35 ya implica O25
+            "AA":  lambda m: m not in ("AA",) and m not in _excluded_by_p1,
+            "U25": lambda m: m not in ("U25","U35") and m not in _excluded_by_p1,
+            "U35": lambda m: m not in ("U35","U25"),
+            "GCM": lambda m: m not in ("GCM",),
+            "TG":  lambda m: m not in ("TG",),
+        }
+        _p2_compat = _COMPAT_P2.get(_best_mkt, lambda m: m != _best_mkt)
         _qual2_de = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _qual_de
-                     if _GRP.get(m,"A") != _p1_grp
+                     if _p2_compat(m)
                      and l != _best_de[0]
                      and m not in _excluded_by_p1]
-        _best_p2  = _qual2_de[0] if _qual2_de else None
+        # Preferir grupo distinto; si no hay, mismo grupo con mkt diferente
+        _qual2_diff_grp = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _qual2_de
+                           if _GRP.get(m,"A") != _p1_grp]
+        _best_p2 = _qual2_diff_grp[0] if _qual2_diff_grp else (_qual2_de[0] if _qual2_de else None)
+
+        # Si aún no hay Pick2: relajar umbral (score ≥ -8) — Pick2 puede ser más agresivo
+        if not _best_p2:
+            _relaxed = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _scored_de
+                        if s >= -8.0 and _p2_compat(m) and l != _best_de[0]
+                        and m not in _excluded_by_p1
+                        and p >= 0.50]   # prob mínima 50% para Pick2
+            _relaxed.sort(key=lambda x: x[5], reverse=True)
+            # Preferir O35 si xG > 2.8 (mercado agresivo con señal)
+            if (hxg + axg) > 2.8:
+                _o35_c = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _relaxed if m == "O35"]
+                if _o35_c and _o35_c[0][1] >= 0.40:
+                    _best_p2 = _o35_c[0]
+            if not _best_p2 and _relaxed:
+                _best_p2 = _relaxed[0]
 
         _pick2_lbl  = _best_p2[0]  if _best_p2 else None
         _pick2_prob = _best_p2[1]  if _best_p2 else None
@@ -6762,11 +6827,17 @@ def render_resultados_tab():
                             if auto_pk:
                                 _vd2, _vc2, _ex2 = _villar_match_pick_to_result(auto_pk, _p_fixed)
                                 _prob2 = auto_pk.get("prob", 0)
+                                # Fuente: respetar la original, añadir contexto de mkt si existe
+                                _src_orig = auto_pk.get("src", "🤖 Cartelera")
+                                _mkt_lbl  = auto_pk.get("mkt","")
+                                _mkt_badge = {"ML":"ML","O25":"O/U","U25":"O/U","O35":"O/U","U35":"O/U",
+                                              "AA":"BTTS","GCM":"GCM","DO":"DC","TG":"TG"}.get(_mkt_lbl,"")
+                                _src_disp = f"{_src_orig}" + (f" · {_mkt_badge}" if _mkt_badge and _mkt_badge not in _src_orig else "")
                                 pick_rows.append({
                                     "label":   auto_pk.get("pick","?"),
                                     "prob":    _prob2 * 100 if _prob2 <= 1 else _prob2,
                                     "odd":     auto_pk.get("odd", 0),
-                                    "src":     auto_pk.get("src", "🤖 Cartelera"),
+                                    "src":     _src_disp,
                                     "verd":    _vd2, "col": _vc2, "expl": _ex2,
                                     "is_main": True,
                                 })
@@ -6860,22 +6931,64 @@ def render_resultados_tab():
                                     f"</div>"
                                     f"</div>", unsafe_allow_html=True)
                             else:
+                                # ── Winner box: quién ganó, bien encuadrado ──
+                                if won_h:
+                                    _winner_n, _loser_n = home_n, away_n
+                                    _winner_sc, _loser_sc = sh, sa
+                                    _wbox_c = "#00ff88"
+                                elif won_a:
+                                    _winner_n, _loser_n = away_n, home_n
+                                    _winner_sc, _loser_sc = sa, sh
+                                    _wbox_c = "#00ff88"
+                                else:  # draw
+                                    _winner_n = "EMPATE"
+                                    _loser_n  = f"{home_n} {sh} – {sa} {away_n}"
+                                    _winner_sc, _loser_sc = sh, sa
+                                    _wbox_c = "#FFD700"
+
+                                _sport_lbl = "FT" if sport_key == "futbol" else "Final"
+                                if draw:
+                                    _result_box = (
+                                        f"<div style='display:flex;align-items:center;justify-content:center;"
+                                        f"gap:8px;margin-top:6px;padding:6px 10px;border-radius:8px;"
+                                        f"background:#FFD70018;border:1.5px solid #FFD70066'>"
+                                        f"<span style='font-size:1.0rem'>🤝</span>"
+                                        f"<div style='text-align:center'>"
+                                        f"<div style='font-size:0.58rem;color:#FFD700;font-weight:900;letter-spacing:.1em'>{_sport_lbl} · EMPATE</div>"
+                                        f"<div style='font-size:1.35rem;font-weight:900;color:#FFD700'>"
+                                        f"{home_n} <span style='color:#666'>{sh}–{sa}</span> {away_n}</div>"
+                                        f"</div></div>"
+                                    )
+                                else:
+                                    _result_box = (
+                                        f"<div style='display:flex;align-items:center;gap:8px;margin-top:6px;"
+                                        f"padding:6px 10px;border-radius:8px;"
+                                        f"background:{_wbox_c}15;border:1.5px solid {_wbox_c}88'>"
+                                        f"<span style='font-size:1.1rem'>🏆</span>"
+                                        f"<div style='flex:1;min-width:0'>"
+                                        f"<div style='font-size:0.56rem;color:{_wbox_c};font-weight:900;letter-spacing:.12em'>{_sport_lbl} · GANÓ</div>"
+                                        f"<div style='font-size:1.25rem;font-weight:900;color:{_wbox_c};"
+                                        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_winner_n}</div>"
+                                        f"</div>"
+                                        f"<div style='text-align:center;background:#0d090080;border-radius:6px;"
+                                        f"padding:3px 10px;flex-shrink:0'>"
+                                        f"<div style='font-size:1.6rem;font-weight:900;"
+                                        f"color:#fff;letter-spacing:.05em'>"
+                                        f"<span style='color:{hc}'>{sh}</span>"
+                                        f"<span style='color:#444;font-size:1.1rem'> – </span>"
+                                        f"<span style='color:{ac}'>{sa}</span></div>"
+                                        f"<div style='font-size:0.55rem;color:#555;letter-spacing:.08em'>"
+                                        f"{home_n[:12]} vs {away_n[:12]}</div>"
+                                        f"</div></div>"
+                                    )
+
                                 st.markdown(
                                     f"<div style='background:linear-gradient(135deg,#100c04,#0a0800);border-radius:12px;padding:10px 12px;"
                                     f"margin:4px 0;border:1px solid {border_c}'>"
+                                    f"<div style='font-size:0.8rem;font-weight:700;color:#3a2e1a;"
+                                    f"margin-bottom:4px'>{home_n} vs {away_n}</div>"
                                     f"{pick_html}"
-                                    f"<div style='display:grid;grid-template-columns:1fr 88px 1fr;"
-                                    f"gap:4px;align-items:center;margin-top:6px;padding-top:6px;"
-                                    f"border-top:1px solid #1a1a30'>"
-                                    f"<div style='text-align:right'><span style='color:{hc};"
-                                    f"font-weight:{'900' if won_h else '400'};font-size:1.32rem'>{home_n}</span></div>"
-                                    f"<div style='text-align:center;background:#0d0900;border-radius:8px;padding:4px 6px'>"
-                                    f"<span style='font-size:1.43rem;font-weight:900;color:{hc}'>{sh}</span>"
-                                    f"<span style='color:#333'> – </span>"
-                                    f"<span style='font-size:1.43rem;font-weight:900;color:{ac}'>{sa}</span></div>"
-                                    f"<div style='text-align:left'><span style='color:{ac};"
-                                    f"font-weight:{'900' if won_a else '400'};font-size:1.32rem'>{away_n}</span></div>"
-                                    f"</div>"
+                                    f"{_result_box}"
                                     f"</div>", unsafe_allow_html=True)
 
             total_sp = ok_sp+fail_sp
@@ -8699,16 +8812,23 @@ _LEAGUE_HISTORICAL: dict = {
     # ══════════════════════════════════════════════════════════════════
     "uefa.champions": {
         "o25_old": 0.542, "o25_rate": 0.568, "avg_goals": 2.92,
+        "aa_rate": 0.58,    # Ambos Anotan eliminatorias ~58% (fase liga ~62%)
+        "o35_rate": 0.38,   # Over 3.5 eliminatorias ~38% (fase liga ~42%)
+        "cs_rate": 0.23,
+        "ratio_h": 0.555,
         "trend": "⬆️ Subiendo +2.6%",
         "perfil": "Champions League — mayor competición de clubes del mundo. Juego abierto entre élites, muchos partidos de ida/vuelta con presión de gol. Fase de grupos ~3.0 goles/partido, eliminatorias ~2.7. Over 2.5 sólido en grupos, más cerrado en KO.",
         "under_value": False, "delta": +0.026, "flag": "🏆",
-        # Ponderación para xG: liga de referencia = blend de las mejores ligas europeas
-        "ref_league_coef": 0.985,  # promedio ponderado PL(1.0)+Bundesliga(0.97)+LaLiga(0.96)+SerieA(0.94)
-        "avg_goals_home": 1.62,    # goles local promedio por partido
-        "avg_goals_away": 1.30,    # goles visitante promedio por partido
+        "ref_league_coef": 0.985,
+        "avg_goals_home": 1.62,
+        "avg_goals_away": 1.30,
     },
     "uefa.europa": {
         "o25_old": 0.518, "o25_rate": 0.541, "avg_goals": 2.78,
+        "aa_rate": 0.55,    # Europa League AA rate ~55%
+        "o35_rate": 0.32,   # Over 3.5 ~32%
+        "cs_rate": 0.27,
+        "ratio_h": 0.535,
         "trend": "⚖️ Estable +2.3%",
         "perfil": "Europa League — mezcla de equipos top de ligas medianas + subcampeones de ligas grandes. Más varianza que UCL. Fases de grupos muy abiertas (~2.9), KO más estratégico (~2.5).",
         "under_value": False, "delta": +0.023, "flag": "🏆",
@@ -8718,9 +8838,13 @@ _LEAGUE_HISTORICAL: dict = {
     },
     "uefa.europa.conf": {
         "o25_old": 0.505, "o25_rate": 0.520, "avg_goals": 2.45,
+        "aa_rate": 0.50,    # Conference AA rate ~50% (más defensiva que UCL/UEL)
+        "o35_rate": 0.26,   # Over 3.5 ~26% (liga más cerrada)
+        "cs_rate": 0.30,
+        "ratio_h": 0.530,
         "trend": "⚖️ Estable 2025-26",
         "perfil": "Conference League 2025-26 — alias. Ver uefa.ecl. ~2.45 g/p (108 partidos). R16 en curso.",
-        "under_value": False, "delta": +0.009, "flag": "🏆",
+        "under_value": True, "delta": +0.009, "flag": "🏆",
         "ref_league_coef": 0.850,
         "avg_goals_home": 1.35,
         "avg_goals_away": 1.15,
@@ -8734,20 +8858,23 @@ _LEAGUE_HISTORICAL: dict = {
         # Agregados R1: Cincinnati 13-0, Philly 12-0, Cruz Azul 8-0, LAFC 7-1, Nashville 7-0
         # R16 hoy: Philly vs América, Monterrey vs Cruz Azul, LAFC vs Alajuelense,
         #   Nashville vs Inter Miami (Messi), San Diego vs Toluca, Tigres vs Cincinnati
-        # MISMOS PATRONES CCL 2025: R1 infla vs relleno CA/Caribe
         # Élite vs élite R16+: ~2.5 g/partido → Under tiene valor real
-        "o25_old": 0.512, "o25_rate": 0.620, "avg_goals": 3.10,
-        "trend": "⬆️ CCL 2026 R16 en curso hoy (10-mar-2026)",
+        "o25_old": 0.512, "o25_rate": 0.540, "avg_goals": 2.55,  # avg élite R16, no R1
+        "aa_rate": 0.52,       # Ambos Anotan R16 ~52% (equipos defienden mejor en KO)
+        "o35_rate": 0.30,      # Over 3.5 R16 ~30% (defensas organizadas)
+        "cs_rate": 0.30,
+        "ratio_h": 0.520,
+        "trend": "⬆️ CCL 2026 R16 en curso",
         "perfil": (
-            "CCL 2026: mismos patrones que 2025. R1 brutal vs relleno (Cincinnati 13-0, "
-            "Philly 12-0, Cruz Azul 8-0). R16 primera vuelta HOY — élite vs élite. "
-            "Inter Miami con Messi, Son Heung-min en LAFC, Cruz Azul campeón defensor. "
-            "Élite vs élite R16+: ~2.5 g/p → U25 valor. Toluca/Miami/Seattle tuvieron bye."
+            "CCL 2026 R16: élite MX vs élite MLS. Inter Miami (Messi), Son en LAFC, Cruz Azul campeón. "
+            "R16 promedios REALES: ~2.5 g/p, AA ~52%, O25 ~54%, U25 valor en duelos equilibrados. "
+            "Philadelphia y Cincinnati dominaron R1 pero en R16 los rivales son de Liga MX nivel. "
+            "Monterrey vs Cruz Azul: clásico mexicano — bajo goles esperado (~2.3 g/p)."
         ),
-        "under_value": False, "delta": +0.108, "flag": "🌎",
+        "under_value": False, "delta": +0.028, "flag": "🌎",
         "ref_league_coef": 0.820,
-        "avg_goals_home": 1.55,
-        "avg_goals_away": 1.25,
+        "avg_goals_home": 1.45,
+        "avg_goals_away": 1.10,
         "avg_goals_elite": 2.50,
     },
 }
@@ -11624,8 +11751,8 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
     """
     import json as _ejson
     # ── EINSTEIN prompt by sport ──
+    _is_ctx_live = "EN VIVO" in context_str or "🔴" in context_str  # aplica a todos
     if sport == "futbol":
-        _is_ctx_live = "EN VIVO" in context_str or "🔴" in context_str
         _ctx_has_data = len(context_str.strip()) > 40
         _e_prompt = (
             f"Eres Einstein, analista de fútbol de élite. Tu análisis se basa en DATOS REALES,\n"
@@ -11633,7 +11760,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             f"3) forma reciente. IMPORTANTE: la forma reciente puede ser engañosa por rotaciones,\n"
             f"lesiones temporales o partidos sin importancia. Un equipo de mayor calidad objetiva\n"
             f"(mejor posición, más puntos, mejor plantilla) SIEMPRE tiene ventaja estructural.\n"
-            + (f"⚡ PARTIDO EN CURSO — analiza con los datos en vivo abajo.\n" if _is_ctx_live else "")
+            + (f"PARTIDO EN CURSO — analiza con los datos en vivo abajo.\n" if _is_ctx_live else "")
             + f"Partido: {away} @ {home}\n"
             f"Jugada Diamante: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
@@ -11643,20 +11770,21 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                f"más débil por forma reciente volátil, corrige a favor del equipo de mayor calidad.\n"
                if _ctx_has_data else
                f"NOTA: Datos ESPN limitados. Usa tu conocimiento del {away} y {home} esta temporada.\n")
-            + (f"Con los datos en vivo, ¿sigue siendo válido el pick {pick_lbl}? "
+            + (f"Con los datos en vivo, sigue siendo válido el pick {pick_lbl}? "
                f"Si el marcador cambió la situación, ajusta tu pick y prob.\n" if _is_ctx_live else "")
-            + f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            + f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
             f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
         )
     elif sport == "nba":
+        _is_ctx_live = _is_ctx_live or "LIVE" in context_str
         _e_prompt = (
             f"Eres Einstein NBA, analista de baloncesto de élite.\n"
             f"Partido: {away} @ {home}\n"
             f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
             + f"\n{context_str}\n"
-            f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
             f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
         )
@@ -11667,7 +11795,7 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
             f"Pick: {pick_lbl} ({pick_prob*100:.1f}%)"
             + (f" @{pick_odd:.2f}" if pick_odd > 1 else "")
             + f"\n{context_str}\n"
-            f"Responde SOLO JSON: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
+            f"Responde SOLO en JSON puro sin texto extra: {{\"pick\":\"...\",\"prob\":{pick_prob*100:.0f},"
             f"\"conf\":\"Alta/Media/Baja\",\"riesgo\":\"BAJO/MEDIO/ALTO\","
             f"\"alternativa\":\"...\",\"resumen\":\"2 lineas max\"}}"
         )
@@ -11680,63 +11808,91 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
     col_e, col_p = st.columns(2)
 
     with col_e:
-        with st.spinner("🧠 Einstein..."):
+        with st.spinner("🧠 Einstein analizando..."):
+            _einstein_err = ""
             try:
-                _r = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_e_prompt,use_search=True,max_tokens=700)}]}})()  # gemini
-                _raw = _r.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
-                _d = _ejson.loads(_raw)
-                _einstein.update(_d)
-            except: pass
+                # Paso 1: buscar contexto web (sin json_mode — incompatible con use_search)
+                _web_ctx = ""
+                try:
+                    _web_ctx = _gemini(
+                        f"Busca información actual sobre: {home} vs {away}. "
+                        f"Liga: {sport}. Dame: forma reciente, lesiones confirmadas, H2H reciente, motivación. "
+                        f"Responde en 3-4 líneas de texto plano.",
+                        use_search=True, max_tokens=400
+                    ) or ""
+                except: pass
+                # Paso 2: generar JSON con todo el contexto (sin use_search — json_mode compatible)
+                _e_prompt_final = _e_prompt
+                if _web_ctx:
+                    _e_prompt_final = _e_prompt + f"\n\nCONTEXTO WEB ACTUAL:\n{_web_ctx}"
+                _raw_ein = _gemini(_e_prompt_final, use_search=False, max_tokens=700, json_mode=True)
+                if not _raw_ein or len(_raw_ein.strip()) < 10:
+                    _einstein_err = "Gemini no devolvió respuesta"
+                else:
+                    _d = __import__("json").loads(_raw_ein)
+                    _einstein.update(_d)
+            except Exception as _ee:
+                _einstein_err = str(_ee)[:120]
         _ec = "#FFD700" if "alta" in str(_einstein.get("conf","")).lower() else ("#00ff88" if "med" in str(_einstein.get("conf","")).lower() else "#aaa")
         _rc = "#00ff88" if _einstein.get("riesgo","")=="BAJO" else ("#FFD700" if _einstein.get("riesgo","")=="MEDIO" else "#ff4444")
-        st.markdown(
-            f"<div style='background:#0d0900;border:1px solid {_ec}33;border-radius:7px;padding:7px 9px'>"
-            f"<div style='font-size:0.825rem;color:#5a4a2e;font-weight:900;letter-spacing:.08em;margin-bottom:3px'>🧠 EINSTEIN</div>"
-            f"<div style='font-size:1.17rem;font-weight:900;color:{_ec};line-height:1.2;margin-bottom:2px'>{_einstein.get('pick', pick_lbl)}</div>"
-            f"<div style='font-size:1.35rem;font-weight:900;color:{_ec}'>{float(_einstein.get('prob', pick_prob*100)):.0f}%"
-            f" <span style='font-size:0.87rem;color:{_rc}'>⚠️ {_einstein.get('riesgo','?')}</span></div>"
-            + (f"<div style='font-size:1.02rem;color:#8a7a5a;margin-top:4px;line-height:1.45'>{_einstein.get('resumen','')}</div>" if _einstein.get('resumen') else "")
-            + (f"<div style='font-size:0.93rem;color:#6b5a3a;margin-top:3px;border-top:1px solid #0f0f1e;padding-top:3px'>Alt: {_einstein.get('alternativa','')}</div>" if _einstein.get('alternativa') else "")
-            + "</div>",
-            unsafe_allow_html=True)
+        if _einstein_err:
+            st.markdown(f"<div style='background:#1a0000;border:1px solid #ff4444;border-radius:7px;padding:6px 9px;font-size:1rem;color:#ff9500'>🧠 Einstein: error al procesar — {_einstein_err}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f"<div style='background:#0d0900;border:1px solid {_ec}33;border-radius:7px;padding:7px 9px'>"
+                f"<div style='font-size:0.825rem;color:#5a4a2e;font-weight:900;letter-spacing:.08em;margin-bottom:3px'>🧠 EINSTEIN</div>"
+                f"<div style='font-size:1.17rem;font-weight:900;color:{_ec};line-height:1.2;margin-bottom:2px'>{_einstein.get('pick', pick_lbl)}</div>"
+                f"<div style='font-size:1.35rem;font-weight:900;color:{_ec}'>{float(_einstein.get('prob', pick_prob*100)):.0f}%"
+                f" <span style='font-size:0.87rem;color:{_rc}'>⚠️ {_einstein.get('riesgo','?')}</span></div>"
+                + (f"<div style='font-size:1.02rem;color:#8a7a5a;margin-top:4px;line-height:1.45'>{_einstein.get('resumen','')}</div>" if _einstein.get('resumen') else "")
+                + (f"<div style='font-size:0.93rem;color:#6b5a3a;margin-top:3px;border-top:1px solid #0f0f1e;padding-top:3px'>Alt: {_einstein.get('alternativa','')}</div>" if _einstein.get('alternativa') else "")
+                + "</div>",
+                unsafe_allow_html=True)
 
     with col_p:
         with st.spinner("✝ Papa auditando..."):
+            _papa_err = ""
             try:
                 _papa_prompt = (
                     f"Eres EL PAPA DE EINSTEIN — meta-IA auditora suprema.\n"
-                    + (f"⚡ PARTIDO EN VIVO — considera los datos en tiempo real.\n" if _is_ctx_live else "")
+                    + (f"PARTIDO EN VIVO — considera los datos en tiempo real.\n" if _is_ctx_live else "")
                     + f"Audita este análisis de Einstein sobre: {away} vs {home}\n"
                     f"Einstein dice: {_einstein.get('pick',pick_lbl)} ({_einstein.get('prob',pick_prob*100):.0f}%)\n"
                     f"Riesgo Einstein: {_einstein.get('riesgo','?')} | Alternativa: {_einstein.get('alternativa','?')}\n"
                     f"Resumen Einstein: {_einstein.get('resumen','N/A')}\n"
                     f"Contexto completo: {context_str[:500]}\n"
-                    + (f"PREGUNTA CLAVE: Con el marcador actual, ¿el pick de Einstein sigue siendo óptimo o hay mejor opción?\n" if _is_ctx_live else "")
-                    + f"Responde SOLO JSON: {{\"grade\":\"A+/A/A-/B+/B/B-/C/D/F\","
+                    + (f"PREGUNTA CLAVE: Con el marcador actual, el pick de Einstein sigue siendo optimo o hay mejor opcion?\n" if _is_ctx_live else "")
+                    + f"Responde SOLO JSON sin texto extra: {{\"grade\":\"A+/A/A-/B+/B/B-/C/D/F\","
                     f"\"conf_score\":85,\"verdict\":\"CONFIRMAR/CUESTIONAR/RECHAZAR\","
                     f"\"resumen_auditoria\":\"1-2 lineas max\","
                     f"\"mejor_alternativa_papa\":\"mercado alternativo o confirmar el de Einstein\"}}"
                 )
-                _rp = type("_R",(),{"status_code":200,"json":lambda s=None:{"content":[{"type":"text","text":_gemini(_papa_prompt,use_search=True,max_tokens=600)}]}})()  # gemini
-                _rawp = _rp.json()["content"][0]["text"].strip().replace("```json","").replace("```","")
-                _dp = _ejson.loads(_rawp)
-                _papa.update(_dp)
-            except: pass
+                _rawp = _gemini(_papa_prompt, use_search=False, max_tokens=600, json_mode=True)
+                if not _rawp or len(_rawp.strip()) < 10:
+                    _papa_err = "Sin respuesta de Gemini"
+                else:
+                    _dp = __import__("json").loads(_rawp)
+                    _papa.update(_dp)
+            except Exception as _pe:
+                _papa_err = str(_pe)[:120]
         _grade = _papa.get("grade","B")
         _gc = "#00ff88" if _grade[0]=="A" else ("#FFD700" if _grade[0]=="B" else ("#ff9500" if _grade[0]=="C" else "#ff4444"))
         _vc = {"CONFIRMAR":"#00ff88","CUESTIONAR":"#FFD700","RECHAZAR":"#ff4444"}.get(_papa.get("verdict",""),"#aaa")
-        st.markdown(
-            f"<div style='background:#0a0805;border:1px solid {_gc}33;border-radius:7px;padding:7px 9px'>"
-            f"<div style='font-size:0.825rem;color:#5a4a2e;font-weight:900;letter-spacing:.08em;margin-bottom:3px'>✝ PAPA DE EINSTEIN</div>"
-            f"<div style='display:flex;align-items:center;gap:5px;margin-bottom:3px'>"
-            f"<div style='font-size:1.82rem;font-weight:900;color:{_gc};line-height:1'>{_grade}</div>"
-            f"<div><div style='font-size:1.08rem;font-weight:900;color:{_vc}'>{_papa.get('verdict','?')}</div>"
-            f"<div style='font-size:0.825rem;color:#555'>Conf: {_papa.get('conf_score',0)}%</div></div>"
-            f"</div>"
-            + (f"<div style='font-size:1.02rem;color:#8a7a5a;line-height:1.45'>{_papa.get('resumen_auditoria','')}</div>" if _papa.get('resumen_auditoria') else "")
-            + (f"<div style='font-size:0.93rem;color:#6b5a3a;margin-top:3px;border-top:1px solid #0f0f1e;padding-top:3px'>Papa: {_papa.get('mejor_alternativa_papa','')}</div>" if _papa.get('mejor_alternativa_papa') else "")
-            + "</div>",
-            unsafe_allow_html=True)
+        if _papa_err:
+            st.markdown(f"<div style='background:#1a0000;border:1px solid #ff4444;border-radius:7px;padding:6px 9px;font-size:1rem;color:#ff9500'>✝ Papa: error — {_papa_err}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f"<div style='background:#0a0805;border:1px solid {_gc}33;border-radius:7px;padding:7px 9px'>"
+                f"<div style='font-size:0.825rem;color:#5a4a2e;font-weight:900;letter-spacing:.08em;margin-bottom:3px'>✝ PAPA DE EINSTEIN</div>"
+                f"<div style='display:flex;align-items:center;gap:5px;margin-bottom:3px'>"
+                f"<div style='font-size:1.82rem;font-weight:900;color:{_gc};line-height:1'>{_grade}</div>"
+                f"<div><div style='font-size:1.08rem;font-weight:900;color:{_vc}'>{_papa.get('verdict','?')}</div>"
+                f"<div style='font-size:0.825rem;color:#555'>Conf: {_papa.get('conf_score',0)}%</div></div>"
+                f"</div>"
+                + (f"<div style='font-size:1.02rem;color:#8a7a5a;line-height:1.45'>{_papa.get('resumen_auditoria','')}</div>" if _papa.get('resumen_auditoria') else "")
+                + (f"<div style='font-size:0.93rem;color:#6b5a3a;margin-top:3px;border-top:1px solid #0f0f1e;padding-top:3px'>Papa: {_papa.get('mejor_alternativa_papa','')}</div>" if _papa.get('mejor_alternativa_papa') else "")
+                + "</div>",
+                unsafe_allow_html=True)
 
     return _einstein, _papa
 
@@ -21947,12 +22103,13 @@ if st.session_state["view"] == "cartelera":
                                                         _pick_prob = _br.get("prob",0)  if _br else 0
                                                         _pick2_lbl_c  = (_br.get("pick2","") if _br else "") or ""
                                                         _pick2_prob_c = (_br.get("pick2_prob",0) if _br else 0) or 0.0
-                                                        # UEFA: si pick1 es de goles o no hay pick2, recalcular
-                                                        _is_uefa_m = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                        _goles_kw  = ("Over","Under","Ambos","AA")
-                                                        _p1_is_gol = any(g in _pick_lbl for g in _goles_kw)
+                                                        # UEFA/CONCACAF: recalcular si Pick1 es derivado (goles, GCM, DO) o sin pick2
+                                                        _is_uefa_m = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf","concacaf.champions","concacaf.league"}
+                                                        # GCM y DO nunca deben ser Pick1 — siempre recalcular si el snap los tiene
+                                                        _bad_p1_kw = ("Over","Under","Ambos","AA","c/Mitad","Mitad","DO ","Doble Op")
+                                                        _p1_is_bad = any(g in _pick_lbl for g in _bad_p1_kw)
                                                         _has_pick2 = bool(_br.get("pick2","") if _br else "")
-                                                        _uefa_recalc = _is_uefa_m and (_p1_is_gol or not _has_pick2)
+                                                        _uefa_recalc = _is_uefa_m and (_p1_is_bad or not _has_pick2)
                                                         if _uefa_recalc:
                                                             _pick_lbl = ""  # forzar recálculo
                                                         # Sin bridge o UEFA recalc: calcular pick con EV real
@@ -22042,24 +22199,25 @@ if st.session_state["view"] == "cartelera":
                                                                 _ag2  = _lg2.get("avg_goals", 2.8)
                                                                 _ar2  = _lg2.get("aa_rate",   0.52)
                                                                 _or2  = _lg2.get("o35_rate",  0.32)
-                                                                # Baselines dinámicos de liga
-                                                                _bo25 = max(0.40, min(0.65, _ag2 / 2 * 0.36))
+                                                                # Baselines dinámicos de liga (cap ajustado para UCL/CONCACAF)
+                                                                _bo25 = max(0.42, min(0.60, _ag2 / 2 * 0.34))
                                                                 _bu25 = 1 - _bo25
-                                                                _bo35 = max(0.20, min(0.50, _or2))
+                                                                _bo35 = max(0.20, min(0.46, _or2))
                                                                 _bu35 = 1 - _bo35
-                                                                _baa  = max(0.42, min(0.62, _ar2))
+                                                                _baa  = max(0.42, min(0.60, _ar2))
                                                                 _BSLN2 = {"ML":0.38,"X":0.26,"DO":0.64,
                                                                           "O25":_bo25,"U25":_bu25,
                                                                           "O35":_bo35,"U35":_bu35,
-                                                                          "O15":0.76,"AA":_baa,"GCM":0.58,"TG":0.68}
-                                                                # Umbrales ajustados por liga
-                                                                _pu25 = min(0.68, 0.53 + max(0, _ag2 - 2.8) * 0.08)
-                                                                _po25 = max(0.48, 0.53 - max(0, 2.8 - _ag2) * 0.05)
-                                                                _paa  = max(0.50, min(0.58, 0.52 + (_ar2 - 0.52) * 0.5))
-                                                                _PTHR2 = {"ML":0.48,"X":0.33,"DO":0.82,
+                                                                          "O15":0.76,"AA":_baa,"GCM":0.55,"TG":0.65}
+                                                                # Umbrales ajustados (cap reducido para ligas goleadoras)
+                                                                _pu25 = min(0.60, 0.52 + max(0, _ag2 - 3.0) * 0.04)
+                                                                _po25 = max(0.46, 0.52 - max(0, 2.8 - _ag2) * 0.04)
+                                                                _paa  = max(0.49, min(0.56, 0.51 + (_ar2 - 0.52) * 0.4))
+                                                                _pgcm = max(0.60, min(0.70, 0.62 + (_ag2 - 2.8) * 0.02))
+                                                                _PTHR2 = {"ML":0.47,"X":0.32,"DO":0.80,
                                                                           "O25":_po25,"U25":_pu25,
-                                                                          "O35":0.44,"U35":0.90,"O15":0.87,
-                                                                          "AA":_paa,"GCM":0.72,"TG":0.80}
+                                                                          "O35":0.42,"U35":0.88,"O15":0.85,
+                                                                          "AA":_paa,"GCM":_pgcm,"TG":0.75}
                                                                 # Señales contextuales locales
                                                                 def _fstrk2(fm):
                                                                     if not fm: return 7.5
@@ -22076,24 +22234,34 @@ if st.session_state["view"] == "cartelera":
                                                                     ev_b = max(-8.0, min(12.0, (ev2 or 0.0) * 50))
                                                                     xg_b = 0.0
                                                                     if m == "ML":
-                                                                        if p == _ph2_adj: xg_b = _xgs2 * 10
-                                                                        else: xg_b = _xgs2 * 10
+                                                                        if p == _ph2_adj and _ph2_adj > _pa2_adj:
+                                                                            xg_b = _xgs2 * 10   # local favorito → bonus
+                                                                        elif p == _pa2_adj and _pa2_adj > _ph2_adj:
+                                                                            xg_b = _xgs2 * 10   # visita favorita → bonus
+                                                                        else:
+                                                                            xg_b = _xgs2 * 4    # partido equilibrado → bonus reducido
                                                                     elif m in ("O25","O35"):
                                                                         xg_b = min(8.0, (_xgh2 + _xga2 - 2.0) * 4)
                                                                     elif m in ("U25","U35"):
                                                                         xg_b = min(8.0, (2.0 - (_xgh2 + _xga2)) * 4) if (_xgh2 + _xga2) < 2.0 else 0.0
                                                                     elif m == "AA":
                                                                         _mn2 = min(_xgh2, _xga2)
-                                                                        xg_b = (_mn2 - 0.8) * 8 if _mn2 > 0.8 else -5.0
+                                                                        if _mn2 >= 0.90:    xg_b = (_mn2 - 0.8) * 10
+                                                                        elif _mn2 >= 0.75:  xg_b = (_mn2 - 0.75) * 6
+                                                                        else:               xg_b = -8.0
                                                                     elif m == "GCM": xg_b = _xgs2 * 6
                                                                     ctx_b = 0.0
                                                                     if m == "ML": ctx_b = _se2 * 6 if p == _ph2_adj else -_se2 * 6
                                                                     elif m in ("O25","O35","AA"): ctx_b = min(5.0, (_hs2 + _as2 - 15) / 15 * 6)
                                                                     pen = 0.0
                                                                     if m == "DO" and abs(_ph2_adj - _pa2_adj) < 0.08: pen = -10.0
-                                                                    if m == "AA" and min(_xgh2, _xga2) < 0.65: pen = -15.0
-                                                                    if m == "U35" and (_xgh2 + _xga2) > 2.2: pen = -20.0
+                                                                    if m == "AA" and min(_xgh2, _xga2) < 0.70: pen = -12.0
+                                                                    if m == "U35" and (_xgh2 + _xga2) > 2.4: pen = -18.0
                                                                     if m == "O15" and p < 0.92: pen = -25.0
+                                                                    if m == "U25" and _ag2 > 3.2 and p < 0.55: pen = -8.0
+                                                                    if m == "O35" and _ag2 < 2.4 and p < 0.30: pen = -6.0
+                                                                    # GCM y TG son derivados de ML — nunca Pick1, solo Pick2
+                                                                    if m in ("GCM","TG"): pen += -30.0
                                                                     return base + ev_b + xg_b + ctx_b + pen
 
                                                                 _pool_c = [
@@ -22119,9 +22287,17 @@ if st.session_state["view"] == "cartelera":
                                                                 _ql2  = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2 if s>=0]
                                                                 _ql2.sort(key=lambda x: x[5], reverse=True)
 
-                                                                # Pick1 = mayor interest score
+                                                                # Pick1 — ML muy seguro (≥62%) siempre gana; ML firme (≥55%) prefiere sobre goles
                                                                 if _ql2:
-                                                                    _bc2 = _ql2[0]
+                                                                    _ml_str2 = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2 if m=="ML" and p>=0.62]
+                                                                    _ml_frm2 = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2 if m=="ML" and p>=0.55]
+                                                                    _top2 = _ql2[0][5]
+                                                                    if _ml_str2:
+                                                                        _bc2 = max(_ml_str2, key=lambda x: x[1])
+                                                                    elif _ml_frm2 and _ml_frm2[0][5] >= _top2 * 0.60:
+                                                                        _bc2 = _ml_frm2[0]
+                                                                    else:
+                                                                        _bc2 = _ql2[0]
                                                                 else:
                                                                     # Fallback: mayor prob sin triviales
                                                                     _fb2 = [(l,p,o,m,g,0) for l,p,o,m,g,_ in _sc2
@@ -22136,10 +22312,37 @@ if st.session_state["view"] == "cartelera":
                                                                 _IMPLIES2  = {"O35":{"O25","O15"},"O25":{"O15"},"U15":{"U25","U35"},"U25":{"U35"}}
                                                                 _excl2     = _IMPLIES2.get(_p1mkt2, set())
 
-                                                                # Pick2 = mayor score contextual de grupo distinto + sin inclusión lógica
-                                                                _ql2b = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2
-                                                                         if g != _p1g2 and l != _bc2[0] and m not in _excl2]
+                                                                # Pick2 = mercado compatible, no el mismo tipo, no implicado lógicamente
+                                                                _COMPAT2 = {
+                                                                    "ML":  lambda m: m not in ("ML","X","DO"),
+                                                                    "X":   lambda m: m not in ("X","ML"),
+                                                                    "DO":  lambda m: m not in ("DO","ML","X"),
+                                                                    "O25": lambda m: m not in ("O25","O15") and m not in _excl2,
+                                                                    "O35": lambda m: m not in ("O35","O25","O15"),
+                                                                    "AA":  lambda m: m not in ("AA",) and m not in _excl2,
+                                                                    "U25": lambda m: m not in ("U25","U35") and m not in _excl2,
+                                                                    "U35": lambda m: m not in ("U35","U25"),
+                                                                    "GCM": lambda m: m not in ("GCM",),
+                                                                    "TG":  lambda m: m not in ("TG",),
+                                                                }
+                                                                _p2_fn2 = _COMPAT2.get(_p1mkt2, lambda m: m != _p1mkt2)
+                                                                _ql2b_all = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2
+                                                                             if _p2_fn2(m) and l != _bc2[0] and m not in _excl2]
+                                                                # Preferir grupo distinto; si no hay, aceptar mismo grupo con mkt diferente
+                                                                _ql2b_diff = [(l,p,o,m,g,s) for l,p,o,m,g,s in _ql2b_all if g != _p1g2]
+                                                                _ql2b = _ql2b_diff if _ql2b_diff else _ql2b_all
                                                                 _bp2  = _ql2b[0] if _ql2b else None
+                                                                # Sin Pick2: relajar umbral (score ≥ -8, prob ≥ 0.50)
+                                                                if not _bp2:
+                                                                    _sc2_relax = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2
+                                                                                  if s >= -8.0 and _p2_fn2(m) and l != _bc2[0]
+                                                                                  and m not in _excl2 and p >= 0.50]
+                                                                    _sc2_relax.sort(key=lambda x: x[5], reverse=True)
+                                                                    if (_xgh2+_xga2) > 2.8:
+                                                                        _o35r = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2_relax if m=="O35" and p>=0.38]
+                                                                        if _o35r: _bp2 = _o35r[0]
+                                                                    if not _bp2 and _sc2_relax:
+                                                                        _bp2 = _sc2_relax[0]
 
                                                                 _pick2_lbl_c  = _bp2[0]          if _bp2 else None
                                                                 _pick2_prob_c = min(0.92, _bp2[1]) if _bp2 else 0.0
@@ -23154,6 +23357,54 @@ else:
                     main_prob = max(0.10, min(0.92, main_prob + 0.04))
                 elif f"⭐ Mejor equipo objetivamente: {g['away']}" in _enrich_ctx:
                     main_prob = max(0.10, min(0.92, main_prob - 0.04))
+        except: pass
+        # ── H2H — historial directo del partido seleccionado ──
+        try:
+            with st.spinner("📊 Buscando H2H..."):
+                _h2h_raw = get_h2h(g.get("home_id",""), g.get("away_id",""),
+                                   g.get("slug",""), g["home"], g["away"])
+            if _h2h_raw:
+                _h2h_s = h2h_stats(_h2h_raw, g["home"], g["away"])
+                _h2h_ctx = (
+                    f"H2H({_h2h_s['tot']} partidos): "
+                    f"{g['home']} {_h2h_s['hp']}% | Empate {_h2h_s['dp']}% | {g['away']} {_h2h_s['ap']}% | "
+                    f"Ult5: {_h2h_s['l5h']}V-{_h2h_s['l5d']}E-{_h2h_s['l5a']}D | "
+                    f"Prom goles {_h2h_s['avg_g']} | O25 {_h2h_s['o25p']}% | BTTS {_h2h_s['bttsp']}%"
+                )
+                _soc_ctx = _h2h_ctx + " | " + _soc_ctx
+                # Widget H2H visual
+                _h2h_rows = "".join(
+                    f"<div style='display:grid;grid-template-columns:70px 1fr 30px 30px 1fr;gap:3px;"
+                    f"padding:4px 8px;border-bottom:1px solid #0f0f1e;font-size:1.125rem'>"
+                    f"<span style='color:#555'>{r['date']}</span>"
+                    f"<span style='color:{'#00ff88' if r['winner']==g[chr(104)+chr(111)+chr(109)+chr(101)] else ('#ff4444' if r['winner']==g['away'] else '#FFD700')};overflow:hidden;white-space:nowrap'>{r['home'][:13]}</span>"
+                    f"<span style='color:#fff;font-weight:700;text-align:center'>{r['gh']}</span>"
+                    f"<span style='color:#fff;font-weight:700;text-align:center'>{r['ga']}</span>"
+                    f"<span style='color:{'#00ff88' if r['winner']==g['away'] else ('#ff4444' if r['winner']==g['home'] else '#FFD700')};overflow:hidden;white-space:nowrap'>{r['away'][:13]}</span>"
+                    f"</div>"
+                    for r in _h2h_raw[:8]
+                )
+                st.markdown(
+                    f"<div style='background:#0a0900;border:1px solid #c9a84c22;border-radius:10px;padding:6px 0;margin:8px 0'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;padding:4px 10px 8px'>"
+                    f"<div style='font-size:1.05rem;color:#c9a84c;font-weight:700;letter-spacing:.08em'>⚔️ H2H · HISTORIAL DIRECTO</div>"
+                    f"<div style='display:flex;gap:10px;font-size:1.08rem'>"
+                    f"<span style='color:#00ff88;font-weight:700'>{g['home'][:12]} {_h2h_s['hp']}%</span>"
+                    f"<span style='color:#FFD700'>Emp {_h2h_s['dp']}%</span>"
+                    f"<span style='color:#ff4444;font-weight:700'>{_h2h_s['ap']}% {g['away'][:12]}</span>"
+                    f"</div></div>"
+                    f"<div style='display:grid;grid-template-columns:70px 1fr 30px 30px 1fr;gap:3px;"
+                    f"padding:2px 8px 4px;font-size:0.85rem;color:#555;border-bottom:1px solid #141428'>"
+                    f"<span>Fecha</span><span>Local</span><span style='text-align:center'>L</span>"
+                    f"<span style='text-align:center'>V</span><span>Visitante</span></div>"
+                    f"{_h2h_rows}"
+                    f"<div style='display:flex;justify-content:space-around;padding:6px 8px 2px;"
+                    f"font-size:1.02rem;color:#666;border-top:1px solid #141428;margin-top:2px'>"
+                    f"<span>Prom goles: <b style='color:#aaa'>{_h2h_s['avg_g']}</b></span>"
+                    f"<span>Over 2.5: <b style='color:#00ccff'>{_h2h_s['o25p']}%</b></span>"
+                    f"<span>BTTS: <b style='color:#aa00ff'>{_h2h_s['bttsp']}%</b></span>"
+                    f"</div></div>",
+                    unsafe_allow_html=True)
         except: pass
         _ei_soc, _papa_soc = _render_einstein_papa('futbol', g['home'], g['away'], main_lbl, main_prob, main_odd, context_str=_soc_ctx)
 
