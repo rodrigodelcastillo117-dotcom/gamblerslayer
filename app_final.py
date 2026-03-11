@@ -1317,7 +1317,9 @@ def _bet365data_bulk_odds() -> dict:
             _lg_list = []
 
         if not _lg_list:
-            _err_msg = "⚠️ Bet365Data: 0 ligas recibidas"
+            # Guardar JSON crudo para debug
+            _raw_sample = str(_leagues)[:300]
+            _err_msg = f"⚠️ Bet365Data: 0 ligas — JSON: {_raw_sample}"
             _ss[_ck] = _result; _ss[_ts] = _now; _ss[_cnt] = 0; _ss[_err] = _err_msg
             return _result
 
@@ -1509,6 +1511,9 @@ def _b365_bulk_upcoming_odds() -> dict:
     except Exception as _ex:
         _err_msg = f"❌ Excepción BetsAPI: {str(_ex)[:80]}"
 
+    # Guardar muestra de nombres para debug de matching
+    _sample_names = list(_result.keys())[:20]
+    _ss["_b365_bulk_sample"] = _sample_names
     _ss[_cache_key] = _result
     _ss[_cache_ts]  = _now
     _ss[_cache_cnt] = _total
@@ -24160,6 +24165,12 @@ if st.session_state["view"] == "cartelera":
                                 st.error(f"**BetsAPI:** {_b365_err}")
                             elif _b365_ok > 0:
                                 st.success(f"**BetsAPI:** ✅ {_b365_ok} eventos cargados")
+                                # Mostrar muestra de nombres para verificar matching
+                                _b365_sample = st.session_state.get("_b365_bulk_sample", [])
+                                if _b365_sample:
+                                    st.caption("Nombres en BetsAPI (primeros 10):")
+                                    for _sn in _b365_sample[:10]:
+                                        st.caption(f"  · {_sn}")
                             else:
                                 st.warning(f"**BetsAPI:** 0 eventos — posible error o rate limit")
                             # The Odds API status
