@@ -901,8 +901,8 @@ def get_ai_analysis(away_team, home_team, league, sport_group,
                 note = f"BTTS a {prob_pct:.0f}% con EV +{ev:.1f}. Considera que equipos defensivos pueden cambiar la dinámica si hay motivación táctica."
         elif "Over 2.5" in best_label:
             note = f"Modelo proyecta partido con >2.5 goles ({prob_pct:.0f}%). El encuentro {away_team} @ {home_team} favorece líneas ofensivas según simulación Poisson."
-        elif "Over 1.5" in best_label:
-            note = f"Over 1.5 a {prob_pct:.0f}% — línea conservadora pero sólida. Solo un empate 0-0 o 1-0 lo arruina. Útil como leg de parlay."
+        elif "Under 2.5" in best_label:
+            note = f"Under 2.5 a {prob_pct:.0f}% — ambos equipos muestran bajo volumen ofensivo. Partido de menos de 3 goles favorecido por el modelo."
         elif draw_pct > 27 and not pick_is_home:
             note = f"Empate en {draw_pct:.0f}% — partidos con equipos tan parejos frecuentemente terminan igualados. Considera la doble oportunidad como cobertura."
         elif spread < 12:
@@ -1237,13 +1237,8 @@ def run_monte_carlo(game, n=10_000):
         candidates+=[
             ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
             ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
-            # O2.5 vs O1.5: prefer O2.5 when >= 58%. O1.5 only enters as pick when O2.5 < 72%
-            # (raised from 58% to 72% to virtually eliminate boring Over 1.5 picks)
-            ("O/U","Over 2.5" if (p_o25 is not None and p_o25 >= 0.58) else "Over 1.5",
-             p_o25 if (p_o25 is not None and p_o25 >= 0.58) else p_o15,
-             o25_ev if (p_o25 is not None and p_o25 >= 0.58) else o15_ev,
-             str(OU_ML),
-             quarter_kelly(p_o25,OU_ML) if (p_o25 is not None and p_o25 >= 0.58) else quarter_kelly(p_o15,OU_ML)),
+            # O/U: Only O2.5, O3.5, Under 2.5 — O1.5 is NEVER a pick (too trivial)
+            ("O/U","Over 2.5",p_o25,o25_ev,str(OU_ML),quarter_kelly(p_o25,OU_ML)),
             ("O/U","Over 3.5",p_o35,o35_ev,str(OU_ML),quarter_kelly(p_o35,OU_ML)),
             ("O/U","Under 2.5",p_u25,u25_ev,str(OU_ML),quarter_kelly(p_u25,OU_ML)),
         ]
@@ -1256,15 +1251,9 @@ def run_monte_carlo(game, n=10_000):
             ("DC","Doble Oportunidad 12",p_dc_12,dc_12_ev,str(DC_ML),quarter_kelly(p_dc_12,DC_ML)),
         ]
 
-    # Best single: block O1.5 when O2.5 >= 72% — avoids trivially high-prob but low-value picks
-    def is_valid_pick(mtype, label, prob):
-        if mtype == "O/U" and label == "Over 1.5" and sport_group == "Soccer":
-            return p_o25 is None or p_o25 < 0.72  # block O1.5 once O2.5 reaches 72%
-        return True
-
     best_single=None; best_ev_v=-999
     for mtype,label,prob,ev,ml,kelly in candidates:
-        if prob is not None and ev is not None and ev>best_ev_v and is_valid_pick(mtype,label,prob):
+        if prob is not None and ev is not None and ev>best_ev_v:
             best_ev_v=ev; best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
 
     pos_legs=[(mtype,label,prob,ev,ml) for mtype,label,prob,ev,ml,k in candidates
@@ -1796,6 +1785,266 @@ with tab_parlays:
 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_all:
+    # ── LIVE PICKS — runs instant simulation on in-progress games ─────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # LIVE PICK ENGINE — contextual logic based on score + minute + probs
+    # Does NOT require EV+. Uses situation to find the best available bet.
+    # ─────────────────────────────────────────────────────────────────────────
+    def parse_live_minute(status_detail):
+        """Extract game minute from ESPN status_detail string. Returns int or None."""
+        import re
+        # Soccer: "70:23", "HT", "45+2", "2nd Half"
+        m = re.search(r"(\d{1,3})['′:]?\d{0,2}(?:\+\d+)?", status_detail or "")
+        if m:
+            val = int(m.group(1))
+            if 1 <= val <= 120:
+                return val
+        if "HT" in (status_detail or "").upper() or "half time" in (status_detail or "").lower():
+            return 45
+        return None
+
+    def live_pick_soccer(g, sim, minute):
+        """
+        Context-aware soccer live pick.
+        Returns dict: {label, rationale, confidence, market_type}
+        Confidence: 'Alta' | 'Media' | 'Baja'
+        """
+        try:
+            hs = int(g.get("home_score") or 0)
+            as_ = int(g.get("away_score") or 0)
+        except:
+            hs, as_ = 0, 0
+        total = hs + as_
+        home_pct  = sim.get("home_pct", 50)
+        away_pct  = sim.get("away_pct", 50)
+        draw_pct  = sim.get("draw_pct", 0)
+        p_btts    = sim.get("p_btts") or 0
+        p_o05     = min(0.97, 1 - (0.15 ** max(total, 0)))   # P(al menos 1 gol más) crude estimate
+        p_o25     = sim.get("p_o25") or 0
+        # Who's dominating: use win% differential as proxy for pressure
+        home_dom  = home_pct > away_pct + 10
+        away_dom  = away_pct > home_pct + 10
+        dom_team  = g["home_team"] if home_dom else (g["away_team"] if away_dom else None)
+        dom_pct   = max(home_pct, away_pct)
+        minute    = minute or 50  # default mid-game
+
+        # ── Situation patterns ────────────────────────────────────────────────
+        # 1. Empate 0-0 después del min 60 + un equipo dominando → ML dominante + Over 0.5
+        if total == 0 and minute >= 60 and dom_team:
+            return {
+                "picks": [
+                    {"label": f"{dom_team} gana", "prob": dom_pct, "market": "ML",
+                     "rationale": f"0-0 en el min {minute} con {dom_team} dominando ({dom_pct:.0f}%). El tiempo apremia — el dominante suele abrir el marcador tardío."},
+                    {"label": "Over 0.5 goles", "prob": round(p_o05*100, 1), "market": "O/U",
+                     "rationale": f"0-0 al min {minute} — altísima probabilidad de al menos 1 gol antes del 90."},
+                ],
+                "headline": f"0-0 min {minute} — {dom_team} presiona"
+            }
+        # 2. Empate 0-0 antes del 60 + equipos parejos → Ambos Anotan SÍ o Over 0.5
+        if total == 0 and minute < 60:
+            if p_btts > 0.55:
+                return {
+                    "picks": [{"label": "Ambos Anotan — SÍ", "prob": round(p_btts*100,1), "market": "BTTS",
+                                "rationale": f"Partido parejo al min {minute}, ambos equipos con potencial ofensivo ({p_btts*100:.0f}%). El 0-0 no durará."}],
+                    "headline": f"0-0 min {minute} — partido abierto"
+                }
+            return {
+                "picks": [{"label": "Over 0.5 goles", "prob": round(p_o05*100, 1), "market": "O/U",
+                            "rationale": f"0-0 al min {minute}. Estadísticamente menos del 5% de partidos terminan 0-0 en estas ligas."}],
+                "headline": f"0-0 min {minute}"
+            }
+        # 3. Empate con goles (1-1, 2-2) → BTTS ya cumplido, buscar quién gana o Over 2.5
+        if hs == as_ and total >= 2 and dom_team:
+            return {
+                "picks": [
+                    {"label": f"{dom_team} gana o empata (DC)", "prob": min(dom_pct + draw_pct * 0.5, 95), "market": "DC",
+                     "rationale": f"{hs}-{as_} min {minute}. {dom_team} con mayor presión. Doble oportunidad cubre empate o victoria."},
+                ],
+                "headline": f"Empate {hs}-{as_} min {minute}"
+            }
+        if hs == as_ and total >= 2:
+            return {
+                "picks": [{"label": "Over 2.5 goles", "prob": round(p_o25*100,1), "market": "O/U",
+                            "rationale": f"Ya van {total} goles al min {minute}. Partido de alto ritmo — Over 2.5 cerca de cumplirse."}],
+                "headline": f"Empate {hs}-{as_}"
+            }
+        # 4. Equipo ganando 1-0 después del min 70 → Under 2.5 o mantener resultado
+        if abs(hs - as_) == 1 and minute >= 70:
+            leader     = g["home_team"] if hs > as_ else g["away_team"]
+            leader_pct = home_pct if hs > as_ else away_pct
+            return {
+                "picks": [
+                    {"label": f"{leader} gana", "prob": leader_pct, "market": "ML",
+                     "rationale": f"{leader} arriba 1-0 al min {minute}. Con poco tiempo, el líder defiende ventaja con alta probabilidad."},
+                    {"label": "Under 2.5 goles", "prob": round((1-(p_o25))*100, 1), "market": "O/U",
+                     "rationale": f"Solo {total} gol(es) al min {minute}. Partido controlado, poco tiempo para más."},
+                ],
+                "headline": f"{hs}-{as_} min {minute} — ventaja mínima"
+            }
+        # 5. Diferencia de 2+ goles → ganar / Under 3.5
+        if abs(hs - as_) >= 2:
+            leader     = g["home_team"] if hs > as_ else g["away_team"]
+            leader_pct = min(home_pct if hs > as_ else away_pct + 15, 92)
+            return {
+                "picks": [{"label": f"{leader} gana", "prob": leader_pct, "market": "ML",
+                            "rationale": f"Ventaja de {abs(hs-as_)} goles al min {minute}. Alta probabilidad de mantener resultado."}],
+                "headline": f"{hs}-{as_} — {leader} dominando"
+            }
+        # 6. Default: best sim pick
+        bs = sim.get("best_single")
+        if bs:
+            return {
+                "picks": [{"label": bs["label"], "prob": round(bs["prob"]*100,1), "market": bs["market"],
+                            "rationale": f"Pick de mayor probabilidad según simulación Monte Carlo (5,000 iteraciones)."}],
+                "headline": f"{hs}-{as_} min {minute}"
+            }
+        return None
+
+    def live_pick_other(g, sim):
+        """For Basketball/NFL/NHL/MLB/Tennis — pick best probability candidate regardless of EV."""
+        try:
+            hs = int(g.get("home_score") or 0)
+            as_ = int(g.get("away_score") or 0)
+        except:
+            hs, as_ = 0, 0
+        home_pct = sim.get("home_pct", 50)
+        away_pct = sim.get("away_pct", 50)
+        sport_group = LEAGUES.get(g["league"], {}).get("group", "")
+        status = g.get("status_detail", "")
+        # Pick team with highest probability
+        if home_pct >= away_pct:
+            label, prob, team = f"{g['home_team']} gana", home_pct, g["home_team"]
+        else:
+            label, prob, team = f"{g["away_team"]} gana", away_pct, g["away_team"]
+        rationale = f"{team} con {prob:.0f}% de probabilidad simulada. Marcador actual: {as_}-{hs}."
+        if sport_group == "Basketball":
+            diff = abs(hs - as_)
+            if diff <= 5:
+                rationale = f"Partido cerrado ({as_}-{hs}). {team} tiene ligera ventaja de {prob:.0f}% según simulación — considera ML o spread reducido."
+            elif diff >= 15:
+                rationale = f"{team} con ventaja de {diff} pts. Probabilidad alta de mantener resultado: {prob:.0f}%."
+        elif sport_group == "Tennis":
+            rationale = f"{team} lidera en sets/games. Modelo estima {prob:.0f}% de ganar el match."
+        return {
+            "picks": [{"label": label, "prob": prob, "market": "ML", "rationale": rationale}],
+            "headline": f"{as_}-{hs} · {status}"
+        }
+
+    live_games = [g for g in games if g["state"] == "in"]
+    if live_games:
+        st.markdown('<div class="section-heading">🔴 Picks En Vivo</div>', unsafe_allow_html=True)
+        st.caption("Análisis contextual: marcador actual + minuto + probabilidades de simulación.")
+
+        for g in live_games:
+            sim         = run_simulation(g, n=5_000)
+            dq          = sim["data_quality"]
+            sport_group = LEAGUES.get(g["league"], {}).get("group", "Soccer")
+            minute      = parse_live_minute(g.get("status_detail", ""))
+
+            try:
+                hs = int(g.get("home_score") or 0)
+                as_ = int(g.get("away_score") or 0)
+            except:
+                hs, as_ = 0, 0
+            score_str   = f"{as_} – {hs}" if (g.get("home_score") or g.get("away_score")) else "–"
+            min_str     = f"min {minute}" if minute else g.get("status_detail","")
+
+            # Get contextual pick
+            if sport_group == "Soccer":
+                result = live_pick_soccer(g, sim, minute)
+            else:
+                result = live_pick_other(g, sim)
+
+            if not result:
+                continue
+
+            picks     = result["picks"]
+            headline  = result.get("headline","")
+            # Best pick = highest probability among suggestions
+            best      = max(picks, key=lambda p: p["prob"])
+
+            prob_color  = "#4ade80" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
+            border_col  = "rgba(255,60,60,0.7)"
+
+            # Build HTML
+            picks_html = ""
+            for i, pk in enumerate(picks):
+                pc = "#4ade80" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
+                picks_html += (
+                    f'<div style="display:flex;align-items:center;gap:10px;'
+                    f'padding:8px 12px;margin-bottom:6px;'
+                    f'background:rgba(255,232,124,{0.08 if i==0 else 0.03});'
+                    f'border-radius:6px;border-left:3px solid {"#FFE87C" if i==0 else "#3a4a3e"}">'
+                    f'<span style="color:#FFE87C;font-size:{1.3 if i==0 else 1.0}rem">&#9658;</span>'
+                    f'<div style="flex:1">'
+                    f'<span style="font-family:Cinzel,serif;font-size:{1.15 if i==0 else 0.95}rem;'
+                    f'font-weight:{"900" if i==0 else "600"};color:#FFE87C;letter-spacing:1.5px">'
+                    f'{pk["label"]}</span>'
+                    f'<div style="font-size:0.75rem;color:#8a9e8a;margin-top:3px;line-height:1.4">'
+                    f'{pk["rationale"]}</div>'
+                    f'</div>'
+                    f'<div style="text-align:center;min-width:48px">'
+                    f'<div style="font-family:Cinzel,serif;font-size:1.1rem;color:{pc};font-weight:700">'
+                    f'{pk["prob"]:.0f}%</div>'
+                    f'<div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">PROB</div>'
+                    f'</div></div>'
+                )
+
+            stats_html = (
+                f'<div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px 0;'
+                f'border-top:1px solid rgba(255,255,255,0.06);margin-top:8px">'
+                f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#60a5fa;font-weight:700">'
+                f'{sim["away_pct"]:.0f}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">'
+                f'{g["away_team"][:11]}</div></div>'
+                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#a78bfa;font-weight:700">'
+                   f'{sim["draw_pct"]:.0f}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">Empate</div></div>'
+                   if sim["is_soccer"] else '')
+                + f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#f97316;font-weight:700">'
+                f'{sim["home_pct"]:.0f}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">'
+                f'{g["home_team"][:11]}</div></div>'
+                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#4ade80;font-weight:700">'
+                   f'{sim["p_btts"]}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">BTTS%</div></div>'
+                   if sim.get("p_btts") and sport_group == "Soccer" else '')
+                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#C9A84C;font-weight:700">'
+                   f'{sim["p_o25"]}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">O2.5%</div></div>'
+                   if sim.get("p_o25") and sport_group == "Soccer" else '')
+                + f'<div style="margin-left:auto;text-align:right"><div style="font-size:0.65rem;color:#3a4a3e">DQ {dq:.0f}%</div>'
+                f'<div style="font-size:0.65rem;color:#3a4a3e">5,000 sims</div></div>'
+                f'</div>'
+            )
+
+            live_html = (
+                '<div style="background:linear-gradient(135deg,#0A1E0F,#071A10);'
+                f'border:2px solid {border_col};border-radius:10px;padding:0;'
+                'margin:10px 0;overflow:hidden;box-shadow:0 0 30px rgba(255,60,60,0.10);">'
+                '<div style="height:3px;background:linear-gradient(90deg,transparent,#ff3c3c,#ff6b6b,#ff3c3c,transparent);'
+                'box-shadow:0 0 10px rgba(255,60,60,0.7)"></div>'
+                '<div style="padding:14px 18px">'
+                # Header row
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
+                '<div>'
+                f'<span style="font-family:\'Playfair Display\',serif;font-size:1.05rem;font-weight:700;color:#fff">'
+                f'{g["away_team"]} @ {g["home_team"]}</span>'
+                f' <span style="color:#4ade80;font-weight:700;font-size:1.1rem;margin-left:6px">{score_str}</span>'
+                f'<div style="font-size:0.72rem;color:#8a9e8a;margin-top:3px">{headline}</div>'
+                '</div>'
+                '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+                '<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
+                'border-radius:20px;padding:2px 9px;font-size:0.65rem;letter-spacing:1.5px;font-weight:600">🔴 EN VIVO</span>'
+                f'<span style="background:rgba(201,168,76,0.1);color:#C9A84C;border:1px solid rgba(201,168,76,0.3);'
+                f'border-radius:20px;padding:2px 9px;font-size:0.65rem">{g["league"]}</span>'
+                + (f'<span style="background:rgba(231,76,60,0.15);color:#e74c3c;border:1px solid rgba(231,76,60,0.3);'
+                   f'border-radius:20px;padding:2px 7px;font-size:0.62rem">⚠ SIN CUOTAS</span>' if dq == 0 else '')
+                + '</div></div>'
+                + picks_html
+                + stats_html
+                + '</div></div>'
+            )
+            st.markdown(live_html, unsafe_allow_html=True)
+
+        st.markdown('<div class="den-divider" style="margin:12px 0 20px 0"></div>', unsafe_allow_html=True)
+
+    # ── ALL GAMES LIST ─────────────────────────────────────────────────────────
     cf1,cf2=st.columns(2)
     with cf1: fs=st.multiselect("Estado",["pre","in","post"],default=["pre","in"],
                                 format_func=lambda x:{"pre":"Próximo","in":"En Vivo","post":"Final"}[x])
