@@ -744,29 +744,43 @@ def run_monte_carlo(game, n=10_000):
         ("ML",game["home_team"]+" ML",sh,home_ev,hml,hk),
         ("ML",game["away_team"]+" ML",sa,away_ev,aml,ak),
     ]
-    if p_btts is not None:
-        # Smart O/U: if O2.5 >= 58% use it as primary, else fallback to O1.5
-        smart_ou_label = "Over 2.5" if (p_o25 is not None and p_o25 >= 0.58) else "Over 1.5"
-        smart_ou_prob  = p_o25 if smart_ou_label == "Over 2.5" else p_o15
-        smart_ou_ev    = o25_ev if smart_ou_label == "Over 2.5" else o15_ev
+
+    # BTTS + O/U markets — ONLY for soccer (and hockey uses total goals differently)
+    # For basketball/football/baseball the O/U line is points, not goals, skip these markets
+    soccer_ou_leagues = {"Soccer"}
+    sport_group = LEAGUES.get(game["league"], {}).get("group", "")
+    if p_btts is not None and sport_group == "Soccer":
         candidates+=[
             ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
             ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
-            ("O/U",smart_ou_label,smart_ou_prob,smart_ou_ev,str(OU_ML),quarter_kelly(smart_ou_prob,OU_ML) if smart_ou_prob else None),
-            ("O/U","Over 1.5",p_o15,o15_ev,str(OU_ML),quarter_kelly(p_o15,OU_ML)),
-            ("O/U","Over 2.5",p_o25,o25_ev,str(OU_ML),quarter_kelly(p_o25,OU_ML)),
+            # O2.5 vs O1.5 logic: if O2.5 >= 58% force it as the recommended pick
+            # otherwise use O1.5 (O1.5 at 85%+ has higher EV but lower real value)
+            ("O/U","Over 2.5" if (p_o25 is not None and p_o25 >= 0.58) else "Over 1.5",
+             p_o25 if (p_o25 is not None and p_o25 >= 0.58) else p_o15,
+             o25_ev if (p_o25 is not None and p_o25 >= 0.58) else o15_ev,
+             str(OU_ML),
+             quarter_kelly(p_o25,OU_ML) if (p_o25 is not None and p_o25 >= 0.58) else quarter_kelly(p_o15,OU_ML)),
             ("O/U","Over 3.5",p_o35,o35_ev,str(OU_ML),quarter_kelly(p_o35,OU_ML)),
             ("O/U","Under 2.5",p_u25,u25_ev,str(OU_ML),quarter_kelly(p_u25,OU_ML)),
         ]
-    candidates+=[
-        ("DC","Doble Oportunidad 1X",p_dc_1x,dc_1x_ev,str(DC_ML),quarter_kelly(p_dc_1x,DC_ML)),
-        ("DC","Doble Oportunidad X2",p_dc_x2,dc_x2_ev,str(DC_ML),quarter_kelly(p_dc_x2,DC_ML)),
-        ("DC","Doble Oportunidad 12",p_dc_12,dc_12_ev,str(DC_ML),quarter_kelly(p_dc_12,DC_ML)),
-    ]
+
+    # DC only meaningful for soccer (3-way markets)
+    if is_soccer:
+        candidates+=[
+            ("DC","Doble Oportunidad 1X",p_dc_1x,dc_1x_ev,str(DC_ML),quarter_kelly(p_dc_1x,DC_ML)),
+            ("DC","Doble Oportunidad X2",p_dc_x2,dc_x2_ev,str(DC_ML),quarter_kelly(p_dc_x2,DC_ML)),
+            ("DC","Doble Oportunidad 12",p_dc_12,dc_12_ev,str(DC_ML),quarter_kelly(p_dc_12,DC_ML)),
+        ]
+
+    # Best single: for soccer, NEVER pick O1.5 when O2.5 >= 58% (EV of O1.5 is misleadingly high)
+    def is_valid_pick(mtype, label, prob):
+        if mtype == "O/U" and label == "Over 1.5" and sport_group == "Soccer":
+            return p_o25 is None or p_o25 < 0.58  # only allow O1.5 if O2.5 < 58%
+        return True
 
     best_single=None; best_ev_v=-999
     for mtype,label,prob,ev,ml,kelly in candidates:
-        if prob is not None and ev is not None and ev>best_ev_v:
+        if prob is not None and ev is not None and ev>best_ev_v and is_valid_pick(mtype,label,prob):
             best_ev_v=ev; best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
 
     pos_legs=[(mtype,label,prob,ev,ml) for mtype,label,prob,ev,ml,k in candidates
