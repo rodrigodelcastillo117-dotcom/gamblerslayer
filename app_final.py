@@ -4360,7 +4360,7 @@ def _snap_auto_pick(partido_id, pick_data, state="pre", force=False):
     snap[partido_id] = {
         "pick":       pick_data.get("pick",""),
         "prob":       pick_data.get("prob",0),
-        "mkt":        pick_data.get("mkt", pick_data.get("src","🤖 Modelo")),
+        "mkt":        pick_data.get("mkt","") or pick_data.get("src","🤖 Modelo"),
         "odd":        pick_data.get("odd",0),
         "src":        pick_data.get("src","🤖 Modelo"),
         "all_picks":  pick_data.get("all_picks", []),
@@ -5106,12 +5106,23 @@ def _bridge_snap_to_brain(partido_id, partido_db):
     # Buscar pick por ID exacto
     pk_snap = snap.get(partido_id)
     if not pk_snap:
-        # Fuzzy: home[:8] + fecha
-        _home_key = (partido_db.get("home","") or partido_db.get("p1",""))[:8].lower().strip()
+        # Fuzzy multi-estrategia: home/away + fecha
+        _home_key  = (partido_db.get("home","") or partido_db.get("p1","")).lower().strip()
+        _away_key  = (partido_db.get("away","") or partido_db.get("p2","")).lower().strip()
         _fecha_key = str(partido_db.get("fecha",""))[:10]
         for _sv in snap.values():
-            _sv_h = (_sv.get("home","") or "").lower().strip()[:8]
-            if _sv_h == _home_key and str(_sv.get("fecha",""))[:10] == _fecha_key:
+            _sv_h = (_sv.get("home","") or "").lower().strip()
+            _sv_a = (_sv.get("away","") or "").lower().strip()
+            _sv_f = str(_sv.get("fecha",""))[:10]
+            if _sv_f != _fecha_key: continue
+            # Match por home (primeros 6 chars en ambas direcciones)
+            if (_sv_h[:6] and _sv_h[:6] in _home_key) or (_home_key[:6] and _home_key[:6] in _sv_h):
+                pk_snap = _sv; break
+            # Match por away
+            if (_sv_a[:6] and _sv_a[:6] in _away_key) or (_away_key[:6] and _away_key[:6] in _sv_a):
+                pk_snap = _sv; break
+            # Para tenis: cruzado (p1 del snap puede ser p2 del DB)
+            if (_sv_h[:6] and _sv_h[:6] in _away_key) or (_sv_a[:6] and _sv_a[:6] in _home_key):
                 pk_snap = _sv; break
     if not pk_snap: return False
 
@@ -6509,12 +6520,24 @@ def render_resultados_tab():
     _snap_pre   = sum(1 for v in _snap_debug.values() if not v.get("frozen"))
     _snap_frz   = sum(1 for v in _snap_debug.values() if v.get("frozen"))
     _snap_ss    = len(st.session_state.get("_picks_snap_mem", {}))
-    st.caption(f"📸 Picks snap: {len(_snap_debug)} total · {_snap_pre} pre-partido · {_snap_frz} congelados · {_snap_ss} en memoria")
+    # Contar cruces snap→partidos terminados
+    _snap_cruzados = 0; _snap_no_cruzados = 0
+    _post_ids_db = {p["id"] for p in partidos if p.get("state")=="post"}
+    _post_homes_db = {(p.get("home","") or p.get("p1",""))[:8].lower().strip()+"_"+str(p.get("fecha",""))[:10] for p in partidos if p.get("state")=="post"}
+    for _sv_id, _sv_data in _snap_debug.items():
+        _sv_home = (_sv_data.get("home","") or "").lower().strip()
+        _sv_fecha = str(_sv_data.get("fecha",""))[:10]
+        _found = (_sv_id in _post_ids_db or _sv_home[:8]+"_"+_sv_fecha in _post_homes_db or
+                  any(_sv_home[:5] in (p.get("home","") or "").lower() for p in partidos if p.get("state")=="post" and str(p.get("fecha",""))[:10]==_sv_fecha))
+        if _found: _snap_cruzados += 1
+        else: _snap_no_cruzados += 1
+    st.caption(f"\U0001f4f8 Picks snap: {len(_snap_debug)} total \u00b7 {_snap_pre} pre-partido \u00b7 {_snap_frz} congelados \u00b7 {_snap_ss} en memoria \u00b7 \u2705 {_snap_cruzados} cruzados \u00b7 \u23f3 {_snap_no_cruzados} sin partido final")
 
     # ── Pre-calcular contadores — cacheado en session_state ──
     # Cache key incluye número de partidos post para invalidar si llegan nuevos
-    _n_post = sum(1 for p in partidos if p.get("state")=="post")
-    _cnt_key = f"villar_counters_{_n_post}"
+    _n_post   = sum(1 for p in partidos if p.get("state")=="post")
+    _n_snap   = len(_snap_debug)  # invalidar si llegaron picks nuevos al snap
+    _cnt_key  = f"villar_counters_{_n_post}_{_n_snap}"
     if _cnt_key in st.session_state:
         _pre_ok   = st.session_state[_cnt_key]["ok"]
         _pre_fail = st.session_state[_cnt_key]["fail"]
@@ -6529,29 +6552,39 @@ def render_resultados_tab():
         for _pp in partidos:
             if _pp.get("state") != "post": continue
             _hk = (_pp.get("home","") or _pp.get("p1","") or "")[:8].lower().strip()
-            _fk = _pp.get("fecha","")
+            _ak = (_pp.get("away","") or _pp.get("p2","") or "")[:8].lower().strip()
+            _fk = str(_pp.get("fecha",""))[:10]
             if _hk and _fk: _post_fuzzy[f"{_hk}_{_fk}"] = _pp
+            if _ak and _fk: _post_fuzzy[f"{_ak}_{_fk}"] = _pp  # también por away
         for _sid, _spk in _snap_all.items():
             _sp = _spk.get("sport","futbol")
             if "nba"  in str(_sp).lower(): _sp = "nba"
             elif "ten" in str(_sp).lower(): _sp = "tenis"
             else:                           _sp = "futbol"
-            # Buscar partido finalizado que corresponda
+            # Buscar partido finalizado — múltiples estrategias
             _res_p = _post_map.get(_sid)
+            _sh_raw = (_spk.get("home","") or "").lower().strip()
+            _sa_raw = (_spk.get("away","") or "").lower().strip()
+            _sf     = str(_spk.get("fecha",""))[:10]
             if not _res_p:
-                # Fallback fuzzy: home[:8] + fecha
-                _sh = (_spk.get("home","") or "").lower().strip()[:8]
-                _sf = _spk.get("fecha","")
-                _res_p = _post_fuzzy.get(f"{_sh}_{_sf}")
+                # Fallback 1: home[:8] + fecha
+                _res_p = _post_fuzzy.get(f"{_sh_raw[:8]}_{_sf}")
             if not _res_p:
-                # Fallback 2: buscar por home+fecha recorriendo
-                _sh_full = (_spk.get("home","") or "").lower().strip()
-                _sf = _spk.get("fecha","")
-                for _pp in _post_map.values():
+                # Fallback 2: away[:8] + fecha (para tenis donde p1/p2 pueden estar invertidos)
+                _res_p = _post_fuzzy.get(f"{_sa_raw[:8]}_{_sf}")
+            if not _res_p:
+                # Fallback 3: recorrer todos los post del mismo deporte+fecha con match parcial
+                for _pp in partidos:
+                    if _pp.get("state") != "post": continue
+                    if _pp.get("fecha","")[:10] != _sf: continue
                     _ph = (_pp.get("home","") or _pp.get("p1","") or "").lower().strip()
-                    if _ph[:6] == _sh_full[:6] and _pp.get("fecha","") == _sf:
+                    _pa = (_pp.get("away","") or _pp.get("p2","") or "").lower().strip()
+                    # Match si cualquier parte de 5+ chars coincide
+                    if (_sh_raw[:5] and _sh_raw[:5] in _ph) or (_ph[:5] and _ph[:5] in _sh_raw):
                         _res_p = _pp; break
-            if not _res_p: continue  # partido no terminó aún
+                    if (_sa_raw[:5] and _sa_raw[:5] in _pa) or (_pa[:5] and _pa[:5] in _sa_raw):
+                        _res_p = _pp; break
+            if not _res_p: continue  # partido realmente no terminó aún
             try:
                 _vd3, _, _ = _villar_match_pick_to_result(_spk, _res_p)
                 if   "GANÓ"  in _vd3: _pre_ok[_sp]  = _pre_ok.get(_sp,0) + 1
