@@ -23709,9 +23709,10 @@ if st.session_state["view"] == "cartelera":
                                                         _bad_p1_kw = ("Over","Under","Ambos","AA","c/Mitad","Mitad","DO ","Doble Op")
                                                         _p1_is_bad = any(g in _pick_lbl for g in _bad_p1_kw)
                                                         _has_pick2 = bool(_br.get("pick2","") if _br else "")
-                                                        # UEFA pre-partido: SIEMPRE recalcular con odds actuales
-                                                        # El bridge puede tener picks de cuando las odds estaban mal
-                                                        _uefa_recalc = _is_uefa_m  # siempre recalcular en UEFA
+                                                        # UEFA pre-partido: recalcular SOLO si no hay bridge del análisis
+                                                        # Si el usuario ya analizó el partido, usar ese pick (es el más preciso)
+                                                        _br_from_analysis = _br and "analisis" in (_br.get("src","") or "").lower()
+                                                        _uefa_recalc = _is_uefa_m and not _br_from_analysis
                                                         if _uefa_recalc:
                                                             _pick_lbl = ""; _pick_prob = 0  # forzar recálculo con odds actuales
                                                         # Sin bridge o UEFA recalc: calcular pick con EV real
@@ -23889,29 +23890,51 @@ if st.session_state["view"] == "cartelera":
                                                                 _ql2  = [(l,p,o,m,g,s) for l,p,o,m,g,s in _sc2 if s>=0]
                                                                 _ql2.sort(key=lambda x: x[5], reverse=True)
 
-                                                                # ══ PICK 1: SIEMPRE ML ══
-                                                                # Favorito ≥55% → ML ganador | <55% → DO del favorito
+                                                                # ══ PICK 1: FAVORITO DEL MERCADO ══
+                                                                # Las odds son la señal más confiable — el favorito según
+                                                                # las odds es siempre Pick 1, sin importar el modelo.
+                                                                _oh_pk = float(_m.get("odd_h",0) or 0)
+                                                                _oa_pk = float(_m.get("odd_a",0) or 0)
+                                                                _od_pk = float(_m.get("odd_d",0) or 0)
                                                                 _all_ml2 = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2
                                                                             if mk=="ML" and "Empate" not in l]
                                                                 _fav_ml2 = max(_all_ml2, key=lambda x: x[1]) if _all_ml2 else None
                                                                 _fav_p2  = _fav_ml2[1] if _fav_ml2 else 0
 
-                                                                if _fav_p2 >= 0.55 and _fav_ml2:
-                                                                    # ML claro — usar el favorito
+                                                                # Usar odds para determinar favorito real
+                                                                if _oh_pk > 1 and _oa_pk > 1:
+                                                                    _vig_pk = 1/_oh_pk + 1/_od_pk + 1/_oa_pk if _od_pk > 1 else 1/_oh_pk + 1/_oa_pk
+                                                                    _mkt_ph_pk = (1/_oh_pk) / _vig_pk
+                                                                    _mkt_pa_pk = (1/_oa_pk) / _vig_pk
+                                                                    _home_is_mkt_fav = _mkt_ph_pk > _mkt_pa_pk
+                                                                    _mkt_fav_p = max(_mkt_ph_pk, _mkt_pa_pk)
+                                                                    # Encontrar el ML que corresponde al favorito del mercado
+                                                                    _fav_ml_mkt = next(
+                                                                        (x for x in _all_ml2 if ("🏠" in x[0]) == _home_is_mkt_fav),
+                                                                        _fav_ml2
+                                                                    )
+                                                                    if _fav_ml_mkt:
+                                                                        # ML si fav ≥52% según mercado, DO si entre 46-51%
+                                                                        if _mkt_fav_p >= 0.52:
+                                                                            _bc2 = _fav_ml_mkt
+                                                                        else:
+                                                                            # Muy equilibrado → DO del favorito de mercado
+                                                                            _fav_nm_pk = _fav_ml_mkt[0].split(" Gana")[0].replace("🏠 ","").replace("✈️ ","").strip()
+                                                                            _do_opts2 = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2
+                                                                                         if mk=="DO" and _fav_nm_pk and _fav_nm_pk[:8].lower() in l.lower()]
+                                                                            _bc2 = max(_do_opts2, key=lambda x: x[1]) if _do_opts2 else _fav_ml_mkt
+                                                                    else:
+                                                                        _bc2 = _fav_ml2 or (_sc2[0] if _sc2 else None)
+                                                                elif _fav_p2 >= 0.52:
                                                                     _bc2 = _fav_ml2
                                                                 else:
-                                                                    # Partido equilibrado → DO del equipo con mayor prob
-                                                                    _fav_name2  = (_fav_ml2[0] if _fav_ml2 else "").split(" Gana")[0].replace("🏠 ","").replace("✈️ ","").strip()
-                                                                    _do_opts2   = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2
-                                                                                   if mk=="DO" and _fav_name2 and _fav_name2[:8].lower() in l.lower()]
-                                                                    if not _do_opts2:  # fallback: cualquier DO
+                                                                    # Sin odds y partido equilibrado → DO
+                                                                    _fav_name2 = (_fav_ml2[0] if _fav_ml2 else "").split(" Gana")[0].replace("🏠 ","").replace("✈️ ","").strip()
+                                                                    _do_opts2  = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2
+                                                                                  if mk=="DO" and _fav_name2 and _fav_name2[:8].lower() in l.lower()]
+                                                                    if not _do_opts2:
                                                                         _do_opts2 = [(l,p,o,mk,g,s) for l,p,o,mk,g,s in _sc2 if mk=="DO"]
-                                                                    if _do_opts2:
-                                                                        _bc2 = max(_do_opts2, key=lambda x: x[1])
-                                                                    elif _fav_ml2:
-                                                                        _bc2 = _fav_ml2  # último fallback: ML aunque sea bajo
-                                                                    else:
-                                                                        _bc2 = _sc2[0] if _sc2 else None
+                                                                    _bc2 = max(_do_opts2, key=lambda x: x[1]) if _do_opts2 else (_fav_ml2 or (_sc2[0] if _sc2 else None))
 
                                                                 _pick_lbl  = _bc2[0]
                                                                 _pick_prob = min(0.92, _bc2[1])
@@ -23950,6 +23973,13 @@ if st.session_state["view"] == "cartelera":
                                                                     _sc2_goles.sort(key=lambda x: x[1], reverse=True)
                                                                     _bp2 = _sc2_goles[0] if _sc2_goles else None
 
+                                                                # Pick 2: si el mejor gol tiene prob baja (<52%), intentar O1.5
+                                                                if _bp2 and _bp2[1] < 0.52 and _bp2[3] in ("O25","AA"):
+                                                                    import math as _p2m
+                                                                    _xgt_p2 = _hx2 + _ax2
+                                                                    _o15_p2 = 1 - sum(_xgt_p2**k * _p2m.exp(-_xgt_p2) / _p2m.factorial(k) for k in range(2))
+                                                                    if _o15_p2 > _bp2[1] + 0.05:  # O1.5 notablemente mejor
+                                                                        _bp2 = (f"⚽ Over 1.5", _o15_p2, 1.35, "O15", "B", _o15_p2 * 100)
                                                                 _pick2_lbl_c  = _bp2[0]          if _bp2 else None
                                                                 _pick2_prob_c = min(0.92, _bp2[1]) if _bp2 else 0.0
                                                             except: pass
