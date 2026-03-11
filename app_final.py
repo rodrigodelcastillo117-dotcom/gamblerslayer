@@ -536,6 +536,8 @@ LEAGUES = {
     "Liga de Expansión":      {"sport":"soccer", "league":"mex.2",               "group":"Soccer"},
     "ATP":              {"sport":"tennis",    "league":"atp",                    "group":"Tennis"},
     "WTA":              {"sport":"tennis",    "league":"wta",                    "group":"Tennis"},
+    "Indian Wells ATP": {"sport":"tennis",    "league":"atp",                    "group":"Tennis", "tournament_id":"411"},
+    "Indian Wells WTA": {"sport":"tennis",    "league":"wta",                    "group":"Tennis", "tournament_id":"411"},
 }
 HOME_BOOST = {
     "NBA":0.035,"WNBA":0.03,"NCAAB":0.05,"MLB":0.025,"NCAA Baseball":0.02,
@@ -543,6 +545,7 @@ HOME_BOOST = {
     "Premier League":0.038,"La Liga":0.04,"Bundesliga":0.042,"Serie A":0.04,
     "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,"Conference League":0.032,"CONCACAF Champions Cup":0.04,
     "Liga de Expansión":0.05,"ATP":0.01,"WTA":0.01,
+    "Indian Wells ATP":0.0,"Indian Wells WTA":0.0,
 }
 LEAGUE_AVG_GOALS = {
     "NBA":114.0,"WNBA":83.0,"NCAAB":72.0,"MLB":4.5,"NCAA Baseball":5.5,
@@ -551,6 +554,7 @@ LEAGUE_AVG_GOALS = {
     "Bundesliga":3.1,"Serie A":2.6,"Ligue 1":2.7,
     "Champions League":2.9,"Europa League":2.7,"Conference League":2.6,"CONCACAF Champions Cup":2.7,"Liga de Expansión":2.5,
     "ATP":None,"WTA":None,
+    "Indian Wells ATP":None,"Indian Wells WTA":None,
 }
 ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
 
@@ -588,60 +592,158 @@ def get_demo_games():
          "home_score":"","away_score":"","home_record":"41-18-6","away_record":"38-22-5",
          "state":"pre","status_detail":"7:00 PM ET","date":"","venue":"Amerant Bank Arena",
          "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
+        {"id":"d9","league":"ATP","home_team":"Carlos Alcaraz","away_team":"Jannik Sinner",
+         "home_score":"","away_score":"","home_record":"","away_record":"",
+         "state":"pre","status_detail":"Indian Wells Masters · QF","date":"","venue":"Indian Wells Masters",
+         "odds":{"spread":"","over_under":"","home_ml":"-115","away_ml":"-105","home_wp":"52","away_wp":"48"}},
+        {"id":"d10","league":"WTA","home_team":"Aryna Sabalenka","away_team":"Coco Gauff",
+         "home_score":"","away_score":"","home_record":"","away_record":"",
+         "state":"pre","status_detail":"Indian Wells Masters · SF","date":"","venue":"Indian Wells Masters",
+         "odds":{"spread":"","over_under":"","home_ml":"-160","away_ml":"+130","home_wp":"61","away_wp":"39"}},
     ]
 
 @st.cache_data(ttl=300)
-def fetch_scoreboard(sport, league):
-    try:
-        r = requests.get(ESPN_URL.format(sport=sport,league=league), timeout=8,
-                         headers={"User-Agent":"Mozilla/5.0"})
-        if r.status_code == 200: return r.json()
-    except: pass
+def fetch_scoreboard(sport, league, tournament_id=None):
+    """
+    Fetch ESPN scoreboard. For tennis tournaments, tries multiple endpoint patterns:
+      1. /tournament/{id}/scoreboard  — tournament-specific (most reliable)
+      2. /scoreboard?tournamentId={id} — query param fallback
+      3. /scoreboard                  — generic fallback
+    """
+    if tournament_id:
+        urls = [
+            f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/tournament/{tournament_id}/scoreboard",
+            f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard?tournamentId={tournament_id}",
+            ESPN_URL.format(sport=sport, league=league),
+        ]
+    else:
+        urls = [ESPN_URL.format(sport=sport, league=league)]
+
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("events") or data.get("leagues"):
+                    return data
+        except: continue
     return {}
 
-def parse_tennis(data, league_name):
-    """Tennis ESPN API has a different JSON structure — competitors don't have homeAway."""
-    games = []
-    for event in data.get("events", []):
+
+def _tennis_player_name(c):
+    """Extract player name from a tennis competitor block — tries all known locations."""
+    for path in [
+        lambda x: x.get("athlete", {}).get("displayName", ""),
+        lambda x: x.get("athlete", {}).get("fullName", ""),
+        lambda x: x.get("team", {}).get("displayName", ""),
+        lambda x: x.get("team", {}).get("name", ""),
+        lambda x: x.get("displayName", ""),
+    ]:
         try:
-            comp   = event.get("competitions", [{}])[0]
-            comps  = comp.get("competitors", [])
-            if len(comps) < 2: continue
-            # Tennis: no homeAway field — competitor[0] = player1, competitor[1] = player2
-            p1 = comps[0]; p2 = comps[1]
-            def player_name(c):
-                ath = c.get("athlete", {})
-                return ath.get("displayName", "") or c.get("team", {}).get("displayName", "Player")
-            status = event.get("status", {})
-            odds_info = {}
-            ol = comp.get("odds", [])
-            if ol:
-                o = ol[0]
-                odds_info = {
-                    "spread": "", "over_under": "",
-                    "home_ml": o.get("homeTeamOdds", {}).get("moneyLine", "") or o.get("team1Odds", {}).get("moneyLine", ""),
-                    "away_ml": o.get("awayTeamOdds", {}).get("moneyLine", "") or o.get("team2Odds", {}).get("moneyLine", ""),
-                    "home_wp": o.get("homeTeamOdds", {}).get("winPercentage", ""),
-                    "away_wp": o.get("awayTeamOdds", {}).get("winPercentage", ""),
-                }
-            tournament = event.get("tournament", {}).get("displayName", "") or comp.get("tournament", {}).get("displayName", "")
-            venue = tournament or comp.get("venue", {}).get("fullName", "")
-            games.append({
-                "id":           event.get("id", ""),
-                "league":       league_name,
-                "home_team":    player_name(p1),   # p1 = "home" for display
-                "away_team":    player_name(p2),   # p2 = "away" for display
-                "home_score":   p1.get("score", ""),
-                "away_score":   p2.get("score", ""),
-                "home_record":  "",
-                "away_record":  "",
-                "state":        status.get("type", {}).get("state", "pre"),
-                "status_detail":status.get("type", {}).get("shortDetail", ""),
-                "date":         event.get("date", ""),
-                "venue":        venue,
-                "odds":         odds_info,
-            })
-        except: continue
+            v = path(c)
+            if v: return v
+        except: pass
+    return "Player"
+
+def _parse_tennis_event(event, league_name):
+    """Parse a single tennis event dict into our game format."""
+    # competitions[0] or direct match block
+    comp  = event.get("competitions", [event])[0]
+    comps = comp.get("competitors", [])
+    if len(comps) < 2:
+        return None
+    p1, p2 = comps[0], comps[1]
+    status = event.get("status", {})
+    state  = status.get("type", {}).get("state", "pre")
+    detail = status.get("type", {}).get("shortDetail", "") or status.get("type", {}).get("description", "")
+
+    # Score — tennis uses set scores, grab total sets won or current score string
+    def tennis_score(c):
+        sc = c.get("score", "")
+        if sc: return str(sc)
+        # linescores = sets
+        ls = c.get("linescores", [])
+        if ls: return "-".join(str(s.get("value","")) for s in ls)
+        return ""
+
+    # Odds
+    odds_info = {"spread":"","over_under":"","home_ml":"","away_ml":"","home_wp":"","away_wp":""}
+    for odds_src in [comp.get("odds",[]), event.get("odds",[])]:
+        if odds_src:
+            o = odds_src[0]
+            # Try multiple field names ESPN uses for tennis moneylines
+            ml1 = (o.get("homeTeamOdds",{}).get("moneyLine","") or
+                   o.get("team1Odds",{}).get("moneyLine","") or
+                   o.get("competitor1Odds",{}).get("moneyLine",""))
+            ml2 = (o.get("awayTeamOdds",{}).get("moneyLine","") or
+                   o.get("team2Odds",{}).get("moneyLine","") or
+                   o.get("competitor2Odds",{}).get("moneyLine",""))
+            wp1 = (o.get("homeTeamOdds",{}).get("winPercentage","") or
+                   o.get("team1Odds",{}).get("winPercentage",""))
+            wp2 = (o.get("awayTeamOdds",{}).get("winPercentage","") or
+                   o.get("team2Odds",{}).get("winPercentage",""))
+            if ml1 or ml2:
+                odds_info.update({"home_ml":ml1,"away_ml":ml2,"home_wp":wp1,"away_wp":wp2})
+            break
+
+    # Tournament name as venue
+    tournament = (event.get("tournament",{}).get("displayName","") or
+                  event.get("league",{}).get("name","") or
+                  comp.get("venue",{}).get("fullName","") or
+                  league_name)
+
+    return {
+        "id":            event.get("id",""),
+        "league":        league_name,
+        "home_team":     _tennis_player_name(p1),
+        "away_team":     _tennis_player_name(p2),
+        "home_score":    tennis_score(p1),
+        "away_score":    tennis_score(p2),
+        "home_record":   "",
+        "away_record":   "",
+        "state":         state,
+        "status_detail": detail,
+        "date":          event.get("date",""),
+        "venue":         tournament,
+        "odds":          odds_info,
+    }
+
+def parse_tennis(data, league_name):
+    """
+    ESPN tennis JSON has several possible structures:
+      A) data["events"] — flat list (standard, used during major tournaments)
+      B) data["leagues"][i]["events"] — grouped by league/tour
+      C) data["events"] empty but data["leagues"] has nested tournament brackets
+    We try all paths and deduplicate by event id.
+    """
+    games = []
+    seen  = set()
+
+    def add(event):
+        g = _parse_tennis_event(event, league_name)
+        if g and g["id"] not in seen and g["home_team"] != "Player":
+            seen.add(g["id"])
+            games.append(g)
+
+    # Path A: flat events list
+    for event in data.get("events", []):
+        try: add(event)
+        except: pass
+
+    # Path B: leagues → events
+    for league in data.get("leagues", []):
+        for event in league.get("events", []):
+            try: add(event)
+            except: pass
+
+    # Path C: leagues → seasons → types → weeks → events (college/challenger)
+    for league in data.get("leagues", []):
+        for season in league.get("season", {}).get("types", []):
+            for week in season.get("weeks", []):
+                for event in week.get("events", []):
+                    try: add(event)
+                    except: pass
+
     return games
 
 def parse_games(data, league_name):
@@ -682,11 +784,10 @@ def get_all_games(leagues):
     for name in leagues:
         cfg=LEAGUES[name]
         try:
-            data=fetch_scoreboard(cfg["sport"],cfg["league"])
-            # Tennis uses a different JSON structure — dedicated parser
+            tid  = cfg.get("tournament_id")
+            data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=tid)
             if cfg["group"] == "Tennis":
                 parsed = parse_tennis(data, name)
-                # Fallback: if tennis parser got nothing, try generic parser
                 if not parsed:
                     parsed = parse_games(data, name)
             else:
@@ -694,6 +795,7 @@ def get_all_games(leagues):
             result.extend(parsed)
         except Exception as e: errors.append(f"{name}: {e}")
     return result, errors
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AI SPORT ANALYSTS — Claude specialist per sport
@@ -887,6 +989,7 @@ LEAGUE_HOME_RATE = {
     "Conference League": 0.460, "CONCACAF Champions Cup": 0.480,
     "Liga de Expansión": 0.480,
     "ATP": 0.500, "WTA": 0.500,  # No home court in tennis
+    "Indian Wells ATP": 0.500, "Indian Wells WTA": 0.500,
 }
 
 def calc_ev(prob, ml):
@@ -1116,8 +1219,8 @@ def run_monte_carlo(game, n=10_000):
         candidates+=[
             ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
             ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
-            # O2.5 vs O1.5 logic: if O2.5 >= 58% force it as the recommended pick
-            # otherwise use O1.5 (O1.5 at 85%+ has higher EV but lower real value)
+            # O2.5 vs O1.5: prefer O2.5 when >= 58%. O1.5 only enters as pick when O2.5 < 72%
+            # (raised from 58% to 72% to virtually eliminate boring Over 1.5 picks)
             ("O/U","Over 2.5" if (p_o25 is not None and p_o25 >= 0.58) else "Over 1.5",
              p_o25 if (p_o25 is not None and p_o25 >= 0.58) else p_o15,
              o25_ev if (p_o25 is not None and p_o25 >= 0.58) else o15_ev,
@@ -1135,10 +1238,10 @@ def run_monte_carlo(game, n=10_000):
             ("DC","Doble Oportunidad 12",p_dc_12,dc_12_ev,str(DC_ML),quarter_kelly(p_dc_12,DC_ML)),
         ]
 
-    # Best single: for soccer, NEVER pick O1.5 when O2.5 >= 58% (EV of O1.5 is misleadingly high)
+    # Best single: block O1.5 when O2.5 >= 72% — avoids trivially high-prob but low-value picks
     def is_valid_pick(mtype, label, prob):
         if mtype == "O/U" and label == "Over 1.5" and sport_group == "Soccer":
-            return p_o25 is None or p_o25 < 0.58  # only allow O1.5 if O2.5 < 58%
+            return p_o25 is None or p_o25 < 0.72  # block O1.5 once O2.5 reaches 72%
         return True
 
     best_single=None; best_ev_v=-999
@@ -1476,7 +1579,19 @@ else:
             if st.button("↺ Reintentar ESPN"): st.cache_data.clear(); st.rerun()
         with col_b:
             if st.button("🧪 Usar demo"): st.session_state["force_demo"]=True; st.rerun()
-        st.markdown('<div class="warn-banner">ESPN no retornó partidos. Puede que no haya juegos programados hoy o que la API esté caída. Usa el modo demo para probar la app.</div>',unsafe_allow_html=True)
+
+        # Specific message if only tennis was selected
+        only_tennis = all(LEAGUES.get(l,{}).get("group")=="Tennis" for l in sel_leagues)
+        if only_tennis:
+            st.markdown("""<div class="warn-banner">
+            🎾 <b>ATP / WTA — Sin partidos disponibles.</b><br>
+            ESPN solo publica partidos de tenis durante semanas de torneo activo (ej: Indian Wells, Miami Open, Roland Garros).
+            Fuera de esas semanas el scoreboard aparece vacío.<br>
+            <b>Solución:</b> Agrega otras ligas (NBA, Soccer) o activa Modo Demo para ver cómo funciona la app.
+            </div>""", unsafe_allow_html=True)
+        else:
+            leagues_str = ", ".join(sel_leagues[:6])
+            st.markdown(f'<div class="warn-banner">ESPN no retornó partidos para: <b>{leagues_str}</b>.<br>Puede que no haya juegos programados hoy o que la API esté temporalmente caída. Usa el modo demo o selecciona otras ligas.</div>',unsafe_allow_html=True)
         st.stop()
     else:
         sel_set=set(sel_leagues)
