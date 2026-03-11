@@ -9815,8 +9815,16 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             else:
                 _xg_total_odds = 2.45 + _balance * 0.35 + _draw_fac * 0.15
                 _ratio_h_base  = 0.565
-            # Split home/away: favorito local ataca más
-            _ratio_h_adj   = max(0.44, min(0.65, _ratio_h_base + (_ph_imp_s - 0.45) * 0.15))
+            # Split home/away: el FAVORITO ataca mas, no siempre el local
+            # Si visitante es favorito claro (ej Arsenal en Leverkusen), invertir ratio
+            _fav_is_home = _ph_imp_s >= _pa_imp_s
+            _fav_prob    = max(_ph_imp_s, _pa_imp_s)
+            _ratio_fav   = min(0.63, max(0.50, _ratio_h_base + (_fav_prob - 0.50) * 0.30))
+            if _fav_is_home:
+                _ratio_h_adj = max(0.44, min(0.65, _ratio_fav))
+            else:
+                # Visitante favorito: visita tiene mas xG, local retiene ventaja campo +0.04
+                _ratio_h_adj = max(0.35, min(0.52, (1 - _ratio_fav) + 0.04))
             _hxg_odds = _xg_total_odds * _ratio_h_adj
             _axg_odds = _xg_total_odds * (1 - _ratio_h_adj)
             _xg_odds_mine = _hxg_odds if is_home else _axg_odds
@@ -11561,9 +11569,57 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
                 axg = axg * 0.60 + _b365_xg_a * 0.40
     except: pass
 
+    # ── Corrección xG: si visitante es favorito claro, reajustar hxg/axg ──
+    # El pipeline de forma siempre da más xG al local por home advantage.
+    # Cuando el visitante es favorito neto (ej Arsenal @1.48 en Leverkusen),
+    # ese sesgo es incorrecto y contamina todas las probabilidades Poisson.
+    try:
+        if has_mkt and odd_h > 1 and odd_a > 1:
+            _vig2 = 1/odd_h + 1/odd_d + 1/odd_a
+            _mkt_ph2 = (1/odd_h) / _vig2
+            _mkt_pa2 = (1/odd_a) / _vig2
+            if _mkt_pa2 > _mkt_ph2 + 0.10:
+                # Visitante claramente favorito → corregir xG
+                # xG debe seguir la proporción del mercado, no la del local
+                _xg_total = hxg + axg
+                # El favorito visitante debe tener al menos su share proporcional
+                _fair_axg = _xg_total * (_mkt_pa2 / (_mkt_ph2 + _mkt_pa2))
+                _fair_hxg = _xg_total * (_mkt_ph2 / (_mkt_ph2 + _mkt_pa2))
+                # Blend conservador: 60% corrección mercado, 40% forma original
+                hxg = round(0.40 * hxg + 0.60 * _fair_hxg, 3)
+                axg = round(0.40 * axg + 0.60 * _fair_axg, 3)
+    except: pass
+
+    # ── Override: favorito muy claro en el mercado → mercado domina el ensemble ──
+    # Si las odds dicen que alguien tiene >62% de ganar (ej Arsenal @1.48),
+    # los modelos de forma y xG deben ceder ante la señal del mercado.
+    # Esto evita que Leverkusen local salga favorito cuando Arsenal es @1.48.
+    _mkt_fav_prob = 0.0
+    if has_mkt:
+        _vig_chk = 1/odd_h + 1/odd_d + 1/odd_a
+        _mkt_fav_prob = max((1/odd_h)/_vig_chk, (1/odd_a)/_vig_chk)
+    _b365_fav_prob = max(_b365_ph, _b365_pa) if _has_b365 else 0.0
+    _market_fav_prob = max(_mkt_fav_prob, _b365_fav_prob)
+
+    # Si hay un favorito muy claro (≥60% no-vig), el mercado toma el 50%+ del peso
+    _market_dominates = _market_fav_prob >= 0.60
+    _market_strong    = _market_fav_prob >= 0.55
+
     # ── Pesos dinámicos — 6 modelos: DC, BVP, ELO, H2H, MKT, FRM, B365 ──
     # B365 peso 0.20 cuando está — señal más informada del mercado real.
-    if _has_b365 and has_mkt and h2h_valid and _has_frm:
+    if _market_dominates and _has_b365 and has_mkt:
+        # Favorito muy claro Y tenemos B365: mercado toma 55% del peso total
+        w = {"dc":0.12,"bvp":0.10,"elo":0.08,"h2h":0.05,"mkt":0.15,"frm":0.10,"b365":0.40}
+    elif _market_dominates and _has_b365:
+        w = {"dc":0.12,"bvp":0.10,"elo":0.08,"h2h":0.05,"mkt":0.00,"frm":0.05,"b365":0.45}
+    elif _market_dominates and has_mkt:
+        # Favorito muy claro con cuotas pero sin B365: mkt toma 45%
+        w = {"dc":0.15,"bvp":0.12,"elo":0.08,"h2h":0.05,"mkt":0.45,"frm":0.10,"b365":0.00}
+    elif _market_strong and _has_b365 and has_mkt:
+        w = {"dc":0.14,"bvp":0.11,"elo":0.09,"h2h":0.07,"mkt":0.18,"frm":0.10,"b365":0.31}
+    elif _market_strong and has_mkt:
+        w = {"dc":0.18,"bvp":0.14,"elo":0.10,"h2h":0.08,"mkt":0.35,"frm":0.10,"b365":0.00}
+    elif _has_b365 and has_mkt and h2h_valid and _has_frm:
         w = {"dc":0.18,"bvp":0.13,"elo":0.09,"h2h":0.10,"mkt":0.10,"frm":0.10,"b365":0.20}
     elif _has_b365 and has_mkt and _has_frm:
         w = {"dc":0.18,"bvp":0.14,"elo":0.10,"h2h":0.05,"mkt":0.10,"frm":0.10,"b365":0.20}
