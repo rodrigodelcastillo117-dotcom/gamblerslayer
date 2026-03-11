@@ -1948,11 +1948,12 @@ st.markdown(f"""<div class="stat-grid">
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab_picks, tab_sim, tab_parlays, tab_all = st.tabs([
+tab_picks, tab_sim, tab_parlays, tab_all, tab_reto = st.tabs([
     "🃏  RONGOL PICKS",
     f"🔮  ORÁCULO  ({n_sims:,}×)",
     "🎰  PARLAYS DEL DÍA",
     "📋  PARTIDOS",
+    "💰  RETO 13M",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2766,6 +2767,545 @@ with tab_all:
           <div class="game-meta">{g['league']}{rh}</div>
           {oh}
         </div>""",unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RETO 13M — Bitácora permanente de bankroll
+# Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
+# ══════════════════════════════════════════════════════════════════════════════
+import json, os as _os, re as _re
+
+def _reto_file(apodo):
+    safe = _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:32]
+    return _os.path.expanduser(f"~/.gamblers_den_reto_{safe}.json")
+
+def _load_reto(apodo):
+    try:
+        with open(_reto_file(apodo), "r") as f:
+            return json.load(f)
+    except:
+        return {"bank_inicial": 2000.0, "meta": 13_000_000.0, "picks": [], "apodo": apodo}
+
+def _save_reto(data, apodo):
+    try:
+        with open(_reto_file(apodo), "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except:
+        return False
+
+def _list_reto_users():
+    """List all apodos that have a saved reto file."""
+    home = _os.path.expanduser("~")
+    users = []
+    try:
+        for fn in _os.listdir(home):
+            if fn.startswith(".gamblers_den_reto_") and fn.endswith(".json"):
+                apodo = fn.replace(".gamblers_den_reto_","").replace(".json","")
+                users.append(apodo)
+    except:
+        pass
+    return sorted(users)
+
+with tab_reto:
+
+    # ── Login por apodo ───────────────────────────────────────────────────────
+    st.markdown('''<div style="
+        text-align:center;
+        font-family:'Cinzel',serif;
+        font-size:1.6rem;
+        font-weight:700;
+        color:#C9A84C;
+        letter-spacing:4px;
+        padding:16px 0 4px;
+        text-shadow: 0 0 20px rgba(201,168,76,0.4)
+    ">💰 RETO 13 MILLONES</div>
+    <div style="text-align:center;font-family:'DM Sans',sans-serif;font-size:0.8rem;
+        color:#6B7E6E;letter-spacing:2px;margin-bottom:20px">
+        DE $2,000 A $13,000,000 · UNA APUESTA A LA VEZ
+    </div>''', unsafe_allow_html=True)
+
+    # Session state para el apodo activo
+    if "reto_apodo" not in st.session_state:
+        st.session_state["reto_apodo"] = ""
+
+    if not st.session_state["reto_apodo"]:
+        # Pantalla de selección de usuario
+        existing_users = _list_reto_users()
+        st.markdown('<div style="max-width:400px;margin:0 auto">', unsafe_allow_html=True)
+        st.markdown('<div class="section-heading" style="text-align:center">¿Quién eres?</div>', unsafe_allow_html=True)
+
+        apodo_input = st.text_input(
+            "Tu apodo", placeholder="ej: Rongol, Pedro, El Jefe...",
+            key="apodo_input_field",
+            help="Cada apodo tiene su propia bitácora separada"
+        )
+        if existing_users:
+            st.caption(f"👥 Usuarios existentes: {', '.join(existing_users)}")
+
+        col_e1, col_e2 = st.columns(2)
+        with col_e1:
+            if st.button("▶ Entrar al Reto", use_container_width=True, key="btn_enter_reto"):
+                if apodo_input.strip():
+                    st.session_state["reto_apodo"] = apodo_input.strip()
+                    st.rerun()
+                else:
+                    st.warning("Escribe tu apodo para continuar.")
+        with col_e2:
+            if existing_users:
+                sel_existing = st.selectbox("O elige uno existente", [""] + existing_users,
+                                             key="sel_existing_user", label_visibility="collapsed")
+                if sel_existing and st.button("Cargar", key="btn_load_existing"):
+                    st.session_state["reto_apodo"] = sel_existing
+                    st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.stop()
+
+    # ── Usuario activo ────────────────────────────────────────────────────────
+    apodo_activo = st.session_state["reto_apodo"]
+
+    col_usr1, col_usr2 = st.columns([4,1])
+    with col_usr1:
+        st.markdown(
+            f'<div style="font-family:\'Cinzel\',serif;font-size:0.9rem;color:#C9A84C;'
+            f'letter-spacing:2px;margin-bottom:12px">👤 {apodo_activo.upper()}</div>',
+            unsafe_allow_html=True
+        )
+    with col_usr2:
+        if st.button("↩ Salir", key="btn_logout_reto", use_container_width=True):
+            st.session_state["reto_apodo"] = ""
+            st.rerun()
+
+    reto = _load_reto(apodo_activo)
+    picks = reto.get("picks", [])
+    bank_inicial = reto.get("bank_inicial", 2000.0)
+    meta = reto.get("meta", 13_000_000.0)
+
+    # ── Calcular bank actual ──────────────────────────────────────────────────
+    bank_actual = bank_inicial
+    for p in picks:
+        r = p.get("resultado", "pendiente")
+        stake = float(p.get("monto", 0))
+        momio = float(p.get("momio", 0))
+        if r == "ganado":
+            # momio stored as decimal (>=1.01); legacy american fallback
+            m = float(p.get("momio", 1.909))
+            if m >= 1.01 and m < 100:   # decimal odds
+                ganancia = stake * (m - 1)
+            elif m > 0:                  # legacy american positive
+                ganancia = stake * m / 100
+            else:                        # legacy american negative
+                ganancia = stake * 100 / abs(m)
+            bank_actual += ganancia
+        elif r == "perdido":
+            bank_actual -= stake
+        # push/pendiente → no cambia bank
+
+    progreso_pct = min((bank_actual / meta) * 100, 100)
+    multiplicador = bank_actual / bank_inicial if bank_inicial > 0 else 1
+
+    # ── KPIs ──────────────────────────────────────────────────────────────────
+    n_gan = sum(1 for p in picks if p.get("resultado")=="ganado")
+    n_per = sum(1 for p in picks if p.get("resultado")=="perdido")
+    n_pen = sum(1 for p in picks if p.get("resultado")=="pendiente")
+    win_rate = (n_gan / (n_gan + n_per) * 100) if (n_gan + n_per) > 0 else 0
+
+    st.markdown(f'''<div class="stat-grid" style="margin-bottom:16px">
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#C9A84C">${bank_actual:,.0f}</div>
+        <div class="stat-label">Bank Actual</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#4ade80">{multiplicador:.1f}×</div>
+        <div class="stat-label">Multiplicador</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#60a5fa">{len(picks)}</div>
+        <div class="stat-label">Total Picks</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#4ade80">{win_rate:.0f}%</div>
+        <div class="stat-label">Win Rate</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#4ade80">{n_gan}</div>
+        <div class="stat-label">Ganados</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#ef4444">{n_per}</div>
+        <div class="stat-label">Perdidos</div>
+      </div>
+    </div>''', unsafe_allow_html=True)
+
+    # ── Barra de progreso hacia meta ──────────────────────────────────────────
+    falta = max(meta - bank_actual, 0)
+    st.markdown(f'''
+    <div style="margin:8px 0 20px">
+      <div style="display:flex;justify-content:space-between;
+          font-family:'DM Sans',sans-serif;font-size:0.72rem;color:#6B7E6E;margin-bottom:6px">
+        <span>${bank_inicial:,.0f} inicio</span>
+        <span style="color:#C9A84C;font-weight:700">{progreso_pct:.4f}% completado</span>
+        <span>Meta: ${meta:,.0f}</span>
+      </div>
+      <div style="background:#0a1a0f;border-radius:4px;height:10px;overflow:hidden;
+          border:1px solid rgba(201,168,76,0.2)">
+        <div style="height:100%;width:{min(progreso_pct,100):.4f}%;
+            background:linear-gradient(90deg,#C9A84C,#FFE87C);
+            border-radius:4px;transition:width 0.5s ease"></div>
+      </div>
+      <div style="text-align:center;font-family:'DM Sans',sans-serif;
+          font-size:0.72rem;color:#6B7E6E;margin-top:6px">
+        Faltan <b style="color:#C9A84C">${falta:,.0f}</b> para la meta
+      </div>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    # ── Gráfica de bankroll ───────────────────────────────────────────────────
+    if picks:
+        import json as _json
+        # Build series: punto 0 = bank_inicial, luego acumulado pick a pick
+        series_bank = [bank_inicial]
+        series_labels = ["Inicio"]
+        running = bank_inicial
+        for p in picks:
+            r = p.get("resultado","pendiente")
+            stake = float(p.get("monto", 0))
+            momio = float(p.get("momio", 0))
+            if r == "ganado":
+                m_c = float(p.get("momio", 1.909))
+                if m_c >= 1.01 and m_c < 100:
+                    gan = stake * (m_c - 1)
+                elif m_c > 0:
+                    gan = stake * m_c / 100
+                else:
+                    gan = stake * 100 / abs(m_c)
+                running += gan
+            elif r == "perdido":
+                running -= stake
+            series_bank.append(round(running, 2))
+            short = (p.get("partido","") or p.get("pick",""))[:18]
+            series_labels.append(f"#{p.get('num','?')} {short}")
+
+        # Colors per segment: green if up, red if down vs previous
+        colors = []
+        for i in range(1, len(series_bank)):
+            colors.append("#4ade80" if series_bank[i] >= series_bank[i-1] else "#ef4444")
+
+        chart_data = _json.dumps({
+            "labels": series_labels,
+            "values": series_bank,
+            "colors": colors,
+            "bank_inicial": bank_inicial,
+            "meta": meta,
+        })
+
+        st.components.v1.html(f'''
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+        <div style="background:#060C08;padding:16px;border-radius:8px;
+            border:1px solid rgba(201,168,76,0.2)">
+          <canvas id="retoChart" height="280"></canvas>
+        </div>
+        <script>
+        const d = {chart_data};
+        const labels = d.labels;
+        const values = d.values;
+        const colors = d.colors;
+
+        // Build per-segment colors for the line
+        const pointColors = ["#C9A84C", ...colors.map(c => c)];
+        const pointRadius = values.map((v,i) => i === values.length-1 ? 7 : 4);
+
+        // Gradient fill
+        const ctx = document.getElementById("retoChart").getContext("2d");
+        const grad = ctx.createLinearGradient(0, 0, 0, 280);
+        grad.addColorStop(0, "rgba(201,168,76,0.25)");
+        grad.addColorStop(1, "rgba(201,168,76,0.01)");
+
+        // Segment colors on the line itself
+        const segmentColors = colors;
+
+        new Chart(ctx, {{
+          type: "line",
+          data: {{
+            labels: labels,
+            datasets: [{{
+              label: "Bankroll",
+              data: values,
+              borderColor: function(ctx) {{ return "#C9A84C"; }},
+              segment: {{
+                borderColor: ctx => {{
+                  const i = ctx.p0DataIndex;
+                  return i < segmentColors.length ? segmentColors[i] : "#C9A84C";
+                }}
+              }},
+              backgroundColor: grad,
+              borderWidth: 2.5,
+              pointBackgroundColor: pointColors,
+              pointRadius: pointRadius,
+              pointHoverRadius: 8,
+              fill: true,
+              tension: 0.35,
+            }}]
+          }},
+          options: {{
+            responsive: true,
+            plugins: {{
+              legend: {{ display: false }},
+              tooltip: {{
+                backgroundColor: "#0D2818",
+                borderColor: "#C9A84C",
+                borderWidth: 1,
+                titleColor: "#C9A84C",
+                bodyColor: "#b8c8b0",
+                callbacks: {{
+                  label: ctx => " $" + ctx.parsed.y.toLocaleString("es-MX", {{minimumFractionDigits:2}})
+                }}
+              }}
+            }},
+            scales: {{
+              x: {{
+                ticks: {{ color: "#3a4a3e", font: {{ size: 10 }}, maxRotation: 45 }},
+                grid: {{ color: "rgba(255,255,255,0.03)" }}
+              }},
+              y: {{
+                ticks: {{
+                  color: "#6B7E6E",
+                  font: {{ size: 10 }},
+                  callback: v => "$" + v.toLocaleString("es-MX")
+                }},
+                grid: {{ color: "rgba(255,255,255,0.05)" }},
+                beginAtZero: false
+              }}
+            }}
+          }}
+        }});
+        </script>
+        ''', height=320, scrolling=False)
+
+    elif not picks:
+        st.markdown('''<div class="empty-state">
+          <div class="empty-icon">💰</div>
+          <div class="empty-title">Sin picks aún</div>
+          <div>Registra tu primer pick abajo para comenzar el reto.</div>
+        </div>''', unsafe_allow_html=True)
+
+    st.markdown('<div class="den-divider" style="margin:20px 0"></div>', unsafe_allow_html=True)
+
+    # ── Formulario: agregar pick ──────────────────────────────────────────────
+    st.markdown('<div class="section-heading">➕ Registrar Pick</div>', unsafe_allow_html=True)
+
+    with st.container():
+        fc1, fc2 = st.columns(2)
+        with fc1:
+            reto_partido  = st.text_input("Partido / Evento", placeholder="ej: Real Madrid vs Bayern",
+                                          key="reto_partido")
+            reto_pick     = st.text_input("Pick", placeholder="ej: Real Madrid ML / Over 2.5 / BTTS Sí",
+                                          key="reto_pick")
+            reto_mercado  = st.selectbox("Mercado", ["ML","O/U","BTTS","DC","Spread","Otro"],
+                                         key="reto_mercado")
+        with fc2:
+            # Tipo de momio: americano o decimal
+            reto_tipo_momio = st.radio(
+                "Formato de momio",
+                ["🇺🇸 Americano", "🌍 Decimal"],
+                horizontal=True,
+                key="reto_tipo_momio"
+            )
+            if reto_tipo_momio == "🇺🇸 Americano":
+                reto_momio_raw = st.number_input(
+                    "Momio americano", value=-110, step=5,
+                    key="reto_momio_am",
+                    help="Positivo: +150 | Negativo: -110"
+                )
+                # Convert to decimal internally for uniform storage
+                if reto_momio_raw > 0:
+                    reto_momio_dec = reto_momio_raw / 100 + 1
+                else:
+                    reto_momio_dec = 100 / abs(reto_momio_raw) + 1
+                momio_display = f"+{reto_momio_raw}" if reto_momio_raw > 0 else str(reto_momio_raw)
+            else:
+                reto_momio_dec = st.number_input(
+                    "Momio decimal", value=1.91, step=0.01,
+                    min_value=1.01, format="%.2f",
+                    key="reto_momio_dec",
+                    help="ej: 1.91 = -110 americano | 2.50 = +150 americano"
+                )
+                momio_display = f"{reto_momio_dec:.2f}"
+
+            reto_monto    = st.number_input("Monto apostado ($)", min_value=1.0,
+                                            value=float(min(bank_actual * 0.05, bank_actual)) if bank_actual > 0 else 100.0,
+                                            step=10.0, key="reto_monto")
+            reto_resultado = st.selectbox("Resultado", ["pendiente","ganado","perdido","push"],
+                                          key="reto_resultado")
+        reto_nota = st.text_input("Nota (opcional)", placeholder="ej: Liga MX · Jornada 12 · pick del oráculo",
+                                  key="reto_nota")
+
+        # Calcular ganancia estimada (decimal odds: ganancia = stake * (dec - 1))
+        ganancia_est = reto_monto * (reto_momio_dec - 1)
+        st.caption(
+            f"💵 Ganancia estimada si gana: **${ganancia_est:,.2f}** "
+            f"· Momio: **{momio_display}** "
+            f"· Nuevo bank si gana: **${bank_actual + ganancia_est:,.2f}**"
+        )
+
+        col_add, col_cfg = st.columns([2,1])
+        with col_add:
+            if st.button("✅ Agregar Pick", use_container_width=True, key="btn_add_pick"):
+                if reto_partido and reto_pick:
+                    nuevo = {
+                        "num":       len(picks) + 1,
+                        "fecha":     datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                        "partido":   reto_partido,
+                        "pick":      reto_pick,
+                        "mercado":   reto_mercado,
+                        "momio":     round(reto_momio_dec, 4),   # always stored as decimal
+                        "momio_fmt": momio_display,               # display string original
+                        "monto":     reto_monto,
+                        "resultado": reto_resultado,
+                        "nota":      reto_nota,
+                    }
+                    picks.append(nuevo)
+                    reto["picks"] = picks
+                    if _save_reto(reto, apodo_activo):
+                        st.toast(f"✅ Pick #{nuevo['num']} registrado", icon="💰")
+                        st.rerun()
+                    else:
+                        st.error("Error guardando. Verifica permisos de escritura.")
+                else:
+                    st.warning("Completa Partido y Pick antes de agregar.")
+
+    # ── Config: banco inicial y meta ──────────────────────────────────────────
+    with st.expander("⚙️ Configurar Reto"):
+        cfg1, cfg2 = st.columns(2)
+        with cfg1:
+            new_bank = st.number_input("Bank Inicial ($)", min_value=1.0,
+                                       value=float(bank_inicial), step=100.0, key="cfg_bank")
+        with cfg2:
+            new_meta = st.number_input("Meta ($)", min_value=1.0,
+                                       value=float(meta), step=100_000.0, key="cfg_meta")
+        if st.button("💾 Guardar Configuración", key="btn_cfg"):
+            reto["bank_inicial"] = new_bank
+            reto["meta"] = new_meta
+            _save_reto(reto, apodo_activo)
+            st.toast("✓ Configuración guardada", icon="⚙️")
+            st.rerun()
+
+    st.markdown('<div class="den-divider" style="margin:20px 0"></div>', unsafe_allow_html=True)
+
+    # ── Historial de picks ────────────────────────────────────────────────────
+    if picks:
+        st.markdown('<div class="section-heading">📋 Historial de Picks</div>', unsafe_allow_html=True)
+
+        running_bank = bank_inicial
+        for p in reversed(picks):
+            num = p.get("num","?")
+            res = p.get("resultado","pendiente")
+            stake = float(p.get("monto",0))
+            momio_p = float(p.get("momio",0))
+
+            if res == "ganado":
+                if momio_p >= 1.01 and momio_p < 100:
+                    gan = stake * (momio_p - 1)
+                elif momio_p > 0:
+                    gan = stake * momio_p / 100
+                else:
+                    gan = stake * 100 / abs(momio_p)
+                delta_str = f"+${gan:,.2f}"
+                res_color = "#4ade80"
+                res_icon  = "✅"
+            elif res == "perdido":
+                delta_str = f"-${stake:,.2f}"
+                res_color = "#ef4444"
+                res_icon  = "❌"
+            elif res == "push":
+                delta_str = "$0 (push)"
+                res_color = "#C9A84C"
+                res_icon  = "↩️"
+            else:
+                delta_str = "pendiente"
+                res_color = "#6B7E6E"
+                res_icon  = "⏳"
+
+            momio_fmt = p.get("momio_fmt") or (f"+{momio_p:.0f}" if momio_p > 0 else f"{momio_p:.2f}")
+            nota_html = f'<div style="font-size:0.7rem;color:#3a4a3e;margin-top:2px">{p.get("nota","")}</div>' if p.get("nota") else ""
+
+            st.markdown(f'''
+            <div class="game-row" style="margin-bottom:6px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
+                <div>
+                  <span style="color:#C9A84C;font-family:'Cinzel',serif;font-size:0.75rem">
+                    #{num}</span>
+                  <span class="game-title" style="margin-left:8px">{p.get("partido","")}</span>
+                  <span class="market-chip chip-ml" style="margin-left:6px">{p.get("mercado","ML")}</span>
+                  <div style="font-size:0.82rem;color:#E0F7F0;margin-top:3px;padding-left:2px">
+                    ▶ {p.get("pick","")}
+                  </div>
+                  {nota_html}
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:1rem;font-weight:700;color:{res_color}">
+                    {res_icon} {res.upper()}
+                  </div>
+                  <div style="font-size:0.78rem;color:{res_color}">{delta_str}</div>
+                  <div style="font-size:0.68rem;color:#6B7E6E">
+                    ${stake:,.0f} @ {momio_fmt}
+                  </div>
+                </div>
+              </div>
+              <div style="font-size:0.65rem;color:#3a4a3e;margin-top:4px">{p.get("fecha","")}</div>
+            </div>
+            ''', unsafe_allow_html=True)
+
+        st.markdown('<div class="den-divider" style="margin:16px 0"></div>', unsafe_allow_html=True)
+
+        # ── Editar resultado de pick pendiente ────────────────────────────────
+        pendientes = [p for p in picks if p.get("resultado")=="pendiente"]
+        if pendientes:
+            st.markdown('<div class="section-heading" style="font-size:0.9rem">⏳ Actualizar Resultado</div>', unsafe_allow_html=True)
+            pen_options = {f"#{p['num']} · {p['partido']} · {p['pick']}": i
+                           for i, p in enumerate(picks) if p.get("resultado")=="pendiente"}
+            sel_pen = st.selectbox("Pick pendiente", list(pen_options.keys()), key="sel_pendiente")
+            new_res = st.selectbox("Nuevo resultado", ["ganado","perdido","push"], key="new_res_pen")
+            if st.button("💾 Actualizar", key="btn_update_res"):
+                idx_pen = pen_options[sel_pen]
+                picks[idx_pen]["resultado"] = new_res
+                reto["picks"] = picks
+                _save_reto(reto, apodo_activo)
+                st.toast(f"✓ Pick actualizado a {new_res}", icon="✅")
+                st.rerun()
+
+        # ── Eliminar último pick ──────────────────────────────────────────────
+        with st.expander("🗑️ Eliminar pick"):
+            if picks:
+                del_options = {f"#{p['num']} · {p['partido']} · {p['pick']}": i
+                               for i, p in enumerate(picks)}
+                sel_del = st.selectbox("Pick a eliminar", list(del_options.keys()), key="sel_del")
+                if st.button("🗑️ Confirmar eliminación", key="btn_del", type="primary"):
+                    idx_del = del_options[sel_del]
+                    picks.pop(idx_del)
+                    # Re-number
+                    for j, pk in enumerate(picks):
+                        pk["num"] = j + 1
+                    reto["picks"] = picks
+                    _save_reto(reto, apodo_activo)
+                    st.toast("Pick eliminado", icon="🗑️")
+                    st.rerun()
+
+        # ── Export CSV ───────────────────────────────────────────────────────
+        csv_rows = ["#,Fecha,Partido,Pick,Mercado,Momio,Monto,Resultado,Nota"]
+        for p in picks:
+            csv_rows.append(",".join([
+                str(p.get("num","")), p.get("fecha",""), p.get("partido","").replace(",",";"),
+                p.get("pick","").replace(",",";"), p.get("mercado",""),
+                str(p.get("momio","")), str(p.get("monto","")),
+                p.get("resultado",""), p.get("nota","").replace(",",";")
+            ]))
+        st.download_button(
+            "⬇ Exportar CSV",
+            data="\n".join(csv_rows),
+            file_name=f"reto13m_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            key="btn_export_reto"
+        )
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;font-family:\'Cinzel\',serif;font-size:0.6rem;color:#2a3a2e;letter-spacing:3px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
