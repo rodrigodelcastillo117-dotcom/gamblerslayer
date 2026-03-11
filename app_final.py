@@ -30,6 +30,8 @@ try:
     API_FOOTBALL_KEY  = st.secrets.get("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = st.secrets.get("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
     BETSAPI_KEY       = st.secrets.get("BETSAPI_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
+    OPENAI_API_KEY    = st.secrets.get("OPENAI_API_KEY", "")
+    GROK_API_KEY      = st.secrets.get("GROK_API_KEY", "")
 except:
     BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
     CHAT_ID           = os.getenv("CHAT_ID", "")
@@ -40,6 +42,8 @@ except:
     API_FOOTBALL_KEY  = os.getenv("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = os.getenv("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
     BETSAPI_KEY       = os.getenv("BETSAPI_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
+    OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
+    GROK_API_KEY      = os.getenv("GROK_API_KEY", "")
 
 # ══════════════════════════════════════════════════════════════════
 # CAPA IA — motor central de la app
@@ -125,7 +129,7 @@ def _gemini(prompt: str, system: str = "", use_search: bool = False,
                 except: pass
         except: pass
 
-    # ── INTENTO 3: Claude (fallback, requiere créditos) ───────────
+    # ── INTENTO 3: Claude (fallback) ─────────────────────────────
     _cl_key = ANTHROPIC_API_KEY
     if _cl_key:
         try:
@@ -137,9 +141,6 @@ def _gemini(prompt: str, system: str = "", use_search: bool = False,
             }
             if _sys.strip():
                 _body_c["system"] = _sys.strip()
-            if use_search:
-                _body_c["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
-
             _r_c = _req.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": _cl_key, "anthropic-version": "2023-06-01",
@@ -152,8 +153,53 @@ def _gemini(prompt: str, system: str = "", use_search: bool = False,
                     if blk.get("type") == "text" and blk.get("text","").strip()
                 ).strip()
                 if raw:
-                    if json_mode:
-                        raw = _clean_json(raw)
+                    if json_mode: raw = _clean_json(raw)
+                    return raw
+        except: pass
+
+    # ── INTENTO 4: OpenAI GPT-4o-mini (fallback) ──────────────────
+    _oai_key = globals().get("OPENAI_API_KEY","") or ""
+    if _oai_key:
+        try:
+            _msgs_oai = []
+            if _sys.strip(): _msgs_oai.append({"role":"system","content":_sys.strip()})
+            _msgs_oai.append({"role":"user","content":prompt})
+            _r_oai = _req.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {_oai_key}",
+                         "Content-Type": "application/json"},
+                json={"model":"gpt-4o-mini","max_tokens":max(max_tokens,512),
+                      "temperature":temperature,"messages":_msgs_oai},
+                timeout=45,
+            )
+            if _r_oai.status_code == 200:
+                raw = (_r_oai.json().get("choices",[{}])[0]
+                              .get("message",{}).get("content","").strip())
+                if raw:
+                    if json_mode: raw = _clean_json(raw)
+                    return raw
+        except: pass
+
+    # ── INTENTO 5: Grok xAI (fallback) ────────────────────────────
+    _grok_key = globals().get("GROK_API_KEY","") or ""
+    if _grok_key:
+        try:
+            _msgs_grok = []
+            if _sys.strip(): _msgs_grok.append({"role":"system","content":_sys.strip()})
+            _msgs_grok.append({"role":"user","content":prompt})
+            _r_grok = _req.post(
+                "https://api.x.ai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {_grok_key}",
+                         "Content-Type": "application/json"},
+                json={"model":"grok-3-mini","max_tokens":max(max_tokens,512),
+                      "temperature":temperature,"messages":_msgs_grok},
+                timeout=45,
+            )
+            if _r_grok.status_code == 200:
+                raw = (_r_grok.json().get("choices",[{}])[0]
+                               .get("message",{}).get("content","").strip())
+                if raw:
+                    if json_mode: raw = _clean_json(raw)
                     return raw
         except: pass
 
@@ -12289,7 +12335,52 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                             _i0 = _raw_ein.find("{"); _i1 = _raw_ein.rfind("}")+1
                             if _i0 >= 0 and _i1 > _i0: _raw_ein = _raw_ein[_i0:_i1]
                         else:
-                            _einstein_err = f"Claude HTTP {_ein_r.status_code}: {_ein_r.text[:120]}"
+                            # Fallback a Groq si Claude falla (créditos, rate limit, etc.)
+                            _ein_groq_key = (GROQ_API_KEY if "GROQ_API_KEY" in dir() else None) or st.secrets.get("GROQ_API_KEY","") or ""
+                            if _ein_groq_key and _ein_r.status_code in (400, 402, 429, 500):
+                                try:
+                                    _ein_gr = _ein_req.post(
+                                        "https://api.groq.com/openai/v1/chat/completions",
+                                        headers={"Authorization": f"Bearer {_ein_groq_key}", "Content-Type": "application/json"},
+                                        json={"model":"llama-3.3-70b-versatile","max_tokens":500,"temperature":0.25,
+                                              "messages":[
+                                                  {"role":"system","content":"Eres Einstein, analista deportivo. Responde SOLO con JSON válido sin texto extra ni backticks."},
+                                                  {"role":"user","content":_e_prompt}
+                                              ]},
+                                        timeout=30,
+                                    )
+                                    if _ein_gr.status_code == 200:
+                                        _raw_ein = _ein_gr.json()["choices"][0]["message"]["content"].strip()
+                                        _raw_ein = _raw_ein.replace("```json","").replace("```","").strip()
+                                        _i0 = _raw_ein.find("{"); _i1 = _raw_ein.rfind("}")+1
+                                        if _i0 >= 0 and _i1 > _i0: _raw_ein = _raw_ein[_i0:_i1]
+                                    elif _ein_gr.status_code == 429:
+                                        # Groq 70B rate limit → intentar con 8B
+                                        try:
+                                            _ein_gr2 = _ein_req.post(
+                                                "https://api.groq.com/openai/v1/chat/completions",
+                                                headers={"Authorization": f"Bearer {_ein_groq_key}", "Content-Type": "application/json"},
+                                                json={"model":"llama-3.1-8b-instant","max_tokens":500,"temperature":0.25,
+                                                      "messages":[
+                                                          {"role":"system","content":"Eres Einstein, analista deportivo. Responde SOLO con JSON válido sin texto extra ni backticks."},
+                                                          {"role":"user","content":_e_prompt}
+                                                      ]},
+                                                timeout=20,
+                                            )
+                                            if _ein_gr2.status_code == 200:
+                                                _raw_ein = _ein_gr2.json()["choices"][0]["message"]["content"].strip()
+                                                _raw_ein = _raw_ein.replace("```json","").replace("```","").strip()
+                                                _i0 = _raw_ein.find("{"); _i1 = _raw_ein.rfind("}")+1
+                                                if _i0 >= 0 and _i1 > _i0: _raw_ein = _raw_ein[_i0:_i1]
+                                            else:
+                                                _einstein_err = f"Sin créditos Claude + Groq rate limit"
+                                        except: _einstein_err = "Sin créditos Claude + Groq error"
+                                    else:
+                                        _einstein_err = f"Groq {_ein_gr.status_code}: {_ein_gr.text[:80]}"
+                                except Exception as _eg_ex:
+                                    _einstein_err = f"Claude HTTP {_ein_r.status_code}: {str(_eg_ex)[:80]}"
+                            else:
+                                _einstein_err = f"Claude HTTP {_ein_r.status_code}: {_ein_r.text[:120]}"
                     except Exception as _ein_ex:
                         _einstein_err = f"Excepción Einstein: {str(_ein_ex)[:120]}"
                 else:
@@ -12365,7 +12456,51 @@ def _render_einstein_papa(sport, home, away, pick_lbl, pick_prob, pick_odd,
                             _p0 = _rawp.find("{"); _p1 = _rawp.rfind("}")+1
                             if _p0 >= 0 and _p1 > _p0: _rawp = _rawp[_p0:_p1]
                         else:
-                            _papa_err = f"Claude HTTP {_papa_res.status_code}: {_papa_res.text[:120]}"
+                            # Fallback a Groq si Claude falla (créditos, rate limit, etc.)
+                            _papa_groq_key = (GROQ_API_KEY if "GROQ_API_KEY" in dir() else None) or st.secrets.get("GROQ_API_KEY","") or ""
+                            if _papa_groq_key and _papa_res.status_code in (400, 402, 429, 500):
+                                try:
+                                    _papa_gr = _papa_req.post(
+                                        "https://api.groq.com/openai/v1/chat/completions",
+                                        headers={"Authorization": f"Bearer {_papa_groq_key}", "Content-Type": "application/json"},
+                                        json={"model":"llama-3.3-70b-versatile","max_tokens":400,"temperature":0.20,
+                                              "messages":[
+                                                  {"role":"system","content":"Eres el Papa de Einstein, auditor supremo. Responde SOLO con JSON válido sin texto extra ni backticks."},
+                                                  {"role":"user","content":_papa_prompt}
+                                              ]},
+                                        timeout=30,
+                                    )
+                                    if _papa_gr.status_code == 200:
+                                        _rawp = _papa_gr.json()["choices"][0]["message"]["content"].strip()
+                                        _rawp = _rawp.replace("```json","").replace("```","").strip()
+                                        _p0 = _rawp.find("{"); _p1 = _rawp.rfind("}")+1
+                                        if _p0 >= 0 and _p1 > _p0: _rawp = _rawp[_p0:_p1]
+                                    elif _papa_gr.status_code == 429:
+                                        try:
+                                            _papa_gr2 = _papa_req.post(
+                                                "https://api.groq.com/openai/v1/chat/completions",
+                                                headers={"Authorization": f"Bearer {_papa_groq_key}", "Content-Type": "application/json"},
+                                                json={"model":"llama-3.1-8b-instant","max_tokens":400,"temperature":0.20,
+                                                      "messages":[
+                                                          {"role":"system","content":"Eres el Papa de Einstein, auditor supremo. Responde SOLO con JSON válido sin texto extra ni backticks."},
+                                                          {"role":"user","content":_papa_prompt}
+                                                      ]},
+                                                timeout=20,
+                                            )
+                                            if _papa_gr2.status_code == 200:
+                                                _rawp = _papa_gr2.json()["choices"][0]["message"]["content"].strip()
+                                                _rawp = _rawp.replace("```json","").replace("```","").strip()
+                                                _p0 = _rawp.find("{"); _p1 = _rawp.rfind("}")+1
+                                                if _p0 >= 0 and _p1 > _p0: _rawp = _rawp[_p0:_p1]
+                                            else:
+                                                _papa_err = f"Sin créditos Claude + Groq rate limit"
+                                        except: _papa_err = "Sin créditos Claude + Groq error"
+                                    else:
+                                        _papa_err = f"Groq {_papa_gr.status_code}: {_papa_gr.text[:80]}"
+                                except Exception as _pg_ex:
+                                    _papa_err = f"Claude HTTP {_papa_res.status_code}: {str(_pg_ex)[:80]}"
+                            else:
+                                _papa_err = f"Claude HTTP {_papa_res.status_code}: {_papa_res.text[:120]}"
                     except Exception as _papa_ex:
                         _papa_err = f"Excepción Papa: {str(_papa_ex)[:120]}"
                 else:
@@ -23427,6 +23562,102 @@ if st.session_state["view"] == "cartelera":
                         return f"⚽ {dias[d.weekday()]} {d.day} {meses[d.month]}"
                     except: return f
 
+                # ══════════════════════════════════════════════════════════════
+                # PRE-CÁLCULO BATCH: calcular picks de TODOS los partidos al
+                # cargar la cartelera. Usa session_state como caché por odds.
+                # Así no hay que entrar partido por partido.
+                # ══════════════════════════════════════════════════════════════
+                import math as _bmath
+                _UEFA_SLUGS_B = {"uefa.champions","uefa.europa","uefa.europa.conf","concacaf.champions","concacaf.league"}
+                for _bm_fecha in list(fut_por_fecha.keys()):
+                    for _bm_cont in list(fut_por_fecha[_bm_fecha].keys()):
+                        for _bm_pais in list(fut_por_fecha[_bm_fecha][_bm_cont].keys()):
+                            for _bm_liga, _bm_ms in list(fut_por_fecha[_bm_fecha][_bm_cont][_bm_pais].items()):
+                                for _bm in _bm_ms:
+                                    if _bm.get("state") == "post": continue
+                                    _bck = f"_xg_cache_{_bm.get('id','')}_{_bm.get('odd_h',0):.2f}_{_bm.get('odd_a',0):.2f}"
+                                    if st.session_state.get(_bck): continue  # ya calculado
+                                    try:
+                                        _bsl = _bm.get("slug","")
+                                        if _bsl in _UEFA_SLUGS_B:
+                                            _bhf = get_form_domestic(_bm["home_id"], _bsl)
+                                            _baf = get_form_domestic(_bm["away_id"], _bsl)
+                                            _bhx = _cup_enriched_xg(_bm, True,  _bhf, _baf)
+                                            _bax = _cup_enriched_xg(_bm, False, _bhf, _baf)
+                                        else:
+                                            _bhf = get_form(_bm["home_id"], _bsl)
+                                            _baf = get_form(_bm["away_id"], _bsl)
+                                            _bhx = xg_weighted(_bhf, True, slug=_bsl)
+                                            _bax = xg_weighted(_baf, False, slug=_bsl)
+                                        _bmc = mc50k(_bhx, _bax)
+                                        _bph = _bmc["ph"]; _bpd = _bmc.get("pd", max(0,1-_bmc["ph"]-_bmc.get("pa",0))); _bpa = _bmc.get("pa", 1-_bph-_bpd)
+                                        # Override de mercado
+                                        _boh = float(_bm.get("odd_h",0) or 0)
+                                        _boa = float(_bm.get("odd_a",0) or 0)
+                                        _bod = float(_bm.get("odd_d",0) or 0)
+                                        if _boh > 1 and _boa > 1 and _bod > 1:
+                                            _bvg = 1/_boh + 1/_bod + 1/_boa
+                                            _bmph = (1/_boh)/_bvg; _bmpd = (1/_bod)/_bvg; _bmpa = (1/_boa)/_bvg
+                                            if _bmpa > _bmph + 0.08:
+                                                _bxt = _bhx + _bax
+                                                _bfw = min(0.85, 0.55 + max(0.0,(_bmpa-0.50)/0.50)*0.30)
+                                                _bhx = round((1-_bfw)*_bhx + _bfw*_bxt*_bmph/(_bmph+_bmpa), 3)
+                                                _bax = round((1-_bfw)*_bax + _bfw*_bxt*_bmpa/(_bmph+_bmpa), 3)
+                                                _bmc2 = mc50k(_bhx, _bax)
+                                                _bph = _bmc2["ph"]; _bpd = _bmc2.get("pd",max(0,1-_bph-_bmc2.get("pa",0))); _bpa = _bmc2.get("pa",1-_bph-_bpd)
+                                            _bph = round(0.75*_bph + 0.25*_bmph, 4)
+                                            _bpa = round(0.75*_bpa + 0.25*_bmpa, 4)
+                                            _bpd = round(max(0.05,1-_bph-_bpa), 4)
+                                        # Pick 1: favorito del mercado
+                                        _bpk1 = ""; _bpb1 = 0.0
+                                        if _boh > 1 and _boa > 1:
+                                            _bvg2 = 1/_boh + (1/_bod if _bod>1 else 0) + 1/_boa
+                                            _bph2 = (1/_boh)/_bvg2; _bpa2 = (1/_boa)/_bvg2
+                                            _bhome_fav = _bph2 > _bpa2
+                                            _bfavp = max(_bph2, _bpa2)
+                                            if _bfavp >= 0.52:
+                                                _bpk1 = f"🏠 {_bm['home']} Gana" if _bhome_fav else f"✈️ {_bm['away']} Gana"
+                                                _bpb1 = _bph if _bhome_fav else _bpa
+                                            else:
+                                                _bpk1 = f"🔵 {(_bm['home'] if _bhome_fav else _bm['away'])[:13]} DO"
+                                                _bpb1 = min(0.92, (_bph+_bpd) if _bhome_fav else (_bpa+_bpd))
+                                        else:
+                                            _bfavh = _bph > _bpa
+                                            _bpk1 = f"🏠 {_bm['home']} Gana" if _bfavh else f"✈️ {_bm['away']} Gana"
+                                            _bpb1 = _bph if _bfavh else _bpa
+                                        # Pick 2: mejor mercado de goles
+                                        _bxt2 = _bhx + _bax
+                                        _bo25 = 1 - sum(_bxt2**k*_bmath.exp(-_bxt2)/_bmath.factorial(k) for k in range(3))
+                                        _baa  = (1-_bmath.exp(-_bhx))*(1-_bmath.exp(-_bax))
+                                        _bo15 = 1 - sum(_bxt2**k*_bmath.exp(-_bxt2)/_bmath.factorial(k) for k in range(2))
+                                        _bu25 = 1 - _bo25
+                                        _bgol_opts = [("⚽ Over 2.5",_bo25),("⚡ Ambos Anotan",_baa),("🔒 Under 2.5",_bu25)]
+                                        _bbest2 = max(_bgol_opts, key=lambda x:x[1])
+                                        if _bbest2[1] < 0.52 and _bo15 > _bbest2[1] + 0.05:
+                                            _bbest2 = ("⚽ Over 1.5", _bo15)
+                                        _bpk2 = _bbest2[0]; _bpb2 = _bbest2[1]
+                                        st.session_state[_bck] = {
+                                            "hx2":_bhx,"ax2":_bax,"ph2":_bph,"pd2":_bpd,"pa2":_bpa,
+                                            "pick":_bpk1,"pick_prob":_bpb1,
+                                            "pick2":_bpk2,"pick2_prob":_bpb2,
+                                        }
+                                        # También guardar en diamond_bridge
+                                        _bbkey = _bm.get("id","") or f"{_bm.get('home_id','')}_{_bm.get('away_id','')}_{_bm.get('fecha','')}"
+                                        if "_diamond_bridge" not in st.session_state:
+                                            st.session_state["_diamond_bridge"] = {}
+                                        _bexist = st.session_state["_diamond_bridge"].get(_bbkey, {})
+                                        if not (_bexist and "analisis" in (_bexist.get("src","") or "").lower()):
+                                            st.session_state["_diamond_bridge"][_bbkey] = {
+                                                "pick":_bpk1,"prob":_bpb1,"pick2":_bpk2,"pick2_prob":_bpb2,
+                                                "home":_bm.get("home",""),"away":_bm.get("away",""),
+                                                "sport":"futbol","fecha":_bm.get("fecha",""),
+                                                "src":"⚡ Cartelera","has_odds":bool(_boh>1 and _boa>1),
+                                                "mkt":"ML" if "Gana" in _bpk1 else "DO",
+                                                "pick2_mkt":"GOLES UEFA" if _bsl in _UEFA_SLUGS_B else "GOLES",
+                                                "is_uefa": _bsl in _UEFA_SLUGS_B,
+                                            }
+                                    except: pass
+
                 for _fi, _fecha in enumerate(sorted(fut_por_fecha.keys())):
                     _paises_dict = fut_por_fecha[_fecha]
                     _total_fecha = sum(sum(len(ms) for ms in ld.values()) for ld in _paises_dict.values())
@@ -23520,6 +23751,111 @@ if st.session_state["view"] == "cartelera":
                                                   st.session_state["sel"]  = {**_m, "_sport":"futbol"}
                                                   st.session_state["view"] = "analisis"
                                                   st.rerun()
+                                      # ══ PRE-CÁLCULO AUTOMÁTICO: calcular picks para todos los partidos sin bridge ══
+                                      # Esto evita tener que meterse partido por partido para que se actualice
+                                      _UEFA_SLUGS_AUTO = {"uefa.champions","uefa.europa","uefa.europa.conf","concacaf.champions","concacaf.league"}
+                                      for _pm_auto in _pre_ms:
+                                          if _pm_auto.get("state","pre") not in ("pre",): continue  # solo pre-partido
+                                          _bk_auto = _pm_auto.get("id","") or f"{_pm_auto.get('home_id','')}_{_pm_auto.get('away_id','')}_{_pm_auto.get('fecha','')}"
+                                          _br_auto = st.session_state.get("_diamond_bridge",{}).get(_bk_auto)
+                                          _has_odds_auto = bool(_pm_auto.get("odd_h",0) and _pm_auto.get("odd_a",0))
+                                          # Recalcular si: sin bridge, o bridge sin odds, o UEFA sin análisis
+                                          _is_uefa_auto = _pm_auto.get("slug","") in _UEFA_SLUGS_AUTO
+                                          _br_from_analysis_auto = _br_auto and ("analisis" in (_br_auto.get("src","") or "").lower() or _br_auto.get("has_odds", False))
+                                          _needs_calc = (not _br_auto) or (_is_uefa_auto and not _br_from_analysis_auto)
+                                          _calc_key_auto = f"_xg_cache_{_bk_auto}_{float(_pm_auto.get('odd_h',0) or 0):.2f}_{float(_pm_auto.get('odd_a',0) or 0):.2f}"
+                                          if _needs_calc and not st.session_state.get(_calc_key_auto):
+                                              try:
+                                                  _sl_auto = _pm_auto.get("slug","")
+                                                  if _sl_auto in _UEFA_CUP_SLUGS:
+                                                      _hf_a = get_form_domestic(_pm_auto["home_id"], _sl_auto)
+                                                      _af_a = get_form_domestic(_pm_auto["away_id"], _sl_auto)
+                                                      _hxa = _cup_enriched_xg(_pm_auto, True,  _hf_a, _af_a)
+                                                      _axa = _cup_enriched_xg(_pm_auto, False, _hf_a, _af_a)
+                                                  else:
+                                                      _hf_a = get_form(_pm_auto["home_id"], _pm_auto["slug"])
+                                                      _af_a = get_form(_pm_auto["away_id"], _pm_auto["slug"])
+                                                      _hxa = xg_weighted(_hf_a, True,  slug=_sl_auto)
+                                                      _axa = xg_weighted(_af_a, False, slug=_sl_auto)
+                                                  _mc_a = mc50k(_hxa, _axa)
+                                                  _ph_a = _mc_a["ph"]; _pd_a = _mc_a.get("pd", max(0,1-_mc_a["ph"]-_mc_a.get("pa",0))); _pa_a = _mc_a.get("pa",1-_mc_a["ph"]-_pd_a)
+                                                  # Override de mercado
+                                                  try:
+                                                      _oh_a = float(_pm_auto.get("odd_h",0) or 0)
+                                                      _oa_a = float(_pm_auto.get("odd_a",0) or 0)
+                                                      _od_a = float(_pm_auto.get("odd_d",0) or 0)
+                                                      if _oh_a > 1 and _oa_a > 1 and _od_a > 1:
+                                                          _vig_a = 1/_oh_a + 1/_od_a + 1/_oa_a
+                                                          _mkt_ph_a = (1/_oh_a) / _vig_a; _mkt_pd_a = (1/_od_a) / _vig_a; _mkt_pa_a = (1/_oa_a) / _vig_a
+                                                          if _mkt_pa_a > _mkt_ph_a + 0.08:
+                                                              _xgt_a = _hxa + _axa
+                                                              _tgt_a = _mkt_pa_a * _xgt_a / max(_pa_a, 0.01) * 0.7 + _xgt_a * 0.3
+                                                              _axa = min(3.5, _axa * (_tgt_a / max(_xgt_a, 0.5)) * 0.65 + _axa * 0.35)
+                                                          _ph_a = round(0.75*_ph_a + 0.25*_mkt_ph_a, 4)
+                                                          _pa_a = round(0.75*_pa_a + 0.25*_mkt_pa_a, 4)
+                                                          _pd_a = round(max(0.05, 1-_ph_a-_pa_a), 4)
+                                                  except: pass
+                                                  st.session_state[_calc_key_auto] = {"hx2":_hxa,"ax2":_axa,"ph2":_ph_a,"pd2":_pd_a,"pa2":_pa_a}
+                                                  # ── Auto-pick1 y pick2 basados en odds del mercado ──
+                                                  try:
+                                                      import math as _pauto
+                                                      _xgt_ap = _hxa + _axa
+                                                      _o25_ap = 1 - sum(_xgt_ap**k * _pauto.exp(-_xgt_ap) / _pauto.factorial(k) for k in range(3))
+                                                      _aa_ap  = (1 - _pauto.exp(-_hxa)) * (1 - _pauto.exp(-_axa))
+                                                      _o15_ap = 1 - sum(_xgt_ap**k * _pauto.exp(-_xgt_ap) / _pauto.factorial(k) for k in range(2))
+                                                      # Pick1: favorito del mercado
+                                                      _oh_ap = float(_pm_auto.get("odd_h",0) or 0)
+                                                      _oa_ap = float(_pm_auto.get("odd_a",0) or 0)
+                                                      _od_ap = float(_pm_auto.get("odd_d",0) or 0)
+                                                      _auto_pick1 = ""; _auto_prob1 = 0.0
+                                                      _auto_pick2 = ""; _auto_prob2 = 0.0
+                                                      if _oh_ap > 1 and _oa_ap > 1:
+                                                          _vig_ap = 1/_oh_ap + (1/_od_ap if _od_ap>1 else 0) + 1/_oa_ap
+                                                          _mph_ap = (1/_oh_ap)/_vig_ap; _mpa_ap = (1/_oa_ap)/_vig_ap
+                                                          _home_fav = _mph_ap > _mpa_ap
+                                                          _fav_p_ap = max(_mph_ap, _mpa_ap)
+                                                          _fav_name_ap = _pm_auto.get("home","") if _home_fav else _pm_auto.get("away","")
+                                                          _fav_emoji_ap = "🏠" if _home_fav else "✈️"
+                                                          if _fav_p_ap >= 0.52:
+                                                              _auto_pick1 = f"{_fav_emoji_ap} {_fav_name_ap} Gana"
+                                                              _auto_prob1 = min(0.92, _fav_p_ap)
+                                                          else:
+                                                              _auto_pick1 = f"🔵 {_fav_name_ap[:13]} DO"
+                                                              _auto_prob1 = min(0.92, _fav_p_ap + (1-_mph_ap-_mpa_ap)*0.5)
+                                                      else:
+                                                          # Sin odds: mejor ML del modelo
+                                                          if _ph_a > _pa_a:
+                                                              _auto_pick1 = f"🏠 {_pm_auto.get('home','')} Gana"; _auto_prob1 = min(0.92, _ph_a)
+                                                          else:
+                                                              _auto_pick1 = f"✈️ {_pm_auto.get('away','')} Gana"; _auto_prob1 = min(0.92, _pa_a)
+                                                      # Pick2: mejor mercado de goles (siempre)
+                                                      _g2_cands = []
+                                                      if _o25_ap >= 0.50: _g2_cands.append(("⚽ Over 2.5", _o25_ap))
+                                                      if _aa_ap  >= 0.50: _g2_cands.append(("⚡ Ambos Anotan", _aa_ap))
+                                                      if _o15_ap >= 0.70: _g2_cands.append(("⚽ Over 1.5", _o15_ap))
+                                                      if not _g2_cands:
+                                                          _g2_cands = [("⚽ Over 2.5", _o25_ap), ("⚡ Ambos Anotan", _aa_ap)]
+                                                      _best_g2_ap = max(_g2_cands, key=lambda x: x[1])
+                                                      _auto_pick2 = _best_g2_ap[0]; _auto_prob2 = min(0.92, _best_g2_ap[1])
+                                                      # Guardar en bridge (solo si no hay bridge del análisis)
+                                                      _bk_ap = _pm_auto.get("id","") or f"{_pm_auto.get('home_id','')}_{_pm_auto.get('away_id','')}_{_pm_auto.get('fecha','')}"
+                                                      _existing_br_ap = st.session_state.get("_diamond_bridge",{}).get(_bk_ap)
+                                                      _br_is_analysis_ap = _existing_br_ap and "analisis" in (_existing_br_ap.get("src","") or "").lower()
+                                                      if not _br_is_analysis_ap:
+                                                          if "_diamond_bridge" not in st.session_state:
+                                                              st.session_state["_diamond_bridge"] = {}
+                                                          st.session_state["_diamond_bridge"][_bk_ap] = {
+                                                              "pick": _auto_pick1, "prob": _auto_prob1,
+                                                              "pick2": _auto_pick2, "pick2_prob": _auto_prob2,
+                                                              "pick2_mkt": "GOLES",
+                                                              "home": _pm_auto.get("home",""), "away": _pm_auto.get("away",""),
+                                                              "sport": "futbol", "fecha": _pm_auto.get("fecha",""),
+                                                              "src": "⚡ Auto-Cartelera", "has_odds": bool(_oh_ap > 1 and _oa_ap > 1),
+                                                              "mkt": "ML" if "Gana" in _auto_pick1 else "DO",
+                                                              "is_uefa": _is_uefa_auto,
+                                                          }
+                                                  except: pass
+                                              except: pass
                                       for _pi in range(0, len(_pre_ms), 2):
                                           _pair = _pre_ms[_pi:_pi+2]
                                           _cols = st.columns(len(_pair))
@@ -23528,20 +23864,28 @@ if st.session_state["view"] == "cartelera":
                                                     _live = _m["state"] == "in"
                                                     _sc_min = _m.get('minute', _m.get('min', 0)) or 0
                                                     _sc   = f"🔴 {_sc_min}'  {_m['score_h']}-{_m['score_a']}" if _live and _m.get('score_h') is not None else ""
+                                                    # ── Caché de cálculo por partido (evita recalcular en cada render) ──
+                                                    _calc_key = f"_xg_cache_{_m.get('id','')}_{_m.get('odd_h',0):.2f}_{_m.get('odd_a',0):.2f}"
+                                                    _cached_calc = st.session_state.get(_calc_key)
+                                                    if _cached_calc:
+                                                        _hx2 = _cached_calc["hx2"]; _ax2 = _cached_calc["ax2"]
+                                                        _ph2 = _cached_calc["ph2"]; _pd2 = _cached_calc["pd2"]; _pa2 = _cached_calc["pa2"]
+                                                        # Los picks los maneja _diamond_bridge (populado por el batch)
                                                     try:
                                                         _msl_c = _m.get("slug","")
-                                                        if _msl_c in _UEFA_CUP_SLUGS:
+                                                        if not _cached_calc:
+                                                          if _msl_c in _UEFA_CUP_SLUGS:
                                                             _hf2 = get_form_domestic(_m["home_id"], _msl_c)
                                                             _af2 = get_form_domestic(_m["away_id"], _msl_c)
                                                             _hx2 = _cup_enriched_xg(_m, True,  _hf2, _af2)
                                                             _ax2 = _cup_enriched_xg(_m, False, _hf2, _af2)
-                                                        else:
+                                                          else:
                                                             _hf2 = get_form(_m["home_id"], _m["slug"])
                                                             _af2 = get_form(_m["away_id"], _m["slug"])
                                                             _hx2 = xg_weighted(_hf2,True,slug=_msl_c)
                                                             _ax2 = xg_weighted(_af2,False,slug=_msl_c)
-                                                        _mc2 = mc50k(_hx2, _ax2)
-                                                        _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
+                                                          _mc2 = mc50k(_hx2, _ax2)
+                                                          _ph2 = _mc2["ph"]; _pd2 = _mc2.get("pd", max(0,1-_mc2["ph"]-_mc2.get("pa",0))); _pa2 = _mc2.get("pa",1-_mc2["ph"]-_pd2)
                                                         # ══ OVERRIDE MERCADO en cartelera ══
                                                         # Si las odds dicen que un equipo tiene ≥55% de ganar,
                                                         # las probs del modelo se corrigen para reflejarlo.
@@ -23577,6 +23921,15 @@ if st.session_state["view"] == "cartelera":
                                                     except:
                                                         _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
                                                         _hx2 = 1.2; _ax2 = 1.0  # defaults para Poisson en vivo
+                                                    # Guardar en caché para renders futuros
+                                                    if not _cached_calc and not _live:
+                                                        try:
+                                                            st.session_state[_calc_key] = {
+                                                                "hx2":_hx2,"ax2":_ax2,"ph2":_ph2,"pd2":_pd2,"pa2":_pa2,
+                                                                "pick":_pick_lbl,"pick_prob":_pick_prob,
+                                                                "pick2":_pick2_lbl_c,"pick2_prob":_pick2_prob_c,
+                                                            }
+                                                        except: pass
                                                     _mx = max(_ph2,_pd2,_pa2)
                                                     _ch = "#00ff88" if _ph2==_mx else "#666"
                                                     _cd = "#FFD700" if _pd2==_mx else "#666"
@@ -23711,10 +24064,13 @@ if st.session_state["view"] == "cartelera":
                                                         _has_pick2 = bool(_br.get("pick2","") if _br else "")
                                                         # UEFA pre-partido: recalcular SOLO si no hay bridge del análisis
                                                         # Si el usuario ya analizó el partido, usar ese pick (es el más preciso)
-                                                        _br_from_analysis = _br and "analisis" in (_br.get("src","") or "").lower()
+                                                        _br_from_analysis = _br and ("analisis" in (_br.get("src","") or "").lower() or _br.get("has_odds", False))
                                                         _uefa_recalc = _is_uefa_m and not _br_from_analysis
                                                         if _uefa_recalc:
                                                             _pick_lbl = ""; _pick_prob = 0  # forzar recálculo con odds actuales
+                                                        # SIEMPRE recalcular si no hay pick2 (independiente de analisis/odds)
+                                                        if not _pick2_lbl_c:
+                                                            _pick_lbl = ""; _pick_prob = 0  # recalcular completo para obtener pick2
                                                         # Sin bridge o UEFA recalc: calcular pick con EV real
                                                         if not _pick_lbl:
                                                             try:
@@ -23983,6 +24339,27 @@ if st.session_state["view"] == "cartelera":
                                                                 _pick2_lbl_c  = _bp2[0]          if _bp2 else None
                                                                 _pick2_prob_c = min(0.92, _bp2[1]) if _bp2 else 0.0
                                                             except: pass
+                                                        # ── PICK 2 fallback: si no se calculó (había bridge), calcular ahora ──
+                                                        if not _pick2_lbl_c:
+                                                            try:
+                                                                import math as _p2fb
+                                                                _xgt_fb = _hx2 + _ax2
+                                                                _o25_fb = 1 - sum(_xgt_fb**k * _p2fb.exp(-_xgt_fb) / _p2fb.factorial(k) for k in range(3))
+                                                                _aa_fb  = (1 - _p2fb.exp(-_hx2)) * (1 - _p2fb.exp(-_ax2))
+                                                                _o15_fb = 1 - sum(_xgt_fb**k * _p2fb.exp(-_xgt_fb) / _p2fb.factorial(k) for k in range(2))
+                                                                # Escoger el mejor mercado de goles
+                                                                _g2_opts = []
+                                                                if _o25_fb >= 0.52: _g2_opts.append((f"⚽ Over 2.5", _o25_fb))
+                                                                if _aa_fb  >= 0.52: _g2_opts.append((f"⚡ Ambos Anotan", _aa_fb))
+                                                                if not _g2_opts and _o15_fb >= 0.72:
+                                                                    _g2_opts.append((f"⚽ Over 1.5", _o15_fb))
+                                                                if not _g2_opts:
+                                                                    # Sin umbral: mejor de O25/AA/O15
+                                                                    _g2_opts = [(f"⚽ Over 2.5", _o25_fb), (f"⚡ Ambos Anotan", _aa_fb), (f"⚽ Over 1.5", _o15_fb)]
+                                                                _best_g2 = max(_g2_opts, key=lambda x: x[1])
+                                                                _pick2_lbl_c  = _best_g2[0]
+                                                                _pick2_prob_c = min(0.92, _best_g2[1])
+                                                            except: pass
                                                     # ── Guardar en bridge/snap ──
                                                     _is_uefa_save = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
                                                     # Guardar siempre en snap pre-partido para Villar (todos los partidos, no solo UEFA)
@@ -23999,6 +24376,7 @@ if st.session_state["view"] == "cartelera":
                                                                     "home": _m.get("home",""), "away": _m.get("away",""),
                                                                     "sport": "futbol", "fecha": _m.get("fecha",""),
                                                                     "src": "⚡ Cartelera",
+                                                                    "has_odds": bool(_m.get("odd_h",0) and _m.get("odd_a",0)),
                                                                     "mkt": ("DO" if ("DO" in _pick_lbl or "🔵" in _pick_lbl) else
                                                                             "O25" if "Over 2.5" in _pick_lbl else
                                                                             "U25" if "Under 2.5" in _pick_lbl else
