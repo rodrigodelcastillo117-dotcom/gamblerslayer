@@ -1393,10 +1393,21 @@ def get_cartelera():
                         for _bk in _g.get("bookmakers", []):
                             for _mkt in _bk.get("markets", []):
                                 if _mkt["key"] == "h2h":
-                                    _outs = {o["name"].lower(): o["price"] for o in _mkt["outcomes"]}
-                                    if _outs.get(_gh,0) > 1: _prices_h.append(_outs[_gh])
+                                    # Buscar precio por nombre exacto primero, luego parcial
+                                    def _find_price(tname, od):
+                                        if od.get(tname, 0) > 1: return od[tname]
+                                        t5 = tname[:5]
+                                        for k,v in od.items():
+                                            if t5 and t5 in k and v > 1: return v
+                                        tw = tname.split()[0] if tname else ""
+                                        for k,v in od.items():
+                                            if tw and tw in k and v > 1: return v
+                                        return 0
+                                    _ph_price = _find_price(_gh, _outs)
+                                    _pa_price = _find_price(_ga, _outs)
+                                    if _ph_price > 1: _prices_h.append(_ph_price)
                                     if _outs.get("draw",0) > 1: _prices_d.append(_outs["draw"])
-                                    if _outs.get(_ga,0) > 1: _prices_a.append(_outs[_ga])
+                                    if _pa_price > 1: _prices_a.append(_pa_price)
                         if _prices_h and _prices_a:
                             _m["odd_h"] = round(sum(_prices_h)/len(_prices_h), 2)
                             _m["odd_d"] = round(sum(_prices_d)/len(_prices_d), 2) if _prices_d else 3.4
@@ -9829,11 +9840,17 @@ def _cup_enriched_xg(m: dict, is_home: bool, hf: list, af: list) -> float:
             _axg_odds = _xg_total_odds * (1 - _ratio_h_adj)
             _xg_odds_mine = _hxg_odds if is_home else _axg_odds
             # Ponderación odds vs modelo propio:
-            # - Sin forma: 80% odds (no tenemos nada más)
+            # - Sin forma: 80% odds
             # - Con forma ESPN: 65% odds
-            # - Con Night Scout europeo: 50% odds (el dato europeo es muy valioso)
+            # - Con Night Scout europeo: 50% odds
             # - Con Night Scout europeo + ESPN: 48% odds
-            if _has_eu_data and _has_night_form and _form_mine:
+            # - Visitante favorito muy claro (>60% implícita): 90% odds — el mercado sabe
+            _away_fav_clear = (not is_home and _pa_imp_s > 0.60) or (is_home and _ph_imp_s < 0.25)
+            _home_fav_clear = (is_home and _ph_imp_s > 0.60)
+            if _away_fav_clear or _home_fav_clear:
+                # Favorito muy claro — el mercado tiene muchísima más info que el anchor de UCL
+                _w_odds = 0.90
+            elif _has_eu_data and _has_night_form and _form_mine:
                 _w_odds = 0.48
             elif _has_eu_data and _has_night_form:
                 _w_odds = 0.50
@@ -11494,6 +11511,27 @@ def ensemble_football(hxg, axg, h2h_s=None, hform=None, aform=None,
         axg = max(0.20, axg + _a_star_delta)
     except: pass
 
+    # ── OVERRIDE MERCADO: si las odds dicen favorito muy claro, xG debe reflejarlo ──
+    # Este es el fix definitivo para casos como Arsenal@Leverkusen (Arsenal @1.48).
+    # Las correcciones anteriores son 40-65% mercado. Aquí si el mercado es muy claro
+    # (>60% implícita) forzamos que el xG sea proporcional a las odds, no al anchor UCL.
+    try:
+        if odd_h > 1 and odd_a > 1 and odd_d > 1:
+            _vig_ov = 1/odd_h + 1/odd_d + 1/odd_a
+            _mkt_ph_ov = (1/odd_h) / _vig_ov
+            _mkt_pa_ov = (1/odd_a) / _vig_ov
+            _xg_tot_ov = hxg + axg
+            # Si mercado es muy claro (>58% a cualquier lado), forzar xG proporcional
+            if max(_mkt_ph_ov, _mkt_pa_ov) >= 0.58:
+                _fair_h = _xg_tot_ov * _mkt_ph_ov / (_mkt_ph_ov + _mkt_pa_ov)
+                _fair_a = _xg_tot_ov * _mkt_pa_ov / (_mkt_ph_ov + _mkt_pa_ov)
+                # Blend: cuanto más claro el favorito, más peso al mercado
+                _fav_strength = (max(_mkt_ph_ov, _mkt_pa_ov) - 0.58) / 0.42  # 0→1
+                _mkt_xg_w = min(0.85, 0.60 + _fav_strength * 0.25)
+                hxg = round((1 - _mkt_xg_w) * hxg + _mkt_xg_w * _fair_h, 3)
+                axg = round((1 - _mkt_xg_w) * axg + _mkt_xg_w * _fair_a, 3)
+    except: pass
+
     dc  = dc_probabilities(hxg, axg, rho=rho)
     bvp = bivariate_poisson(hxg, axg)
     elo_ph = elo_win_prob(home_id or "h", away_id or "a", hform, aform)
@@ -11818,12 +11856,17 @@ def _tennis_elo_prob(rank1, rank2, odd_1=0, odd_2=0, surface="hard",
 
     # Blend con mercado — el mercado tiene info que el ranking no tiene
     # (lesiones de hoy, condiciones, confianza actual del jugador)
+    # Peso dinámico: más peso al mercado cuando es muy diferente del ranking
     if odd_1 > 1 and odd_2 > 1:
         vig   = 1/odd_1 + 1/odd_2
         p_mkt = (1/odd_1) / vig
-        # Cuanto más igual el ranking, más peso al mercado
+        _mkt_fav = max(p_mkt, 1-p_mkt)
         rank_gap = abs(r1 - r2)
-        mkt_weight = 0.50 if rank_gap < 20 else (0.40 if rank_gap < 50 else 0.30)
+        # Base: cuanto más parejo el ranking, más peso al mercado
+        # Además: si el mercado dice favorito muy claro (>62%), pesa más
+        _base_w  = 0.50 if rank_gap < 20 else (0.40 if rank_gap < 50 else 0.30)
+        _fav_w   = 0.15 if _mkt_fav >= 0.68 else (0.08 if _mkt_fav >= 0.62 else 0.0)
+        mkt_weight = min(0.65, _base_w + _fav_w)
         p_elo = (1 - mkt_weight) * p_elo + mkt_weight * p_mkt
 
     return round(max(0.05, min(0.95, p_elo)), 4)
@@ -11894,7 +11937,10 @@ def _tennis_monte_carlo_50k(p_win_match, odd_1=0, odd_2=0, n=10000):
     if odd_1 > 1 and odd_2 > 1:
         vig   = 1/odd_1 + 1/odd_2
         p_mkt = (1/odd_1) / vig
-        p1_mc = 0.65 * p1_mc + 0.35 * p_mkt
+        _mkt_fav_mc = max(p_mkt, 1-p_mkt)
+        # Más peso si el mercado tiene un favorito muy claro
+        _mc_mkt_w = 0.50 if _mkt_fav_mc >= 0.65 else (0.40 if _mkt_fav_mc >= 0.58 else 0.35)
+        p1_mc = (1 - _mc_mkt_w) * p1_mc + _mc_mkt_w * p_mkt
     return round(max(0.05, min(0.95, p1_mc)), 4)
 
 
@@ -12340,15 +12386,35 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
             p1_srv  = max(0.05, min(0.95, p1_srv  + _wx_adj * 0.8))
     except: pass
 
-    # Si hay análisis de Einstein, también lo incluimos como señal
-    p1_einstein = expert_p1 if expert_p1 is not None else None
+    # ── Mercado como señal directa en el ensemble ──
+    # Las cuotas incorporan: lesiones de hoy, estado físico reportado,
+    # sharps que vieron el entrenamiento, info privilegiada del circuito.
+    # Peso base 20%, sube hasta 40% si hay favorito muy claro (>65%).
+    p1_mkt = None
+    _mkt_w_ten = 0.0
+    if odd_1 > 1 and odd_2 > 1:
+        _vig_ten = 1/odd_1 + 1/odd_2
+        p1_mkt   = (1/odd_1) / _vig_ten
+        _mkt_fav_ten = max(p1_mkt, 1 - p1_mkt)
+        _mkt_w_ten = 0.40 if _mkt_fav_ten >= 0.68 else (0.30 if _mkt_fav_ten >= 0.62 else 0.20)
 
-    # ── Consenso ponderado — 5 modelos ──
+    # ── Consenso ponderado — 5 modelos + mercado ──
     # Elo y Momentum son los más diferenciadores (amplitud 50-95%)
     # Superficie y Serve dan señal real de superficie pero menor amplitud
     # MC es blend de Elo+Surf — sirve de "árbitro"
-    # Pesos: Elo 30%, MC 20%, Momentum 25%, Superficie 13%, Serve 12%
-    if p1_einstein is not None:
+    # Pesos base (sin mercado): Elo 30%, MC 20%, Momentum 25%, Superficie 13%, Serve 12%
+    # Con mercado: los pesos base se reducen proporcionalmente para dar espacio al mercado
+    if p1_mkt is not None and _mkt_w_ten > 0:
+        _scale = 1 - _mkt_w_ten
+        if p1_einstein is not None:
+            p1_final = (_scale * (0.22*p1_elo + 0.15*p1_surf + 0.16*p1_mc +
+                        0.20*p1_mom + 0.12*p1_srv + 0.15*p1_einstein) +
+                        _mkt_w_ten * p1_mkt)
+        else:
+            p1_final = (_scale * (0.30*p1_elo + 0.13*p1_surf + 0.20*p1_mc +
+                        0.25*p1_mom + 0.12*p1_srv) +
+                        _mkt_w_ten * p1_mkt)
+    elif p1_einstein is not None:
         p1_final = (0.22*p1_elo + 0.15*p1_surf + 0.16*p1_mc +
                     0.20*p1_mom + 0.12*p1_srv + 0.15*p1_einstein)
     else:
@@ -12365,7 +12431,8 @@ def veredicto_academico_tenis(p1_name, p2_name, rank1, rank2,
 
     # ── Consenso entre modelos ──
     models_p1 = [p1_elo, p1_surf, p1_mc, p1_mom, p1_srv]
-    if p1_einstein: models_p1.append(p1_einstein)
+    if p1_einstein is not None: models_p1.append(p1_einstein)
+    if p1_mkt      is not None: models_p1.append(p1_mkt)
     agree = sum(1 for p in models_p1 if (p >= 0.5) == (p1_final >= 0.5))
     total_m = len(models_p1)
     std = statistics.stdev(models_p1) if len(models_p1) > 1 else 0.1
@@ -13415,7 +13482,9 @@ def escanear_nba_y_enviar(games):
     for g in games:
         if g["state"] != "pre": continue
         try:
-            res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+            res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"],
+                           odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0),
+                           odd_over=g.get("odd_over",0), odd_under=g.get("odd_under",0))
         except:
             res = {"p_over":0.52,"p_under":0.48,"line":g.get("ou_line",220.5),
                    "p_h_win":0.55,"proj":220,"net_h":0,"net_a":0}
@@ -14519,7 +14588,8 @@ def _soc_calib_get_liga_params(slug):
 
 
 
-def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
+def nba_ou_model(home_id, away_id, ou_line, referee_names=None,
+                 odd_h=0.0, odd_a=0.0, odd_over=0.0, odd_under=0.0):
     """
     NBA O/U + ML — mejoras v2:
     1. HCA calibrada: +2.8 pts (57.8% real NBA 2024, BBRef)
@@ -14745,6 +14815,34 @@ def nba_ou_model(home_id, away_id, ou_line, referee_names=None):
     # Escala calibrada: 1 pt diferencial ≈ 3% probabilidad (NBA empirical)
     p_h_win = 1 / (1 + math.exp(-combined_diff * 0.12))
     p_a_win = 1 - p_h_win
+
+    # ── Blend cuotas ML: el mercado NBA es extremadamente eficiente ──
+    # Las líneas de Las Vegas incorporan lesiones de último minuto, viajes,
+    # motivación, reportes de práctica — info que ESPN no tiene.
+    # Peso mercado: 40% cuando hay odds claras, 25% cuando son cerradas.
+    _odd_h = float(odd_h or 0); _odd_a = float(odd_a or 0)
+    if _odd_h > 1 and _odd_a > 1:
+        _vig_nba = 1/_odd_h + 1/_odd_a
+        _mkt_ph  = (1/_odd_h) / _vig_nba
+        _mkt_pa  = (1/_odd_a) / _vig_nba
+        _mkt_fav = max(_mkt_ph, _mkt_pa)
+        # Más peso al mercado cuando hay un favorito claro (>60%)
+        _mkt_w = 0.45 if _mkt_fav >= 0.62 else (0.35 if _mkt_fav >= 0.56 else 0.25)
+        p_h_win = (1 - _mkt_w) * p_h_win + _mkt_w * _mkt_ph
+        p_a_win = 1 - p_h_win
+
+    # ── Blend cuotas O/U: la línea del mercado es el mejor prior disponible ──
+    # Si el mercado pone Over/Under con cuota <1.85 (implícita >54%), nuestro
+    # modelo debe converger hacia ese lado. Peso 35% al mercado.
+    _odd_ov = float(odd_over or 0); _odd_un = float(odd_under or 0)
+    if _odd_ov > 1 and _odd_un > 1:
+        _vig_ou  = 1/_odd_ov + 1/_odd_un
+        _mkt_ov  = (1/_odd_ov) / _vig_ou
+        _mkt_un  = (1/_odd_un) / _vig_ou
+        _ou_fav  = max(_mkt_ov, _mkt_un)
+        _ou_w    = 0.40 if _ou_fav >= 0.58 else 0.30
+        p_over   = (1 - _ou_w) * p_over  + _ou_w * _mkt_ov
+        p_under  = 1 - p_over
 
     return {
         "proj":         round(proj, 1),
@@ -16679,7 +16777,9 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
             # King Rongo analiza todos los juegos del día (usa cache si existe)
             try:
                 res = (st.session_state.get("_nba_model_cache",{}).get(g.get("id",""))
-                       or nba_ou_model(g["home_id"], g["away_id"], g["ou_line"]))
+                       or nba_ou_model(g["home_id"], g["away_id"], g["ou_line"],
+                                   odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0),
+                                   odd_over=g.get("odd_over",0), odd_under=g.get("odd_under",0)))
                 p_h_base = res.get("p_h_win", 0.55); p_a_base = 1-p_h_base
                 line= res["line"]
 
@@ -22351,7 +22451,9 @@ if st.session_state["view"] == "cartelera":
                                     unsafe_allow_html=True)
                                 if st.button("📊 Analizar", key=f"nba_{g['id']}", use_container_width=True):
                                     with st.spinner("🤖 IA analizando partido..."):
-                                        res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"])
+                                        res = nba_ou_model(g["home_id"], g["away_id"], g["ou_line"],
+                           odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0),
+                           odd_over=g.get("odd_over",0), odd_under=g.get("odd_under",0))
                                         # ── Registrar pick para calibración ──
                                         try:
                                             _calib_side = "over" if res["p_over"] > res["p_under"] else "under"
@@ -24193,7 +24295,11 @@ else:
             st.info("✅ Partido finalizado. Resultado final mostrado arriba.")
         else:
             with st.spinner("🏀 Calculando modelo O/U + ML..."):
-                _nba_res = nba_ou_model(g.get("home_id",""), g.get("away_id",""), g.get("ou_line",0))
+                _nba_res = nba_ou_model(
+                    g.get("home_id",""), g.get("away_id",""), g.get("ou_line",0),
+                    odd_h=g.get("odd_h",0), odd_a=g.get("odd_a",0),
+                    odd_over=g.get("odd_over",0), odd_under=g.get("odd_under",0)
+                )
             _p_over  = _nba_res.get("p_over", 0.5)
             _p_under = _nba_res.get("p_under", 0.5)
             _p_home  = _nba_res.get("p_h_win", 0.5)
