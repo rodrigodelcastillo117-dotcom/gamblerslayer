@@ -1936,7 +1936,7 @@ with tab_all:
         st.caption("Análisis contextual: marcador actual + minuto + probabilidades de simulación.")
 
         for g in live_games:
-            sim         = run_simulation(g, n=5_000)
+            sim         = run_monte_carlo(g, n=5_000)
             dq          = sim["data_quality"]
             sport_group = LEAGUES.get(g["league"], {}).get("group", "Soccer")
             minute      = parse_live_minute(g.get("status_detail", ""))
