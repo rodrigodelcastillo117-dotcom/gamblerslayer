@@ -4271,16 +4271,25 @@ def _save_results_db(db):
     except: pass
 
 def _load_picks_snap():
-    """Carga snapshot de picks automáticos generados (por partido_id)."""
+    """Carga snapshot de picks. Usa session_state como backup de /tmp."""
+    file_snap = {}
     try:
-        with open(PICKS_SNAP_F,"r") as f: return json.load(f)
-    except: return {}
+        with open(PICKS_SNAP_F,"r") as f: file_snap = json.load(f)
+    except: pass
+    try:
+        ss_snap = st.session_state.get("_picks_snap_mem", {})
+    except: ss_snap = {}
+    return {**file_snap, **ss_snap}
 
 def _save_picks_snap(snap):
-    """Guarda snapshot de picks. snap = {partido_id: {pick, prob, mkt, src, fecha_gen}}"""
+    """Guarda en /tmp Y session_state para sobrevivir reboots de /tmp."""
     try:
         with open(PICKS_SNAP_F,"w") as f: json.dump(snap, f, ensure_ascii=False, indent=2)
     except: pass
+    try:
+        st.session_state["_picks_snap_mem"] = snap
+    except: pass
+
 
 def _snap_auto_pick(partido_id, pick_data, state="pre", force=False):
     """Guarda pick automático en snapshot.
@@ -4288,11 +4297,20 @@ def _snap_auto_pick(partido_id, pick_data, state="pre", force=False):
     force=False: no sobreescribe partidos ya terminados (comportamiento por defecto)."""
     if not partido_id or not pick_data: return
     snap = _load_picks_snap()
-    # Sin force: no sobreescribir jamás un pick ya guardado (pre-partido congelado)
+    # Proteger picks ya congelados (partido en juego o terminado) — excepto force
     if not force and partido_id in snap:
         existing = snap[partido_id]
-        # Si el pick fue guardado pre-partido (frozen) o el partido ya empezó → proteger
+        # Solo proteger si el partido ya empezó o está congelado explícitamente
         if existing.get("frozen") or state in ("in", "post"):
+            return
+    # Con force=True Y state=="pre": siempre actualizar (pick más reciente de cartelera)
+    # Con force=True Y state=="in/post": solo si no hay pick pre-partido guardado ya
+    if force and state in ("in","post") and partido_id in snap:
+        existing = snap[partido_id]
+        if existing.get("pick") and not existing.get("frozen"):
+            # Ya hay pick pre-partido — congelarlo y no sobreescribir
+            snap[partido_id]["frozen"] = True
+            _save_picks_snap(snap)
             return
     snap[partido_id] = {
         "pick":       pick_data.get("pick",""),
@@ -6421,6 +6439,12 @@ def render_resultados_tab():
     _dep_counts = {}
     for _p in partidos: _dep_counts[_p.get("deporte","?")] = _dep_counts.get(_p.get("deporte","?"),0)+1
     st.caption(f"🗄️ DB total: {len(partidos)} partidos — {_dep_counts}")
+    # Debug snap: contar picks guardados pre-partido
+    _snap_debug = _load_picks_snap()
+    _snap_pre   = sum(1 for v in _snap_debug.values() if not v.get("frozen"))
+    _snap_frz   = sum(1 for v in _snap_debug.values() if v.get("frozen"))
+    _snap_ss    = len(st.session_state.get("_picks_snap_mem", {}))
+    st.caption(f"📸 Picks snap: {len(_snap_debug)} total · {_snap_pre} pre-partido · {_snap_frz} congelados · {_snap_ss} en memoria")
 
     # ── Pre-calcular contadores — cacheado en session_state ──
     # Cache key incluye número de partidos post para invalidar si llegan nuevos
@@ -13570,8 +13594,9 @@ def _sort_cartelera(matches, hoy_str, hora_now):
 @st.cache_data(ttl=120, show_spinner=False)
 def get_nba_cartelera():
     now = datetime.now(CDMX)
-    dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(0,3)]
+    dates = [(now+timedelta(days=i)).strftime("%Y%m%d") for i in range(-1,3)]  # incluir ayer (partidos tardíos)
     hoy = now.strftime("%Y-%m-%d")
+    ayer = (now-timedelta(days=1)).strftime("%Y-%m-%d")
     games, seen = [], set()
     for ds in dates:
         data = eg(f"{NBA_ESPN}/scoreboard", {"dates": ds, "limit": 50})
@@ -13588,7 +13613,20 @@ def get_nba_cartelera():
                 hora  = utc.astimezone(CDMX).strftime("%H:%M")
                 fecha = utc.astimezone(CDMX).strftime("%Y-%m-%d")
                 state = ev["status"]["type"]["state"]
-                if fecha < hoy: continue
+                # Corregir state: ESPN a veces deja partidos terminados como "in"
+                _st_detail = ev.get("status",{}).get("type",{}).get("detail","")
+                _st_desc   = ev.get("status",{}).get("type",{}).get("description","").lower()
+                if state == "in" and ("final" in _st_desc or "final" in _st_detail.lower()):
+                    state = "post"
+                # También: si "period" es Q4 u OT y el reloj es 0:00 → post
+                if state == "in":
+                    _clock = ev.get("status",{}).get("displayClock","")
+                    _per   = ev.get("status",{}).get("period", 0)
+                    if _per >= 4 and _clock in ("0:00","00:00","0.0"):
+                        state = "post"
+                # Permitir ayer solo si el partido ya terminó (state=post) — para NBA tardío
+                if fecha < ayer: continue
+                if fecha == ayer and state != "post": continue
                 if fecha > (now+timedelta(days=2)).strftime("%Y-%m-%d"): continue
                 ou_line = 0.0
                 try:
@@ -21053,35 +21091,47 @@ if st.session_state["view"] == "cartelera":
                                                     "pick2": _nba_ou_lbl, "pick2_prob": _nba_ou_p, "pick2_mkt": "O/U"
                                                 }, state="pre")
                                             except: pass
-                                # En vivo: recalcular con ritmo real del partido
+                                # En vivo: recalcular O/U con ritmo real — NO sobreescribir el ML
+                                _live_ou_pl = ""; _live_ou_pp = 0.0
                                 if live:
                                     try:
-                                        import math as _nm
-                                        _sc_h_nba = int(g.get("score_h",0) or 0)
-                                        _sc_a_nba = int(g.get("score_a",0) or 0)
-                                        _qtr_nba  = int(g.get("quarter", g.get("period",2)) or 2)
+                                        _sc_h_nba  = int(g.get("score_h",0) or 0)
+                                        _sc_a_nba  = int(g.get("score_a",0) or 0)
+                                        _qtr_nba   = int(g.get("quarter", g.get("period",2)) or 2)
                                         _total_nba = _sc_h_nba + _sc_a_nba
-                                        _ou_line   = g.get("ou_line", 220)
-                                        # Cuartos restantes: 4 - quarter (aprox)
-                                        _qtrs_rem  = max(0.5, 4 - _qtr_nba + 0.5)
-                                        # Ritmo: total anotado por tiempo jugado → proyectar al final
-                                        _pace      = _total_nba / max(1, 4 - _qtrs_rem)
-                                        _proj_fin  = _total_nba + _pace * _qtrs_rem
-                                        _diff_proj = _proj_fin - _ou_line
-                                        if _diff_proj > 8:
-                                            _nba_pl = f"🔴 Over {_ou_line} ({_proj_fin:.0f} proy)"
-                                            _nba_pp = min(0.92, 0.60 + _diff_proj * 0.012)
-                                        elif _diff_proj < -8:
-                                            _nba_pl = f"🔴 Under {_ou_line} ({_proj_fin:.0f} proy)"
-                                            _nba_pp = min(0.92, 0.60 + abs(_diff_proj) * 0.012)
-                                        else:
-                                            _nba_pl = ""; _nba_pp = 0
+                                        _ou_line   = float(g.get("ou_line") or 0)
+                                        # Si no hay línea válida, no calcular O/U en vivo
+                                        if _ou_line > 50:
+                                            _qtrs_rem  = max(0.5, 4 - _qtr_nba + 0.5)
+                                            _pace      = _total_nba / max(1, 4 - _qtrs_rem)
+                                            _proj_fin  = _total_nba + _pace * _qtrs_rem
+                                            _diff_proj = _proj_fin - _ou_line
+                                            if _diff_proj > 8:
+                                                _live_ou_pl = f"🔴 Over {_ou_line:.0f} ({_proj_fin:.0f} proy)"
+                                                _live_ou_pp = min(0.92, 0.60 + _diff_proj * 0.012)
+                                            elif _diff_proj < -8:
+                                                _live_ou_pl = f"🔴 Under {_ou_line:.0f} ({_proj_fin:.0f} proy)"
+                                                _live_ou_pp = min(0.92, 0.60 + abs(_diff_proj) * 0.012)
+                                        # ML en vivo: actualizar prob con ventaja actual
+                                        if _nba_pp > 0 and _sc_h_nba != _sc_a_nba:
+                                            _lead = _sc_h_nba - _sc_a_nba
+                                            _qtrs_done = min(4, _qtr_nba)
+                                            _pct_done  = _qtrs_done / 4.0
+                                            # Ajustar prob del ML con la ventaja actual
+                                            _lead_adj = _lead * _pct_done * 0.008
+                                            if ("home" in (_nba_pl or "").lower() or g["home"] in (_nba_pl or "")):
+                                                _nba_pp = min(0.94, max(0.30, _nba_pp + _lead_adj))
+                                            else:
+                                                _nba_pp = min(0.94, max(0.30, _nba_pp - _lead_adj))
                                     except: pass
                                 # ── NBA Card: matchup + 2 pick rows (ML + O/U) ──
                                 _nba_pick_row = ""
-                                # pick2 puede venir del snap (bridge) o de lo calculado arriba
-                                _nba_pl2 = locals().get("_nba_pl2") or (_nba_br.get("pick2","") if _nba_br else "")
-                                _nba_pp2 = locals().get("_nba_pp2") or (_nba_br.get("pick2_prob",0) if _nba_br else 0)
+                                # Pick2: en vivo usar el O/U calculado; pre-partido usar el del modelo
+                                _p2_lbl_show  = _live_ou_pl if live else (_nba_pl2 or "")
+                                _p2_prob_show = _live_ou_pp if live else (_nba_pp2 or 0)
+                                if not _p2_lbl_show:
+                                    _p2_lbl_show  = _nba_pl2 or ""
+                                    _p2_prob_show = _nba_pp2 or 0
                                 if _nba_pl and _nba_pp >= 0.46:
                                     if _nba_pp >= 0.68:    _npe,_npc,_npt = "💎","#00ccff","DIAMANTE"
                                     elif _nba_pp >= 0.60:  _npe,_npc,_npt = "🔥","#ff6600","FUEGO"
@@ -21102,19 +21152,20 @@ if st.session_state["view"] == "cartelera":
                                         f"<span style='font-size:1.05rem;font-weight:900;color:{_npc}'>{_nba_pp*100:.0f}%</span>"
                                         f"</div>"
                                     )
-                                    # Pick 2: O/U siempre
-                                    if _nba_pl2 and not live:
-                                        _ou_c = "#ff6600" if "Over" in _nba_pl2 else "#00ccff"
+                                    # Pick 2: O/U — usar _p2_lbl_show (en vivo o pre-partido)
+                                    if _p2_lbl_show and _p2_prob_show >= 0.46:
+                                        _ou_c = "#ff6600" if "Over" in _p2_lbl_show else "#00ccff"
+                                        _ou_pfx = "🔴 " if live and _live_ou_pl else ""
                                         _nba_pick_row += (
                                             f"<div style='border-top:1px solid #1a2535;margin-top:4px;"
                                             f"padding-top:4px;display:flex;align-items:center;gap:6px'>"
                                             f"<span style='font-size:0.9rem'>2️⃣</span>"
                                             f"<div style='flex:1;min-width:0'>"
-                                            f"<div style='font-size:0.58rem;color:{_ou_c};font-weight:900;letter-spacing:.1em'>O/U</div>"
+                                            f"<div style='font-size:0.58rem;color:{_ou_c};font-weight:900;letter-spacing:.1em'>{_ou_pfx}O/U</div>"
                                             f"<div style='font-size:0.85rem;font-weight:700;color:#fff;"
-                                            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_nba_pl2}</div>"
+                                            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{_p2_lbl_show}</div>"
                                             f"</div>"
-                                            f"<span style='font-size:0.95rem;font-weight:900;color:{_ou_c}'>{_nba_pp2*100:.0f}%</span>"
+                                            f"<span style='font-size:0.95rem;font-weight:900;color:{_ou_c}'>{_p2_prob_show*100:.0f}%</span>"
                                             f"</div>"
                                         )
                                 _nba_border = "#ff444466" if live else "#00ccff22"
@@ -22349,7 +22400,10 @@ if st.session_state["view"] == "cartelera":
                                                             except: pass
                                                     # ── Guardar en bridge/snap ──
                                                     _is_uefa_save = _m.get("slug","") in {"uefa.champions","uefa.europa","uefa.europa.conf"}
-                                                    if _pick_lbl and (_is_uefa_save or not (_br.get("pick","") if _br else "")):
+                                                    # Guardar siempre en snap pre-partido para Villar (todos los partidos, no solo UEFA)
+                                                    _m_state = _m.get("state","pre")
+                                                    _should_save = _pick_lbl and _m_state not in ("in","post")
+                                                    if _should_save or (_pick_lbl and _is_uefa_save):
                                                         try:
                                                             _bk = _m.get("id","") or f"{_m.get('home_id','')}_{_m.get('away_id','')}_{_m.get('fecha','')}"
                                                             if _bk:
@@ -22374,7 +22428,9 @@ if st.session_state["view"] == "cartelera":
                                                                     "is_uefa": _is_uefa_save,
                                                                 }
                                                                 st.session_state["_diamond_bridge"][_bk] = _snap_data
-                                                                _snap_auto_pick(_bk, _snap_data, state=_m.get("state","pre"), force=_is_uefa_save)
+                                                                # force=True si es pre-partido (siempre guardar pick original para Villar)
+                                                                _force_snap = _m_state == "pre" or _is_uefa_save
+                                                                _snap_auto_pick(_bk, _snap_data, state=_m_state, force=_force_snap)
                                                         except: pass
                                                     # ── Render card ──
                                                     _card_border = "#ff444466" if _live else ("#c9a84c55" if _pick_prob >= 0.68 else "#c9a84c1a")
