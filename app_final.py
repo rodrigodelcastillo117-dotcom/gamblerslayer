@@ -1,6 +1,7 @@
 """
-ESPN+ Pick Analyzer — Monte Carlo con Mercados Extendidos
-BTTS · O/U 1.5/2.5/3.5 · Doble Oportunidad · Parlays Automáticos
+THE GAMBLERS DEN
+Monte Carlo Sports Betting Analyzer
+BTTS · O/U · Parlays · Doble Oportunidad
 """
 
 import streamlit as st
@@ -10,49 +11,471 @@ import math
 import time
 from datetime import datetime, timezone
 
-st.set_page_config(page_title="ESPN+ Pick Analyzer", page_icon="🎯", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="The Gamblers Den",
+    page_icon="🎰",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;600;700&display=swap');
-.main,.stApp{background-color:#0A0A0A;color:#E8E8E8;}
-h1,h2,h3{font-family:'Bebas Neue',sans-serif!important;letter-spacing:2px;}
-.hero-title{font-family:'Bebas Neue',sans-serif;font-size:3.2rem;color:#D00000;letter-spacing:4px;margin-bottom:0;text-shadow:0 0 30px rgba(208,0,0,0.4);}
-.hero-sub{font-size:0.85rem;color:#888;letter-spacing:3px;text-transform:uppercase;}
-.game-card{background:linear-gradient(135deg,#111128,#1A1A2E);border:1px solid #2A2A4A;border-left:4px solid #D00000;border-radius:8px;padding:14px;margin:6px 0;}
-.sim-card{background:linear-gradient(135deg,#0A1A0A,#0D2010);border:1px solid #1a4a1a;border-left:4px solid #4ade80;border-radius:8px;padding:14px;margin:6px 0;}
-.sim-card-gold{background:linear-gradient(135deg,#1A1400,#2D2000);border:2px solid #FFD700;border-radius:12px;padding:20px;margin:10px 0;box-shadow:0 0 30px rgba(255,215,0,0.15);}
-.sim-card-red{background:linear-gradient(135deg,#1A0500,#2D0A00);border:1px solid #ef4444;border-left:4px solid #ef4444;border-radius:8px;padding:14px;margin:6px 0;}
-.sim-card-mid{background:linear-gradient(135deg,#1A1200,#2D2000);border:1px solid #fbbf24;border-left:4px solid #fbbf24;border-radius:8px;padding:14px;margin:6px 0;}
-.sim-card-purple{background:linear-gradient(135deg,#12001A,#200D2D);border:1px solid #a78bfa;border-left:4px solid #a78bfa;border-radius:8px;padding:14px;margin:6px 0;}
-.parlay-card{background:linear-gradient(135deg,#001A1A,#002D2D);border:2px solid #22d3ee;border-radius:12px;padding:18px;margin:8px 0;box-shadow:0 0 20px rgba(34,211,238,0.1);}
-.report-box{background:#111128;border:1px solid #2A2A4A;border-radius:12px;padding:24px;margin:8px 0;line-height:1.8;}
-.section-title{font-family:'Bebas Neue',sans-serif;font-size:1.2rem;color:#D00000;letter-spacing:2px;border-bottom:1px solid #2A2A4A;padding-bottom:4px;margin:16px 0 8px 0;}
-.market-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.72rem;font-weight:700;margin:2px;}
-.tag-ml{background:#1a2a4a;color:#60a5fa;}
-.tag-btts{background:#1a3a1a;color:#4ade80;}
-.tag-ou{background:#3a2a00;color:#fbbf24;}
-.tag-dc{background:#2a1a3a;color:#a78bfa;}
-.tag-parlay{background:#001a1a;color:#22d3ee;}
-.metric-box{background:#1A1A2E;border:1px solid #2A2A4A;border-radius:8px;padding:14px;text-align:center;}
-.metric-num{font-family:'Bebas Neue',sans-serif;font-size:2rem;color:#D00000;}
-.metric-label{font-size:0.7rem;color:#888;text-transform:uppercase;letter-spacing:2px;}
-.prob-bar-bg{background:#1A1A2E;border-radius:4px;height:9px;margin:4px 0;}
-.prob-bar-fill{height:9px;border-radius:4px;}
-.ev-pos{color:#4ade80;font-weight:700;}
-.ev-neg{color:#ef4444;font-weight:700;}
-.badge-green{background:#1a4a1a;color:#4ade80;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:700;}
-.badge-yellow{background:#3a3000;color:#fbbf24;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:700;}
-.badge-red{background:#3a0a0a;color:#ef4444;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:700;}
-.demo-banner{background:#1a1a00;border:1px solid #444400;border-radius:8px;padding:10px 16px;margin:8px 0;color:#fbbf24;font-size:0.85rem;}
-.status-live{color:#4ade80;font-weight:700;}
-.status-pre{color:#60a5fa;}
-.stButton>button{background:linear-gradient(135deg,#D00000,#8B0000)!important;color:white!important;font-family:'Bebas Neue',sans-serif!important;font-size:1.05rem!important;letter-spacing:2px!important;border:none!important;padding:12px 32px!important;border-radius:6px!important;width:100%!important;}
-hr{border-color:#2A2A4A;}
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --gold:    #C9A84C;
+  --gold2:   #F0D080;
+  --felt:    #0D2818;
+  --felt2:   #0A1F12;
+  --felt3:   #071610;
+  --dark:    #060C08;
+  --card:    #0F1F14;
+  --card2:   #122318;
+  --border:  #1E3825;
+  --red:     #C0392B;
+  --green:   #27AE60;
+  --cyan:    #1ABC9C;
+  --text:    #D4C5A0;
+  --muted:   #6B7E6E;
+  --white:   #F5EDD8;
+}
+
+* { box-sizing: border-box; }
+
+.main, .stApp, .stMainBlockContainer {
+  background-color: var(--dark) !important;
+  color: var(--text) !important;
+}
+
+/* Hide streamlit chrome */
+#MainMenu, footer, header { visibility: hidden; }
+.stDeployButton { display: none; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--dark); }
+::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 3px; }
+
+/* ── HEADER ── */
+.den-header {
+  text-align: center;
+  padding: 2rem 0 1rem 0;
+  position: relative;
+}
+.den-logo {
+  font-family: 'Cinzel', serif;
+  font-size: 3.8rem;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 8px;
+  text-transform: uppercase;
+  text-shadow: 0 0 40px rgba(201,168,76,0.5), 0 0 80px rgba(201,168,76,0.2);
+  line-height: 1;
+  margin: 0;
+}
+.den-subtitle {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  color: var(--muted);
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+.den-divider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  margin: 1rem 0;
+  opacity: 0.5;
+}
+.den-corner {
+  display: inline-block;
+  color: var(--gold);
+  opacity: 0.4;
+  font-size: 1.2rem;
+  margin: 0 12px;
+}
+
+/* ── METRIC TILES ── */
+.stat-grid { display: flex; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+.stat-tile {
+  flex: 1; min-width: 100px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--gold);
+  border-radius: 4px;
+  padding: 14px 10px;
+  text-align: center;
+}
+.stat-num {
+  font-family: 'Cinzel', serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--gold);
+  line-height: 1;
+}
+.stat-label {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.62rem;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+/* ── PICK CARD (THE MAIN ATTRACTION) ── */
+.pick-card {
+  background: linear-gradient(145deg, #0A1E0F 0%, #071610 50%, #0D2010 100%);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 0;
+  margin: 12px 0;
+  overflow: hidden;
+  box-shadow: 0 0 60px rgba(201,168,76,0.08), inset 0 1px 0 rgba(201,168,76,0.15);
+  position: relative;
+}
+.pick-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), var(--gold2), var(--gold), transparent);
+}
+.pick-header {
+  padding: 16px 20px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pick-matchup {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--white);
+}
+.pick-league-badge {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.68rem;
+  color: var(--gold);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  background: rgba(201,168,76,0.1);
+  border: 1px solid rgba(201,168,76,0.3);
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.pick-body { padding: 16px 20px; }
+
+.pick-action {
+  font-family: 'Cinzel', serif;
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: var(--gold2);
+  text-shadow: 0 0 20px rgba(240,208,128,0.4);
+  letter-spacing: 2px;
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pick-action-arrow {
+  color: var(--gold);
+  font-size: 1.8rem;
+}
+
+.market-chip {
+  display: inline-block;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 3px;
+  margin-right: 4px;
+}
+.chip-ml     { background: rgba(26,96,196,0.25); color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+.chip-btts   { background: rgba(39,174,96,0.2);  color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+.chip-ou     { background: rgba(201,168,76,0.15); color: var(--gold2); border: 1px solid rgba(201,168,76,0.3); }
+.chip-dc     { background: rgba(167,139,250,0.2); color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
+.chip-parlay { background: rgba(26,188,156,0.2);  color: #1ABC9C; border: 1px solid rgba(26,188,156,0.3); }
+.chip-warn   { background: rgba(192,57,43,0.2);   color: #e74c3c; border: 1px solid rgba(231,76,60,0.3); }
+
+.stats-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.stat-item { text-align: center; min-width: 70px; }
+.stat-item-val {
+  font-family: 'Cinzel', serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.stat-item-lbl {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.6rem;
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+.val-gold   { color: var(--gold2); }
+.val-green  { color: #4ade80; }
+.val-cyan   { color: #1ABC9C; }
+.val-blue   { color: #60a5fa; }
+.val-purple { color: #a78bfa; }
+.val-red    { color: #ef4444; }
+.val-muted  { color: var(--muted); }
+
+/* confidence badge */
+.conf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+.conf-high   { background: rgba(39,174,96,0.15);  color: #4ade80; border: 1px solid rgba(74,222,128,0.4); }
+.conf-medium { background: rgba(201,168,76,0.15); color: var(--gold2); border: 1px solid rgba(201,168,76,0.4); }
+.conf-low    { background: rgba(192,57,43,0.15);  color: #ef4444; border: 1px solid rgba(231,76,60,0.4); }
+
+/* pick rationale */
+.pick-rationale {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-top: 10px;
+}
+.pick-rationale b { color: var(--text); }
+
+/* ── PARLAY CARD ── */
+.parlay-card {
+  background: linear-gradient(145deg, #071510 0%, #0A1E18 100%);
+  border: 1px solid rgba(26,188,156,0.5);
+  border-radius: 8px;
+  padding: 0;
+  margin: 10px 0;
+  overflow: hidden;
+  box-shadow: 0 0 30px rgba(26,188,156,0.06);
+}
+.parlay-header {
+  background: rgba(26,188,156,0.08);
+  border-bottom: 1px solid rgba(26,188,156,0.2);
+  padding: 10px 16px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+  color: #1ABC9C;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.parlay-body { padding: 14px 16px; }
+.parlay-leg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(26,188,156,0.1);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.parlay-leg:last-child { border-bottom: none; }
+.parlay-connector {
+  text-align: center;
+  color: var(--gold);
+  font-size: 0.7rem;
+  letter-spacing: 3px;
+  padding: 2px 0;
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* ── GAME LIST CARD ── */
+.game-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin: 6px 0;
+  transition: border-color 0.2s;
+}
+.game-row:hover { border-left-color: var(--gold2); }
+.game-row-ev {
+  border-left-color: #4ade80;
+}
+.game-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--white);
+}
+.game-meta {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── PROB BARS ── */
+.bar-wrap { margin: 4px 0; }
+.bar-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+.bar-team { font-family: 'DM Sans',sans-serif; font-size:0.72rem; color:var(--muted); }
+.bar-pct  { font-family: 'Cinzel',sans-serif; font-size:0.72rem; font-weight:700; }
+.bar-bg   { background: rgba(255,255,255,0.05); border-radius:3px; height:6px; }
+.bar-fill { height:6px; border-radius:3px; }
+
+/* ── SECTION HEADING ── */
+.section-heading {
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin: 20px 0 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-heading::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+/* ── WARNING BANNER ── */
+.warn-banner {
+  background: rgba(201,168,76,0.06);
+  border: 1px solid rgba(201,168,76,0.25);
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.78rem;
+  color: #C9A84C;
+  margin: 8px 0;
+}
+.demo-banner {
+  background: rgba(192,57,43,0.08);
+  border: 1px solid rgba(192,57,43,0.3);
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.78rem;
+  color: #e74c3c;
+  margin: 8px 0;
+}
+
+/* ── SIDEBAR ── */
+[data-testid="stSidebar"] {
+  background: var(--felt3) !important;
+  border-right: 1px solid var(--border) !important;
+}
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stSelectSlider span {
+  font-family: 'DM Sans', sans-serif !important;
+  color: var(--text) !important;
+}
+.sidebar-logo {
+  font-family: 'Cinzel', serif;
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 4px;
+  text-align: center;
+  padding: 12px 0 4px;
+  text-shadow: 0 0 20px rgba(201,168,76,0.4);
+}
+.sidebar-sub {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.6rem;
+  color: var(--muted);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+/* ── TABS ── */
+.stTabs [data-baseweb="tab-list"] {
+  background: var(--felt3) !important;
+  border-bottom: 1px solid var(--border) !important;
+  gap: 0 !important;
+}
+.stTabs [data-baseweb="tab"] {
+  font-family: 'Cinzel', serif !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 2px !important;
+  color: var(--muted) !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 10px 20px !important;
+}
+.stTabs [aria-selected="true"] {
+  color: var(--gold) !important;
+  border-bottom: 2px solid var(--gold) !important;
+}
+.stTabs [data-baseweb="tab-panel"] {
+  background: var(--dark) !important;
+  padding-top: 16px !important;
+}
+
+/* ── BUTTON ── */
+.stButton > button {
+  background: linear-gradient(135deg, #8B6914 0%, var(--gold) 50%, #8B6914 100%) !important;
+  color: var(--dark) !important;
+  font-family: 'Cinzel', serif !important;
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 3px !important;
+  text-transform: uppercase !important;
+  border: none !important;
+  padding: 14px 32px !important;
+  border-radius: 3px !important;
+  width: 100% !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  box-shadow: 0 4px 20px rgba(201,168,76,0.3) !important;
+}
+.stButton > button:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 8px 30px rgba(201,168,76,0.5) !important;
+}
+
+/* ── NO RESULTS ── */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--muted);
+  font-family: 'DM Sans', sans-serif;
+}
+.empty-icon { font-size: 3rem; margin-bottom: 12px; }
+.empty-title { font-family: 'Cinzel', serif; font-size: 1rem; color: var(--gold); letter-spacing: 2px; margin-bottom: 8px; }
+
+hr { border-color: var(--border) !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Leagues ───────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATA
+# ═══════════════════════════════════════════════════════════════════════════════
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
     "WNBA":             {"sport":"basketball","league":"wnba",                   "group":"Basketball"},
@@ -82,30 +505,26 @@ HOME_BOOST = {
     "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,
     "Liga de Expansión":0.05,"ATP":0.01,"WTA":0.01,
 }
-# Goles/puntos promedio esperados por liga (para Poisson)
 LEAGUE_AVG_GOALS = {
-    "NBA":114.0,"WNBA":83.0,"NCAAB":72.0,
-    "MLB":4.5,"NCAA Baseball":5.5,
-    "NFL":23.0,"NCAAF":28.0,
-    "NHL":3.1,
+    "NBA":114.0,"WNBA":83.0,"NCAAB":72.0,"MLB":4.5,"NCAA Baseball":5.5,
+    "NFL":23.0,"NCAAF":28.0,"NHL":3.1,
     "MLS":2.8,"Liga MX":2.6,"Premier League":2.7,"La Liga":2.6,
     "Bundesliga":3.1,"Serie A":2.6,"Ligue 1":2.7,
     "Champions League":2.9,"Europa League":2.7,"Liga de Expansión":2.5,
-    "ATP":None,"WTA":None,  # No aplica goles
+    "ATP":None,"WTA":None,
 }
 ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
 
-# ── Demo data ────────────────────────────────────────────────────────────────
 def get_demo_games():
     return [
-        {"id":"d1","league":"Premier League","home_team":"Arsenal","away_team":"Chelsea",
-         "home_score":"","away_score":"","home_record":"20-6-5","away_record":"17-8-6",
-         "state":"pre","status_detail":"Dom 12:30 PM","date":"","venue":"Emirates Stadium",
-         "odds":{"spread":"","over_under":"2.5","home_ml":"-145","away_ml":"+380","home_wp":"52","away_wp":"23"}},
-        {"id":"d2","league":"Champions League","home_team":"Real Madrid","away_team":"Bayern Munich",
+        {"id":"d1","league":"Champions League","home_team":"Real Madrid","away_team":"Bayern Munich",
          "home_score":"","away_score":"","home_record":"24-5-2","away_record":"22-6-3",
          "state":"pre","status_detail":"Mar 3:00 PM","date":"","venue":"Santiago Bernabéu",
          "odds":{"spread":"","over_under":"3.0","home_ml":"-118","away_ml":"+290","home_wp":"47","away_wp":"28"}},
+        {"id":"d2","league":"Premier League","home_team":"Arsenal","away_team":"Chelsea",
+         "home_score":"","away_score":"","home_record":"20-6-5","away_record":"17-8-6",
+         "state":"pre","status_detail":"Dom 12:30 PM","date":"","venue":"Emirates Stadium",
+         "odds":{"spread":"","over_under":"2.5","home_ml":"-145","away_ml":"+380","home_wp":"52","away_wp":"23"}},
         {"id":"d3","league":"NBA","home_team":"Boston Celtics","away_team":"Miami Heat",
          "home_score":"","away_score":"","home_record":"47-13","away_record":"28-32",
          "state":"pre","status_detail":"8:00 PM ET","date":"","venue":"TD Garden",
@@ -122,17 +541,16 @@ def get_demo_games():
          "home_score":"","away_score":"","home_record":"18-12","away_record":"15-15",
          "state":"pre","status_detail":"7:05 PM ET","date":"","venue":"Yankee Stadium",
          "odds":{"spread":"","over_under":"8.5","home_ml":"-145","away_ml":"+122","home_wp":"59","away_wp":"41"}},
-        {"id":"d7","league":"NHL","home_team":"Florida Panthers","away_team":"Tampa Bay Lightning",
-         "home_score":"","away_score":"","home_record":"41-18-6","away_record":"38-22-5",
-         "state":"pre","status_detail":"7:00 PM ET","date":"","venue":"Amerant Bank Arena",
-         "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
-        {"id":"d8","league":"Bundesliga","home_team":"Bayern Munich","away_team":"Borussia Dortmund",
+        {"id":"d7","league":"Bundesliga","home_team":"Bayern Munich","away_team":"Borussia Dortmund",
          "home_score":"","away_score":"","home_record":"20-4-4","away_record":"16-6-6",
          "state":"pre","status_detail":"Sáb 9:30 AM","date":"","venue":"Allianz Arena",
          "odds":{"spread":"","over_under":"3.5","home_ml":"-155","away_ml":"+400","home_wp":"58","away_wp":"18"}},
+        {"id":"d8","league":"NHL","home_team":"Florida Panthers","away_team":"Tampa Bay Lightning",
+         "home_score":"","away_score":"","home_record":"41-18-6","away_record":"38-22-5",
+         "state":"pre","status_detail":"7:00 PM ET","date":"","venue":"Amerant Bank Arena",
+         "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
     ]
 
-# ── ESPN Fetch ────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def fetch_scoreboard(sport, league):
     try:
@@ -185,7 +603,9 @@ def get_all_games(leagues):
         except Exception as e: errors.append(f"{name}: {e}")
     return result, errors
 
-# ── Math helpers ──────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# MATH ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
 def ml_to_prob(ml):
     try:
         ml=float(str(ml).replace("+",""))
@@ -214,12 +634,10 @@ def quarter_kelly(prob, ml):
     except: return None
 
 def poisson_sample(lam, rng):
-    """Fast Poisson sampler via Knuth algorithm."""
-    if lam <= 0: return 0
-    L = math.exp(-lam); k = 0; p = 1.0
-    while p > L:
-        k += 1; p *= rng.random()
-    return k - 1
+    if lam<=0: return 0
+    L=math.exp(-min(lam,30)); k=0; p=1.0
+    while p>L: k+=1; p*=rng.random()
+    return k-1
 
 def compute_base_prob(game):
     signals,weights=[],[]
@@ -250,49 +668,29 @@ def compute_base_prob(game):
     return {"home_prob":home_p,"away_prob":1-home_p,"draw_prob":0.0,"dq":dq,"is_soccer":False}
 
 def get_lambda(game):
-    """Estimate expected goals/points per team using O/U line."""
-    league=game["league"]
-    avg=LEAGUE_AVG_GOALS.get(league)
-    if avg is None: return None, None
+    league=game["league"]; avg=LEAGUE_AVG_GOALS.get(league)
+    if avg is None: return None,None
     ou=game["odds"].get("over_under","")
     try: total=float(str(ou))
     except: total=avg*2
-    base=compute_base_prob(game)
-    hp=base["home_prob"]; ap=base["away_prob"]
-    # Distribute total proportionally to win probability, with small home boost
-    home_share = (hp + 0.52) / (hp + ap + 1.04)
-    lam_home = total * home_share
-    lam_away = total * (1 - home_share)
-    return lam_home, lam_away
+    base=compute_base_prob(game); hp=base["home_prob"]; ap=base["away_prob"]
+    home_share=(hp+0.52)/(hp+ap+1.04)
+    return total*home_share, total*(1-home_share)
 
-# ── Monte Carlo with Extended Markets ─────────────────────────────────────────
 def run_monte_carlo(game, n=10_000):
     base=compute_base_prob(game)
     hp,dp,dq=base["home_prob"],base["draw_prob"],base["dq"]
-    is_soccer=base["is_soccer"]
-    sigma=(1-dq)*0.15
-    lam_h, lam_a = get_lambda(game)
-    use_goals = lam_h is not None
-
-    # Result counters
-    hw=aw=d=0
-    # Goals markets
-    btts=0; o15=0; o25=0; o35=0; u15=0; u25=0; u35=0
-    # Double chance
-    dc_1x=0; dc_x2=0; dc_12=0
-
+    is_soccer=base["is_soccer"]; sigma=(1-dq)*0.15
+    lam_h,lam_a=get_lambda(game); use_goals=lam_h is not None
+    hw=aw=d=btts=o15=o25=o35=dc_1x=dc_x2=dc_12=0
     rng=random.Random()
 
     for _ in range(n):
         ph=max(0.01,min(0.99,hp+rng.gauss(0,sigma)))
-
         if use_goals:
-            # Simulate actual score via Poisson
-            lh=max(0.1, lam_h*(1+rng.gauss(0,0.15*(1-dq))))
-            la=max(0.1, lam_a*(1+rng.gauss(0,0.15*(1-dq))))
-            gh=poisson_sample(lh,rng); ga=poisson_sample(la,rng)
-            total_g=gh+ga
-
+            lh=max(0.1,lam_h*(1+rng.gauss(0,0.15*(1-dq))))
+            la=max(0.1,lam_a*(1+rng.gauss(0,0.15*(1-dq))))
+            gh=poisson_sample(lh,rng); ga=poisson_sample(la,rng); tg=gh+ga
             if is_soccer:
                 if gh>ga: hw+=1; dc_1x+=1; dc_12+=1
                 elif gh==ga: d+=1; dc_1x+=1; dc_x2+=1
@@ -300,21 +698,15 @@ def run_monte_carlo(game, n=10_000):
             else:
                 if gh>ga: hw+=1; dc_1x+=1; dc_12+=1
                 else: aw+=1; dc_x2+=1; dc_12+=1
-
             if gh>0 and ga>0: btts+=1
-            if total_g>1.5: o15+=1
-            else: u15+=1
-            if total_g>2.5: o25+=1
-            else: u25+=1
-            if total_g>3.5: o35+=1
-            else: u35+=1
+            if tg>1.5: o15+=1
+            if tg>2.5: o25+=1
+            if tg>3.5: o35+=1
         else:
-            # No score simulation (tennis/etc) — use probability only
             if is_soccer:
                 pd=max(0.01,min(0.50,dp+rng.gauss(0,sigma*0.5)))
                 phn=ph*(1-pd); pan=(1-ph)*(1-pd); t=phn+pan+pd
-                phn/=t; pan/=t; pd/=t
-                r=rng.random()
+                phn/=t; pan/=t; pd/=t; r=rng.random()
                 if r<phn: hw+=1; dc_1x+=1; dc_12+=1
                 elif r<phn+pd: d+=1; dc_1x+=1; dc_x2+=1
                 else: aw+=1; dc_x2+=1; dc_12+=1
@@ -322,7 +714,6 @@ def run_monte_carlo(game, n=10_000):
                 if rng.random()<ph: hw+=1; dc_1x+=1; dc_12+=1
                 else: aw+=1; dc_x2+=1; dc_12+=1
 
-    # ── Probabilities ──────────────────────────────────────────────────────
     sh=hw/n; sa=aw/n; sd=d/n
     p_btts=btts/n if use_goals else None
     p_o15=o15/n if use_goals else None
@@ -331,7 +722,6 @@ def run_monte_carlo(game, n=10_000):
     p_u25=(n-o25)/n if use_goals else None
     p_dc_1x=dc_1x/n; p_dc_x2=dc_x2/n; p_dc_12=dc_12/n
 
-    # ── Moneyline EV ──────────────────────────────────────────────────────
     hml=game["odds"].get("home_ml",""); aml=game["odds"].get("away_ml","")
     ou=game["odds"].get("over_under","")
     home_ev=calc_ev(sh,hml) if hml else None
@@ -339,70 +729,54 @@ def run_monte_carlo(game, n=10_000):
     hk=quarter_kelly(sh,hml) if hml else None
     ak=quarter_kelly(sa,aml) if aml else None
 
-    # ── Goals markets EV (assume standard juice -110 unless line known) ───
-    BTTS_ML = -115   # typical BTTS yes price
-    NO_BTTS_ML = -105
-    OU_ML = -110
+    BTTS_ML=-115; OU_ML=-110; DC_ML=-200
+    btts_ev=calc_ev(p_btts,BTTS_ML) if p_btts is not None else None
+    no_btts_ev=calc_ev(1-p_btts,BTTS_ML) if p_btts is not None else None
+    o15_ev=calc_ev(p_o15,OU_ML) if p_o15 is not None else None
+    o25_ev=calc_ev(p_o25,OU_ML) if p_o25 is not None else None
+    o35_ev=calc_ev(p_o35,OU_ML) if p_o35 is not None else None
+    u25_ev=calc_ev(p_u25,OU_ML) if p_u25 is not None else None
+    dc_1x_ev=calc_ev(p_dc_1x,DC_ML); dc_x2_ev=calc_ev(p_dc_x2,DC_ML); dc_12_ev=calc_ev(p_dc_12,DC_ML)
 
-    btts_ev   = calc_ev(p_btts, BTTS_ML) if p_btts is not None else None
-    no_btts_ev= calc_ev(1-p_btts, NO_BTTS_ML) if p_btts is not None else None
-    o15_ev    = calc_ev(p_o15, OU_ML) if p_o15 is not None else None
-    o25_ev    = calc_ev(p_o25, OU_ML) if p_o25 is not None else None
-    o35_ev    = calc_ev(p_o35, OU_ML) if p_o35 is not None else None
-    u25_ev    = calc_ev(p_u25, OU_ML) if p_u25 is not None else None
-
-    # Doble oportunidad (typical -200 for DC)
-    DC_ML = -200
-    dc_1x_ev = calc_ev(p_dc_1x, DC_ML)
-    dc_x2_ev = calc_ev(p_dc_x2, DC_ML)
-    dc_12_ev  = calc_ev(p_dc_12, DC_ML)
-
-    # ── Best single bet across ALL markets ───────────────────────────────
-    candidates = [
-        ("ML", game["home_team"]+" ML", sh, home_ev, hml, hk),
-        ("ML", game["away_team"]+" ML", sa, away_ev, aml, ak),
+    candidates=[
+        ("ML",game["home_team"]+" ML",sh,home_ev,hml,hk),
+        ("ML",game["away_team"]+" ML",sa,away_ev,aml,ak),
     ]
     if p_btts is not None:
-        candidates += [
-            ("BTTS", "Ambos Anotan SÍ", p_btts, btts_ev, str(BTTS_ML), quarter_kelly(p_btts,BTTS_ML)),
-            ("BTTS", "Ambos Anotan NO", 1-p_btts if p_btts else None, no_btts_ev, str(NO_BTTS_ML), quarter_kelly(1-p_btts,NO_BTTS_ML) if p_btts else None),
-            ("O/U",  f"Over 1.5", p_o15, o15_ev, str(OU_ML), quarter_kelly(p_o15,OU_ML)),
-            ("O/U",  f"Over 2.5", p_o25, o25_ev, str(OU_ML), quarter_kelly(p_o25,OU_ML)),
-            ("O/U",  f"Over 3.5", p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35,OU_ML)),
-            ("O/U",  f"Under 2.5", p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25,OU_ML)),
+        candidates+=[
+            ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
+            ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
+            ("O/U","Over 1.5",p_o15,o15_ev,str(OU_ML),quarter_kelly(p_o15,OU_ML)),
+            ("O/U","Over 2.5",p_o25,o25_ev,str(OU_ML),quarter_kelly(p_o25,OU_ML)),
+            ("O/U","Over 3.5",p_o35,o35_ev,str(OU_ML),quarter_kelly(p_o35,OU_ML)),
+            ("O/U","Under 2.5",p_u25,u25_ev,str(OU_ML),quarter_kelly(p_u25,OU_ML)),
         ]
-    candidates += [
-        ("DC", "Doble Oportunidad 1X", p_dc_1x, dc_1x_ev, str(DC_ML), quarter_kelly(p_dc_1x,DC_ML)),
-        ("DC", "Doble Oportunidad X2", p_dc_x2, dc_x2_ev, str(DC_ML), quarter_kelly(p_dc_x2,DC_ML)),
-        ("DC", "Doble Oportunidad 12", p_dc_12, dc_12_ev, str(DC_ML), quarter_kelly(p_dc_12,DC_ML)),
+    candidates+=[
+        ("DC","Doble Oportunidad 1X",p_dc_1x,dc_1x_ev,str(DC_ML),quarter_kelly(p_dc_1x,DC_ML)),
+        ("DC","Doble Oportunidad X2",p_dc_x2,dc_x2_ev,str(DC_ML),quarter_kelly(p_dc_x2,DC_ML)),
+        ("DC","Doble Oportunidad 12",p_dc_12,dc_12_ev,str(DC_ML),quarter_kelly(p_dc_12,DC_ML)),
     ]
 
-    best_single=None; best_ev_val=-999
-    for mtype, label, prob, ev, ml, kelly in candidates:
-        if prob is not None and ev is not None and ev > best_ev_val:
-            best_ev_val=ev
-            best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
+    best_single=None; best_ev_v=-999
+    for mtype,label,prob,ev,ml,kelly in candidates:
+        if prob is not None and ev is not None and ev>best_ev_v:
+            best_ev_v=ev; best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
 
-    # ── Best parlay: top 2 positive-EV legs from this game ────────────────
     pos_legs=[(mtype,label,prob,ev,ml) for mtype,label,prob,ev,ml,k in candidates
-              if prob is not None and ev is not None and ev>0 and mtype!="DC"]
-    pos_legs.sort(key=lambda x: x[3], reverse=True)
+              if prob is not None and ev is not None and ev>0 and mtype not in ("DC",)]
+    pos_legs.sort(key=lambda x:x[3],reverse=True)
     best_parlay=None
-    if len(pos_legs)>=2 and p_btts is not None:
+    if len(pos_legs)>=2:
         leg1,leg2=pos_legs[0],pos_legs[1]
-        # Combined probability (assume independence — conservative)
         parlay_prob=leg1[2]*leg2[2]
-        # Standard parlay payout: multiply decimal odds
-        def ml_to_decimal(ml):
+        def ml_dec(ml):
             try:
                 ml=float(str(ml).replace("+",""))
                 return (ml/100+1) if ml>0 else (100/abs(ml)+1)
             except: return 1.909
-        dec1=ml_to_decimal(leg1[4]); dec2=ml_to_decimal(leg2[4])
-        parlay_payout=(dec1*dec2-1)*100  # profit per $100
-        parlay_ev=round(parlay_prob*parlay_payout-(1-parlay_prob)*100,2)
-        best_parlay={"legs":[leg1,leg2],"prob":parlay_prob,
-                     "ev":parlay_ev,"payout":round(parlay_payout,1)}
+        payout=(ml_dec(leg1[4])*ml_dec(leg2[4])-1)*100
+        parlay_ev=round(parlay_prob*payout-(1-parlay_prob)*100,2)
+        best_parlay={"legs":[leg1,leg2],"prob":parlay_prob,"ev":parlay_ev,"payout":round(payout,1)}
 
     return {
         "home_pct":round(sh*100,1),"away_pct":round(sa*100,1),"draw_pct":round(sd*100,1),
@@ -410,202 +784,224 @@ def run_monte_carlo(game, n=10_000):
         "home_ev":home_ev,"away_ev":away_ev,
         "home_ml":hml,"away_ml":aml,"over_under":ou,
         "home_kelly":hk,"away_kelly":ak,
-        # Goals markets
         "p_btts":round(p_btts*100,1) if p_btts is not None else None,
         "btts_ev":btts_ev,"no_btts_ev":no_btts_ev,
         "p_o15":round(p_o15*100,1) if p_o15 is not None else None,"o15_ev":o15_ev,
         "p_o25":round(p_o25*100,1) if p_o25 is not None else None,"o25_ev":o25_ev,
         "p_o35":round(p_o35*100,1) if p_o35 is not None else None,"o35_ev":o35_ev,
         "p_u25":round(p_u25*100,1) if p_u25 is not None else None,"u25_ev":u25_ev,
-        # Double chance
         "p_dc_1x":round(p_dc_1x*100,1),"dc_1x_ev":dc_1x_ev,
         "p_dc_x2":round(p_dc_x2*100,1),"dc_x2_ev":dc_x2_ev,
         "p_dc_12":round(p_dc_12*100,1),"dc_12_ev":dc_12_ev,
-        # Best picks
         "best_single":best_single,"best_parlay":best_parlay,
-        "is_soccer":is_soccer,"n_simulations":n,
-        "use_goals":use_goals,
+        "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
     }
 
 def run_all_simulations(games, n=10_000):
     results=[]; pb=st.progress(0); st_txt=st.empty()
     for i,game in enumerate(games):
-        st_txt.markdown(f"**⚙️ [{i+1}/{len(games)}]** `{game['away_team']} @ {game['home_team']}` — {game['league']}")
+        st_txt.markdown(
+            f'<div style="font-family:\'DM Sans\',sans-serif;font-size:0.8rem;color:#6B7E6E;">'
+            f'⚙ Simulando [{i+1}/{len(games)}] — {game["away_team"]} @ {game["home_team"]}</div>',
+            unsafe_allow_html=True)
         results.append({**game,"sim":run_monte_carlo(game,n)})
         pb.progress((i+1)/len(games))
     pb.empty(); st_txt.empty()
     return results
 
-# ── Report ────────────────────────────────────────────────────────────────────
-def confidence_label(ev, dq):
-    if ev>=10 and dq>=60: return "ALTA","badge-green","🟢"
-    if ev>=5  and dq>=40: return "MEDIA","badge-yellow","🟡"
-    return "BAJA","badge-red","🔴"
+# ═══════════════════════════════════════════════════════════════════════════════
+# RENDER HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+def chip(market):
+    cls={"ML":"chip-ml","BTTS":"chip-btts","O/U":"chip-ou","DC":"chip-dc","PARLAY":"chip-parlay"}.get(market,"chip-ml")
+    return f'<span class="market-chip {cls}">{market}</span>'
 
-def edge_pct(prob_sim, ml):
+def conf_badge(ev, dq):
+    if ev>=10 and dq>=60: return '<span class="conf-badge conf-high">◆ ALTA</span>'
+    if ev>=5  and dq>=40: return '<span class="conf-badge conf-medium">◆ MEDIA</span>'
+    return '<span class="conf-badge conf-low">◆ BAJA</span>'
+
+def dq_warn(dq):
+    if dq==0: return '<span class="market-chip chip-warn">⚠ SIN CUOTAS</span>'
+    if dq<40: return '<span class="market-chip chip-warn">⚠ DATA BAJA</span>'
+    return ""
+
+def edge(prob_sim, ml):
     try: return round((prob_sim-ml_to_prob(float(str(ml).replace("+",""))))*100,1)
     except: return 0.0
 
-def market_tag(mtype):
-    tags={"ML":"tag-ml ML","BTTS":"tag-btts BTTS","O/U":"tag-ou O/U","DC":"tag-dc DC","PARLAY":"tag-parlay PARLAY"}
-    cls,lbl=tags.get(mtype,"tag-ml ML").split(" ",1)
-    return f'<span class="market-tag {cls}">{lbl}</span>'
+def bar(pct, color, label):
+    return f"""<div class="bar-wrap">
+      <div class="bar-row">
+        <span class="bar-team">{label}</span>
+        <span class="bar-pct" style="color:{color}">{pct:.1f}%</span>
+      </div>
+      <div class="bar-bg"><div class="bar-fill" style="width:{min(pct,100):.1f}%;background:{color}"></div></div>
+    </div>"""
 
-def generate_report(sim_results, is_demo=False):
-    today=datetime.now(timezone.utc).strftime("%A %d %b %Y, %H:%M UTC")
+def render_pick_card(r, rank=None):
+    """Render a full premium pick card with explicit bet label."""
+    sim=r["sim"]; bs=sim["best_single"]; dq=sim["data_quality"]
+    if not bs: return ""
 
-    # Collect all best singles
-    all_singles=[]
-    for r in sim_results:
-        sim=r["sim"]; bs=sim.get("best_single")
-        if bs and bs["ev"]>0:
-            eg=edge_pct(bs["prob"],bs["ml"]) if bs["market"]=="ML" else 0
-            all_singles.append({**r,"bs":bs,"edge":eg})
-    all_singles.sort(key=lambda x: x["bs"]["ev"],reverse=True)
+    impl=ml_to_prob(bs["ml"])*100 if bs["market"]=="ML" and bs["ml"] else 0
+    eg=edge(bs["prob"],bs["ml"]) if bs["market"]=="ML" else 0
+    is_live = r.get("state","")=="in"
+    live_html='<span class="market-chip chip-btts" style="animation:none">🔴 EN VIVO</span>' if is_live else ""
+    rank_html=f'<span style="font-family:\'Cinzel\',serif;color:#6B7E6E;font-size:0.8rem">#{rank}</span> ' if rank else ""
 
-    # Collect all parlays
-    all_parlays=[]
-    for r in sim_results:
-        sim=r["sim"]; bp=sim.get("best_parlay")
-        if bp and bp["ev"]>0:
-            all_parlays.append({**r,"bp":bp})
-    all_parlays.sort(key=lambda x: x["bp"]["ev"],reverse=True)
+    # Score display
+    score_html=""
+    if is_live and r.get("home_score") and r.get("away_score"):
+        score_html=f' <span style="color:#4ade80;font-weight:700">{r["away_score"]} – {r["home_score"]}</span>'
 
-    lines=['<div class="report-box">']
-    if is_demo:
-        lines.append('<div class="demo-banner">⚠️ <b>MODO DEMO</b> — Datos ilustrativos. Activa ligas reales en el sidebar.</div>')
-    lines.append(f'<div style="color:#555;font-size:0.8rem;margin-bottom:16px">📅 {today} · {len(sim_results)} partidos · {sim_results[0]["sim"]["n_simulations"]:,} iters/partido</div>')
+    # Goals market pills
+    goals_html=""
+    if sim["use_goals"] and sim.get("p_btts") is not None:
+        pills=[]
+        if sim.get("btts_ev") is not None:
+            c="#4ade80" if (sim["btts_ev"] or 0)>0 else "#6B7E6E"
+            pills.append(f'<span style="color:{c};font-size:0.75rem">⚽ BTTS {sim["p_btts"]}% (EV {sim["btts_ev"]:+.1f})</span>')
+        if sim.get("p_o25") is not None:
+            c="#C9A84C" if (sim["o25_ev"] or 0)>0 else "#6B7E6E"
+            pills.append(f'<span style="color:{c};font-size:0.75rem">📊 O2.5 {sim["p_o25"]}% (EV {sim["o25_ev"]:+.1f})</span>')
+        if sim.get("p_o15") is not None:
+            pills.append(f'<span style="color:#6B7E6E;font-size:0.75rem">📊 O1.5 {sim["p_o15"]}%</span>')
+        if sim.get("p_o35") is not None:
+            pills.append(f'<span style="color:#6B7E6E;font-size:0.75rem">📊 O3.5 {sim["p_o35"]}%</span>')
+        if pills:
+            goals_html='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">'+"".join(pills)+"</div>"
 
-    # ── PICK PRINCIPAL ────────────────────────────────────────────────────
-    if all_singles:
-        top=all_singles[0]; bs=top["bs"]; sim=top["sim"]
-        conf,badge_cls,emoji=confidence_label(bs["ev"],sim["data_quality"])
-        impl=ml_to_prob(bs["ml"])*100 if bs["ml"] and bs["market"]=="ML" else 0
-        lines.append('<div class="section-title">🥇 PICK PRINCIPAL</div>')
-        lines.append(f"""<div class="sim-card-gold" style="margin:0">
-          <div style="font-size:1.05rem;font-weight:700;color:#fff">{top['away_team']} @ {top['home_team']}</div>
-          <div style="color:#888;font-size:0.8rem;margin-bottom:8px">{top['league']} · {top['status_detail']}</div>
-          <div style="margin-bottom:10px">{market_tag(bs['market'])}
-            <span style="font-size:1.2rem;color:#FFD700;font-weight:700;margin-left:8px">► {bs['label']}</span>
+    return f"""<div class="pick-card">
+      <div class="pick-header">
+        <div>
+          {rank_html}<span class="pick-matchup">{r['away_team']} @ {r['home_team']}{score_html}</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          {live_html}
+          <span class="pick-league-badge">{r['league']}</span>
+          {dq_warn(dq)}
+        </div>
+      </div>
+      <div class="pick-body">
+        <div style="margin-bottom:4px">{chip(bs['market'])}<span style="color:#6B7E6E;font-size:0.72rem;margin-left:6px">{r.get('status_detail','')}</span></div>
+        <div class="pick-action">
+          <span class="pick-action-arrow">▶</span>
+          <span>{bs['label']}</span>
+          {"<span style='font-size:1rem;color:#6B7E6E'>@ "+bs['ml']+"</span>" if bs['ml'] else ""}
+        </div>
+        <div class="stats-row">
+          <div class="stat-item">
+            <div class="stat-item-val val-green">{bs['prob']*100:.1f}%</div>
+            <div class="stat-item-lbl">Prob. Sim.</div>
           </div>
-          <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px">
-            <div><div style="color:#888;font-size:0.68rem">PROB. SIMULADA</div><div style="font-size:1.3rem;font-weight:700;color:#4ade80">{bs['prob']*100:.1f}%</div></div>
-            {"<div><div style='color:#888;font-size:0.68rem'>PROB. IMPLÍCITA</div><div style='font-size:1.3rem;font-weight:700;color:#aaa'>"+str(round(impl,1))+"%</div></div>" if impl else ""}
-            {"<div><div style='color:#888;font-size:0.68rem'>EDGE</div><div style='font-size:1.3rem;font-weight:700;color:#60a5fa'>+"+str(top['edge'])+"%</div></div>" if top['edge'] else ""}
-            <div><div style="color:#888;font-size:0.68rem">EV / $100</div><div style="font-size:1.3rem;font-weight:700;color:#FFD700">+{bs['ev']:.1f}</div></div>
-            <div><div style="color:#888;font-size:0.68rem">KELLY 25%</div><div style="font-size:1.3rem;font-weight:700;color:#a78bfa">{bs['kelly']:.1%}</div></div>
-            <div><div style="color:#888;font-size:0.68rem">CONFIANZA</div><div style="margin-top:4px"><span class="{badge_cls}">{emoji} {conf}</span></div></div>
+          {"<div class='stat-item'><div class='stat-item-val val-muted'>"+str(round(impl,1))+"%</div><div class='stat-item-lbl'>Impl. Casa</div></div>" if impl>0 else ""}
+          {"<div class='stat-item'><div class='stat-item-val val-blue'>+"+str(eg)+"%</div><div class='stat-item-lbl'>Edge</div></div>" if eg>0 else ""}
+          <div class="stat-item">
+            <div class="stat-item-val val-gold">+{bs['ev']:.1f}</div>
+            <div class="stat-item-lbl">EV / $100</div>
           </div>
-        </div>""")
+          <div class="stat-item">
+            <div class="stat-item-val val-purple">{bs['kelly']:.1%}</div>
+            <div class="stat-item-lbl">Kelly 25%</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-item-val" style="font-size:0.9rem">{conf_badge(bs['ev'],dq)}</div>
+            <div class="stat-item-lbl">Confianza</div>
+          </div>
+        </div>
+        {goals_html}
+      </div>
+    </div>"""
 
-        # ── VALUE BETS ADICIONALES ────────────────────────────────────────
-        if len(all_singles)>1:
-            lines.append(f'<div class="section-title">🥈 TODAS LAS VALUE BETS ({len(all_singles)-1} adicionales)</div>')
-            for r in all_singles[1:8]:
-                bs2=r["bs"]; sim2=r["sim"]
-                conf2,badge2,em2=confidence_label(bs2["ev"],sim2["data_quality"])
-                lines.append(f"""<div class="sim-card">
-                  <div style="display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center">
-                    <div>
-                      <div style="font-weight:700;font-size:0.9rem">{r['away_team']} @ {r['home_team']}</div>
-                      <div style="color:#555;font-size:0.75rem">{r['league']}</div>
-                      <div style="margin-top:3px">{market_tag(bs2['market'])}
-                        <span style="color:#4ade80;font-weight:700"> {bs2['label']}</span>
-                      </div>
-                    </div>
-                    <div style="text-align:right">
-                      <span class="{badge2}">{em2} {conf2}</span><br>
-                      <span style="color:#FFD700;font-weight:700">EV +{bs2['ev']:.1f}</span><br>
-                      <span style="color:#aaa;font-size:0.75rem">{bs2['prob']*100:.1f}% prob · Kelly {bs2['kelly']:.1%}</span>
-                    </div>
-                  </div>
-                </div>""")
+def render_parlay_card(r):
+    sim=r["sim"]; bp=sim["best_parlay"]
+    if not bp or bp["ev"]<=0: return ""
+    conf=conf_badge(bp["ev"],sim["data_quality"])
+    legs_html=""
+    for i,leg in enumerate(bp["legs"]):
+        legs_html+=f'<div class="parlay-leg">{chip(leg[0])}<span>{leg[1]}</span><span style="color:#4ade80;margin-left:auto">{leg[2]*100:.1f}%</span></div>'
+        if i<len(bp["legs"])-1:
+            legs_html+='<div class="parlay-connector">+ COMBINADA +</div>'
+    return f"""<div class="parlay-card">
+      <div class="parlay-header">🎰 PARLAY — {r['away_team']} @ {r['home_team']} · {r['league']}</div>
+      <div class="parlay-body">
+        {legs_html}
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid rgba(26,188,156,0.15)">
+          <div class="stat-item"><div class="stat-item-val val-green">{bp['prob']*100:.1f}%</div><div class="stat-item-lbl">Prob. Combo</div></div>
+          <div class="stat-item"><div class="stat-item-val val-cyan">+{bp['payout']:.0f}</div><div class="stat-item-lbl">Pago / $100</div></div>
+          <div class="stat-item"><div class="stat-item-val val-gold">+{bp['ev']:.1f}</div><div class="stat-item-lbl">EV / $100</div></div>
+          <div class="stat-item">{conf}</div>
+        </div>
+        {"<div class='warn-banner' style='margin-top:8px'>⚠ DQ 0% — Sin cuotas reales. Verifica precios en tu casa antes de apostar.</div>" if sim["data_quality"]==0 else ""}
+      </div>
+    </div>"""
 
-    # ── MEJORES PARLAYS ───────────────────────────────────────────────────
-    if all_parlays:
-        lines.append(f'<div class="section-title">🎰 MEJORES COMBINADAS / PARLAYS ({len(all_parlays)})</div>')
-        for r in all_parlays[:4]:
-            bp=r["bp"]; legs=bp["legs"]
-            conf_p,badge_p,em_p=confidence_label(bp["ev"],r["sim"]["data_quality"])
-            leg_html="".join(
-                f'<div style="padding:4px 0;border-bottom:1px solid #1a3a3a;font-size:0.82rem">'
-                f'{market_tag(lg[0])} <span style="color:#E8E8E8">{lg[1]}</span> '
-                f'<span style="color:#4ade80">{lg[2]*100:.1f}%</span></div>'
-                for lg in legs
-            )
-            lines.append(f"""<div class="parlay-card">
-              <div style="font-weight:700;color:#22d3ee;margin-bottom:6px">🎰 PARLAY: {r['away_team']} @ {r['home_team']} — {r['league']}</div>
-              {leg_html}
-              <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
-                <div><div style="color:#888;font-size:0.68rem">PROB. COMBINADA</div><div style="font-size:1.1rem;font-weight:700;color:#4ade80">{bp['prob']*100:.1f}%</div></div>
-                <div><div style="color:#888;font-size:0.68rem">PAGO / $100</div><div style="font-size:1.1rem;font-weight:700;color:#22d3ee">+{bp['payout']:.0f}</div></div>
-                <div><div style="color:#888;font-size:0.68rem">EV / $100</div><div style="font-size:1.1rem;font-weight:700;color:#FFD700">{"+" if bp['ev']>0 else ""}{bp['ev']:.1f}</div></div>
-                <div style="margin-top:4px"><span class="{badge_p}">{em_p} {conf_p}</span></div>
-              </div>
-            </div>""")
-
-    # ── RESUMEN ───────────────────────────────────────────────────────────
-    if not all_singles:
-        lines.append('<div class="section-title">⚠️ SIN VALUE BETS</div>')
-        lines.append('<p style="color:#888">No se encontraron apuestas con EV positivo. Amplía las ligas seleccionadas.</p>')
-
-    total_sims=len(sim_results)*sim_results[0]["sim"]["n_simulations"]
-    n_goals=[r for r in sim_results if r["sim"]["use_goals"]]
-    lines.append('<div class="section-title">📈 RESUMEN</div>')
-    lines.append(f"""<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px">
-      <div style="background:#1a4a1a;padding:8px 14px;border-radius:6px;text-align:center"><div style="font-size:1.3rem;font-weight:700;color:#4ade80">{len(all_singles)}</div><div style="color:#888;font-size:0.7rem">BETS EV+</div></div>
-      <div style="background:#001a1a;padding:8px 14px;border-radius:6px;text-align:center"><div style="font-size:1.3rem;font-weight:700;color:#22d3ee">{len(all_parlays)}</div><div style="color:#888;font-size:0.7rem">PARLAYS EV+</div></div>
-      <div style="background:#1A1A2E;padding:8px 14px;border-radius:6px;text-align:center"><div style="font-size:1.3rem;font-weight:700;color:#a78bfa">{len(n_goals)}</div><div style="color:#888;font-size:0.7rem">CON GOLES SIM</div></div>
-      <div style="background:#1A1A2E;padding:8px 14px;border-radius:6px;text-align:center"><div style="font-size:1.3rem;font-weight:700;color:#60a5fa">{total_sims:,}</div><div style="color:#888;font-size:0.7rem">TOTAL SIMS</div></div>
-    </div>
-    <div style="color:#555;font-size:0.72rem;margin-top:6px">⚠️ EV de BTTS/O/U calculado asumiendo cuota estándar (-110/-115). Verifica cuota real en tu casa. Solo fines informativos.</div>""")
-    lines.append("</div>")
-    return "\n".join(lines)
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR
+# ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown('<p class="hero-title">ESPN+</p>', unsafe_allow_html=True)
-    st.markdown('<p class="hero-sub">Monte Carlo · Mercados Extendidos</p>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-logo">THE DEN</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-sub">Gamblers · Analytics · Edge</div>', unsafe_allow_html=True)
     st.divider()
-    st.markdown("### 🎲 Simulación")
-    n_sims=st.select_slider("Iteraciones",options=[1_000,2_500,5_000,10_000,25_000],value=10_000)
-    st.caption(f"⚡ {n_sims:,} sims/partido")
+
+    st.markdown("**SIMULACIÓN**")
+    n_sims=st.select_slider("Iteraciones",options=[1_000,2_500,5_000,10_000,25_000],value=10_000,
+                            label_visibility="collapsed")
+    st.caption(f"⚡ {n_sims:,} iteraciones por partido")
     st.divider()
-    st.markdown("### 🏆 Ligas")
+
+    st.markdown("**LIGAS**")
     groups=sorted(set(v["group"] for v in LEAGUES.values()))
-    sel_groups=st.multiselect("Grupos",groups,default=["Basketball","Baseball","Soccer"])
+    sel_groups=st.multiselect("Grupos",groups,default=["Basketball","Baseball","Soccer"],
+                              label_visibility="collapsed")
     avail=[n for n,cfg in LEAGUES.items() if cfg["group"] in sel_groups]
-    sel_leagues=st.multiselect("Ligas",avail,default=avail)
+    sel_leagues=st.multiselect("Ligas",avail,default=avail,label_visibility="collapsed")
     st.divider()
-    use_demo=st.toggle("🧪 Forzar datos demo",value=False)
+
+    use_demo=st.toggle("🧪 Modo demo",value=False)
     st.divider()
-    st.caption("📡 ESPN API · caché 5 min")
-    st.caption("🎯 ML · BTTS · O/U · DC · Parlays")
-    st.caption("💰 100% Gratis")
-    if st.button("🔄 Limpiar caché"):
-        st.cache_data.clear(); st.session_state.pop("sim_results",None); st.success("✅")
+    st.caption("ESPN API · Monte Carlo · Poisson")
+    st.caption("BTTS · O/U · DC · Parlays")
+    st.caption("100% Gratis · Sin API externa")
+    if st.button("↺  LIMPIAR CACHÉ"):
+        st.cache_data.clear(); st.session_state.pop("sim_results",None); st.rerun()
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-st.markdown('<h1 class="hero-title">🎯 Monte Carlo Pick Analyzer</h1>', unsafe_allow_html=True)
-st.markdown('<p class="hero-sub">ML · BTTS · Over/Under · Doble Oportunidad · Parlays · 100% Gratis</p>', unsafe_allow_html=True)
-st.divider()
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
+st.markdown("""
+<div class="den-header">
+  <div class="den-logo">The Gamblers Den</div>
+  <div class="den-subtitle">Monte Carlo · Expected Value · Sports Intelligence</div>
+  <div style="margin-top:10px">
+    <span class="den-corner">♠</span>
+    <span class="den-corner">♣</span>
+    <span class="den-corner">♥</span>
+    <span class="den-corner">♦</span>
+  </div>
+</div>
+<div class="den-divider"></div>
+""", unsafe_allow_html=True)
 
-if not sel_leagues: st.warning("⚠️ Selecciona al menos una liga."); st.stop()
+if not sel_leagues:
+    st.warning("Selecciona al menos una liga en el sidebar.")
+    st.stop()
 
+# Load games
 is_demo=False
 if use_demo:
     games=get_demo_games(); is_demo=True
-    st.info("🧪 Usando datos demo.")
 else:
-    with st.spinner("📡 Cargando datos de ESPN..."):
+    with st.spinner("Consultando ESPN..."):
         games,fetch_errors=get_all_games(sel_leagues)
     if not games:
-        st.warning("⚠️ ESPN no retornó partidos.")
         col_a,col_b=st.columns(2)
         with col_a:
-            if st.button("🔄 Reintentar"): st.cache_data.clear(); st.rerun()
+            if st.button("↺ Reintentar ESPN"): st.cache_data.clear(); st.rerun()
         with col_b:
             if st.button("🧪 Usar demo"): st.session_state["force_demo"]=True; st.rerun()
+        st.markdown('<div class="warn-banner">ESPN no retornó partidos. Puede que no haya juegos programados hoy o que la API esté caída. Usa el modo demo para probar la app.</div>',unsafe_allow_html=True)
         st.stop()
     else:
         sel_set=set(sel_leagues)
@@ -614,56 +1010,98 @@ else:
 if st.session_state.get("force_demo"):
     games=get_demo_games(); is_demo=True; st.session_state.pop("force_demo",None)
 
+if is_demo:
+    st.markdown('<div class="demo-banner">⚠ MODO DEMO — Datos ilustrativos. Desactiva el toggle en el sidebar para datos reales de ESPN.</div>',unsafe_allow_html=True)
+
+# Stats bar
 live_g=[g for g in games if g["state"]=="in"]
 pre_g=[g for g in games if g["state"]=="pre"]
 odds_g=[g for g in games if g["odds"]]
+sr=st.session_state.get("sim_results",[])
+pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
 
-c1,c2,c3,c4=st.columns(4)
-for col,num,label,color in [(c1,len(games),"Partidos","#D00000"),(c2,len(live_g),"En Vivo","#4ade80"),(c3,len(pre_g),"Próximos","#60a5fa"),(c4,len(odds_g),"Con Cuotas","#FFD700")]:
-    col.markdown(f'<div class="metric-box"><div class="metric-num" style="color:{color}">{num}</div><div class="metric-label">{label}</div></div>',unsafe_allow_html=True)
+st.markdown(f"""<div class="stat-grid">
+  <div class="stat-tile"><div class="stat-num">{len(games)}</div><div class="stat-label">Partidos</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#4ade80">{len(live_g)}</div><div class="stat-label">En Vivo</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
+  <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#4ade80">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#1ABC9C">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
+</div>""", unsafe_allow_html=True)
 
-st.divider()
-tab_report,tab_sim,tab_all=st.tabs(["🎯 Reporte de Picks","🎲 Simulaciones","📋 Partidos"])
+st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
-# ── TAB REPORT ────────────────────────────────────────────────────────────────
-with tab_report:
+# ── TABS ──────────────────────────────────────────────────────────────────────
+tab_picks, tab_sim, tab_parlays, tab_all = st.tabs([
+    "🎯  PICKS DEL DÍA",
+    f"🎲  SIMULACIONES  ({n_sims:,}×)",
+    "🎰  PARLAYS",
+    "📋  PARTIDOS",
+])
+
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_picks:
     sr=st.session_state.get("sim_results",[])
     if not sr:
-        st.info("👈 Ve al tab **🎲 Simulaciones** y presiona el botón.")
-        st.markdown("""
-**Mercados que analiza esta versión:**
-
-| Mercado | Descripción |
-|---------|-------------|
-| <span class="market-tag tag-ml">ML</span> | Moneyline — ganador del partido | 
-| <span class="market-tag tag-btts">BTTS</span> | Ambos Anotan Sí/No |
-| <span class="market-tag tag-ou">O/U</span> | Over/Under 1.5, 2.5, 3.5 goles |
-| <span class="market-tag tag-dc">DC</span> | Doble Oportunidad 1X / X2 / 12 |
-| <span class="market-tag tag-parlay">PARLAY</span> | Combinada automática de los 2 mejores legs |
-
-BTTS y O/U usan simulación de goles por distribución **Poisson** calibrada al O/U line de ESPN.
-        """, unsafe_allow_html=True)
+        st.markdown("""<div class="empty-state">
+          <div class="empty-icon">🎲</div>
+          <div class="empty-title">Sin simulaciones</div>
+          <div>Ve al tab <b>SIMULACIONES</b> y presiona el botón para generar los picks del día.</div>
+        </div>""", unsafe_allow_html=True)
     else:
-        report_html=generate_report(sr,is_demo=st.session_state.get("last_sim_demo",False))
-        st.markdown(report_html,unsafe_allow_html=True)
+        all_bets=[]
+        for r in sr:
+            bs=r["sim"].get("best_single")
+            if bs and bs["ev"]>0: all_bets.append(r)
+        all_bets.sort(key=lambda x: x["sim"]["best_single"]["ev"],reverse=True)
 
-# ── TAB SIMULATIONS ───────────────────────────────────────────────────────────
+        if not all_bets:
+            st.markdown('<div class="warn-banner">No se encontraron apuestas con EV positivo hoy. Intenta con más ligas o espera actualización de cuotas.</div>',unsafe_allow_html=True)
+        else:
+            # TOP PICK
+            st.markdown('<div class="section-heading">♠ Pick Principal</div>', unsafe_allow_html=True)
+            st.markdown(render_pick_card(all_bets[0]), unsafe_allow_html=True)
+
+            # REST
+            if len(all_bets)>1:
+                st.markdown(f'<div class="section-heading">♣ Value Bets ({len(all_bets)-1})</div>', unsafe_allow_html=True)
+                for i,r in enumerate(all_bets[1:7],2):
+                    st.markdown(render_pick_card(r,rank=i), unsafe_allow_html=True)
+
+        # Avoid
+        avoid=[r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
+        avoid.sort(key=lambda x:x["sim"]["best_single"]["ev"])
+        if avoid:
+            st.markdown('<div class="section-heading">♦ Evitar</div>', unsafe_allow_html=True)
+            for r in avoid[:3]:
+                bs=r["sim"]["best_single"]
+                st.markdown(f'<div class="game-row"><span class="game-title" style="color:#ef4444">✗ {r["away_team"]} @ {r["home_team"]}</span><span class="game-meta">{r["league"]} · EV {bs["ev"]:.1f} · {bs["label"]}</span></div>',unsafe_allow_html=True)
+
+        st.markdown('<div class="den-divider" style="margin:16px 0"></div>',unsafe_allow_html=True)
+        today=datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+        total_sims=len(sr)*sr[0]["sim"]["n_simulations"]
+        st.markdown(f'<div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:0.72rem;color:#3a4a3e">📅 {today} · {total_sims:,} simulaciones · {"DEMO" if is_demo else "ESPN Live"}</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
 with tab_sim:
-    st.markdown(f"### {len(games)} partidos × {n_sims:,} iteraciones = **{len(games)*n_sims:,} simulaciones**")
-    if is_demo: st.markdown('<div class="demo-banner">🧪 Modo DEMO activo.</div>',unsafe_allow_html=True)
+    st.markdown(f'<div class="section-heading">🎲 Motor Monte Carlo — {len(games)} partidos × {n_sims:,}</div>',unsafe_allow_html=True)
+    if is_demo:
+        st.markdown('<div class="demo-banner">Modo demo activo.</div>',unsafe_allow_html=True)
 
-    if st.button(f"🚀 CORRER {n_sims:,} SIMULACIONES",key="run_sim"):
+    if st.button(f"▶  CORRER  {n_sims:,}  SIMULACIONES"):
         t0=time.time()
         sr2=run_all_simulations(games,n=n_sims)
         elapsed=time.time()-t0
         st.session_state["sim_results"]=sr2
         st.session_state["last_sim_demo"]=is_demo
-        st.success(f"✅ {len(games)*n_sims:,} simulaciones en {elapsed:.1f}s — ve al tab **🎯 Reporte de Picks**")
+        n_pos=len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
+        st.success(f"✓ {len(games)*n_sims:,} simulaciones en {elapsed:.1f}s · {n_pos} value bets encontradas")
         st.balloons()
+        st.rerun()
 
     sr=st.session_state.get("sim_results",[])
     if sr:
-        sort_by=st.selectbox("Ordenar por",["Mejor EV (cualquier mercado)","Mayor prob. local","Mayor prob. visitante","Calidad dato"])
+        sort_by=st.selectbox("Ordenar por",["Mejor EV","Mayor prob. local","Mayor prob. visitante","Calidad dato"],label_visibility="collapsed")
         def sk(r):
             s=r["sim"]; bs=s.get("best_single")
             if "EV" in sort_by: return bs["ev"] if bs else -999
@@ -671,103 +1109,112 @@ with tab_sim:
             if "visitante" in sort_by: return s["away_pct"]
             return s["data_quality"]
         sorted_r=sorted(sr,key=sk,reverse=True)
-        ev_filter=st.checkbox("Solo EV positivo",value=False)
-        display=[r for r in sorted_r if not ev_filter or (r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0)]
+        ev_only=st.checkbox("Solo EV positivo",value=False)
+        display=[r for r in sorted_r if not ev_only or (r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0)]
 
         for r in display:
             sim=r["sim"]; bs=sim.get("best_single"); dq=sim["data_quality"]
-            card="sim-card" if (bs and bs["ev"]>5) else "sim-card-red" if not(bs and bs["ev"]>0) else "game-card"
-            def bar(pct,color,label):
-                return f'<div style="margin:3px 0"><div style="display:flex;justify-content:space-between"><span style="font-size:0.75rem;color:#aaa">{label}</span><span style="font-size:0.75rem;font-weight:700;color:{color}">{pct:.1f}%</span></div><div class="prob-bar-bg"><div class="prob-bar-fill" style="width:{min(pct,100):.1f}%;background:{color}"></div></div></div>'
+            has_ev=bs and bs["ev"]>0
+            card_cls="game-row game-row-ev" if has_ev else "game-row"
+            badge=f'{chip(bs["market"])} <span style="color:#4ade80;font-weight:600;font-size:0.8rem">EV +{bs["ev"]:.1f} · {bs["label"]}</span>' if has_ev else '<span style="color:#6B7E6E;font-size:0.78rem">Sin EV positivo</span>'
+            dqc="#4ade80" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
 
-            bars=bar(sim["away_pct"],"#60a5fa",r["away_team"])
-            if sim["is_soccer"]: bars+=bar(sim["draw_pct"],"#a78bfa","Empate")
-            bars+=bar(sim["home_pct"],"#f97316",r["home_team"])
+            bars_html=bar(sim["away_pct"],"#60a5fa",r["away_team"])
+            if sim["is_soccer"]: bars_html+=bar(sim["draw_pct"],"#a78bfa","Empate")
+            bars_html+=bar(sim["home_pct"],"#f97316",r["home_team"])
 
-            best_badge=f'{market_tag(bs["market"])} <span class="badge-green">EV +{bs["ev"]:.1f}</span>' if (bs and bs["ev"]>0) else ""
-            dqc="#4ade80" if dq>=70 else "#fbbf24" if dq>=40 else "#ef4444"
-
-            # Goals markets summary
-            goals_html=""
+            goals_line=""
             if sim["use_goals"] and sim.get("p_btts") is not None:
-                btts_color="#4ade80" if (sim.get("btts_ev") or 0)>0 else "#ef4444"
-                o25_color="#4ade80" if (sim.get("o25_ev") or 0)>0 else "#ef4444"
-                goals_html=f"""<div style="margin-top:6px;font-size:0.78rem;display:flex;gap:12px;flex-wrap:wrap">
-                  <span>⚽ BTTS: <b style="color:{btts_color}">{sim['p_btts']}%</b> (EV {sim.get('btts_ev',0) or 0:+.1f})</span>
-                  <span>📊 O2.5: <b style="color:{o25_color}">{sim['p_o25']}%</b> (EV {sim.get('o25_ev',0) or 0:+.1f})</span>
-                  <span>📊 O1.5: <b>{sim['p_o15']}%</b></span>
-                  <span>📊 O3.5: <b>{sim['p_o35']}%</b></span>
-                </div>"""
+                btc="#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
+                o2c="#C9A84C" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
+                goals_line=f'<div style="font-size:0.72rem;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap"><span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span><span style="color:{o2c}">📊 O2.5 {sim["p_o25"]}%</span><span style="color:#6B7E6E">O1.5 {sim["p_o15"]}%</span><span style="color:#6B7E6E">O3.5 {sim["p_o35"]}%</span></div>'
 
-            # Best parlay badge
-            parlay_html=""
-            bp=sim.get("best_parlay")
-            if bp and bp["ev"]>0:
-                parlay_html=f'<br><span class="market-tag tag-parlay">PARLAY EV +{bp["ev"]:.1f} · pago +{bp["payout"]:.0f}</span>'
-
-            st.markdown(f"""<div class="{card}">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
+            st.markdown(f"""<div class="{card_cls}">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
                 <div>
-                  <strong>{r['away_team']} @ {r['home_team']}</strong>
-                  <br><small style="color:#555">{r['league']} · {r['status_detail']} · <span style="color:{dqc}">DQ {dq:.0f}%</span></small>
-                  {("<br>"+best_badge) if best_badge else ""}
-                  {parlay_html}
+                  <div class="game-title">{r['away_team']} @ {r['home_team']}</div>
+                  <div class="game-meta">{r['league']} · {r['status_detail']} · <span style="color:{dqc}">DQ {dq:.0f}%</span></div>
+                  <div style="margin-top:4px">{badge}</div>
                 </div>
-                <div style="text-align:right;font-size:0.78rem;color:#888">
-                  ML {sim['away_ml'] or 'N/A'} / {sim['home_ml'] or 'N/A'}
+                <div style="text-align:right;font-size:0.72rem;color:#6B7E6E">
+                  ML {sim['away_ml'] or '—'} / {sim['home_ml'] or '—'}
                 </div>
               </div>
-              <div style="margin-top:8px">{bars}</div>
-              {goals_html}
+              <div style="margin-top:8px">{bars_html}</div>
+              {goals_line}
             </div>""",unsafe_allow_html=True)
 
-        # CSV
-        st.divider()
-        csv=["Liga,Visitante,Local,Prob Vis%,Prob Local%,Empate%,ML Vis,ML Local,EV Vis,EV Local,BTTS%,EV BTTS,O2.5%,EV O2.5,O3.5%,DC 1X%,DC X2%,DC 12%,Mejor Mercado,Mejor Label,Mejor EV,DQ%"]
+        st.markdown('<div class="den-divider" style="margin:16px 0"></div>',unsafe_allow_html=True)
+        csv=["Liga,Visitante,Local,Prob Vis%,Prob Local%,Empate%,ML Vis,ML Local,EV Vis,EV Local,BTTS%,EV BTTS,O2.5%,EV O2.5,O3.5%,DC 1X%,DC X2%,Mejor Mercado,Mejor Pick,Mejor EV,DQ%"]
         for r in sorted_r:
             s=r["sim"]; bs=s.get("best_single",{}) or {}
-            csv.append(",".join([
-                r['league'],r['away_team'],r['home_team'],
+            csv.append(",".join([r['league'],r['away_team'],r['home_team'],
                 str(s['away_pct']),str(s['home_pct']),str(s['draw_pct']),
                 str(s['away_ml']),str(s['home_ml']),
                 str(s['away_ev'] or ""),str(s['home_ev'] or ""),
                 str(s['p_btts'] or ""),str(s['btts_ev'] or ""),
-                str(s['p_o25'] or ""),str(s['o25_ev'] or ""),
-                str(s['p_o35'] or ""),
-                str(s['p_dc_1x']),str(s['p_dc_x2']),str(s['p_dc_12']),
-                bs.get('market',""),bs.get('label',""),str(bs.get('ev',"")),
-                str(s['data_quality'])
-            ]))
-        st.download_button("💾 Descargar CSV completo",data="\n".join(csv),
-                           file_name=f"mc_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",mime="text/csv")
+                str(s['p_o25'] or ""),str(s['o25_ev'] or ""),str(s['p_o35'] or ""),
+                str(s['p_dc_1x']),str(s['p_dc_x2']),
+                bs.get('market',""),bs.get('label',""),str(bs.get('ev',"")),str(s['data_quality'])]))
+        st.download_button("⬇  Descargar CSV",data="\n".join(csv),
+                           file_name=f"gamblers_den_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",mime="text/csv")
+    else:
+        st.markdown("""<div class="empty-state">
+          <div class="empty-icon">♠</div>
+          <div class="empty-title">Listo para simular</div>
+          <div>Presiona el botón para correr las simulaciones Monte Carlo.</div>
+        </div>""",unsafe_allow_html=True)
 
-# ── TAB ALL GAMES ─────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_parlays:
+    sr=st.session_state.get("sim_results",[])
+    if not sr:
+        st.markdown("""<div class="empty-state">
+          <div class="empty-icon">🎰</div>
+          <div class="empty-title">Sin parlays aún</div>
+          <div>Corre las simulaciones primero.</div>
+        </div>""",unsafe_allow_html=True)
+    else:
+        parlays=[r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0]
+        parlays.sort(key=lambda x:x["sim"]["best_parlay"]["ev"],reverse=True)
+        if parlays:
+            st.markdown(f'<div class="section-heading">🎰 Combinadas con EV+ ({len(parlays)})</div>',unsafe_allow_html=True)
+            for r in parlays:
+                st.markdown(render_parlay_card(r),unsafe_allow_html=True)
+            st.markdown('<div class="warn-banner">⚠ Cuotas de BTTS/O/U asumidas a −110/−115 estándar. Verifica precio real en tu casa. Parlays son de alta varianza — usa sizing conservador.</div>',unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="warn-banner">No se encontraron parlays con EV positivo en los partidos disponibles.</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
 with tab_all:
     cf1,cf2=st.columns(2)
-    with cf1: fs=st.multiselect("Estado",["pre","in","post"],default=["pre","in"],format_func=lambda x:{"pre":"🔵 Próximo","in":"🔴 En Vivo","post":"⚫ Final"}[x])
-    with cf2: fl=st.multiselect("Liga",list(set(g["league"] for g in games)),default=list(set(g["league"] for g in games)))
+    with cf1: fs=st.multiselect("Estado",["pre","in","post"],default=["pre","in"],
+                                format_func=lambda x:{"pre":"Próximo","in":"En Vivo","post":"Final"}[x])
+    with cf2: fl=st.multiselect("Liga",list(set(g["league"] for g in games)),
+                                default=list(set(g["league"] for g in games)))
     filtered=[g for g in games if g["state"] in fs and g["league"] in fl]
-    st.caption(f"Mostrando {len(filtered)} de {len(games)} partidos {'(DEMO)' if is_demo else ''}")
+    st.caption(f"{len(filtered)} de {len(games)} partidos {'· DEMO' if is_demo else ''}")
+
     for g in filtered:
-        sc={"in":"status-live","pre":"status-pre","post":"status-post"}.get(g["state"],"")
-        si={"in":"🔴","pre":"🔵","post":"⚫"}.get(g["state"],"")
+        si={"in":"🔴","pre":"◉","post":"○"}.get(g["state"],"")
+        live_cls="color:#4ade80;" if g["state"]=="in" else "color:#6B7E6E;"
         oh=""
         if g["odds"]:
             o=g["odds"]; parts=[]
-            if o.get("spread"): parts.append(f"<b>Spread:</b> {o['spread']}")
-            if o.get("over_under"): parts.append(f"<b>O/U:</b> {o['over_under']}")
-            if o.get("home_ml"): parts.append(f"<b>ML Casa:</b> {o['home_ml']}")
-            if o.get("away_ml"): parts.append(f"<b>ML Vis:</b> {o['away_ml']}")
-            if parts: oh="<br><small style='color:#FFD700'>"+" · ".join(parts)+"</small>"
-        sh=f" <span style='color:#4ade80;font-weight:700'>{g['away_score']}-{g['home_score']}</span>" if g["state"]=="in" and g["home_score"] else ""
-        rh=f"<br><small style='color:#555'>{g.get('away_record','?')} vs {g.get('home_record','?')}</small>" if (g.get("away_record") or g.get("home_record")) else ""
-        st.markdown(f"""<div class="game-card">
-          <div style="display:flex;justify-content:space-between">
-            <strong>{g['away_team']} @ {g['home_team']}{sh}</strong>
-            <span class="{sc}">{si} {g['status_detail']}</span>
+            if o.get("spread"): parts.append(f"Spread: {o['spread']}")
+            if o.get("over_under"): parts.append(f"O/U {o['over_under']}")
+            if o.get("home_ml"): parts.append(f"ML {o['home_ml']}/{o.get('away_ml','')}")
+            if parts: oh=f'<div style="color:#C9A84C;font-size:0.72rem;margin-top:2px">{" · ".join(parts)}</div>'
+        sh=f' <span style="color:#4ade80">{g["away_score"]}–{g["home_score"]}</span>' if g["state"]=="in" and g.get("home_score") else ""
+        rh=f'<span style="color:#3a4a3e"> · {g.get("away_record","?")} vs {g.get("home_record","?")}</span>' if (g.get("away_record") or g.get("home_record")) else ""
+        st.markdown(f"""<div class="game-row">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="game-title">{g['away_team']} @ {g['home_team']}{sh}</div>
+            <span style="{live_cls}font-size:0.8rem">{si} {g['status_detail']}</span>
           </div>
-          <small style="color:#555">{g['league']}</small>{rh}{oh}
+          <div class="game-meta">{g['league']}{rh}</div>
+          {oh}
         </div>""",unsafe_allow_html=True)
 
-st.divider()
-st.markdown('<div style="text-align:center;color:#444;font-size:0.72rem">ESPN+ Monte Carlo · ML · BTTS · O/U · DC · Parlays · 100% Gratis · ⚠️ Solo fines informativos</div>',unsafe_allow_html=True)
+st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;font-family:\'Cinzel\',serif;font-size:0.6rem;color:#2a3a2e;letter-spacing:3px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
