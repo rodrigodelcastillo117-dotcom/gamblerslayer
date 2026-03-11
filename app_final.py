@@ -1440,8 +1440,16 @@ def get_cartelera():
                         for _bk in _g.get("bookmakers", []):
                             for _mkt in _bk.get("markets", []):
                                 if _mkt["key"] == "h2h":
+                                    # Construir dict nombre_lower → precio desde outcomes
+                                    _outs = {}
+                                    for _oc in _mkt.get("outcomes", []):
+                                        _oname = (_oc.get("name") or "").lower()
+                                        _oprice = float(_oc.get("price", 0) or 0)
+                                        if _oname and _oprice > 1:
+                                            _outs[_oname] = _oprice
                                     # Buscar precio por nombre exacto primero, luego parcial
                                     def _find_price(tname, od):
+                                        tname = (tname or "").lower()
                                         if od.get(tname, 0) > 1: return od[tname]
                                         t5 = tname[:5]
                                         for k,v in od.items():
@@ -1453,7 +1461,7 @@ def get_cartelera():
                                     _ph_price = _find_price(_gh, _outs)
                                     _pa_price = _find_price(_ga, _outs)
                                     if _ph_price > 1: _prices_h.append(_ph_price)
-                                    if _outs.get("draw",0) > 1: _prices_d.append(_outs["draw"])
+                                    if _outs.get("draw", 0) > 1: _prices_d.append(_outs["draw"])
                                     if _pa_price > 1: _prices_a.append(_pa_price)
                         if _prices_h and _prices_a:
                             _m["odd_h"] = round(sum(_prices_h)/len(_prices_h), 2)
