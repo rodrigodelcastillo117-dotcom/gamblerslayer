@@ -1263,9 +1263,13 @@ def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
 def _bet365data_bulk_odds() -> dict:
     """
     Trae eventos de fútbol de Bet365Data con odds 1X2.
-    Estrategia: primero intenta /soccer/events directo (sin /leagues),
-    luego /leagues como fallback.
-    Caché 10 min. Expone JSON raw para debug.
+    Endpoints probados:
+      - /live-events?sport=Soccer   → data.events[] (partidos LIVE)
+      - /upcoming-events?sport=Soccer → data.events[] (partidos pre-match)
+    Estructura confirmada del JSON:
+      event.home / event.away
+      event.ma[{name:"Fulltime Result", pa:[{OR:0=home,1=draw,2=away, decimal:"x.xx"}]}]
+    Caché 10 min.
     """
     import time as _t3, unicodedata as _ud3, requests as _rq3
     _ck = "_b365d_cache"; _ts = "_b365d_ts"; _cnt = "_b365d_cnt"; _err = "_b365d_err"
@@ -1295,120 +1299,115 @@ def _bet365data_bulk_odds() -> dict:
 
     _result = {}; _total = 0; _err_msg = ""
 
-    def _parse_events(events_raw):
-        """Parsea lista de eventos y extrae odds. Retorna número de odds encontradas."""
+    def _parse_b365_events(json_data):
+        """
+        Parser para estructura confirmada de Bet365Data:
+        json_data = { "data": { "events": [ { "home": ..., "away": ...,
+          "ma": [{ "name": "Fulltime Result",
+                   "pa": [{"OR": "0", "decimal": "x.xx"}, ...] }] } ] } }
+        OR: 0=home, 1=draw, 2=away
+        """
         _found = 0
-        if isinstance(events_raw, list):
-            _evs = events_raw
-        elif isinstance(events_raw, dict):
-            _evs = (events_raw.get("data") or events_raw.get("results") or
-                    events_raw.get("events") or events_raw.get("items") or [])
-        else:
-            return 0
+        # Extraer lista de eventos
+        _evs = []
+        if isinstance(json_data, dict):
+            _d = json_data.get("data", json_data)
+            if isinstance(_d, dict):
+                _evs = _d.get("events", [])
+            elif isinstance(_d, list):
+                _evs = _d
+        elif isinstance(json_data, list):
+            _evs = json_data
+
         for _ev in _evs:
             if not isinstance(_ev, dict): continue
-            # Nombres equipos — probar múltiples campos
-            _h_raw = (_ev.get("home") or _ev.get("homeName") or _ev.get("home_name") or
-                      _ev.get("HomeTeam") or (_ev.get("homeTeam") or {}).get("name") or
-                      _ev.get("team1") or "")
-            _a_raw = (_ev.get("away") or _ev.get("awayName") or _ev.get("away_name") or
-                      _ev.get("AwayTeam") or (_ev.get("awayTeam") or {}).get("name") or
-                      _ev.get("team2") or "")
+            _h_raw = str(_ev.get("home") or "").strip()
+            _a_raw = str(_ev.get("away") or "").strip()
             if not _h_raw or not _a_raw: continue
-            _h = _norm(str(_h_raw)); _a = _norm(str(_a_raw))
-            # Odds — formato A: campos directos
-            _oh = float(_ev.get("homeOdds") or _ev.get("home_odds") or _ev.get("odds_1") or
-                         _ev.get("odd_1") or _ev.get("home_od") or _ev.get("HomeOdds") or 0)
-            _od = float(_ev.get("drawOdds") or _ev.get("draw_odds") or _ev.get("odds_x") or
-                         _ev.get("odd_x") or _ev.get("draw_od") or _ev.get("DrawOdds") or 0)
-            _oa = float(_ev.get("awayOdds") or _ev.get("away_odds") or _ev.get("odds_2") or
-                         _ev.get("odd_2") or _ev.get("away_od") or _ev.get("AwayOdds") or 0)
-            # Odds — formato B: lista [{name/outcome, price/odds/value}]
-            if not (_oh > 1 and _oa > 1):
-                for _fl in ["odds","markets","Odds","selections","outcomes"]:
-                    _ol = _ev.get(_fl)
-                    if not isinstance(_ol, list): continue
-                    for _o in _ol:
-                        if not isinstance(_o, dict): continue
-                        _on = str(_o.get("name") or _o.get("outcome") or _o.get("Name") or "").lower()
-                        _ov = float(_o.get("price") or _o.get("odds") or _o.get("value") or _o.get("Price") or 0)
-                        if _ov <= 1: continue
-                        if any(t in _on for t in ["home","1|","local","1x2-1"]): _oh = _ov
-                        elif any(t in _on for t in ["draw","empate","x|","tie"]): _od = _ov
-                        elif any(t in _on for t in ["away","2|","visit","1x2-2"]): _oa = _ov
-                    if _oh > 1 and _oa > 1: break
+
+            # Filtrar esports / virtual
+            _league = str(_ev.get("league") or _ev.get("CT") or "").lower()
+            if any(x in _league for x in ["esoccer", "esports", "virtual", "cyber", "volta",
+                                           "h2h gg", "battle", "8 mins", "12 mins", "6 mins"]):
+                continue
+
+            _h = _norm(_h_raw); _a = _norm(_a_raw)
+            _oh = _od = _oa = 0.0
+
+            # Buscar mercado "Fulltime Result" en ma[]
+            _ma = _ev.get("ma") or []
+            for _mkt in _ma:
+                if not isinstance(_mkt, dict): continue
+                _mkt_name = str(_mkt.get("name") or "").lower()
+                if "fulltime" not in _mkt_name and "1x2" not in _mkt_name and "match result" not in _mkt_name:
+                    continue
+                _pa = _mkt.get("pa") or []
+                for _sel in _pa:
+                    if not isinstance(_sel, dict): continue
+                    # Ignorar selections de otras ligas (tienen |C y OF!=0 con ID="1")
+                    if _sel.get("|C") or str(_sel.get("OF", "0")) not in ("0", ""):
+                        continue
+                    _or = str(_sel.get("OR", "")).strip()
+                    _dec_raw = _sel.get("decimal", "")
+                    try:
+                        _dec = float(_dec_raw) if _dec_raw else 0.0
+                    except (ValueError, TypeError):
+                        _dec = 0.0
+                    if _dec <= 1.0: continue
+                    if _or == "0":   _oh = _dec
+                    elif _or == "1": _od = _dec
+                    elif _or == "2": _oa = _dec
+                if _oh > 1 and _oa > 1:
+                    break  # mercado correcto encontrado
+
             if _oh > 1 and _oa > 1:
-                _entry = {"odd_h": round(_oh,2), "odd_d": round(_od,2) if _od>1 else 3.5,
-                          "odd_a": round(_oa,2), "home": _h, "away": _a}
+                _entry = {
+                    "odd_h": round(_oh, 2),
+                    "odd_d": round(_od, 2) if _od > 1 else 3.50,
+                    "odd_a": round(_oa, 2),
+                    "home": _h, "away": _a,
+                }
                 _idx(_result, _h, _a, _entry)
                 _found += 1
         return _found
 
     try:
-        # ── Estrategia A: /soccer/events directo (sin ID de liga) ──────
-        # Algunos endpoints de este tipo devuelven todos los eventos del día
-        for _direct_url in [
-            "https://bet365data.p.rapidapi.com/soccer/events",
-            "https://bet365data.p.rapidapi.com/soccer/events/today",
-            "https://bet365data.p.rapidapi.com/events?sport=soccer",
-        ]:
+        # ── PASO 1: upcoming-events (pre-match) ──────────────────────────
+        _urls_to_try = [
+            ("https://bet365data.p.rapidapi.com/upcoming-events", {"sport": "Soccer"}),
+            ("https://bet365data.p.rapidapi.com/upcoming-events", {"sport": "soccer"}),
+            ("https://bet365data.p.rapidapi.com/pre-match-events", {"sport": "Soccer"}),
+        ]
+        for _url, _params in _urls_to_try:
             try:
-                _r_direct = _rq3.get(_direct_url, headers=_HDR, timeout=8)
-                if _r_direct.status_code == 200:
-                    _found = _parse_events(_r_direct.json())
+                _r = _rq3.get(_url, headers=_HDR, params=_params, timeout=10)
+                if _r.status_code == 200:
+                    _found = _parse_b365_events(_r.json())
                     if _found > 0:
-                        _total = _found
-                        _ss["_b365d_raw_sample"] = str(_r_direct.json())[:300]
+                        _total += _found
+                        _ss["_b365d_raw_sample"] = str(_r.json())[:400]
                         break
-            except: continue
+                    else:
+                        _ss["_b365d_raw_sample"] = f"200 OK pero 0 odds: {str(_r.json())[:300]}"
+                else:
+                    _ss["_b365d_raw_sample"] = f"HTTP {_r.status_code} en {_url}"
+            except Exception as _ex2:
+                _ss["_b365d_raw_sample"] = f"Error en {_url}: {str(_ex2)[:100]}"
+                continue
 
-        # ── Estrategia B: /leagues → /soccer/events/{id} por liga ──────
-        if _total == 0:
-            _r_lg = _rq3.get(
-                "https://bet365data.p.rapidapi.com/leagues",
-                headers=_HDR,
-                params={"take": 500, "from": 0, "sport": "soccer"},
-                timeout=12
+        # ── PASO 2: live-events como complemento ─────────────────────────
+        try:
+            _r_live = _rq3.get(
+                "https://bet365data.p.rapidapi.com/live-events",
+                headers=_HDR, params={"sport": "Soccer"}, timeout=10
             )
-            _lg_raw = _r_lg.json() if _r_lg.status_code == 200 else {}
-            _ss["_b365d_leagues_raw"] = str(_lg_raw)[:500]  # para debug
+            if _r_live.status_code == 200:
+                _found_live = _parse_b365_events(_r_live.json())
+                _total += _found_live
+        except: pass
 
-            # Extraer lista de ligas de cualquier estructura
-            def _find_list(obj, d=0):
-                if d > 3: return []
-                if isinstance(obj, list) and obj: return obj
-                if isinstance(obj, dict):
-                    for k in ["data","results","leagues","items","list","records","body","response","Leagues"]:
-                        v = obj.get(k)
-                        if isinstance(v, list) and v: return v
-                        if isinstance(v, dict):
-                            r = _find_list(v, d+1)
-                            if r: return r
-                return []
-
-            _lg_list = _find_list(_lg_raw)
-
-            if not _lg_list:
-                _err_msg = f"⚠️ /leagues estructura no reconocida → JSON: {str(_lg_raw)[:300]}"
-            else:
-                _processed = 0
-                for _lg in _lg_list[:60]:
-                    _lg_id = (_lg.get("id") or _lg.get("leagueId") or _lg.get("FI") or
-                              _lg.get("league_id") or _lg.get("Id") or _lg.get("ID") or
-                              _lg.get("LeagueId") or "")
-                    if not _lg_id: continue
-                    try:
-                        _r_ev = _rq3.get(
-                            f"https://bet365data.p.rapidapi.com/soccer/events/{_lg_id}",
-                            headers=_HDR, timeout=8)
-                        if _r_ev.status_code != 200: continue
-                        _found = _parse_events(_r_ev.json())
-                        if _found > 0 and _processed == 0:
-                            _ss["_b365d_raw_sample"] = str(_r_ev.json())[:300]
-                        _total += _found; _processed += 1
-                    except: continue
-                if _total == 0:
-                    _err_msg = f"⚠️ {_processed} ligas procesadas, 0 odds — ver _b365d_leagues_raw"
+        if _total == 0:
+            _err_msg = "⚠️ 0 odds obtenidas — revisar _b365d_raw_sample para debug"
 
     except Exception as _ex:
         _err_msg = f"❌ Excepción: {str(_ex)[:120]}"
@@ -1541,10 +1540,30 @@ def _b365_get_prematch_1x2(fi: str) -> tuple:
     """
     Dado un FI de Bet365, obtiene las odds 1X2 via prematch.
     Retorna (odd_h, odd_d, odd_a) en decimal, o (0,0,0) si falla.
+    Wrapper de compatibilidad sobre _b365_get_prematch_odds.
+    """
+    _o = _b365_get_prematch_odds(fi)
+    return _o.get("odd_h", 0.0), _o.get("odd_d", 0.0), _o.get("odd_a", 0.0)
+
+
+def _b365_get_prematch_odds(fi: str) -> dict:
+    """
+    Dado un FI de Bet365, obtiene odds completos via prematch:
+      - 1X2  (Match Result / Full Time Result)
+      - Over/Under (Goals Over/Under, todas las lineas disponibles)
+      - Asian Handicap (todas las lineas disponibles)
+    Retorna dict:
+      {
+        "odd_h": float, "odd_d": float, "odd_a": float,
+        "ou": { "2.5": {"over": float, "under": float}, ... },
+        "ah": { "-0.5": {"home": float, "away": float}, ... }
+      }
+    Retorna {} si falla o no hay datos.
     """
     if not BETSAPI_KEY or not fi:
-        return 0.0, 0.0, 0.0
+        return {}
     import requests as _rq3
+    import re as _re
     _HEADERS = {
         "x-rapidapi-host": "betsapi2.p.rapidapi.com",
         "x-rapidapi-key":  BETSAPI_KEY,
@@ -1556,37 +1575,94 @@ def _b365_get_prematch_1x2(fi: str) -> tuple:
             params={"FI": fi},
             timeout=8
         )
-        if _r.status_code != 200: return 0.0, 0.0, 0.0
+        if _r.status_code != 200:
+            return {}
         _results = _r.json().get("results", [])
-        if not _results: return 0.0, 0.0, 0.0
+        if not _results:
+            return {}
 
-        # Parsear sp{} buscando 1X2
-        _oh = _od = _oa = 0.0
-        def _find_1x2(obj, depth=0):
-            nonlocal _oh, _od, _oa
-            if depth > 5 or (_oh > 1 and _oa > 1): return
-            if isinstance(obj, list):
-                for i in obj: _find_1x2(i, depth+1)
+        _out = {
+            "odd_h": 0.0, "odd_d": 0.0, "odd_a": 0.0,
+            "ou": {},
+            "ah": {},
+        }
+
+        def _find_markets(obj, depth=0):
+            if depth > 6:
                 return
-            if not isinstance(obj, dict): return
+            if isinstance(obj, list):
+                for i in obj:
+                    _find_markets(i, depth + 1)
+                return
+            if not isinstance(obj, dict):
+                return
+
             _sp = obj.get("sp") or {}
             for _mid, _md in _sp.items():
-                if not isinstance(_md, dict): continue
+                if not isinstance(_md, dict):
+                    continue
                 _mn = (_md.get("name") or "").lower()
-                if any(t in _mn for t in ["match result","1x2","full time result","match winner"]):
-                    for _out in (_md.get("odds") or []):
-                        _on = (_out.get("name") or "").lower()
-                        _ov = float(_out.get("odds") or 0)
-                        if _ov <= 1: continue
-                        if "home" in _on or _on in ["1"]: _oh = _ov
-                        elif "draw" in _on or _on in ["x"]: _od = _ov
-                        elif "away" in _on or _on in ["2"]: _oa = _ov
+                _odds_list = _md.get("odds") or []
+
+                # 1X2
+                if any(t in _mn for t in ["match result", "1x2", "full time result", "match winner"]):
+                    for _o in _odds_list:
+                        _on = (_o.get("name") or "").lower()
+                        _ov = float(_o.get("odds") or 0)
+                        if _ov <= 1:
+                            continue
+                        if "home" in _on or _on == "1":
+                            _out["odd_h"] = _ov
+                        elif "draw" in _on or _on == "x":
+                            _out["odd_d"] = _ov
+                        elif "away" in _on or _on == "2":
+                            _out["odd_a"] = _ov
+
+                # Over/Under
+                elif any(t in _mn for t in ["goals over/under", "over/under", "total goals"]):
+                    for _o in _odds_list:
+                        _on = (_o.get("name") or "").lower()
+                        _ov = float(_o.get("odds") or 0)
+                        if _ov <= 1:
+                            continue
+                        _m = _re.search(r"(\d+\.?\d*)", _on)
+                        if not _m:
+                            continue
+                        _line = _m.group(1)
+                        if _line not in _out["ou"]:
+                            _out["ou"][_line] = {"over": 0.0, "under": 0.0}
+                        if "over" in _on:
+                            _out["ou"][_line]["over"] = _ov
+                        elif "under" in _on:
+                            _out["ou"][_line]["under"] = _ov
+
+                # Asian Handicap
+                elif any(t in _mn for t in ["asian handicap", "asian lines"]):
+                    for _o in _odds_list:
+                        _on = (_o.get("name") or "").lower()
+                        _ov = float(_o.get("odds") or 0)
+                        if _ov <= 1:
+                            continue
+                        _m = _re.search(r"([+-]?\d+\.?\d*)", _on)
+                        if not _m:
+                            continue
+                        _line = _m.group(1)
+                        if _line not in _out["ah"]:
+                            _out["ah"][_line] = {"home": 0.0, "away": 0.0}
+                        if "home" in _on:
+                            _out["ah"][_line]["home"] = _ov
+                        elif "away" in _on:
+                            _out["ah"][_line]["away"] = _ov
+
+            # Recursion sobre valores nested
             for _v in obj.values():
-                if isinstance(_v, (dict, list)): _find_1x2(_v, depth+1)
-        _find_1x2(_results[0])
-        return _oh, _od, _oa
+                if isinstance(_v, (dict, list)):
+                    _find_markets(_v, depth + 1)
+
+        _find_markets(_results[0])
+        return _out
     except:
-        return 0.0, 0.0, 0.0
+        return {}
 
 def _refresh_odds_inplace(matches: list) -> list:
     """
