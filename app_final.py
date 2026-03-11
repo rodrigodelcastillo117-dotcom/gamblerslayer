@@ -1410,10 +1410,19 @@ def run_monte_carlo(game, n=10_000):
             ("DC", game["home_team"]+" o "+game["away_team"]+" (sin empate)", p_dc_12, dc_12_ev, str(DC_ML), quarter_kelly(p_dc_12,DC_ML)),
         ]
 
-    best_single=None; best_ev_v=-999
+    # Market preference order when EVs are close: BTTS > O/U > ML > DC
+    MARKET_PREF = {"BTTS": 4, "O/U": 3, "ML": 2, "DC": 1}
+    best_single=None; best_ev_v=-999; best_pref=-1
     for mtype,label,prob,ev,ml,kelly in candidates:
-        if prob is not None and ev is not None and ev>best_ev_v:
-            best_ev_v=ev; best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
+        if prob is None or ev is None:
+            continue
+        pref = MARKET_PREF.get(mtype, 0)
+        # Accept if strictly higher EV, or same EV tier (within 1pt) but better market preference
+        is_better_ev   = ev > best_ev_v + 1.0
+        is_same_ev_better_market = (abs(ev - best_ev_v) <= 1.0) and (pref > best_pref)
+        if is_better_ev or is_same_ev_better_market:
+            best_ev_v=ev; best_pref=pref
+            best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
 
     # intra-parlay candidates stored for use by build_parlays()
     best_parlay=None  # will be set by build_parlays() in run_all_simulations
@@ -1460,9 +1469,11 @@ def build_parlays(results):
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     def is_today(r):
-        """Return True if the game is scheduled for today or has no date (live/unknown)."""
-        d = (r.get("date") or "")[:10]  # "2026-03-11T20:00:00Z" → "2026-03-11"
-        return d == "" or d == today_str
+        """Return True if game is today, live/unknown date, or a demo game."""
+        d = (r.get("date") or "")[:10]
+        if d == "" and str(r.get("id","")).startswith("d"):
+            return True
+        return d == today_str
 
     # Only consider today's games
     results_today = [r for r in results if is_today(r)]
@@ -2236,7 +2247,15 @@ with tab_parlays:
                 unsafe_allow_html=True
             )
         elif pending_games:
-            st.markdown('<div class="warn-banner">No se encontraron parlays con EV positivo. Prueba con más ligas o espera más partidos.</div>',unsafe_allow_html=True)
+            all_parlays_raw = [r for r in sr if r["sim"].get("best_parlay")]
+            if all_parlays_raw:
+                best_raw = max(all_parlays_raw, key=lambda r: r["sim"]["best_parlay"].get("ev",-999))
+                bp = best_raw["sim"]["best_parlay"]
+                ev_str = f"{bp.get('ev',0):+.1f}"
+                st.warning(f"\u26a0 No hay parlays con EV positivo hoy. El mejor disponible tiene EV {ev_str} \u2014 apuesta con precauci\u00f3n.")
+                st.markdown(render_parlay_card(best_raw), unsafe_allow_html=True)
+            else:
+                st.info("No hay suficientes partidos para armar parlays hoy. Selecciona m\u00e1s ligas o espera m\u00e1s juegos.")
         else:
             st.markdown('<div class="warn-banner">Todos los partidos del día han terminado. No hay partidos pendientes para nuevos parlays.</div>',unsafe_allow_html=True)
 
