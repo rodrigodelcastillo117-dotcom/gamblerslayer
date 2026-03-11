@@ -1251,7 +1251,87 @@ def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
     except Exception:
         return []
 
-@st.cache_data(ttl=600, show_spinner=False)
+
+def _refresh_odds_inplace(matches: list) -> list:
+    """
+    Refresca odds de The Odds API en tiempo real (sin caché).
+    Llamada FUERA de get_cartelera para que siempre use datos frescos.
+    """
+    import requests as _rq
+    _odds_key = ODDS_API_KEY
+    if not _odds_key or not matches:
+        return matches
+    _UEFA_LIVE = {
+        "uefa.champions": "soccer_uefa_champs_league",
+        "uefa.europa":    "soccer_uefa_europa_league",
+        "uefa.europa.conf": "soccer_uefa_europa_conference_league",
+        "concacaf.champions": "soccer_concacaf_champions_cup",
+        "concacaf.league": "soccer_concacaf_league",
+    }
+    _ALL_LIVE = dict(_UEFA_LIVE)
+    # Ligas adicionales con cobertura en The Odds API
+    _EXTRA_LIVE = {
+        "esp.1": "soccer_spain_la_liga",
+        "eng.1": "soccer_epl",
+        "ger.1": "soccer_germany_bundesliga",
+        "ita.1": "soccer_italy_serie_a",
+        "fra.1": "soccer_france_ligue_1",
+        "usa.1": "soccer_usa_mls",
+        "mex.1": "soccer_mexico_ligamx",
+    }
+    _ALL_LIVE.update(_EXTRA_LIVE)
+
+    _bulk = {}
+    for _m in matches:
+        if _m.get("state") == "post": continue
+        _sl = _m.get("slug","")
+        if _sl not in _ALL_LIVE: continue
+        if _sl not in _bulk:
+            try:
+                _r = _rq.get(
+                    f"https://api.the-odds-api.com/v4/sports/{_ALL_LIVE[_sl]}/odds",
+                    params={"apiKey": _odds_key, "regions": "eu",
+                            "markets": "h2h", "oddsFormat": "decimal",
+                            "bookmakers": "bet365,pinnacle,williamhill,betfair,unibet"},
+                    timeout=8)
+                _bulk[_sl] = _r.json() if _r.status_code == 200 else []
+            except: _bulk[_sl] = []
+
+        def _fp(tname, od):
+            tname = (tname or "").lower()
+            if od.get(tname, 0) > 1: return od[tname]
+            t5 = tname[:5]
+            for k,v in od.items():
+                if t5 and t5 in k and v > 1: return v
+            tw = tname.split()[0] if tname else ""
+            for k,v in od.items():
+                if tw and tw in k and v > 1: return v
+            return 0
+
+        for _g in _bulk.get(_sl, []):
+            _gh = (_g.get("home_team") or "").lower()
+            _ga = (_g.get("away_team") or "").lower()
+            _mh = _m["home"].lower(); _ma = _m["away"].lower()
+            if not (_mh[:5] in _gh or _ma[:5] in _ga or _gh[:5] in _mh or _ga[:5] in _ma):
+                continue
+            _ph, _pd, _pa = [], [], []
+            for _bk in _g.get("bookmakers", []):
+                for _mkt in _bk.get("markets", []):
+                    if _mkt["key"] == "h2h":
+                        _outs = {(_oc.get("name") or "").lower(): float(_oc.get("price",0) or 0)
+                                 for _oc in _mkt.get("outcomes",[]) if _oc.get("price",0) > 1}
+                        _pph = _fp(_gh, _outs); _ppa = _fp(_ga, _outs)
+                        if _pph > 1: _ph.append(_pph)
+                        if _outs.get("draw",0) > 1: _pd.append(_outs["draw"])
+                        if _ppa > 1: _pa.append(_ppa)
+            if _ph and _pa:
+                _m["odd_h"] = round(sum(_ph)/len(_ph), 2)
+                _m["odd_d"] = round(sum(_pd)/len(_pd), 2) if _pd else 3.4
+                _m["odd_a"] = round(sum(_pa)/len(_pa), 2)
+            break
+    return matches
+
+@st.cache_data(ttl=180, show_spinner=False)
 def get_cartelera():
     now   = datetime.now(CDMX)
     # Pedimos hoy + 5 días en UTC para no perder partidos por diferencia horaria
@@ -21969,6 +22049,18 @@ if deporte == "futbol":
     with st.spinner("Cargando cartelera..."):
         try:
             all_matches = get_cartelera()
+            # Refrescar odds en tiempo real (sin caché) — siempre datos frescos
+            try:
+                all_matches = _refresh_odds_inplace(all_matches)
+            except: pass
+            # Invalidar caché de picks si cambiaron las odds
+            _odds_sig = {m.get("id",""): (m.get("odd_h",0), m.get("odd_a",0)) for m in all_matches}
+            if st.session_state.get("_odds_sig_prev") != _odds_sig:
+                # Odds cambiaron — limpiar caché de xG para recalcular picks
+                for _k in list(st.session_state.keys()):
+                    if _k.startswith("_xg_cache_"):
+                        del st.session_state[_k]
+                st.session_state["_odds_sig_prev"] = _odds_sig
         except Exception as _e:
             all_matches = []
             st.warning(f"⚠️ Error cargando fútbol: {_e}")
