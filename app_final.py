@@ -1252,63 +1252,256 @@ def _apifootball_cartelera(slug: str, league_id: int, league_name: str) -> list:
         return []
 
 
+
+def _b365_bulk_upcoming_odds() -> dict:
+    """
+    UNA sola llamada a BetsAPI upcoming → dict de odds 1X2 para todos los partidos.
+    Retorna: { "home_key|away_key": {"odd_h": x, "odd_d": x, "odd_a": x, "fi": id} }
+    Cacheable en session_state por 10 min.
+    """
+    import time as _t2
+    _cache_key = "_b365_bulk_cache"
+    _cache_ts   = "_b365_bulk_ts"
+    _ss = st.session_state
+    _now = _t2.time()
+    # Devolver caché si tiene menos de 10 min
+    if _cache_key in _ss and (_now - _ss.get(_cache_ts, 0)) < 600:
+        return _ss[_cache_key]
+
+    if not BETSAPI_KEY:
+        return {}
+
+    _HEADERS = {
+        "x-rapidapi-host": "betsapi2.p.rapidapi.com",
+        "x-rapidapi-key":  BETSAPI_KEY,
+    }
+
+    def _novig3(h, d, a):
+        t = h + d + a
+        if t <= 0: return 0.0, 0.0, 0.0
+        return round(h/t, 4), round(d/t, 4), round(a/t, 4)
+
+    def _impl(dec):
+        try: return 1.0/float(dec) if float(dec) > 1 else 0.0
+        except: return 0.0
+
+    _result = {}
+    try:
+        import requests as _rq2
+        # Traer hasta 3 páginas de partidos próximos de fútbol (sport_id=1)
+        for _pg in range(1, 4):
+            _r = _rq2.get(
+                "https://betsapi2.p.rapidapi.com/v1/bet365/upcoming",
+                headers=_HEADERS,
+                params={"sport_id": 1, "page": _pg},
+                timeout=10
+            )
+            if _r.status_code != 200: break
+            _evs = _r.json().get("results", [])
+            if not _evs: break
+
+            for _ev in _evs:
+                # Nombre del evento
+                _name = (_ev.get("name") or "").lower()
+                _parts = _name.replace(" vs ", "|").replace(" v ", "|").split("|")
+                _h = (_ev.get("home", {}).get("name") or (_parts[0].strip() if _parts else "")).lower()
+                _a = (_ev.get("away", {}).get("name") or (_parts[1].strip() if len(_parts) > 1 else "")).lower()
+                if not _h or not _a: continue
+
+                _fi = str(_ev.get("id") or _ev.get("FI") or "")
+                if not _fi: continue
+
+                # Odds 1X2 si vienen en el upcoming (a veces las incluye)
+                _oh = _impl(_ev.get("home_od") or _ev.get("odds_home") or 0)
+                _od = _impl(_ev.get("draw_od") or _ev.get("odds_draw") or 0)
+                _oa = _impl(_ev.get("away_od") or _ev.get("odds_away") or 0)
+                _oh_d = float(_ev.get("home_od") or _ev.get("odds_home") or 0)
+                _od_d = float(_ev.get("draw_od") or _ev.get("odds_draw") or 0)
+                _oa_d = float(_ev.get("away_od") or _ev.get("odds_away") or 0)
+
+                # Clave de búsqueda: primeros 6 chars de cada equipo
+                _key = f"{_h[:6]}|{_a[:6]}"
+                _result[_key] = {
+                    "odd_h": round(_oh_d, 2),
+                    "odd_d": round(_od_d, 2),
+                    "odd_a": round(_oa_d, 2),
+                    "fi":    _fi,
+                    "home":  _h,
+                    "away":  _a,
+                }
+                # También indexar por primeros 8 chars para mejor matching
+                _key2 = f"{_h[:8]}|{_a[:8]}"
+                _result[_key2] = _result[_key]
+
+    except Exception as _e:
+        pass  # Silencioso — no bloquear cartelera
+
+    _ss[_cache_key] = _result
+    _ss[_cache_ts]  = _now
+    return _result
+
+
+def _b365_get_prematch_1x2(fi: str) -> tuple:
+    """
+    Dado un FI de Bet365, obtiene las odds 1X2 via prematch.
+    Retorna (odd_h, odd_d, odd_a) en decimal, o (0,0,0) si falla.
+    """
+    if not BETSAPI_KEY or not fi:
+        return 0.0, 0.0, 0.0
+    import requests as _rq3
+    _HEADERS = {
+        "x-rapidapi-host": "betsapi2.p.rapidapi.com",
+        "x-rapidapi-key":  BETSAPI_KEY,
+    }
+    try:
+        _r = _rq3.get(
+            "https://betsapi2.p.rapidapi.com/v3/bet365/prematch",
+            headers=_HEADERS,
+            params={"FI": fi},
+            timeout=8
+        )
+        if _r.status_code != 200: return 0.0, 0.0, 0.0
+        _results = _r.json().get("results", [])
+        if not _results: return 0.0, 0.0, 0.0
+
+        # Parsear sp{} buscando 1X2
+        _oh = _od = _oa = 0.0
+        def _find_1x2(obj, depth=0):
+            nonlocal _oh, _od, _oa
+            if depth > 5 or (_oh > 1 and _oa > 1): return
+            if isinstance(obj, list):
+                for i in obj: _find_1x2(i, depth+1)
+                return
+            if not isinstance(obj, dict): return
+            _sp = obj.get("sp") or {}
+            for _mid, _md in _sp.items():
+                if not isinstance(_md, dict): continue
+                _mn = (_md.get("name") or "").lower()
+                if any(t in _mn for t in ["match result","1x2","full time result","match winner"]):
+                    for _out in (_md.get("odds") or []):
+                        _on = (_out.get("name") or "").lower()
+                        _ov = float(_out.get("odds") or 0)
+                        if _ov <= 1: continue
+                        if "home" in _on or _on in ["1"]: _oh = _ov
+                        elif "draw" in _on or _on in ["x"]: _od = _ov
+                        elif "away" in _on or _on in ["2"]: _oa = _ov
+            for _v in obj.values():
+                if isinstance(_v, (dict, list)): _find_1x2(_v, depth+1)
+        _find_1x2(_results[0])
+        return _oh, _od, _oa
+    except:
+        return 0.0, 0.0, 0.0
+
 def _refresh_odds_inplace(matches: list) -> list:
     """
-    Refresca odds de The Odds API en tiempo real (sin caché).
+    Refresca odds en tiempo real (sin caché).
+    Prioridad: 1) BetsAPI Bet365 (cobertura global) → 2) The Odds API (ligas UCL/UEFA que Bet365 puede no tener)
     Llamada FUERA de get_cartelera para que siempre use datos frescos.
     """
     import requests as _rq
-    _odds_key = ODDS_API_KEY
-    if not _odds_key or not matches:
+    if not matches:
         return matches
-    _UEFA_LIVE = {
-        "uefa.champions": "soccer_uefa_champs_league",
-        "uefa.europa":    "soccer_uefa_europa_league",
-        "uefa.europa.conf": "soccer_uefa_europa_conference_league",
-        "concacaf.champions": "soccer_concacaf_champions_cup",
-        "concacaf.league": "soccer_concacaf_league",
-    }
-    _ALL_LIVE = dict(_UEFA_LIVE)
-    # Ligas adicionales con cobertura en The Odds API
-    _EXTRA_LIVE = {
-        "esp.1": "soccer_spain_la_liga",
-        "eng.1": "soccer_epl",
-        "ger.1": "soccer_germany_bundesliga",
-        "ita.1": "soccer_italy_serie_a",
-        "fra.1": "soccer_france_ligue_1",
-        "usa.1": "soccer_usa_mls",
-        "mex.1": "soccer_mexico_ligamx",
-    }
-    _ALL_LIVE.update(_EXTRA_LIVE)
 
-    _bulk = {}
-    for _m in matches:
-        if _m.get("state") == "post": continue
+    # ══════════════════════════════════════════════════════════════════
+    # PASO 1: BetsAPI Bet365 — cobertura global (Liga MX, CONCACAF, todo)
+    # Una sola llamada cacheada trae todos los partidos del día
+    # ══════════════════════════════════════════════════════════════════
+    if BETSAPI_KEY:
+        _b365_idx = _b365_bulk_upcoming_odds()
+
+        for _m in matches:
+            if _m.get("state") == "post": continue
+            _mh = _m["home"].lower().strip()
+            _ma = _m["away"].lower().strip()
+
+            _fi_found = None
+            _oh_f = _od_f = _oa_f = 0.0
+
+            # Buscar por nombre fuzzy: 8, 6, 5 chars
+            for _klen in [8, 6, 5]:
+                _search_key = f"{_mh[:_klen]}|{_ma[:_klen]}"
+                if _search_key in _b365_idx:
+                    _entry = _b365_idx[_search_key]
+                    _fi_found = _entry.get("fi")
+                    _oh_f = float(_entry.get("odd_h") or 0)
+                    _od_f = float(_entry.get("odd_d") or 0)
+                    _oa_f = float(_entry.get("odd_a") or 0)
+                    break
+
+            # Odds directas del bulk → usarlas
+            if _fi_found and _oh_f > 1 and _oa_f > 1:
+                _m["odd_h"] = _oh_f
+                _m["odd_d"] = _od_f if _od_f > 1 else 3.5
+                _m["odd_a"] = _oa_f
+                _m["odds_src"] = "bet365"
+                continue
+
+            # Solo FI sin odds → llamar prematch para ese partido
+            if _fi_found:
+                _oh_p, _od_p, _oa_p = _b365_get_prematch_1x2(_fi_found)
+                if _oh_p > 1 and _oa_p > 1:
+                    _m["odd_h"] = _oh_p
+                    _m["odd_d"] = _od_p if _od_p > 1 else 3.5
+                    _m["odd_a"] = _oa_p
+                    _m["odds_src"] = "bet365_pm"
+
+    # ══════════════════════════════════════════════════════════════════
+    # PASO 2: The Odds API — complemento para partidos que BetsAPI no cubrió
+    # (UCL, UEFA Europa, Conf. League — a veces mejor cobertura de casas EU)
+    # ══════════════════════════════════════════════════════════════════
+    _odds_key = ODDS_API_KEY
+    if not _odds_key:
+        return matches
+
+    # Solo partidos que todavía no tienen odds
+    _still_missing = [_m for _m in matches
+                      if _m.get("state") != "post"
+                      and float(_m.get("odd_h") or 0) <= 1.0]
+    if not _still_missing:
+        return matches
+
+    _ODDS_API_MAP = {
+        "uefa.champions":    "soccer_uefa_champs_league",
+        "uefa.europa":       "soccer_uefa_europa_league",
+        "uefa.europa.conf":  "soccer_uefa_europa_conference_league",
+        "concacaf.champions":"soccer_concacaf_champions_cup",
+        "concacaf.league":   "soccer_concacaf_league",
+        "esp.1":  "soccer_spain_la_liga",
+        "eng.1":  "soccer_epl",
+        "ger.1":  "soccer_germany_bundesliga",
+        "ita.1":  "soccer_italy_serie_a",
+        "fra.1":  "soccer_france_ligue_1",
+        "usa.1":  "soccer_usa_mls",
+        "mex.1":  "soccer_mexico_ligamx",
+    }
+
+    _bulk2 = {}
+    def _fp(tname, od):
+        tname = (tname or "").lower()
+        if od.get(tname, 0) > 1: return od[tname]
+        t5 = tname[:5]
+        for k,v in od.items():
+            if t5 and t5 in k and v > 1: return v
+        tw = tname.split()[0] if tname else ""
+        for k,v in od.items():
+            if tw and tw in k and v > 1: return v
+        return 0
+
+    for _m in _still_missing:
         _sl = _m.get("slug","")
-        if _sl not in _ALL_LIVE: continue
-        if _sl not in _bulk:
+        if _sl not in _ODDS_API_MAP: continue
+        if _sl not in _bulk2:
             try:
                 _r = _rq.get(
-                    f"https://api.the-odds-api.com/v4/sports/{_ALL_LIVE[_sl]}/odds",
+                    f"https://api.the-odds-api.com/v4/sports/{_ODDS_API_MAP[_sl]}/odds",
                     params={"apiKey": _odds_key, "regions": "eu",
                             "markets": "h2h", "oddsFormat": "decimal",
                             "bookmakers": "bet365,pinnacle,williamhill,betfair,unibet"},
                     timeout=8)
-                _bulk[_sl] = _r.json() if _r.status_code == 200 else []
-            except: _bulk[_sl] = []
+                _bulk2[_sl] = _r.json() if _r.status_code == 200 else []
+            except: _bulk2[_sl] = []
 
-        def _fp(tname, od):
-            tname = (tname or "").lower()
-            if od.get(tname, 0) > 1: return od[tname]
-            t5 = tname[:5]
-            for k,v in od.items():
-                if t5 and t5 in k and v > 1: return v
-            tw = tname.split()[0] if tname else ""
-            for k,v in od.items():
-                if tw and tw in k and v > 1: return v
-            return 0
-
-        for _g in _bulk.get(_sl, []):
+        for _g in _bulk2.get(_sl, []):
             _gh = (_g.get("home_team") or "").lower()
             _ga = (_g.get("away_team") or "").lower()
             _mh = _m["home"].lower(); _ma = _m["away"].lower()
@@ -1328,7 +1521,9 @@ def _refresh_odds_inplace(matches: list) -> list:
                 _m["odd_h"] = round(sum(_ph)/len(_ph), 2)
                 _m["odd_d"] = round(sum(_pd)/len(_pd), 2) if _pd else 3.4
                 _m["odd_a"] = round(sum(_pa)/len(_pa), 2)
+                _m["odds_src"] = "oddsapi"
             break
+
     return matches
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -23908,6 +24103,7 @@ if st.session_state["view"] == "cartelera":
                                                     _oh_c = float(_m.get("odd_h",0) or 0)
                                                     _oa_c = float(_m.get("odd_a",0) or 0)
                                                     _od_c = float(_m.get("odd_d",0) or 0)
+                                                    _has_odds = _oh_c > 1 and _oa_c > 1
                                                     if _oh_c > 1 and _oa_c > 1 and _od_c > 1:
                                                         _vig_r = 1/_oh_c + 1/_od_c + 1/_oa_c
                                                         _ph2 = round((1/_oh_c) / _vig_r, 4)
@@ -23919,18 +24115,30 @@ if st.session_state["view"] == "cartelera":
                                                         _pa2 = round((1/_oa_c) / _vig_r * 0.80, 4)
                                                         _pd2 = round(max(0.05, 1-_ph2-_pa2), 4)
                                                     else:
-                                                        _ph2 = 0.40; _pd2 = 0.25; _pa2 = 0.35
-                                                    # xG sintético desde probs (para Poisson en pick2)
-                                                    _hx2 = max(0.3, -_imath.log(max(0.01, 1-_ph2)) * 1.1)
-                                                    _ax2 = max(0.3, -_imath.log(max(0.01, 1-_pa2)) * 1.1)
+                                                        _ph2 = None; _pd2 = None; _pa2 = None
+                                                    # xG sintético desde probs (para pick2)
+                                                    if _has_odds:
+                                                        _hx2 = max(0.3, -_imath.log(max(0.01, 1-_ph2)) * 1.1)
+                                                        _ax2 = max(0.3, -_imath.log(max(0.01, 1-_pa2)) * 1.1)
+                                                    else:
+                                                        _hx2 = 1.2; _ax2 = 1.0
 
-                                                    _mx = max(_ph2,_pd2,_pa2)
-                                                    _ch = "#00ff88" if _ph2==_mx else "#666"
-                                                    _cd = "#FFD700" if _pd2==_mx else "#666"
-                                                    _ca = "#00ff88" if _pa2==_mx else "#666"
-                                                    _bh = "900" if _ph2==_mx else "400"
-                                                    _bd = "900" if _pd2==_mx else "400"
-                                                    _ba = "900" if _pa2==_mx else "400"
+                                                    # Render probs: solo si hay odds reales
+                                                    if _has_odds and _ph2 is not None:
+                                                        _mx = max(_ph2,_pd2,_pa2)
+                                                        _ch = "#00ff88" if _ph2==_mx else "#aaa"
+                                                        _cd = "#FFD700" if _pd2==_mx else "#aaa"
+                                                        _ca = "#00ff88" if _pa2==_mx else "#aaa"
+                                                        _bh = "900" if _ph2==_mx else "400"
+                                                        _bd = "900" if _pd2==_mx else "400"
+                                                        _ba = "900" if _pa2==_mx else "400"
+                                                        _pct_h = f"{_ph2*100:.0f}%"
+                                                        _pct_d = f"{_pd2*100:.0f}%"
+                                                        _pct_a = f"{_pa2*100:.0f}%"
+                                                    else:
+                                                        _mx = 0; _ch = "#555"; _cd = "#555"; _ca = "#555"
+                                                        _bh = "400"; _bd = "400"; _ba = "400"
+                                                        _pct_h = "--"; _pct_d = "--"; _pct_a = "--"
                                                     _border = "#ff444466" if _live else "#c9a84c1a"
                                                     _home_short = _m["home"]
                                                     _away_short = _m["away"]
@@ -24051,6 +24259,8 @@ if st.session_state["view"] == "cartelera":
                                                         # ════════════════════════════════════════════
                                                         import math as _pm2
                                                         # Leer picks del análisis manual si existen
+                                                        # Sin odds reales → no mostrar pick
+                                                        if not _has_odds: _pick_lbl = ""; _pick2_lbl_c = ""
                                                         _br_analisis = _br and "analisis" in (_br.get("src","") or "").lower()
                                                         _pick_lbl     = (_br.get("pick","")      if _br_analisis else "") or ""
                                                         _pick_prob    = (_br.get("prob",0)        if _br_analisis else 0)  or 0.0
@@ -24182,15 +24392,15 @@ if st.session_state["view"] == "cartelera":
                                                         f"<div style='display:flex;gap:3px;margin-top:5px'>"
                                                         f"<div style='flex:1;text-align:center;background:#100c04;"
                                                         f"border-radius:4px;padding:3px 1px'>"
-                                                        f"<div style='font-size:1.125rem;font-weight:{_bh};color:{_ch}'>{_ph2*100:.0f}%</div>"
+                                                        f"<div style='font-size:1.125rem;font-weight:{_bh};color:{_ch}'>{_pct_h}</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>🏠</div></div>"
                                                         f"<div style='flex:1;text-align:center;background:#100c04;"
                                                         f"border-radius:4px;padding:3px 1px'>"
-                                                        f"<div style='font-size:1.125rem;font-weight:{_bd};color:{_cd}'>{_pd2*100:.0f}%</div>"
+                                                        f"<div style='font-size:1.125rem;font-weight:{_bd};color:{_cd}'>{_pct_d}</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>🤝</div></div>"
                                                         f"<div style='flex:1;text-align:center;background:#100c04;"
                                                         f"border-radius:4px;padding:3px 1px'>"
-                                                        f"<div style='font-size:1.125rem;font-weight:{_ba};color:{_ca}'>{_pa2*100:.0f}%</div>"
+                                                        f"<div style='font-size:1.125rem;font-weight:{_ba};color:{_ca}'>{_pct_a}</div>"
                                                         f"<div style='font-size:0.75rem;color:#6b5a3a'>✈️</div></div>"
                                                         f"</div>{_pick_row}</div>",
                                                         unsafe_allow_html=True)
