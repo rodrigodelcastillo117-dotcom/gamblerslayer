@@ -6246,6 +6246,10 @@ def _villar_auto_pick(partido_db):
             # DO pick débil cuando nadie domina claramente
             if mkt == "DO" and abs(_ph_d - _pa_d) < 0.08:
                 penalty = -10.0
+            # DO redundante cuando hay ML fuerte disponible (≥54%)
+            # — el ML ya es la apuesta correcta, el DO solo cubre el empate innecesariamente
+            if mkt == "DO" and max(_ph_d, _pa_d) >= 0.54:
+                penalty += -12.0  # penalizar DO cuando el ML del favorito es firme
             # AA penalizada si algún equipo tiene xG muy bajo
             if mkt == "AA" and min(hxg, axg) < 0.70:
                 penalty = -12.0  # ajustado de 0.65→0.70 y de -15→-12
@@ -6279,19 +6283,41 @@ def _villar_auto_pick(partido_db):
         # Pick1 — prioridad:
         #  1. ML muy seguro (prob ≥ 0.62) con score positivo → siempre es Pick1
         #  2. ML fuerte (prob ≥ 0.55) con score ≥ top_score*0.65 → prefiere ML sobre goles
-        #  3. Mayor score contextual entre todos
+        #  3. B365 confirma favorito ML ≥0.55 → ML gana sobre DO aunque score sea menor
+        #  4. Mayor score contextual entre todos
         if _qual_de:
             _ml_strong = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _qual_de
                           if m == "ML" and p >= 0.62]
             _ml_firm   = [(l,p,o,ev,m,s) for l,p,o,ev,m,s in _qual_de
                           if m == "ML" and p >= 0.55]
             _top_score = _qual_de[0][5]
+
+            # ── B365 confirma favorito: si el mercado dice ML ≥ 0.54, ML gana sobre DO ──
+            _b365_ml_confirmed = False
+            try:
+                _b365_snap = st.session_state.get("_b365_last_consensus", {})
+                _b365_mkt_fav = _b365_snap.get("market_favorite","")
+                _b365_mkt_favp = _b365_snap.get("market_fav_prob", 0)
+                if _b365_mkt_fav in ("home","away") and _b365_mkt_favp >= 0.54:
+                    _b365_ml_confirmed = True
+            except: pass
+
             if _ml_strong:
                 # ML muy seguro → siempre Pick1, aunque score de goles sea mayor
                 _best_de = max(_ml_strong, key=lambda x: x[1])
-            elif _ml_firm and _ml_firm[0][5] >= _top_score * 0.60:
-                # ML firme con score razonable → prefiere ML sobre mercados de goles
+            elif _ml_firm and (_ml_firm[0][5] >= _top_score * 0.60 or _b365_ml_confirmed):
+                # ML firme con score razonable O confirmado por B365 → ML gana sobre DO
                 _best_de = _ml_firm[0]
+            elif _qual_de[0][4] == "DO" and len(_ml_firm) > 0 and _ml_firm[0][1] >= 0.52:
+                # DO está arriba pero hay ML ≥ 52% — DO solo gana si ML es realmente débil
+                _do_score = _qual_de[0][5]
+                _ml_score = _ml_firm[0][5]
+                if _do_score > _ml_score * 1.35:
+                    # DO domina por margen amplio (35%+) → DO como Pick1
+                    _best_de = _qual_de[0]
+                else:
+                    # DO no domina con claridad → prefiere ML más informativo
+                    _best_de = _ml_firm[0]
             else:
                 _best_de = _qual_de[0]
         else:
