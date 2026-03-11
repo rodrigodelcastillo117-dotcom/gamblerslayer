@@ -4,7 +4,7 @@ THE GAMBLERS DEN — FINAL
 """
 import streamlit as st
 import streamlit.components.v1 as _st_components
-import requests, numpy as np, math, threading
+import requests, numpy as np, math, threading, re
 from datetime import datetime, timedelta
 import pytz
 
@@ -29,6 +29,7 @@ try:
     TENNIS_API_KEY    = st.secrets.get("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
     API_FOOTBALL_KEY  = st.secrets.get("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = st.secrets.get("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
+    BETSAPI_KEY       = st.secrets.get("BETSAPI_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
 except:
     BOT_TOKEN         = os.getenv("BOT_TOKEN", "")
     CHAT_ID           = os.getenv("CHAT_ID", "")
@@ -38,6 +39,7 @@ except:
     TENNIS_API_KEY    = os.getenv("TENNIS_API_KEY", "04f347bda8bf9af33d836085b958ed98cb885b4d94e1a1bb848732d5813a2cfc")
     API_FOOTBALL_KEY  = os.getenv("API_FOOTBALL_KEY", "3c836b8a839378ddddcdc7c7635778e1")
     ODDS_API_KEY      = os.getenv("ODDS_API_KEY", "fcd1d66114bf43935dfb7b53e7433994")
+    BETSAPI_KEY       = os.getenv("BETSAPI_KEY", "150f2d06famsh09366da78aff829p164679jsna06a32c89671")
 
 # ══════════════════════════════════════════════════════════════════
 # CAPA IA — motor central de la app
@@ -16930,6 +16932,127 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                     if _fi_e.get("referee"):
                         _c["reasoning"] = _c.get("reasoning","") + f" · \u2696\ufe0f {_fi_e['referee'][:15]}"
                 except: pass
+
+            # ── Bet365 Market Consensus — señal de mercado no-vig ──
+            if _c.get("sport","futbol") == "futbol":
+                try:
+                    _b365 = _b365_market_consensus(_home_c, _away_c, sport_id=1)
+                    if _b365.get("found"):
+                        _mkt_h   = _b365["ph_novig"]
+                        _mkt_a   = _b365["pa_novig"]
+                        _mkt_d   = _b365["pd_novig"]
+                        _mod_prob = _c.get("prob", 0.45)
+                        _pick_lbl2 = _c.get("pick","").lower()
+                        _mkt_fav   = _b365["market_favorite"]
+
+                        # ── Determinar prob del mercado para el outcome del pick ──
+                        if any(w in _pick_lbl2 for w in ["local","home","gana"]):
+                            _mkt_prob_pick = _mkt_h
+                            # Draw No Bet del local — fuerza real sin ruido de empate
+                            _dnb_adj = _b365["dnb_home_novig"]
+                        elif any(w in _pick_lbl2 for w in ["visit","away","visita"]):
+                            _mkt_prob_pick = _mkt_a
+                            _dnb_adj = _b365["dnb_away_novig"]
+                        elif "empate" in _pick_lbl2 or "draw" in _pick_lbl2:
+                            _mkt_prob_pick = _mkt_d
+                            _dnb_adj = 0.0
+                        elif any(w in _pick_lbl2 for w in ["over","más","o2","o3"]):
+                            _mkt_prob_pick = _b365["ou25_over_novig"] or _mkt_h
+                            _dnb_adj = 0.0
+                        elif any(w in _pick_lbl2 for w in ["under","menos","u2","u3"]):
+                            _mkt_prob_pick = _b365["ou25_under_novig"] or (1 - _b365["ou25_over_novig"]) or _mkt_h
+                            _dnb_adj = 0.0
+                        elif "btts" in _pick_lbl2 or "ambos" in _pick_lbl2:
+                            _mkt_prob_pick = _b365["btts_yes_novig"] or _mkt_h
+                            _dnb_adj = 0.0
+                        else:
+                            _mkt_prob_pick = _mkt_h
+                            _dnb_adj = 0.0
+
+                        _delta_mkt = _mod_prob - _mkt_prob_pick
+                        _b365_parts = []
+
+                        # ── 1. Confluencia modelo vs mercado 1X2 ──────────────
+                        if _mkt_prob_pick > 0:
+                            if _delta_mkt >= 0.05:
+                                _b365_bonus = min(1.5, _delta_mkt * 12)
+                                _c["score"] = min(10.0, _c["score"] + _b365_bonus)
+                                _b365_parts.append(f"🎯 Modelo>{_mkt_prob_pick:.0%} mkt(+{_b365_bonus:.1f})")
+                            elif abs(_delta_mkt) <= 0.04:
+                                _c["score"] = min(10.0, _c["score"] + 0.5)
+                                _b365_parts.append(f"✅ Confluencia B365 {_mkt_prob_pick:.0%}")
+                            elif _delta_mkt <= -0.08:
+                                _blend = _mod_prob * 0.65 + _mkt_prob_pick * 0.35
+                                _c["prob"] = min(0.92, _blend)
+                                _c["score"] = max(0.0, _c["score"] - 0.4)
+                                _b365_parts.append(f"⚠️ Mkt={_mkt_prob_pick:.0%}≠mod={_mod_prob:.0%}")
+                            else:
+                                _b365_parts.append(f"🎰 B365:{_mkt_prob_pick:.0%}")
+
+                        # ── 2. xG implícito vs nuestro xG ────────────────────
+                        _xg_mkt = _b365["xg_total_impl"]
+                        _xg_mod = _c.get("hxg", 0) + _c.get("axg", 0)
+                        if _xg_mkt > 0 and _xg_mod > 0:
+                            _xg_delta = _xg_mkt - _xg_mod
+                            if abs(_xg_delta) >= 0.6:
+                                # Mercado espera más/menos goles que nuestro modelo
+                                # Ajustar prob O/U del pick si aplica
+                                if any(w in _pick_lbl2 for w in ["over","más","o2"]):
+                                    _xg_adj = min(0.4, abs(_xg_delta) * 0.15) * (1 if _xg_delta > 0 else -1)
+                                    _c["score"] = min(10.0, max(0.0, _c["score"] + _xg_adj))
+                                _b365_parts.append(f"xG_mkt={_xg_mkt:.1f}(mod={_xg_mod:.1f})")
+
+                        # ── 3. Asian Handicap — margen de victoria esperado ───
+                        _ah_line = _b365["ah_line"]
+                        if _ah_line != 0.0:
+                            # AH negativo = favorito local con ventaja
+                            if _ah_line <= -1.5 and any(w in _pick_lbl2 for w in ["local","home","gana"]):
+                                _c["score"] = min(10.0, _c["score"] + 0.3)
+                                _b365_parts.append(f"AH={_ah_line:+.1f}🔥")
+                            elif _ah_line >= 1.5 and any(w in _pick_lbl2 for w in ["visit","away","visita"]):
+                                _c["score"] = min(10.0, _c["score"] + 0.3)
+                                _b365_parts.append(f"AH={_ah_line:+.1f}🔥")
+                            else:
+                                _b365_parts.append(f"AH={_ah_line:+.1f}")
+
+                        # ── 4. BTTS — señal de partido abierto ───────────────
+                        _btts = _b365["btts_yes_novig"]
+                        if _btts >= 0.62 and any(w in _pick_lbl2 for w in ["over","más","btts","ambos"]):
+                            _c["score"] = min(10.0, _c["score"] + 0.25)
+                            _b365_parts.append(f"BTTS={_btts:.0%}✅")
+                        elif _btts <= 0.35 and any(w in _pick_lbl2 for w in ["under","menos"]):
+                            _c["score"] = min(10.0, _c["score"] + 0.25)
+                            _b365_parts.append(f"BTTS={_btts:.0%}✅")
+
+                        # ── 5. Partido abierto → favorear picks dinámicos ────
+                        if _b365["market_open_game"]:
+                            if any(w in _pick_lbl2 for w in ["over","más","btts","ambos","o2","o3"]):
+                                _c["score"] = min(10.0, _c["score"] + 0.3)
+                                _b365_parts.append("🔓partido_abierto")
+
+                        # ── 6. Draw No Bet — fuerza real del favorito ────────
+                        if _dnb_adj >= 0.72 and any(w in _pick_lbl2 for w in ["local","home","gana","visit","away","visita"]):
+                            _c["score"] = min(10.0, _c["score"] + 0.2)
+                            _b365_parts.append(f"DNB={_dnb_adj:.0%}")
+
+                        # ── 7. Córners — señal de presión/posesión ───────────
+                        _corn_over = _b365["corners_over_novig"]
+                        _corn_line = _b365["corners_line"]
+                        if _corn_over >= 0.65 and any(w in _pick_lbl2 for w in ["corner","córner","corn"]):
+                            _c["score"] = min(10.0, _c["score"] + 0.3)
+                            _b365_parts.append(f"Corn>{_corn_line:.0f}={_corn_over:.0%}")
+
+                        _c["b365_signal"] = " · ".join(_b365_parts[:3])  # max 3 señales
+                        _c["b365_novig"] = {
+                            "ph": _mkt_h, "pd": _mkt_d, "pa": _mkt_a,
+                            "ou25_o": _b365["ou25_over_novig"],
+                            "btts":   _btts,
+                            "xg_h":   _b365["xg_home_impl"],
+                            "xg_a":   _b365["xg_away_impl"],
+                            "ah":     _ah_line,
+                            "dnb_h":  _b365["dnb_home_novig"],
+                        }
+                except: pass
         except: pass
         return _c
 
@@ -16965,7 +17088,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                       "|Trans:" + str(round(c.get("trans_score",5.0),1)) +
                       "|Coach:" + str(round(c.get("coach_score",5.0),1)) +
                       ("|Sharp:"+c.get("sharp_side","none")+"x"+str(c.get("sharp_strength",0)) if c.get("sharp_side","none")!="none" else "") +
-                      ("|FI:"+c.get("full_intel_src","")[:60] if c.get("full_intel_src") else "")),
+                      ("|FI:"+c.get("full_intel_src","")[:60] if c.get("full_intel_src") else "") +
+                      ("|B365:"+c.get("b365_signal","")[:40] if c.get("b365_signal") else "")),
                      c.get("contradiccion",False),
                      # Datos externos completos: xG real + Full Intel + Sharp
                      ((c.get("full_intel_src","") or c.get("rxg_source","") or
@@ -16987,6 +17111,8 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                         el_pick.get("rten_source",""))
             if _ext_src:
                 el_pick["reasoning"] = el_pick.get("reasoning","") + f" · 📊 {_ext_src[:80]}"
+            if el_pick.get("b365_signal"):
+                el_pick["reasoning"] = el_pick.get("reasoning","") + f" · {el_pick['b365_signal']}"
     except: pass
     if el_pick:
         el_pick = {**el_pick, "is_rongo_pick": True}
@@ -19039,6 +19165,474 @@ def _fetch_odds_movement(home: str, away: str, slug: str = "") -> dict:
 
     except:
         return _default
+
+
+# ══════════════════════════════════════════════════════════════════
+# BET365 MARKET CONSENSUS — cuotas no-vig via BetsAPI (RapidAPI)
+# Fuente: https://rapidapi.com/b365api-b365api-default/api/betsapi2
+#
+# Mercados extraídos:
+#   1X2, Asian Handicap, O/U múltiples líneas (0.5-4.5), BTTS,
+#   Draw No Bet, Double Chance, Halftime Result, 1st Half O/U,
+#   Team Goals O/U (local/visita), Corners O/U, Cards O/U,
+#   Match Result & O/U, BTTS & O/U
+#
+# Señales derivadas:
+#   xG implícito del mercado (ajuste Poisson sobre líneas O/U)
+#   xG por equipo (Team Goals O/U)
+#   Asian Handicap line → margen de victoria esperado
+#   Draw No Bet → fuerza real del favorito sin ruido de empate
+#   Confluencia mercado vs modelo propio
+# ══════════════════════════════════════════════════════════════════
+@st.cache_data(ttl=1800, show_spinner=False)
+def _b365_market_consensus(home: str, away: str, sport_id: int = 1) -> dict:
+    """
+    Cuotas Bet365 pre-partido → señales completas de mercado.
+    sport_id: 1=Fútbol, 18=Basketball, 13=Tenis
+    """
+    _default = {
+        "found": False,
+        # 1X2 no-vig
+        "ph_novig": 0.0, "pd_novig": 0.0, "pa_novig": 0.0,
+        # O/U 2.5 no-vig
+        "ou25_over_novig": 0.0, "ou25_under_novig": 0.0,
+        # O/U todas las líneas
+        "ou_lines": {},          # {0.5: p_over, 1.5: p_over, ...}
+        # BTTS no-vig
+        "btts_yes_novig": 0.0, "btts_no_novig": 0.0,
+        # Draw No Bet no-vig
+        "dnb_home_novig": 0.0, "dnb_away_novig": 0.0,
+        # Double Chance no-vig
+        "dc_1x_novig": 0.0, "dc_x2_novig": 0.0, "dc_12_novig": 0.0,
+        # Halftime no-vig
+        "ht_home_novig": 0.0, "ht_draw_novig": 0.0, "ht_away_novig": 0.0,
+        # 1st Half O/U 0.5
+        "ht_ou_over_novig": 0.0,
+        # Team Goals O/U (xG implícito por equipo)
+        "xg_home_impl": 0.0,    # goles esperados local según mercado
+        "xg_away_impl": 0.0,    # goles esperados visita según mercado
+        "xg_total_impl": 0.0,   # xG total implícito (ajuste Poisson)
+        # Asian Handicap
+        "ah_line": 0.0,          # línea AH (negativo = favorito local)
+        "ah_home_novig": 0.0,
+        "ah_away_novig": 0.0,
+        # Corners O/U
+        "corners_line": 0.0,
+        "corners_over_novig": 0.0,
+        # Cards O/U
+        "cards_line": 0.0,
+        "cards_over_novig": 0.0,
+        # Combinados
+        "combo_1x2_ou": {},      # {"home_over": p, "draw_over": p, ...}
+        # Meta
+        "market_favorite": "",
+        "market_fav_prob": 0.0,
+        "market_open_game": False,  # True si el mercado espera partido abierto
+        "b365_raw": {},
+        "source_txt": ""
+    }
+
+    if not BETSAPI_KEY:
+        return _default
+
+    _HEADERS = {
+        "x-rapidapi-host": "betsapi2.p.rapidapi.com",
+        "x-rapidapi-key": BETSAPI_KEY,
+    }
+
+    def _novig(probs: list) -> list:
+        total = sum(p for p in probs if p > 0)
+        if total <= 0: return probs
+        return [p / total for p in probs]
+
+    def _dec_to_impl(dec: float) -> float:
+        return 1.0 / dec if dec > 1.0 else 0.0
+
+    def _fuzzy(a: str, b: str) -> bool:
+        a, b = a.lower().strip(), b.lower().strip()
+        return a[:6] in b or b[:6] in a or a[:8] in b or b[:8] in a
+
+    import math
+    def _poisson_ou(lam: float, line: float) -> float:
+        """P(goles > line) bajo Poisson(lam)."""
+        k = int(line)
+        try:
+            p_under = sum(math.exp(-lam) * lam**i / math.factorial(i) for i in range(k+1))
+            return max(0.0, min(1.0, 1.0 - p_under))
+        except: return 0.5
+
+    def _fit_poisson_xg(ou_lines_novig: dict) -> float:
+        """Ajuste Poisson sobre múltiples líneas O/U → xG total del mercado."""
+        if len(ou_lines_novig) < 2: return 0.0
+        best_lam, best_err = 2.5, float('inf')
+        for lam_x10 in range(5, 70):
+            lam = lam_x10 / 10.0
+            err = sum((_poisson_ou(lam, l) - p)**2 for l, p in ou_lines_novig.items())
+            if err < best_err:
+                best_err = err; best_lam = lam
+        return round(best_lam, 2)
+
+    try:
+        # ── PASO 1: Buscar FI del evento ──────────────────────────────
+        _fi = None
+        _home_l = home.lower().strip()
+        _away_l = away.lower().strip()
+
+        for _page in range(1, 4):
+            _r1 = requests.get(
+                "https://betsapi2.p.rapidapi.com/v1/bet365/upcoming",
+                headers=_HEADERS,
+                params={"sport_id": sport_id, "page": _page},
+                timeout=8
+            )
+            if _r1.status_code != 200: break
+            _events = _r1.json().get("results", [])
+            if not _events: break
+
+            for _ev in _events:
+                _ev_name = (_ev.get("name") or "").lower()
+                _teams = _ev_name.replace(" vs ", "|").replace(" v ", "|").split("|")
+                _ev_home = _teams[0].strip() if len(_teams) >= 2 else _ev_name
+                _ev_away = _teams[1].strip() if len(_teams) >= 2 else _ev_name
+
+                _h2 = (_ev.get("home", {}).get("name") or "").lower()
+                _a2 = (_ev.get("away", {}).get("name") or "").lower()
+
+                if (_fuzzy(_home_l, _ev_home) and _fuzzy(_away_l, _ev_away)) or \
+                   (_h2 and _a2 and _fuzzy(_home_l, _h2) and _fuzzy(_away_l, _a2)):
+                    _fi = _ev.get("id") or _ev.get("FI")
+                    break
+            if _fi: break
+
+        if not _fi:
+            return {**_default, "source_txt": "⚠️ Evento no encontrado en Bet365"}
+
+        # ── PASO 2: Traer cuotas ──────────────────────────────────────
+        _r2 = requests.get(
+            "https://betsapi2.p.rapidapi.com/v3/bet365/prematch",
+            headers=_HEADERS,
+            params={"FI": _fi},
+            timeout=8
+        )
+        if _r2.status_code != 200:
+            return {**_default, "source_txt": f"⚠️ BetsAPI {_r2.status_code}"}
+
+        _results = _r2.json().get("results", [])
+        if not _results:
+            return {**_default, "source_txt": "⚠️ Sin cuotas"}
+
+        # ── PASO 3: Parsear estructura sp{} de BetsAPI ────────────────
+        _raw = {}
+        def _parse(obj, depth=0):
+            if depth > 6 or not isinstance(obj, (dict, list)): return
+            if isinstance(obj, list):
+                for item in obj: _parse(item, depth+1)
+                return
+            _sp = obj.get("sp") or {}
+            for _mid, _md in _sp.items():
+                if not isinstance(_md, dict): continue
+                _mname = (_md.get("name") or _mid).lower()
+                _odds_list = _md.get("odds", [])
+                _raw[_mname] = {}
+                for _out in _odds_list:
+                    _oname = (_out.get("name") or "").strip()
+                    _oval  = float(_out.get("odds") or 0)
+                    _hdr   = (_out.get("header") or "").strip()
+                    _hdcp  = (_out.get("handicap") or "").strip()
+                    _key   = "|".join(filter(None, [_oname, _hdr, _hdcp]))
+                    if _oval > 1.0:
+                        _raw[_mname][_key] = _oval
+            # Recursivo para sub-estructuras
+            for _v in obj.values():
+                if isinstance(_v, (dict, list)): _parse(_v, depth+1)
+        _parse(_results[0] if _results else {})
+
+        # ── PASO 4: 1X2 ──────────────────────────────────────────────
+        _ph_i = _pd_i = _pa_i = 0.0
+        for _k, _mv in _raw.items():
+            if any(t in _k for t in ["match result","1x2","full time result","match winner"]):
+                for _ok, _ov in _mv.items():
+                    _okl = _ok.lower()
+                    if "home" in _okl or _ok.startswith("1|") or _ok == "1":
+                        _ph_i = _dec_to_impl(_ov)
+                    elif "draw" in _okl or _ok.lower().startswith("x"):
+                        _pd_i = _dec_to_impl(_ov)
+                    elif "away" in _okl or _ok.startswith("2|") or _ok == "2":
+                        _pa_i = _dec_to_impl(_ov)
+                break
+        _ph_nv = _pd_nv = _pa_nv = 0.0
+        if _ph_i > 0 and _pa_i > 0:
+            _nv = _novig([_ph_i, _pd_i, _pa_i])
+            _ph_nv, _pd_nv, _pa_nv = _nv
+
+        # ── PASO 5: O/U todas las líneas ─────────────────────────────
+        _ou_raw = {}     # line → (over_impl, under_impl)
+        for _k, _mv in _raw.items():
+            if any(t in _k for t in ["over/under","total goals","goals over","match goals"]):
+                for _ok, _ov in _mv.items():
+                    _okl = _ok.lower()
+                    for _line in [0.5, 1.5, 2.5, 3.5, 4.5]:
+                        if str(_line) in _ok:
+                            _impl = _dec_to_impl(_ov)
+                            if _line not in _ou_raw:
+                                _ou_raw[_line] = [0.0, 0.0]
+                            if "over" in _okl:
+                                _ou_raw[_line][0] = _impl
+                            elif "under" in _okl:
+                                _ou_raw[_line][1] = _impl
+                break
+
+        _ou_lines_nv = {}
+        _ou25_over_nv = _ou25_under_nv = 0.0
+        for _line, (_ov_i, _un_i) in _ou_raw.items():
+            if _ov_i > 0 and _un_i > 0:
+                _nv2 = _novig([_ov_i, _un_i])
+                _ou_lines_nv[_line] = _nv2[0]
+                if _line == 2.5:
+                    _ou25_over_nv, _ou25_under_nv = _nv2[0], _nv2[1]
+
+        # xG total implícito del mercado (ajuste Poisson)
+        _xg_total = _fit_poisson_xg(_ou_lines_nv) if len(_ou_lines_nv) >= 2 else 0.0
+
+        # ── PASO 6: BTTS ─────────────────────────────────────────────
+        _btts_y = _btts_n = 0.0
+        for _k, _mv in _raw.items():
+            if any(t in _k for t in ["both teams","btts","bts","gg/ng"]):
+                for _ok, _ov in _mv.items():
+                    _okl = _ok.lower()
+                    if any(w in _okl for w in ["yes","gg","si"]): _btts_y = _dec_to_impl(_ov)
+                    elif any(w in _okl for w in ["no","ng"]):     _btts_n = _dec_to_impl(_ov)
+                break
+        _btts_y_nv = _btts_n_nv = 0.0
+        if _btts_y > 0 and _btts_n > 0:
+            _nv3 = _novig([_btts_y, _btts_n])
+            _btts_y_nv, _btts_n_nv = _nv3
+
+        # ── PASO 7: Draw No Bet ───────────────────────────────────────
+        _dnb_h = _dnb_a = 0.0
+        for _k, _mv in _raw.items():
+            if "draw no bet" in _k or "dnb" in _k:
+                for _ok, _ov in _mv.items():
+                    _okl = _ok.lower()
+                    if "home" in _okl: _dnb_h = _dec_to_impl(_ov)
+                    elif "away" in _okl: _dnb_a = _dec_to_impl(_ov)
+                break
+        _dnb_h_nv = _dnb_a_nv = 0.0
+        if _dnb_h > 0 and _dnb_a > 0:
+            _nv4 = _novig([_dnb_h, _dnb_a])
+            _dnb_h_nv, _dnb_a_nv = _nv4
+
+        # ── PASO 8: Double Chance ─────────────────────────────────────
+        _dc_1x = _dc_x2 = _dc_12 = 0.0
+        for _k, _mv in _raw.items():
+            if "double chance" in _k:
+                for _ok, _ov in _mv.items():
+                    _okl = _ok.lower()
+                    if "1x" in _okl or "home or draw" in _okl: _dc_1x = _dec_to_impl(_ov)
+                    elif "x2" in _okl or "draw or away" in _okl: _dc_x2 = _dec_to_impl(_ov)
+                    elif "12" in _okl or "home or away" in _okl: _dc_12 = _dec_to_impl(_ov)
+                break
+        _dc_1x_nv = _dc_x2_nv = _dc_12_nv = 0.0
+        if _dc_1x > 0 and _dc_x2 > 0:
+            _s = _dc_1x + _dc_x2 + _dc_12
+            if _s > 0:
+                _dc_1x_nv = _dc_1x/_s; _dc_x2_nv = _dc_x2/_s; _dc_12_nv = _dc_12/_s
+
+        # ── PASO 9: Halftime Result ───────────────────────────────────
+        _ht_h = _ht_d = _ht_a = 0.0
+        for _k, _mv in _raw.items():
+            if "half time result" in _k or "half-time result" in _k or "1st half result" in _k:
+                for _ok, _ov in _mv.items():
+                    _okl = _ok.lower()
+                    if "home" in _okl: _ht_h = _dec_to_impl(_ov)
+                    elif "draw" in _okl: _ht_d = _dec_to_impl(_ov)
+                    elif "away" in _okl: _ht_a = _dec_to_impl(_ov)
+                break
+        _ht_h_nv = _ht_d_nv = _ht_a_nv = 0.0
+        if _ht_h > 0 and _ht_a > 0:
+            _nv5 = _novig([_ht_h, _ht_d, _ht_a])
+            _ht_h_nv, _ht_d_nv, _ht_a_nv = _nv5
+
+        # ── PASO 10: 1st Half O/U 0.5 ────────────────────────────────
+        _ht_ou_over = 0.0
+        for _k, _mv in _raw.items():
+            if ("1st half" in _k or "half time" in _k) and ("goal" in _k or "over" in _k):
+                for _ok, _ov in _mv.items():
+                    if "0.5" in _ok and "over" in _ok.lower():
+                        _ht_ou_raw = _dec_to_impl(_ov)
+                        # Buscar el under correspondiente
+                        _ht_un = next((v for k2,v in _mv.items() if "0.5" in k2 and "under" in k2.lower()), 0)
+                        if _ht_un > 0:
+                            _ht_ou_over = _novig([_ht_ou_raw, _dec_to_impl(_ht_un)])[0]
+                        break
+                break
+
+        # ── PASO 11: Team Goals O/U → xG implícito por equipo ─────────
+        _xg_home = _xg_away = 0.0
+        _team_ou_home = {}
+        _team_ou_away = {}
+        for _k, _mv in _raw.items():
+            _is_home = "home team" in _k and ("goal" in _k or "over" in _k)
+            _is_away = "away team" in _k and ("goal" in _k or "over" in _k)
+            if _is_home or _is_away:
+                _target = _team_ou_home if _is_home else _team_ou_away
+                for _ok, _ov in _mv.items():
+                    for _tline in [0.5, 1.5, 2.5]:
+                        if str(_tline) in _ok:
+                            _impl_v = _dec_to_impl(_ov)
+                            if "over" in _ok.lower():
+                                if _tline not in _target: _target[_tline] = [0.0, 0.0]
+                                _target[_tline][0] = _impl_v
+                            elif "under" in _ok.lower():
+                                if _tline not in _target: _target[_tline] = [0.0, 0.0]
+                                _target[_tline][1] = _impl_v
+
+        _team_ou_home_nv = {}
+        _team_ou_away_nv = {}
+        for _tl, (_ov_i, _un_i) in _team_ou_home.items():
+            if _ov_i > 0 and _un_i > 0:
+                _team_ou_home_nv[_tl] = _novig([_ov_i, _un_i])[0]
+        for _tl, (_ov_i, _un_i) in _team_ou_away.items():
+            if _ov_i > 0 and _un_i > 0:
+                _team_ou_away_nv[_tl] = _novig([_ov_i, _un_i])[0]
+
+        if len(_team_ou_home_nv) >= 1:
+            _xg_home = _fit_poisson_xg(_team_ou_home_nv)
+        if len(_team_ou_away_nv) >= 1:
+            _xg_away = _fit_poisson_xg(_team_ou_away_nv)
+
+        # Si no hay team O/U, estimar desde xG total + BTTS
+        if _xg_total > 0 and _xg_home == 0 and _xg_away == 0:
+            if _btts_y_nv > 0.5:
+                # Partido abierto → distribución más simétrica
+                _h_share = _ph_nv if _ph_nv > 0 else 0.55
+                _xg_home = round(_xg_total * (_h_share * 0.6 + 0.4 * 0.5), 2)
+                _xg_away = round(_xg_total - _xg_home, 2)
+            elif _ph_nv > 0:
+                _xg_home = round(_xg_total * 0.58, 2)
+                _xg_away = round(_xg_total * 0.42, 2)
+
+        # ── PASO 12: Asian Handicap ───────────────────────────────────
+        _ah_line = _ah_h = _ah_a = 0.0
+        for _k, _mv in _raw.items():
+            if "asian handicap" in _k:
+                # Buscar la línea principal (más cercana a 0)
+                _best_line = None; _best_dist = 99
+                for _ok, _ov in _mv.items():
+                    # Extraer número del handicap
+                    _nums = re.findall(r'[-+]?\d+\.?\d*', _ok)
+                    if _nums:
+                        _n = float(_nums[0])
+                        if abs(_n) < _best_dist:
+                            _best_dist = abs(_n); _best_line = _n
+                if _best_line is not None:
+                    _ah_line = _best_line
+                    for _ok, _ov in _mv.items():
+                        if str(_best_line) in _ok or str(abs(_best_line)) in _ok:
+                            if "home" in _ok.lower(): _ah_h = _dec_to_impl(_ov)
+                            elif "away" in _ok.lower(): _ah_a = _dec_to_impl(_ov)
+                if _ah_h > 0 and _ah_a > 0:
+                    _nv_ah = _novig([_ah_h, _ah_a])
+                    _ah_h, _ah_a = _nv_ah
+                break
+
+        # ── PASO 13: Corners O/U ─────────────────────────────────────
+        _corn_line = _corn_over = 0.0
+        for _k, _mv in _raw.items():
+            if "corner" in _k and ("over" in _k or "under" in _k or "total" in _k):
+                for _ok, _ov in _mv.items():
+                    _nums2 = re.findall(r'\d+\.?\d*', _ok)
+                    if _nums2 and "over" in _ok.lower():
+                        _cl = float(_nums2[0])
+                        if 8.0 <= _cl <= 11.0:  # líneas comunes
+                            _corn_line = _cl
+                            _corn_u = next((v for k2,v in _mv.items() if str(_cl) in k2 and "under" in k2.lower()), 0)
+                            if _corn_u > 0:
+                                _corn_over = _novig([_dec_to_impl(_ov), _dec_to_impl(_corn_u)])[0]
+                            break
+                break
+
+        # ── PASO 14: Cards O/U ───────────────────────────────────────
+        _cards_line = _cards_over = 0.0
+        for _k, _mv in _raw.items():
+            if ("card" in _k or "booking" in _k) and ("over" in _k or "under" in _k or "total" in _k):
+                for _ok, _ov in _mv.items():
+                    _nums3 = re.findall(r'\d+\.?\d*', _ok)
+                    if _nums3 and "over" in _ok.lower():
+                        _cardl = float(_nums3[0])
+                        if 2.0 <= _cardl <= 6.0:
+                            _cards_line = _cardl
+                            _card_u = next((v for k2,v in _mv.items() if str(_cardl) in k2 and "under" in k2.lower()), 0)
+                            if _card_u > 0:
+                                _cards_over = _novig([_dec_to_impl(_ov), _dec_to_impl(_card_u)])[0]
+                            break
+                break
+
+        # ── PASO 15: Combinados 1X2 & O/U ────────────────────────────
+        _combo = {}
+        for _k, _mv in _raw.items():
+            if ("result" in _k or "1x2" in _k) and ("over" in _k or "under" in _k or "goals" in _k):
+                for _ok, _ov in _mv.items():
+                    _okl = _ok.lower()
+                    _ckey = None
+                    if "home" in _okl and "over" in _okl: _ckey = "home_over"
+                    elif "home" in _okl and "under" in _okl: _ckey = "home_under"
+                    elif "draw" in _okl and "over" in _okl: _ckey = "draw_over"
+                    elif "draw" in _okl and "under" in _okl: _ckey = "draw_under"
+                    elif "away" in _okl and "over" in _okl: _ckey = "away_over"
+                    elif "away" in _okl and "under" in _okl: _ckey = "away_under"
+                    if _ckey:
+                        _combo[_ckey] = round(_dec_to_impl(_ov), 4)
+                if _combo: break
+
+        # ── PASO 16: Señales derivadas ────────────────────────────────
+        _market_fav = "home"; _market_fav_p = _ph_nv
+        if _pa_nv > _ph_nv and _pa_nv > _pd_nv: _market_fav = "away"; _market_fav_p = _pa_nv
+        elif _pd_nv > _ph_nv and _pd_nv > _pa_nv: _market_fav = "draw"; _market_fav_p = _pd_nv
+
+        # Partido abierto: BTTS alto + O/U 2.5 alto
+        _open_game = (_btts_y_nv >= 0.55 and _ou25_over_nv >= 0.58)
+
+        # ── Texto de diagnóstico ──────────────────────────────────────
+        _parts = []
+        if _ph_nv > 0:
+            _parts.append(f"🎰 B365 1X2: L={_ph_nv:.0%} E={_pd_nv:.0%} V={_pa_nv:.0%}")
+        if _xg_total > 0:
+            _parts.append(f"xG_mkt={_xg_total:.1f}({_xg_home:.1f}h/{_xg_away:.1f}v)")
+        if _btts_y_nv > 0:
+            _parts.append(f"BTTS={_btts_y_nv:.0%}")
+        if _ou25_over_nv > 0:
+            _parts.append(f"O2.5={_ou25_over_nv:.0%}")
+        if _ah_line != 0:
+            _parts.append(f"AH={_ah_line:+.1f}")
+        if _dnb_h_nv > 0:
+            _parts.append(f"DNB_H={_dnb_h_nv:.0%}")
+        if _corn_over > 0:
+            _parts.append(f"Corn>{_corn_line:.0f}={_corn_over:.0%}")
+
+        return {
+            "found": True,
+            "ph_novig": round(_ph_nv, 4), "pd_novig": round(_pd_nv, 4), "pa_novig": round(_pa_nv, 4),
+            "ou25_over_novig": round(_ou25_over_nv, 4), "ou25_under_novig": round(1-_ou25_over_nv, 4),
+            "ou_lines": {str(k): round(v,4) for k,v in _ou_lines_nv.items()},
+            "btts_yes_novig": round(_btts_y_nv, 4), "btts_no_novig": round(_btts_n_nv, 4),
+            "dnb_home_novig": round(_dnb_h_nv, 4), "dnb_away_novig": round(_dnb_a_nv, 4),
+            "dc_1x_novig": round(_dc_1x_nv, 4), "dc_x2_novig": round(_dc_x2_nv, 4), "dc_12_novig": round(_dc_12_nv, 4),
+            "ht_home_novig": round(_ht_h_nv, 4), "ht_draw_novig": round(_ht_d_nv, 4), "ht_away_novig": round(_ht_a_nv, 4),
+            "ht_ou_over_novig": round(_ht_ou_over, 4),
+            "xg_home_impl": round(_xg_home, 2), "xg_away_impl": round(_xg_away, 2), "xg_total_impl": round(_xg_total, 2),
+            "ah_line": _ah_line, "ah_home_novig": round(_ah_h, 4), "ah_away_novig": round(_ah_a, 4),
+            "corners_line": _corn_line, "corners_over_novig": round(_corn_over, 4),
+            "cards_line": _cards_line, "cards_over_novig": round(_cards_over, 4),
+            "combo_1x2_ou": _combo,
+            "market_favorite": _market_fav, "market_fav_prob": round(_market_fav_p, 4),
+            "market_open_game": _open_game,
+            "b365_raw": _raw,
+            "source_txt": " · ".join(_parts)
+        }
+
+    except Exception as _e:
+        return {**_default, "source_txt": f"⚠️ BetsAPI exc: {str(_e)[:80]}"}
 
 
 @st.cache_data(ttl=7200, show_spinner=False)
