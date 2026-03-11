@@ -1410,19 +1410,34 @@ def run_monte_carlo(game, n=10_000):
             ("DC", game["home_team"]+" o "+game["away_team"]+" (sin empate)", p_dc_12, dc_12_ev, str(DC_ML), quarter_kelly(p_dc_12,DC_ML)),
         ]
 
-    # Market preference order when EVs are close: BTTS > O/U > ML > DC
+    # Detect "partido parejo" — same condition Claude uses to suggest goal markets
+    # spread < 12 means both teams within 12% of each other → parejo
+    _spread = abs(sh - sa) * 100  # percentage spread between teams
+    _parejo = use_goals and is_soccer and _spread < 12
+
     MARKET_PREF = {"BTTS": 4, "O/U": 3, "ML": 2, "DC": 1}
     best_single=None; best_ev_v=-999; best_pref=-1
-    for mtype,label,prob,ev,ml,kelly in candidates:
-        if prob is None or ev is None:
-            continue
-        pref = MARKET_PREF.get(mtype, 0)
-        # Accept if strictly higher EV, or same EV tier (within 1pt) but better market preference
-        is_better_ev   = ev > best_ev_v + 1.0
-        is_same_ev_better_market = (abs(ev - best_ev_v) <= 1.0) and (pref > best_pref)
-        if is_better_ev or is_same_ev_better_market:
-            best_ev_v=ev; best_pref=pref
-            best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
+
+    if _parejo:
+        # Partido parejo: Claude recommends goal markets → pick by highest PROBABILITY
+        goal_candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
+                           if mt in ("BTTS","O/U") and pr is not None]
+        if goal_candidates:
+            best_goal = max(goal_candidates, key=lambda x: x[2])  # highest prob
+            mt,lb,pr,ev,ml,k = best_goal
+            best_single = {"market":mt,"label":lb,"prob":pr,"ev":ev or 0,"ml":ml,"kelly":k or 0}
+        # Done — parejo always uses goal market by prob, no ML/DC override
+    else:
+        # Normal case: pick by highest EV, with BTTS preferred on ties
+        for mtype,label,prob,ev,ml,kelly in candidates:
+            if prob is None or ev is None:
+                continue
+            pref = MARKET_PREF.get(mtype, 0)
+            is_better_ev = ev > best_ev_v + 1.0
+            is_same_ev_better_market = (abs(ev - best_ev_v) <= 1.0) and (pref > best_pref)
+            if is_better_ev or is_same_ev_better_market:
+                best_ev_v=ev; best_pref=pref
+                best_single={"market":mtype,"label":label,"prob":prob,"ev":ev,"ml":ml,"kelly":kelly or 0}
 
     # intra-parlay candidates stored for use by build_parlays()
     best_parlay=None  # will be set by build_parlays() in run_all_simulations
@@ -1586,8 +1601,10 @@ def run_all_simulations(games, n=10_000):
 # RENDER HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 def chip(market):
+    label_map = {"DC": "DO"}
+    display_market = label_map.get(market, market)
     cls={"ML":"chip-ml","BTTS":"chip-btts","O/U":"chip-ou","DC":"chip-dc","PARLAY":"chip-parlay"}.get(market,"chip-ml")
-    return f'<span class="market-chip {cls}">{market}</span>'
+    return f'<span class="market-chip {cls}">{display_market}</span>'
 
 def conf_badge(ev, dq):
     if ev>=10 and dq>=60: return '<span class="conf-badge conf-high">◆ ALTA</span>'
@@ -1657,22 +1674,34 @@ def render_pick_card(r, rank=None):
         score_html = (' <span style="color:#4ade80;font-weight:700">'
                       + str(r["away_score"]) + " - " + str(r["home_score"]) + "</span>")
 
-    # Goals pills
+    # Goals pills — bigger font, highlight best % with star
     goals_html = ""
     if sim.get("use_goals") and sim.get("p_btts") is not None:
-        pills = []
-        if sim.get("btts_ev") is not None:
-            c = "#4ade80" if (sim["btts_ev"] or 0) > 0 else "#6B7E6E"
-            ev_s = ("+" if sim["btts_ev"] >= 0 else "") + str(round(sim["btts_ev"], 1))
-            pills.append('<span style="color:' + c + ';font-size:0.75rem">BTTS ' + str(sim["p_btts"]) + '% (EV ' + ev_s + ')</span>')
+        # Find best probability among all goal markets to highlight it
+        goal_entries = []
+        if sim.get("p_btts") is not None and sim.get("btts_ev") is not None:
+            goal_entries.append(("BTTS", sim["p_btts"], sim["btts_ev"]))
         if sim.get("p_o25") is not None:
-            c = "#C9A84C" if (sim.get("o25_ev") or 0) > 0 else "#6B7E6E"
-            ev_s = ("+" if (sim.get("o25_ev") or 0) >= 0 else "") + str(round(sim.get("o25_ev") or 0, 1))
-            pills.append('<span style="color:' + c + ';font-size:0.75rem">O2.5 ' + str(sim["p_o25"]) + '% (EV ' + ev_s + ')</span>')
+            goal_entries.append(("O2.5", sim["p_o25"], sim.get("o25_ev") or 0))
         if sim.get("p_o15") is not None:
-            pills.append('<span style="color:#6B7E6E;font-size:0.75rem">O1.5 ' + str(sim["p_o15"]) + '%</span>')
+            goal_entries.append(("O1.5", sim["p_o15"], None))
         if sim.get("p_o35") is not None:
-            pills.append('<span style="color:#6B7E6E;font-size:0.75rem">O3.5 ' + str(sim["p_o35"]) + '%</span>')
+            goal_entries.append(("O3.5", sim["p_o35"], None))
+        best_pct_label = max(goal_entries, key=lambda x: x[1])[0] if goal_entries else ""
+        pills = []
+        for lbl, pct, ev_v in goal_entries:
+            is_best = lbl == best_pct_label
+            if ev_v is not None:
+                ev_s = ("+" if ev_v >= 0 else "") + str(round(ev_v, 1))
+                c = "#4ade80" if ev_v > 0 else ("#C9A84C" if lbl == "O2.5" else "#6B7E6E")
+                star = "⭐ " if is_best else ""
+                fw = "font-weight:700;" if is_best else ""
+                pills.append('<span style="color:' + c + ';font-size:0.88rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b> (EV ' + ev_s + ')</span>')
+            else:
+                c = "#8ab4a0" if is_best else "#6B7E6E"
+                star = "⭐ " if is_best else ""
+                fw = "font-weight:700;" if is_best else ""
+                pills.append('<span style="color:' + c + ';font-size:0.88rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b></span>')
         if pills:
             goals_html = ('<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;'
                           'padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">'
