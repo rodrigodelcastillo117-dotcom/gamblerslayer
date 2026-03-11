@@ -1748,7 +1748,14 @@ with tab_sim:
             sim=r["sim"]; bs=sim.get("best_single"); dq=sim["data_quality"]
             has_ev=bs and bs["ev"]>0
             card_cls="game-row game-row-ev" if has_ev else "game-row"
-            badge=f'{chip(bs["market"])} <span style="color:#4ade80;font-weight:600;font-size:0.8rem">EV +{bs["ev"]:.1f} · {bs["label"]}</span>' if has_ev else '<span style="color:#6B7E6E;font-size:0.78rem">Sin EV positivo</span>'
+            if has_ev:
+                ev_c = "#4ade80" if bs["ev"]>=10 else "#C9A84C"
+                badge = (f'<span style="color:#FFE87C;margin-right:4px">&#9658;</span>'
+                         f'<span style="font-weight:700;font-size:0.85rem;color:#FFE87C">{bs["label"]}</span>'
+                         f'<span style="color:{ev_c};font-size:0.78rem;margin-left:8px">EV +{bs["ev"]:.1f}</span>'
+                         f'<span style="color:#6B7E6E;font-size:0.72rem;margin-left:6px">· {round(bs["prob"]*100,1)}% prob · Kelly {round(bs.get("kelly",0)*100,1)}%</span>')
+            else:
+                badge = '<span style="color:#6B7E6E;font-size:0.78rem">Sin EV positivo</span>'
             dqc="#4ade80" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
 
             bars_html=bar(sim["away_pct"],"#60a5fa",r["away_team"])
@@ -1759,8 +1766,9 @@ with tab_sim:
             if sim["use_goals"] and sim.get("p_btts") is not None:
                 btc="#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
                 o2c="#C9A84C" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
+                o3c="#C9A84C" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
                 dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
-            goals_line=f'<div style="font-size:0.72rem;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap"><span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span><span style="color:{o2c}">📊 O2.5 {sim["p_o25"]}%</span><span style="color:#6B7E6E">O1.5 {sim["p_o15"]}%</span><span style="color:#6B7E6E">O3.5 {sim["p_o35"]}%</span><span style="color:#3a4a3e;margin-left:auto">fuente: {dq_src}</span></div>'
+                goals_line=f'<div style="font-size:0.72rem;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap"><span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span><span style="color:{o2c}">📊 O2.5 {sim["p_o25"]}%</span><span style="color:{o3c}">O3.5 {sim.get("p_o35","—")}%</span><span style="color:#3a4a3e;margin-left:auto">fuente: {dq_src}</span></div>'
 
             st.markdown(f"""<div class="{card_cls}">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
