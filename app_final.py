@@ -1963,18 +1963,89 @@ with tab_parlays:
         st.markdown("""<div class="empty-state">
           <div class="empty-icon">🎰</div>
           <div class="empty-title">Sin parlays aún</div>
-          <div>Corre las simulaciones primero.</div>
+          <div>Presiona <b>▶ ANALIZAR AHORA</b> en el sidebar para generar parlays.</div>
         </div>""",unsafe_allow_html=True)
     else:
-        parlays=[r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0]
-        parlays.sort(key=lambda x:x["sim"]["best_parlay"]["ev"],reverse=True)
+        # ── Detectar si algún partido del parlay original ya terminó ─────────────
+        parlay_game_ids = set()
+        for r in sr:
+            bp = r["sim"].get("best_parlay")
+            if bp and bp["ev"] > 0:
+                parlay_game_ids.add(r.get("id",""))
+
+        finished_parlay_games = [g for g in games if g.get("id","") in parlay_game_ids and g["state"]=="post"]
+        pending_games = [g for g in games if g["state"] in ("pre","in")]
+
+        # ── Auto-detect: si hay partidos del parlay que terminaron y hay pendientes ─
+        needs_regen = (
+            len(finished_parlay_games) > 0
+            and len(pending_games) > 0
+            and not st.session_state.get("_parlay_regen_done", False)
+        )
+
+        # Guardar el estado de regeneración por sesión de parlay
+        _regen_key = f"regen_{len(finished_parlay_games)}_{len(pending_games)}"
+        if st.session_state.get("_parlay_regen_key") != _regen_key:
+            st.session_state["_parlay_regen_done"] = False
+            st.session_state["_parlay_regen_key"] = _regen_key
+
+        # ── Banner de alerta si hay partidos terminados ───────────────────────────
+        if finished_parlay_games:
+            finished_names = " · ".join(
+                f"{g['away_team']} @ {g['home_team']}" for g in finished_parlay_games[:3]
+            )
+            st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #4ade80;background:rgba(74,222,128,0.08)">
+                ✅ <b>Partido(s) del parlay terminaron:</b> {finished_names}<br>
+                <span style="color:#6B7E6E;font-size:0.8rem">{len(pending_games)} partidos pendientes disponibles para nuevo parlay.</span>
+            </div>''', unsafe_allow_html=True)
+
+        # ── Botón manual + auto-regen ─────────────────────────────────────────────
+        col_p1, col_p2 = st.columns([3, 1])
+        with col_p1:
+            st.markdown(f'<div class="section-heading">🎰 Parlays del día</div>', unsafe_allow_html=True)
+        with col_p2:
+            regen_clicked = st.button("🔄 Nuevo Parlay", use_container_width=True,
+                                      disabled=len(pending_games)==0,
+                                      help="Re-simula con los partidos pendientes del día")
+
+        # Ejecutar regeneración (auto o manual)
+        if (needs_regen or regen_clicked) and pending_games:
+            with st.spinner(f"🎰 Re-simulando {len(pending_games)} partidos pendientes..."):
+                new_sr = run_all_simulations(pending_games, n=n_sims)
+            st.session_state["sim_results"] = new_sr
+            st.session_state["_parlay_regen_done"] = True
+            n_new_parlays = len([r for r in new_sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])
+            st.toast(f"✓ Parlay actualizado · {n_new_parlays} combinadas EV+", icon="🎰")
+            st.rerun()
+
+        # ── Mostrar parlays (siempre el más reciente en session_state) ────────────
+        sr_current = st.session_state.get("sim_results", [])
+        parlays = [r for r in sr_current if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0]
+        parlays.sort(key=lambda x: x["sim"]["best_parlay"]["ev"], reverse=True)
+
         if parlays:
-            st.markdown(f'<div class="section-heading">🎰 Combinadas con EV+ ({len(parlays)})</div>',unsafe_allow_html=True)
+            # Indicador de estado de partidos
+            n_post  = len([g for g in games if g["state"]=="post"])
+            n_live  = len([g for g in games if g["state"]=="in"])
+            n_pre   = len([g for g in games if g["state"]=="pre"])
+            status_color = "#4ade80" if n_live > 0 else "#60a5fa"
+            st.markdown(
+                f'<div style="font-size:0.72rem;color:#6B7E6E;margin-bottom:12px">' +
+                (f'<span style="color:{status_color}">⚡ {n_live} en vivo</span> · ' if n_live else "") +
+                f'{n_pre} próximos · {n_post} terminados</div>',
+                unsafe_allow_html=True
+            )
             for r in parlays:
-                st.markdown(render_parlay_card(r),unsafe_allow_html=True)
-            st.markdown('<div class="warn-banner">⚠ Cuotas de BTTS/O/U asumidas a −110/−115 estándar. Verifica precio real en tu casa. Parlays son de alta varianza — usa sizing conservador.</div>',unsafe_allow_html=True)
+                st.markdown(render_parlay_card(r), unsafe_allow_html=True)
+            st.markdown(
+                '<div class="warn-banner">⚠ Cuotas de BTTS/O/U asumidas a −110/−115 estándar. ' +
+                'Verifica precio real en tu casa. Parlays son de alta varianza — usa sizing conservador.</div>',
+                unsafe_allow_html=True
+            )
+        elif pending_games:
+            st.markdown('<div class="warn-banner">No se encontraron parlays con EV positivo. Prueba con más ligas o espera más partidos.</div>',unsafe_allow_html=True)
         else:
-            st.markdown('<div class="warn-banner">No se encontraron parlays con EV positivo en los partidos disponibles.</div>',unsafe_allow_html=True)
+            st.markdown('<div class="warn-banner">Todos los partidos del día han terminado. No hay partidos pendientes para nuevos parlays.</div>',unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_all:
