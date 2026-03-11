@@ -13425,6 +13425,7 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
 
     # Groq primero
     if _groq_key:
+        _groq_err = ""
         try:
             _r_groq = _rq.post(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -13445,10 +13446,17 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
                 if _txt:
                     _src = "🔍 Tavily + Groq" if _web_ctx else "🤖 Groq"
                     return f"{_txt}\n\n_Fuente: {_src}_"
-        except: pass
+            else:
+                try:
+                    _groq_err = _r_groq.json().get("error",{}).get("message", f"HTTP {_r_groq.status_code}")
+                except:
+                    _groq_err = f"HTTP {_r_groq.status_code}"
+        except Exception as _ge:
+            _groq_err = str(_ge)[:120]
 
     # Claude fallback
     if _cl_key:
+        _cl_err = ""
         try:
             _r_cl = _rq.post(
                 "https://api.anthropic.com/v1/messages",
@@ -13467,9 +13475,22 @@ def _pach_call(pregunta: str, sport_label: str, context_data: dict) -> str:
                 ).strip()
                 if txt:
                     return f"{txt}\n\n_Fuente: Tavily + Claude_"
-        except: pass
+            else:
+                try:
+                    _cl_err = _r_cl.json().get("error",{}).get("message", f"HTTP {_r_cl.status_code}")
+                except:
+                    _cl_err = f"HTTP {_r_cl.status_code}"
+        except Exception as _ce:
+            _cl_err = str(_ce)[:120]
 
-    return "⚠️ PACH sin respuesta. Verifica GROQ_API_KEY en Streamlit secrets."
+    # Mostrar error diagnóstico para que el usuario pueda corregir
+    _diag = []
+    if _groq_key and _groq_err: _diag.append(f"Groq: {_groq_err}")
+    if _cl_key   and _cl_err:   _diag.append(f"Claude: {_cl_err}")
+    if not _groq_key and not _cl_key:
+        return "❌ PACH necesita GROQ_API_KEY en Streamlit secrets (gratis en groq.com)"
+    _diag_str = " | ".join(_diag) if _diag else "sin respuesta"
+    return f"⚠️ PACH error: {_diag_str}"
 def render_pach(sport_label: str, context_data: dict):
     """
     🤖 PACH — Chat AI analista integrado en el tab de Bot.
@@ -16284,34 +16305,73 @@ def _king_rongo_scan_all(matches_fut, nba_games, ten_matches, pick_history=None)
                 _kr_all_mkts = [(l,p,o,g) for l,p,o,g in _kr_all_mkts if p >= 0.10]
                 if not _kr_all_mkts: continue
 
-                # ── Selección KR: 100% por probabilidad ──
-                # El pick es siempre el mercado con mayor % de probabilidad.
-                # Umbrales mínimos por tipo de mercado para evitar picks flojos.
+                # ── Selección KR: por probabilidad con jerarquía de mercados ──
+                #
+                # Problema original: O1.5 siempre ~85%, DO siempre ~65%, AA ~55%
+                # → nunca salían ML aunque tuvieran 60%+ bien fundamentada.
+                #
+                # Solución: cada mercado compite contra sus PROPIOS UMBRALES.
+                # KR elige el mercado más "seguro" dentro de su categoría,
+                # priorizando ML si tiene prob ≥ umbral_ml y es favorito claro.
+                #
+                # Jerarquía:
+                #   1. ML favorito (1X2) si prob ≥ 0.55 — siempre preferido si hay favorito claro
+                #   2. DO favorito si prob ≥ 0.68 — solo DO del equipo con más prob ML
+                #   3. O/U si prob ≥ 0.60 — excluyendo O1.5 salvo ≥0.82
+                #   4. AA si prob ≥ 0.62
+                #   5. GCM/TG si prob ≥ 0.63
+
                 def _is_o25_u25(lbl): return ("Over 2.5" in lbl or "Under 2.5" in lbl)
 
                 _kr_valid = [(l,p,o,mk) for l,p,o,mk in _kr_all_mkts if p>0.01 and o>1.0]
                 if not _kr_valid: _kr_valid = _kr_all_mkts
 
-                # Pool elegible: umbrales mínimos por mercado
-                _kr_pool = []
-                for l,p,o,mk in _kr_valid:
-                    if "1.5 Total" in l and p < 0.80: continue  # O1.5 solo si muy seguro
-                    if mk in ("1X2","AA") and p < 0.52: continue
-                    if mk in ("OU",)      and p < 0.54: continue
-                    if mk in ("DO","GCM") and p < 0.60: continue
-                    if mk in ("TG",)      and p < 0.58: continue
-                    if p < 0.50: continue
-                    _kr_pool.append((l, p, o, mk))
+                # Identificar favorito ML (home o away, no empate)
+                _ml_opts = [(l,p,o,mk) for l,p,o,mk in _kr_valid if mk == "1X2" and "Empate" not in l]
+                _fav_ml  = max(_ml_opts, key=lambda x: x[1]) if _ml_opts else None
+                _fav_prob = _fav_ml[1] if _fav_ml else 0
+                _fav_lbl  = _fav_ml[0] if _fav_ml else ""
+                _fav_is_home = _hn in _fav_lbl if _fav_ml else True
 
-                if _kr_pool:
-                    # Elegir siempre el de MAYOR PROBABILIDAD
-                    _best_kr_raw = max(_kr_pool, key=lambda x: x[1])
-                    lbl, prob, odd, mkt = _best_kr_raw
+                # DO correcto: solo el del equipo favorito (mayor prob ML)
+                _do_fav_lbl = f"🔵 DO {_hn}" if _fav_is_home else f"🟣 DO {_an}"
+                _do_opts_fav = [(l,p,o,mk) for l,p,o,mk in _kr_valid
+                                if mk == "DO" and _do_fav_lbl[:8] in l]
+
+                # Candidatos por categoría con umbral propio
+                # Regla principal:
+                #   ≥55% favorito → ML (muy favorito, vale la cuota)
+                #   <55% favorito → DO del favorito (partido equilibrado, ML muy arriesgado)
+                _cat_ml  = [(l,p,o,mk) for l,p,o,mk in _kr_valid
+                            if mk == "1X2" and "Empate" not in l and p >= 0.55]
+                _cat_do  = [(l,p,o,mk) for l,p,o,mk in _do_opts_fav if p >= 0.60]
+                _cat_ou  = [(l,p,o,mk) for l,p,o,mk in _kr_valid
+                            if mk == "OU" and p >= 0.60
+                            and not ("1.5 Total" in l and p < 0.82)]
+                _cat_aa  = [(l,p,o,mk) for l,p,o,mk in _kr_valid if mk == "AA" and p >= 0.62]
+                _cat_gcm = [(l,p,o,mk) for l,p,o,mk in _kr_valid if mk in ("GCM","TG") and p >= 0.63]
+
+                _best_kr_raw = None
+                if _cat_ml:
+                    # Favorito claro ≥55% → ML directo
+                    _best_kr_raw = max(_cat_ml, key=lambda x: x[1])
+                elif _cat_do:
+                    # Partido equilibrado (<55%) → DO del favorito (más seguro)
+                    _best_kr_raw = max(_cat_do, key=lambda x: x[1])
+                elif _cat_ou:
+                    _best_kr_raw = max(_cat_ou, key=lambda x: x[1])
+                elif _cat_aa:
+                    _best_kr_raw = max(_cat_aa, key=lambda x: x[1])
+                elif _cat_gcm:
+                    _best_kr_raw = max(_cat_gcm, key=lambda x: x[1])
                 else:
-                    # Fallback: mayor prob del pool válido sin O1.5
-                    _kr_no15 = [(l,p,o,mk) for l,p,o,mk in _kr_valid if "1.5 Total" not in l and p>=0.50]
-                    _fallback = max(_kr_no15, key=lambda x: x[1]) if _kr_no15 else max(_kr_valid, key=lambda x: x[1])
-                    lbl, prob, odd, mkt = _fallback[0], _fallback[1], _fallback[2], _fallback[3]
+                    _fb_pool = [(l,p,o,mk) for l,p,o,mk in _kr_valid
+                                if p >= 0.52 and not ("1.5 Total" in l and p < 0.80)]
+                    if _fb_pool:
+                        _best_kr_raw = max(_fb_pool, key=lambda x: x[1])
+
+                if _best_kr_raw is None: continue
+                lbl, prob, odd, mkt = _best_kr_raw
 
                 if prob < 0.52: continue  # umbral mínimo absoluto
                 edge   = _kr_edge(prob, odd)
