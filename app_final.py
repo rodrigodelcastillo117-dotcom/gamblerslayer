@@ -492,9 +492,11 @@ LEAGUES = {
     "Bundesliga":       {"sport":"soccer",    "league":"ger.1",                  "group":"Soccer"},
     "Serie A":          {"sport":"soccer",    "league":"ita.1",                  "group":"Soccer"},
     "Ligue 1":          {"sport":"soccer",    "league":"fra.1",                  "group":"Soccer"},
-    "Champions League": {"sport":"soccer",    "league":"UEFA.CHAMPIONS",         "group":"Soccer"},
-    "Europa League":    {"sport":"soccer",    "league":"UEFA.EUROPA",            "group":"Soccer"},
-    "Liga de Expansión":{"sport":"soccer",    "league":"mex.2",                  "group":"Soccer"},
+    "Champions League":       {"sport":"soccer", "league":"UEFA.CHAMPIONS",    "group":"Soccer"},
+    "Europa League":          {"sport":"soccer", "league":"UEFA.EUROPA",         "group":"Soccer"},
+    "Conference League":      {"sport":"soccer", "league":"UEFA.CONFERENCE",     "group":"Soccer"},
+    "CONCACAF Champions Cup": {"sport":"soccer", "league":"CONCACAF.CHAMPIONS",  "group":"Soccer"},
+    "Liga de Expansión":      {"sport":"soccer", "league":"mex.2",               "group":"Soccer"},
     "ATP":              {"sport":"tennis",    "league":"atp",                    "group":"Tennis"},
     "WTA":              {"sport":"tennis",    "league":"wta",                    "group":"Tennis"},
 }
@@ -502,7 +504,7 @@ HOME_BOOST = {
     "NBA":0.035,"WNBA":0.03,"NCAAB":0.05,"MLB":0.025,"NCAA Baseball":0.02,
     "NFL":0.035,"NCAAF":0.045,"NHL":0.03,"MLS":0.04,"Liga MX":0.045,
     "Premier League":0.038,"La Liga":0.04,"Bundesliga":0.042,"Serie A":0.04,
-    "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,
+    "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,"Conference League":0.032,"CONCACAF Champions Cup":0.04,
     "Liga de Expansión":0.05,"ATP":0.01,"WTA":0.01,
 }
 LEAGUE_AVG_GOALS = {
@@ -510,7 +512,7 @@ LEAGUE_AVG_GOALS = {
     "NFL":23.0,"NCAAF":28.0,"NHL":3.1,
     "MLS":2.8,"Liga MX":2.6,"Premier League":2.7,"La Liga":2.6,
     "Bundesliga":3.1,"Serie A":2.6,"Ligue 1":2.7,
-    "Champions League":2.9,"Europa League":2.7,"Liga de Expansión":2.5,
+    "Champions League":2.9,"Europa League":2.7,"Conference League":2.6,"CONCACAF Champions Cup":2.7,"Liga de Expansión":2.5,
     "ATP":None,"WTA":None,
 }
 ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
@@ -743,9 +745,14 @@ def run_monte_carlo(game, n=10_000):
         ("ML",game["away_team"]+" ML",sa,away_ev,aml,ak),
     ]
     if p_btts is not None:
+        # Smart O/U: if O2.5 >= 58% use it as primary, else fallback to O1.5
+        smart_ou_label = "Over 2.5" if (p_o25 is not None and p_o25 >= 0.58) else "Over 1.5"
+        smart_ou_prob  = p_o25 if smart_ou_label == "Over 2.5" else p_o15
+        smart_ou_ev    = o25_ev if smart_ou_label == "Over 2.5" else o15_ev
         candidates+=[
             ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
             ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
+            ("O/U",smart_ou_label,smart_ou_prob,smart_ou_ev,str(OU_ML),quarter_kelly(smart_ou_prob,OU_ML) if smart_ou_prob else None),
             ("O/U","Over 1.5",p_o15,o15_ev,str(OU_ML),quarter_kelly(p_o15,OU_ML)),
             ("O/U","Over 2.5",p_o25,o25_ev,str(OU_ML),quarter_kelly(p_o25,OU_ML)),
             ("O/U","Over 3.5",p_o35,o35_ev,str(OU_ML),quarter_kelly(p_o35,OU_ML)),
@@ -840,79 +847,115 @@ def bar(pct, color, label):
     </div>"""
 
 def render_pick_card(r, rank=None):
-    """Render a full premium pick card with explicit bet label."""
-    sim=r["sim"]; bs=sim["best_single"]; dq=sim["data_quality"]
-    if not bs: return ""
+    """Render pick card - all HTML built via string concat, no ternaries in f-strings."""
+    sim = r["sim"]
+    bs  = sim.get("best_single")
+    dq  = sim["data_quality"]
+    if not bs:
+        return ""
 
-    impl=ml_to_prob(bs["ml"])*100 if bs["market"]=="ML" and bs["ml"] else 0
-    eg=edge(bs["prob"],bs["ml"]) if bs["market"]=="ML" else 0
-    is_live = r.get("state","")=="in"
-    live_html='<span class="market-chip chip-btts" style="animation:none">🔴 EN VIVO</span>' if is_live else ""
-    rank_html=f'<span style="font-family:\'Cinzel\',serif;color:#6B7E6E;font-size:0.8rem">#{rank}</span> ' if rank else ""
+    prob_pct  = bs["prob"] * 100
+    ev_val    = bs["ev"]
+    kelly_pct = bs["kelly"]
 
-    # Score display
-    score_html=""
+    impl = ml_to_prob(bs["ml"]) * 100 if bs["market"] == "ML" and bs["ml"] else 0
+    eg   = edge(bs["prob"], bs["ml"]) if bs["market"] == "ML" else 0
+
+    impl_html = ""
+    if impl > 0:
+        impl_html = ('<div class="stat-item"><div class="stat-item-val val-muted">'
+                     + str(round(impl, 1)) + '%</div>'
+                     '<div class="stat-item-lbl">Impl. Casa</div></div>')
+
+    edge_html = ""
+    if eg > 0:
+        edge_html = ('<div class="stat-item"><div class="stat-item-val val-blue">+'
+                     + str(eg) + '%</div>'
+                     '<div class="stat-item-lbl">Edge</div></div>')
+
+    conf_html  = conf_badge(bs["ev"], dq)
+    ml_display = "@ " + str(bs["ml"]) if bs["ml"] else ""
+    is_live    = r.get("state", "") == "in"
+    live_html  = '<span class="market-chip chip-btts">🔴 EN VIVO</span>' if is_live else ""
+    rank_html  = ""
+    if rank:
+        rank_html = '<span style="font-family:Cinzel,serif;color:#6B7E6E;font-size:0.8rem">#' + str(rank) + '</span> '
+
+    score_html = ""
     if is_live and r.get("home_score") and r.get("away_score"):
-        score_html=f' <span style="color:#4ade80;font-weight:700">{r["away_score"]} – {r["home_score"]}</span>'
+        score_html = (' <span style="color:#4ade80;font-weight:700">'
+                      + str(r["away_score"]) + " - " + str(r["home_score"]) + "</span>")
 
-    # Goals market pills
-    goals_html=""
-    if sim["use_goals"] and sim.get("p_btts") is not None:
-        pills=[]
+    # Goals pills
+    goals_html = ""
+    if sim.get("use_goals") and sim.get("p_btts") is not None:
+        pills = []
         if sim.get("btts_ev") is not None:
-            c="#4ade80" if (sim["btts_ev"] or 0)>0 else "#6B7E6E"
-            pills.append(f'<span style="color:{c};font-size:0.75rem">⚽ BTTS {sim["p_btts"]}% (EV {sim["btts_ev"]:+.1f})</span>')
+            c = "#4ade80" if (sim["btts_ev"] or 0) > 0 else "#6B7E6E"
+            ev_s = ("+" if sim["btts_ev"] >= 0 else "") + str(round(sim["btts_ev"], 1))
+            pills.append('<span style="color:' + c + ';font-size:0.75rem">BTTS ' + str(sim["p_btts"]) + '% (EV ' + ev_s + ')</span>')
         if sim.get("p_o25") is not None:
-            c="#C9A84C" if (sim["o25_ev"] or 0)>0 else "#6B7E6E"
-            pills.append(f'<span style="color:{c};font-size:0.75rem">📊 O2.5 {sim["p_o25"]}% (EV {sim["o25_ev"]:+.1f})</span>')
+            c = "#C9A84C" if (sim.get("o25_ev") or 0) > 0 else "#6B7E6E"
+            ev_s = ("+" if (sim.get("o25_ev") or 0) >= 0 else "") + str(round(sim.get("o25_ev") or 0, 1))
+            pills.append('<span style="color:' + c + ';font-size:0.75rem">O2.5 ' + str(sim["p_o25"]) + '% (EV ' + ev_s + ')</span>')
         if sim.get("p_o15") is not None:
-            pills.append(f'<span style="color:#6B7E6E;font-size:0.75rem">📊 O1.5 {sim["p_o15"]}%</span>')
+            pills.append('<span style="color:#6B7E6E;font-size:0.75rem">O1.5 ' + str(sim["p_o15"]) + '%</span>')
         if sim.get("p_o35") is not None:
-            pills.append(f'<span style="color:#6B7E6E;font-size:0.75rem">📊 O3.5 {sim["p_o35"]}%</span>')
+            pills.append('<span style="color:#6B7E6E;font-size:0.75rem">O3.5 ' + str(sim["p_o35"]) + '%</span>')
         if pills:
-            goals_html='<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">'+"".join(pills)+"</div>"
+            goals_html = ('<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;'
+                          'padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">'
+                          + " &nbsp;|&nbsp; ".join(pills) + "</div>")
 
-    return f"""<div class="pick-card">
-      <div class="pick-header">
-        <div>
-          {rank_html}<span class="pick-matchup">{r['away_team']} @ {r['home_team']}{score_html}</span>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          {live_html}
-          <span class="pick-league-badge">{r['league']}</span>
-          {dq_warn(dq)}
-        </div>
-      </div>
-      <div class="pick-body">
-        <div style="margin-bottom:4px">{chip(bs['market'])}<span style="color:#6B7E6E;font-size:0.72rem;margin-left:6px">{r.get('status_detail','')}</span></div>
-        <div class="pick-action">
-          <span class="pick-action-arrow">▶</span>
-          <span>{bs['label']}</span>
-          {"<span style='font-size:1rem;color:#6B7E6E'>@ "+bs['ml']+"</span>" if bs['ml'] else ""}
-        </div>
-        <div class="stats-row">
-          <div class="stat-item">
-            <div class="stat-item-val val-green">{bs['prob']*100:.1f}%</div>
-            <div class="stat-item-lbl">Prob. Sim.</div>
-          </div>
-          {"<div class='stat-item'><div class='stat-item-val val-muted'>"+str(round(impl,1))+"%</div><div class='stat-item-lbl'>Impl. Casa</div></div>" if impl>0 else ""}
-          {"<div class='stat-item'><div class='stat-item-val val-blue'>+"+str(eg)+"%</div><div class='stat-item-lbl'>Edge</div></div>" if eg>0 else ""}
-          <div class="stat-item">
-            <div class="stat-item-val val-gold">+{bs['ev']:.1f}</div>
-            <div class="stat-item-lbl">EV / $100</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-item-val val-purple">{bs['kelly']:.1%}</div>
-            <div class="stat-item-lbl">Kelly 25%</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-item-val" style="font-size:0.9rem">{conf_badge(bs['ev'],dq)}</div>
-            <div class="stat-item-lbl">Confianza</div>
-          </div>
-        </div>
-        {goals_html}
-      </div>
-    </div>"""
+    dq_html   = dq_warn(dq)
+    chip_html = chip(bs["market"])
+    status    = r.get("status_detail", "")
+
+    return (
+        '<div class="pick-card">'
+          '<div class="pick-header">'
+            '<div>' + rank_html
+              + '<span class="pick-matchup">' + r["away_team"] + ' @ ' + r["home_team"] + score_html + '</span>'
+            '</div>'
+            '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+              + live_html
+              + '<span class="pick-league-badge">' + r["league"] + '</span>'
+              + dq_html
+            + '</div>'
+          '</div>'
+          '<div class="pick-body">'
+            '<div style="margin-bottom:4px">' + chip_html
+              + '<span style="color:#6B7E6E;font-size:0.72rem;margin-left:6px">' + status + '</span>'
+            '</div>'
+            '<div class="pick-action">'
+              '<span class="pick-action-arrow">&#9658;</span>'
+              ' <span>' + bs["label"] + '</span>'
+              ' <span style="font-size:1rem;color:#6B7E6E">' + ml_display + '</span>'
+            '</div>'
+            '<div class="stats-row">'
+              '<div class="stat-item">'
+                '<div class="stat-item-val val-green">' + str(round(prob_pct, 1)) + '%</div>'
+                '<div class="stat-item-lbl">Prob. Sim.</div>'
+              '</div>'
+              + impl_html + edge_html
+              + '<div class="stat-item">'
+                '<div class="stat-item-val val-gold">+' + str(round(ev_val, 1)) + '</div>'
+                '<div class="stat-item-lbl">EV / $100</div>'
+              '</div>'
+              '<div class="stat-item">'
+                '<div class="stat-item-val val-purple">' + str(round(kelly_pct * 100, 1)) + '%</div>'
+                '<div class="stat-item-lbl">Kelly 25%</div>'
+              '</div>'
+              '<div class="stat-item">'
+                '<div class="stat-item-val" style="font-size:0.9rem">' + conf_html + '</div>'
+                '<div class="stat-item-lbl">Confianza</div>'
+              '</div>'
+            '</div>'
+            + goals_html
+          + '</div>'
+        '</div>'
+    )
+
 
 def render_parlay_card(r):
     sim=r["sim"]; bp=sim["best_parlay"]
