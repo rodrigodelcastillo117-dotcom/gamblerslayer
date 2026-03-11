@@ -1281,9 +1281,9 @@ def run_monte_carlo(game, n=10_000):
     # DC only meaningful for soccer (3-way markets)
     if is_soccer:
         candidates+=[
-            ("DC","Doble Oportunidad 1X",p_dc_1x,dc_1x_ev,str(DC_ML),quarter_kelly(p_dc_1x,DC_ML)),
-            ("DC","Doble Oportunidad X2",p_dc_x2,dc_x2_ev,str(DC_ML),quarter_kelly(p_dc_x2,DC_ML)),
-            ("DC","Doble Oportunidad 12",p_dc_12,dc_12_ev,str(DC_ML),quarter_kelly(p_dc_12,DC_ML)),
+            ("DC", game["home_team"]+" o Empate (1X)", p_dc_1x, dc_1x_ev, str(DC_ML), quarter_kelly(p_dc_1x,DC_ML)),
+            ("DC", game["away_team"]+" o Empate (X2)", p_dc_x2, dc_x2_ev, str(DC_ML), quarter_kelly(p_dc_x2,DC_ML)),
+            ("DC", game["home_team"]+" o "+game["away_team"]+" (sin empate)", p_dc_12, dc_12_ev, str(DC_ML), quarter_kelly(p_dc_12,DC_ML)),
         ]
 
     best_single=None; best_ev_v=-999
