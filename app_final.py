@@ -5778,14 +5778,38 @@ with tab_sim:
       }
       // Liga buttons (start with ▶  or ▼ )
       if (lbl.startsWith('\u25b6  ') || lbl.startsWith('\u25bc  ')) {
-        btn.style.setProperty('background', 'rgba(8,18,12,0.9)', 'important');
-        btn.style.setProperty('border', '1px solid rgba(201,168,76,0.25)', 'important');
-        btn.style.setProperty('border-left', '3px solid rgba(201,168,76,0.65)', 'important');
+        // Pick color based on league name in label
+        var lgColor = '#C9A84C'; var lgBorder = 'rgba(201,168,76,0.65)'; var lgBg = 'rgba(8,18,12,0.9)'; var lgGlow = 'transparent';
+        var LIGA_MAP = {
+          // Soccer — green
+          'Bundesliga':'#4ade80','La Liga':'#4ade80','Serie A':'#4ade80','Ligue 1':'#4ade80',
+          'Premier League':'#4ade80','MLS':'#4ade80','Liga MX':'#4ade80','CONCACAF':'#4ade80',
+          'Champions':'#4ade80','Europa':'#4ade80','Conference':'#4ade80','Copa':'#4ade80',
+          'Eredivisie':'#4ade80','Primeira':'#4ade80','Super Lig':'#4ade80',
+          // Basketball — orange
+          'NBA':'#f97316','NCAA':'#f97316',
+          // Hockey — blue
+          'NHL':'#60a5fa',
+          // Baseball — red
+          'MLB':'#ef4444',
+          // Football — purple
+          'NFL':'#a78bfa','CFB':'#a78bfa'
+        };
+        for (var k in LIGA_MAP) {
+          if (lbl.indexOf(k) !== -1) { lgColor = LIGA_MAP[k]; lgBorder = lgColor; lgGlow = lgColor.replace(')',',0.15)').replace('rgb','rgba'); break; }
+        }
+        var hexToRgba = function(c, a) {
+          // simple pass-through for already-rgba or named
+          return c;
+        };
+        btn.style.setProperty('background', 'rgba(8,18,12,0.92)', 'important');
+        btn.style.setProperty('border', '1px solid ' + lgColor + '33', 'important');
+        btn.style.setProperty('border-left', '3px solid ' + lgColor, 'important');
         btn.style.setProperty('border-radius', '0 6px 6px 0', 'important');
-        btn.style.setProperty('color', '#C9A84C', 'important');
+        btn.style.setProperty('color', lgColor, 'important');
         btn.style.setProperty('font-weight', '700', 'important');
         btn.style.setProperty('text-align', 'left', 'important');
-        btn.style.setProperty('box-shadow', 'none', 'important');
+        btn.style.setProperty('box-shadow', '0 0 8px ' + lgGlow, 'important');
       }
     });
   }
