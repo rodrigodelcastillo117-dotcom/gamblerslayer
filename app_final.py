@@ -4320,6 +4320,40 @@ if use_demo:
 else:
     with st.spinner("Consultando ESPN..."):
         games,fetch_errors=get_all_games(sel_leagues)
+
+    # ── Persist pre-game soccer matches across refreshes ─────────────────────
+    # ESPN soccer API often only returns active games. We cache pre-game soccer
+    # matches so they keep appearing in PICKS even after ESPN drops them.
+    from datetime import timedelta as _td_cache
+    _now_cache = datetime.now(timezone.utc)
+    _today_cdmx_cache = (_now_cache - _td_cache(hours=6)).strftime("%Y-%m-%d")
+    _cached_pre = st.session_state.get("_soccer_pre_cache", {})
+
+    # Store new pre-game soccer matches
+    for _g in games:
+        _gid = _g.get("id","")
+        if not _gid: continue
+        if LEAGUES.get(_g.get("league",""),{}).get("group","") == "Soccer" and _g.get("state") == "pre":
+            _cached_pre[_gid] = _g
+
+    # Purge old days
+    for _gid in [k for k, v in list(_cached_pre.items())]:
+        try:
+            _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","")[:19]).replace("T"," "),
+                        "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) - _td_cache(hours=6)).strftime("%Y-%m-%d")
+            if _ev_cdmx != _today_cdmx_cache:
+                _cached_pre.pop(_gid, None)
+        except: pass
+
+    st.session_state["_soccer_pre_cache"] = _cached_pre
+
+    # Re-inject cached pre-game soccer that ESPN dropped (now showing as live or missing)
+    _current_ids = {_g.get("id","") for _g in games}
+    for _gid, _cg in _cached_pre.items():
+        if _gid not in _current_ids:
+            _cg_copy = dict(_cg); _cg_copy["state"] = "pre"
+            games.append(_cg_copy)
+
     if not games:
         col_a,col_b=st.columns(2)
         with col_a:
