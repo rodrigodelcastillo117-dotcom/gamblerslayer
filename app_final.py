@@ -4522,59 +4522,95 @@ st.markdown("""
 <div class="den-divider"></div>
 """, unsafe_allow_html=True)
 
-# ── MOBILE: hamburger button via st.markdown (no iframe, direct DOM) ─────────
+# ── MOBILE: pure CSS hamburger — no JS, works everywhere ────────────────────
 st.markdown("""
-<div id="den-hamburger" onclick="denToggle()" style="
-  display:none;
-  position:fixed;top:14px;left:14px;z-index:99999;
-  background:#071610;border:2px solid #C9A84C;border-radius:7px;
-  padding:8px 10px;cursor:pointer;
-  box-shadow:0 2px 20px rgba(201,168,76,0.45);
-  flex-direction:column;gap:5px;align-items:center;justify-content:center;
-">
-  <span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>
-  <span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>
-  <span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>
-</div>
-<div id="den-ov" onclick="denClose()" style="
-  display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9997;
-"></div>
-<script>
-(function(){
-  var MOBILE = window.innerWidth < 769;
-  var hbg = document.getElementById('den-hamburger');
-  if(MOBILE && hbg){ hbg.style.display='flex'; }
+<style>
+/* Hidden checkbox that controls sidebar visibility */
+#den-toggle { display: none; }
 
-  function getSB(){ return document.querySelector('[data-testid="stSidebar"]'); }
+/* Hamburger button label — only visible on mobile */
+#den-ham-label {
+  display: none;
+  position: fixed;
+  top: 14px; left: 14px;
+  z-index: 99999;
+  background: #071610;
+  border: 2px solid #C9A84C;
+  border-radius: 7px;
+  padding: 8px 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 20px rgba(201,168,76,0.45);
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+}
+#den-ham-label span {
+  display: block;
+  width: 22px; height: 2.5px;
+  background: #C9A84C;
+  border-radius: 2px;
+  transition: all 0.25s;
+}
 
-  function showSB(){
-    var sb=getSB(); if(!sb) return;
-    sb.style.cssText += ';position:fixed!important;top:0;left:0;height:100vh;z-index:9998;transform:translateX(0);transition:transform 0.25s ease;min-width:78vw;max-width:88vw;';
-    document.getElementById('den-ov').style.display='block';
+/* Overlay — shown when checkbox is checked */
+#den-ham-label::before {
+  content: none;
+}
+#den-ov-label {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 9990;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  /* Show hamburger */
+  #den-ham-label { display: flex; }
+
+  /* Sidebar: always hidden off-screen */
+  [data-testid="stSidebar"] {
+    position: fixed !important;
+    top: 0 !important; left: 0 !important;
+    height: 100dvh !important;
+    min-width: 78vw !important;
+    max-width: 88vw !important;
+    z-index: 9995 !important;
+    transform: translateX(-110%) !important;
+    transition: transform 0.25s ease !important;
+    box-shadow: 6px 0 40px rgba(0,0,0,0.8) !important;
+    overflow-y: auto !important;
   }
-  function hideSB(){
-    var sb=getSB(); if(!sb) return;
-    sb.style.transform='translateX(-110%)';
-    document.getElementById('den-ov').style.display='none';
+
+  /* When checkbox checked: show sidebar + overlay */
+  #den-toggle:checked ~ [data-testid="stSidebar"],
+  #den-toggle:checked ~ * [data-testid="stSidebar"],
+  body:has(#den-toggle:checked) [data-testid="stSidebar"] {
+    transform: translateX(0) !important;
   }
-  function initSB(){
-    if(!MOBILE) return;
-    var sb=getSB(); if(!sb) return;
-    sb.style.cssText += ';position:fixed!important;top:0;left:0;height:100vh;z-index:9998;transform:translateX(-110%);transition:transform 0.25s ease;min-width:78vw;max-width:88vw;';
+  body:has(#den-toggle:checked) #den-ov-label {
+    display: block;
   }
 
-  window.denToggle = function(){
-    var sb=getSB(); if(!sb) return;
-    var open = parseFloat(sb.style.transform.replace('translateX(','')) > -50;
-    if(open){ hideSB(); } else { showSB(); }
-  };
-  window.denClose = hideSB;
+  /* Main content: full width */
+  .stMainBlockContainer, section.main {
+    margin-left: 0 !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+    padding-top: 56px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+</style>
 
-  setTimeout(initSB, 100);
-  setTimeout(initSB, 500);
-  setTimeout(initSB, 1200);
-})();
-</script>
+<input type="checkbox" id="den-toggle">
+<label id="den-ham-label" for="den-toggle">
+  <span></span><span></span><span></span>
+</label>
+<label id="den-ov-label" for="den-toggle"></label>
 """, unsafe_allow_html=True)
 
 if not sel_leagues:
