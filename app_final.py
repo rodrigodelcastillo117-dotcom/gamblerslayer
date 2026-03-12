@@ -3277,8 +3277,34 @@ if _tp_count_late != st.session_state.get("_tp_count_cached", -1):
 
 # ── Poblar memoria (botón sidebar) ───────────────────────────────────────────
 if st.session_state.pop("run_populate", False):
+    # ── Diagnóstico antes de intentar poblar ─────────────────────────────────
+    diag_lines = []
+    try:
+        s = st.secrets.get("gsheets", {})
+        diag_lines.append(f"gsheets secret keys: {list(s.keys())}")
+        diag_lines.append(f"private_key present: {bool(s.get('private_key'))}")
+        diag_lines.append(f"spreadsheet_id: {s.get('spreadsheet_id','MISSING')}")
+        diag_lines.append(f"_gsheets_available(): {_gsheets_available()}")
+        try:
+            gc = _get_gsheet_client()
+            diag_lines.append("gsheet client: ✅ OK")
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            sh = gc.open_by_key(sid)
+            diag_lines.append(f"spreadsheet opened: ✅ '{sh.title}'")
+            tabs = [ws.title for ws in sh.worksheets()]
+            diag_lines.append(f"existing tabs: {tabs}")
+        except Exception as e:
+            diag_lines.append(f"gsheet client ERROR: {e}")
+    except Exception as e:
+        diag_lines.append(f"secrets ERROR: {e}")
+
+    with st.expander("🔍 Diagnóstico Sheets", expanded=True):
+        for line in diag_lines:
+            st.code(line)
+
     if not _gsheets_available():
-        st.error("❌ Google Sheets no configurado. Revisa tus secrets.")
+        st.error("❌ Google Sheets no disponible — revisa diagnóstico arriba")
+        st.stop()
     else:
         st.markdown("""
         <div style='background:rgba(201,168,76,0.08);border:1px solid #C9A84C;
