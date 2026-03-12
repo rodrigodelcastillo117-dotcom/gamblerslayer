@@ -986,8 +986,8 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
                 break
 
         return games_raw_list if games_raw_list else None
-    except:
-        return None
+    except Exception as _raw_e:
+        return None  # caller handles
 
 
 def populate_all_team_profiles(progress_bar=None, status_text=None):
@@ -1030,29 +1030,14 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
                     f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
                 )
 
-            games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
-            if not games:
-                failed += 1
-                # Log first failure per league to diagnose
+            try:
+                games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
+            except Exception as _e:
+                games = None
                 if ti == 0:
-                    # Try to get raw error
-                    try:
-                        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
-                               f"{sport_slug}/{league_slug}/teams/{tid}/schedule")
-                        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
-                        data = r.json()
-                        events = data.get("events", [])
-                        if events:
-                            # Find first past event with scores
-                            for fe in events[:5]:
-                                comps = fe.get("competitions",[{}])[0].get("competitors",[])
-                                scores = [(c.get("id"),c.get("homeAway"),c.get("score")) for c in comps]
-                                log.append(f"  ⚠ {tname} sample scores: {scores} date={fe.get('date','')[:10]}")
-                                break
-                        else:
-                            log.append(f"  ⚠ {tname} empty events")
-                    except Exception as e:
-                        log.append(f"  ⚠ {tname} request error: {e}")
+                    log.append(f"  ⚠ {tname} fetch error: {_e}")
+            if not games or not isinstance(games, list) or len(games) == 0:
+                failed += 1
                 continue
             games = games[:_TP_MAX_GAMES]
             stats  = _compute_profile_stats(games, sport_group)
