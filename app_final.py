@@ -2113,16 +2113,15 @@ def parse_games(data, league_name):
                     _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
-                    # CDMX = UTC-5 (horario de verano desde 2nd Sunday March)
-                    # Recalculate with correct offset
-                    _ev_cdmx_dt    = _ev_utc - _td(hours=5)
-                    _ev_cdmx_date  = _ev_cdmx_dt.strftime("%Y-%m-%d")
-                    _today_cdmx    = (_now_utc - _td(hours=5)).strftime("%Y-%m-%d")
-                    _tomorrow_cdmx = (_now_utc - _td(hours=5) + _td(days=1)).strftime("%Y-%m-%d")
-                    # Accept: today CDMX always, or tomorrow CDMX if hour < 6 (late-night = still tonight)
+                    # ESPN sends dates in local time already (no UTC conversion needed)
+                    _ev_cdmx_date = _raw_date[:10]   # just the date part
+                    _ev_cdmx_hour = int(_raw_date[11:13]) if len(_raw_date) >= 13 else 12
+                    _today_cdmx    = (_now_mx).strftime("%Y-%m-%d")
+                    _tomorrow_cdmx = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
+                    # Accept today always; accept tomorrow only if hour < 6 (late-night games)
                     if _ev_cdmx_date == _today_cdmx:
                         pass
-                    elif _ev_cdmx_date == _tomorrow_cdmx and _ev_cdmx_dt.hour < 6:
+                    elif _ev_cdmx_date == _tomorrow_cdmx and _ev_cdmx_hour < 6:
                         pass
                     else:
                         continue
@@ -5607,28 +5606,20 @@ with tab_sim:
     }
     _SPORTS_ORDER_P = ["Soccer","Football","Baseball","Basketball","Hockey"]
 
-    _now_mx_pt  = datetime.now(timezone.utc) - _td_pt(hours=5)  # UTC-5 CDMX verano
+    _now_mx_pt  = datetime.now(timezone.utc) - _td_pt(hours=6)  # approx CDMX for wall-clock
     _today_mx_p = _now_mx_pt.strftime("%Y-%m-%d")
     _tom_mx_p   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
     _d2_mx_p    = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
 
     def _mx_date_p(g):
+        # ESPN dates are already in local time — just use the date part directly
         raw = g.get("date") or ""
-        if not raw: return _today_mx_p
-        try:
-            from datetime import timezone as _tzp
-            _u = datetime.strptime(raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp.utc)
-            return (_u - _td_pt(hours=5)).strftime("%Y-%m-%d")  # UTC-5 CDMX verano
-        except: return raw[:10]
+        return raw[:10] if raw else _today_mx_p
 
     def _mx_time_p(g):
+        # ESPN dates are already in local time — just use the time part directly
         raw = g.get("date") or ""
-        if not raw: return ""
-        try:
-            from datetime import timezone as _tzp
-            _u = datetime.strptime(raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp.utc)
-            return (_u - _td_pt(hours=5)).strftime("%H:%M")  # UTC-5 CDMX verano
-        except: return ""
+        return raw[11:16] if len(raw) >= 16 else ""
 
     def _fmt_date_p(ds):
         try:
@@ -5686,17 +5677,14 @@ with tab_sim:
         if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
-        # Include today CDMX always; tomorrow only if hour < 6 (late-night games)
+        # _mx_date_p now returns raw date from ESPN (already local time)
+        # Accept today; accept tomorrow only if hour < 6 (late-night = still tonight)
+        _raw_g_date = (g.get("date") or "")
+        _raw_g_hour = int(_raw_g_date[11:13]) if len(_raw_g_date) >= 13 else 12
         if _gd == _today_mx_p:
             pass
-        elif _gd == _tom_mx_p:
-            try:
-                from datetime import timezone as _tzp2
-                _u2 = datetime.strptime((g.get("date") or "")[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp2.utc)
-                if (_u2 - _td_pt(hours=5)).hour >= 6:
-                    continue  # genuinely tomorrow
-            except:
-                continue
+        elif _gd == _tom_mx_p and _raw_g_hour < 6:
+            pass
         else:
             continue
         _bucket = _today_mx_p
