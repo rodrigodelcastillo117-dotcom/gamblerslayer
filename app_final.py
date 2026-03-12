@@ -1604,8 +1604,20 @@ def _parse_live_stats(comp, home, away):
 def parse_games(data, league_name):
     """Parse ESPN scoreboard JSON into normalized game dicts."""
     games = []
+    from datetime import timedelta as _td
+    _now_utc   = datetime.now(timezone.utc)
+    _now_mx    = _now_utc - _td(hours=6)  # Mexico City offset
+    _valid_dates = set()
+    for _d in range(-1, 3):  # yesterday, today, tomorrow, day after
+        _valid_dates.add((_now_utc + _td(days=_d)).strftime("%Y-%m-%d"))
+        _valid_dates.add((_now_mx  + _td(days=_d)).strftime("%Y-%m-%d"))
+
     for event in data.get("events", []):
         try:
+            # Filter: only show games within window of today (±1 day)
+            ev_date = event.get("date","")[:10]
+            if ev_date and ev_date not in _valid_dates:
+                continue
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
@@ -1645,7 +1657,7 @@ def parse_games(data, league_name):
                 "home_record":  hr[0].get("summary", "") if hr else "",
                 "away_record":  ar[0].get("summary", "") if ar else "",
                 "state":        status.get("type", {}).get("state", "pre"),
-                "status_detail": status.get("type", {}).get("shortDetail", ""),
+                "status_detail": (status.get("type", {}).get("shortDetail", "") or "").split("\n")[0].strip(),
                 "date":         event.get("date", ""),
                 "venue":        comp.get("venue", {}).get("fullName", ""),
                 "odds":         odds_info,
@@ -2655,9 +2667,9 @@ def run_monte_carlo(game, n=10_000):
     # DC only meaningful for soccer (3-way markets)
     if is_soccer:
         candidates+=[
-            ("DC", game["home_team"]+" o Empate (1X)", p_dc_1x, dc_1x_ev, str(DC_ML), quarter_kelly(p_dc_1x,DC_ML)),
-            ("DC", game["away_team"]+" o Empate (X2)", p_dc_x2, dc_x2_ev, str(DC_ML), quarter_kelly(p_dc_x2,DC_ML)),
-            ("DC", game["home_team"]+" o "+game["away_team"]+" (sin empate)", p_dc_12, dc_12_ev, str(DC_ML), quarter_kelly(p_dc_12,DC_ML)),
+            ("DO", game["home_team"]+" o Empate (1X)", p_dc_1x, dc_1x_ev, str(DC_ML), quarter_kelly(p_dc_1x,DC_ML)),
+            ("DO", game["away_team"]+" o Empate (X2)", p_dc_x2, dc_x2_ev, str(DC_ML), quarter_kelly(p_dc_x2,DC_ML)),
+            ("DO", game["home_team"]+" o "+game["away_team"]+" (sin empate)", p_dc_12, dc_12_ev, str(DC_ML), quarter_kelly(p_dc_12,DC_ML)),
         ]
 
     # ── Team Profile O/U rate blend ───────────────────────────────────────────
@@ -2729,16 +2741,17 @@ def run_monte_carlo(game, n=10_000):
     _has_real_signal = _has_ml or _has_scoring or _has_form
 
     if is_soccer and not _has_real_signal:
-        # Strip O/U and BTTS — keep only ML and DC (which at least reflect team identity)
+        # Sin ninguna señal real: eliminar DC también (EV ficticio -200)
+        # Solo dejar ML si existe, o nada — evita picks de DC siempre ganando
         candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
-                      if mt not in ("O/U","BTTS")]
+                      if mt not in ("O/U","BTTS","DO")]
 
     # Detect "partido parejo" — requires real ML signal to be meaningful
     # Without ML, hp≈aw≈0.37 always → _parejo always True → always picks U3.5
     _spread = abs(sh - sa) * 100  # percentage spread between teams
     _parejo = use_goals and is_soccer and _spread < 12 and _has_ml
 
-    MARKET_PREF = {"BTTS": 4, "O/U": 3, "ML": 2, "DC": 1}
+    MARKET_PREF = {"BTTS": 4, "O/U": 3, "ML": 2, "DO": 1}
     best_single=None; best_ev_v=-999; best_pref=-1
 
     if _parejo:
@@ -2765,7 +2778,7 @@ def run_monte_carlo(game, n=10_000):
     # intra-parlay candidates stored for use by build_parlays()
     best_parlay=None  # will be set by build_parlays() in run_all_simulations
     pos_legs=[(mtype,label,prob,ev,ml) for mtype,label,prob,ev,ml,k in candidates
-              if prob is not None and ev is not None and ev>0 and mtype not in ("DC",)]
+              if prob is not None and ev is not None and ev>0 and mtype not in ("DO",)]
     pos_legs.sort(key=lambda x:x[3],reverse=True)
 
     sim = {
@@ -2944,9 +2957,9 @@ def run_all_simulations(games, n=10_000):
 # RENDER HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 def chip(market):
-    label_map = {"DC": "DO"}
+    label_map = {"DO": "DO"}
     display_market = label_map.get(market, market)
-    cls={"ML":"chip-ml","BTTS":"chip-btts","O/U":"chip-ou","DC":"chip-dc","PARLAY":"chip-parlay"}.get(market,"chip-ml")
+    cls={"ML":"chip-ml","BTTS":"chip-btts","O/U":"chip-ou","DO":"chip-dc","PARLAY":"chip-parlay"}.get(market,"chip-ml")
     return f'<span class="market-chip {cls}">{display_market}</span>'
 
 def conf_badge(ev, dq):
@@ -3055,7 +3068,7 @@ def render_pick_card(r, rank=None):
 
     dq_html   = dq_warn(dq)
     chip_html = chip(bs["market"])
-    status    = r.get("status_detail", "")
+    status    = r.get("status_detail", "").replace("<","").replace(">","").replace("/","").strip()
 
     # Recent form badges
     form_html = ""
@@ -3471,40 +3484,27 @@ st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
 # [team profiles badge — moved below after function definitions]
 
-# ── Team Profiles status badge — se renderiza con datos del session_state ──────
-# (el valor real se carga más abajo cuando _load_all_team_profiles ya está definida)
-_tp_count_display = st.session_state.get("_tp_count_cached", -1)
-if _tp_count_display > 0:
-    _tp_meta = st.session_state.get("_tp_meta_cached", {})
+# ── Team Profiles — cargar y mostrar badge ────────────────────────────────
+_tp_profiles_now = _load_all_team_profiles()
+_tp_count_now    = len(_tp_profiles_now)
+if _tp_count_now > 0:
+    _tp_total_games = sum(p.get("n_games",0) for p in _tp_profiles_now.values())
+    _tp_leagues     = len({p.get("league","") for p in _tp_profiles_now.values()})
     st.markdown(
         f'<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
         f'color:#4ade80;letter-spacing:1px">'
-        f'🧠 Memoria activa: <b>{_tp_count_display}</b> equipos · '
-        f'<b>{_tp_meta.get("total_games",0)}</b> partidos · '
-        f'<b>{_tp_meta.get("leagues",0)}</b> ligas</div>',
+        f'🧠 Memoria activa: <b>{_tp_count_now}</b> equipos · '
+        f'<b>{_tp_total_games}</b> partidos · '
+        f'<b>{_tp_leagues}</b> ligas</div>',
         unsafe_allow_html=True
     )
-elif _tp_count_display == 0:
+else:
     st.markdown(
         '<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
         'color:#6B7E6E;letter-spacing:1px">'
         '🧠 Memoria: aprendiendo... (se llena automáticamente con cada partido)</div>',
         unsafe_allow_html=True
     )
-# Si _tp_count_display == -1 (primera carga), no mostrar nada — se carga abajo
-
-# ── Cargar team profiles (aquí _load_all_team_profiles ya está definida) ─────────
-_tp_profiles_late = _load_all_team_profiles()
-_tp_count_late    = len(_tp_profiles_late)
-if _tp_count_late != st.session_state.get("_tp_count_cached", -1):
-    # Actualizar session_state con datos frescos
-    st.session_state["_tp_count_cached"] = _tp_count_late
-    st.session_state["_tp_meta_cached"]  = {
-        "total_games": sum(p.get("n_games",0) for p in _tp_profiles_late.values()),
-        "leagues":     len({p.get("league","") for p in _tp_profiles_late.values()}),
-    }
-    if _tp_count_late > 0:
-        st.rerun()  # re-render para mostrar badge actualizado
 
 # ── Poblar memoria (botón sidebar) ───────────────────────────────────────────
 if st.session_state.pop("run_populate", False):
@@ -3980,7 +3980,7 @@ with tab_all:
                       "rationale": f"{hs}-{as_} al min {minute}. BTTS ya cumplido. Casas ofrecen {ou_label} como siguiente línea natural — {ou_prob:.0f}% según simulación."}]
             if dom_team:
                 dc_prob = min(dom_pct + draw_pct * 0.4, 92)
-                picks.append({"label": f"{dom_team} gana o empata (DC)", "prob": round(dc_prob, 1), "market": "DC",
+                picks.append({"label": f"{dom_team} gana o empata (DO)", "prob": round(dc_prob, 1), "market": "DO",
                                "rationale": f"{dom_team} con mayor dominio. Doble Oportunidad cubre empate o victoria — {dc_prob:.0f}%."})
             return {"picks": picks, "headline": f"Empate {hs}-{as_} min {minute}"}
 
@@ -4896,7 +4896,7 @@ with tab_reto:
                                           key="reto_partido")
             reto_pick     = st.text_input("Pick", placeholder="ej: Real Madrid ML / Over 2.5 / BTTS Sí",
                                           key="reto_pick")
-            reto_mercado  = st.selectbox("Mercado", ["ML","O/U","BTTS","DC","Spread","Otro"],
+            reto_mercado  = st.selectbox("Mercado", ["ML","O/U","BTTS","DO","Spread","Otro"],
                                          key="reto_mercado")
         with fc2:
             # Tipo de momio: americano o decimal
@@ -5028,7 +5028,7 @@ with tab_reto:
             with st.container():
                 h_left, h_right = st.columns([3, 1])
                 with h_left:
-                    mercado_chip = {"ML":"🎯","O/U":"📊","BTTS":"⚽","DC":"🔄","Spread":"📐","Otro":"🎲"}.get(p.get("mercado","ML"),"🎯")
+                    mercado_chip = {"ML":"🎯","O/U":"📊","BTTS":"⚽","DO":"🔄","Spread":"📐","Otro":"🎲"}.get(p.get("mercado","ML"),"🎯")
                     st.markdown(
                         f'<span style="color:#C9A84C;font-family:\'Cinzel\',serif;font-size:0.78rem">#{num}</span>'
                         f' <span style="color:#E0F7F0;font-weight:600">{p.get("partido","")}</span>'
