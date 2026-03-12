@@ -5855,6 +5855,55 @@ with tab_parlays:
             if len(_multi_legs) >= 3:
                 break
 
+        # Fallback: si no hay legs por filtro de fecha, usar sr_current directo
+        if len(_multi_legs) < 2 and sr_current:
+            _used_fb = set()
+            _all_fb_legs = []
+            for _r in sr_current:
+                _gid = _r.get("id","")
+                if _gid in _used_fb: continue
+                _st = _r.get("state") or (_gmap_par.get(_gid) or {}).get("state","pre")
+                if _st == "post": continue
+                _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
+                _sim = _r["sim"]
+                # Best pick for this game
+                if _sg == "Soccer":
+                    _hp = _sim.get("home_pct") or 0
+                    _ap = _sim.get("away_pct") or 0
+                    _bp = _sim.get("p_btts") or 0
+                    _o25 = _sim.get("p_o25") or 0
+                    _best_p = max(_hp, _ap, _bp, _o25)
+                    if _hp >= _ap and _hp == _best_p:
+                        _lbl, _mkt = _r["home_team"], "ML"
+                    elif _ap == _best_p:
+                        _lbl, _mkt = _r["away_team"], "ML"
+                    elif _bp == _best_p:
+                        _lbl, _mkt = "Ambos Anotan", "BTTS"
+                    else:
+                        _lbl, _mkt = "Over 2.5", "O/U"
+                    _prob = _best_p
+                else:
+                    _hp = _sim.get("home_pct") or 0
+                    _ap = _sim.get("away_pct") or 0
+                    _prob = max(_hp, _ap)
+                    _lbl = _r["home_team"] if _hp >= _ap else _r["away_team"]
+                    _mkt = "ML"
+                if _prob > 0:
+                    _all_fb_legs.append({"sport":_sg,"game":_r,"league":_r["league"],
+                                         "market":_mkt,"label":_lbl,"prob":_prob})
+                _used_fb.add(_gid)
+            # Sort by prob, pick top 3 from different sports if possible
+            _all_fb_legs.sort(key=lambda x: x["prob"], reverse=True)
+            _fb_sports_used = set()
+            _fb_ids_used = set()
+            for _fl in _all_fb_legs:
+                _fgid = _fl["game"].get("id","")
+                if _fgid in _fb_ids_used: continue
+                _fb_ids_used.add(_fgid)
+                _fb_sports_used.add(_fl["sport"])
+                _multi_legs.append(_fl)
+                if len(_multi_legs) >= 3: break
+
         # Calcular prob combinada
         if len(_multi_legs) >= 2:
             _multi_prob = 1.0
@@ -7089,7 +7138,7 @@ with tab_reto:
             return PAD_L + i * (W - PAD_L - PAD_R) / (n - 1)
 
         n = len(_vals)
-        RES_CLR = {{"ganado":"#4ade80","perdido":"#ef4444","pendiente":"#f59e0b",None:"#C9A84C"}}
+        RES_CLR = {"ganado":"#4ade80","perdido":"#ef4444","pendiente":"#f59e0b"}
 
         # Build polyline points
         pts = " ".join(f"{{_vx(i,n):.1f}},{{_vy(v):.1f}}" for i,v in enumerate(_vals))
