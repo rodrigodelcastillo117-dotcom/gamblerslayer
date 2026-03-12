@@ -808,98 +808,62 @@ hr { border-color: var(--border) !important; }
   border-radius: 0 0 6px 6px !important;
   padding: 16px 12px !important;
 }
-/* ── Liga collapsible buttons — target by aria-label prefix ── */
-button[aria-label^="▶  "],
-button[aria-label^="▼  "] {
-  background: transparent !important;
-  border: none !important;
-  border-left: 3px solid rgba(201,168,76,0.45) !important;
+/* ── Liga + Sport buttons: see high-specificity block below ── */
+
+/* ── Sport tile + liga buttons: inject via JS-driven class approach ──
+   Streamlit overrides button[aria-label] so we use :is() with high specificity */
+:is(div.stButton) > button:is([aria-label*="Basketball"]) {
+  background: rgba(249,115,22,0.22) !important;
+  border: 1px solid #f97316 !important;
+  color: #000 !important; font-weight: 800 !important;
+  box-shadow: 0 0 10px rgba(249,115,22,0.25) !important;
+}
+:is(div.stButton) > button:is([aria-label*="Soccer"]) {
+  background: rgba(74,222,128,0.22) !important;
+  border: 1px solid #4ade80 !important;
+  color: #000 !important; font-weight: 800 !important;
+  box-shadow: 0 0 10px rgba(74,222,128,0.25) !important;
+}
+:is(div.stButton) > button:is([aria-label*="Hockey"]) {
+  background: rgba(96,165,250,0.22) !important;
+  border: 1px solid #60a5fa !important;
+  color: #000 !important; font-weight: 800 !important;
+  box-shadow: 0 0 10px rgba(96,165,250,0.25) !important;
+}
+:is(div.stButton) > button:is([aria-label*="Baseball"]) {
+  background: rgba(239,68,68,0.22) !important;
+  border: 1px solid #ef4444 !important;
+  color: #000 !important; font-weight: 800 !important;
+  box-shadow: 0 0 10px rgba(239,68,68,0.25) !important;
+}
+:is(div.stButton) > button:is([aria-label*="Football"]) {
+  background: rgba(167,139,250,0.22) !important;
+  border: 1px solid #a78bfa !important;
+  color: #000 !important; font-weight: 800 !important;
+  box-shadow: 0 0 10px rgba(167,139,250,0.25) !important;
+}
+/* ── Liga buttons: dark bg + gold text ── */
+:is(div.stButton) > button:is([aria-label^="▶  "]),
+:is(div.stButton) > button:is([aria-label^="▼  "]) {
+  background: rgba(10,20,14,0.85) !important;
+  border: 1px solid rgba(201,168,76,0.3) !important;
+  border-left: 3px solid rgba(201,168,76,0.6) !important;
   border-radius: 0 6px 6px 0 !important;
   color: #C9A84C !important;
   font-family: 'Cinzel', serif !important;
-  font-size: 0.75rem !important;
+  font-size: 0.73rem !important;
   font-weight: 700 !important;
-  letter-spacing: 1.2px !important;
+  letter-spacing: 1px !important;
   text-transform: uppercase !important;
   text-align: left !important;
   padding: 8px 14px !important;
-  width: 100% !important;
   box-shadow: none !important;
-  margin: 4px 0 2px 0 !important;
-  transition: background 0.15s ease, border-color 0.15s ease !important;
 }
-button[aria-label^="▶  "]:hover,
-button[aria-label^="▼  "]:hover {
+:is(div.stButton) > button:is([aria-label^="▶  "]):hover,
+:is(div.stButton) > button:is([aria-label^="▼  "]):hover {
   background: rgba(201,168,76,0.08) !important;
   border-left-color: #C9A84C !important;
   color: #F0D080 !important;
-}
-
-/* ── Sport tile buttons — colored by sport ── */
-button[aria-label*="Basketball"] {
-  background: rgba(249,115,22,0.18) !important;
-  border: 1px solid rgba(249,115,22,0.5) !important;
-  border-radius: 8px !important;
-  color: #000 !important;
-  font-weight: 800 !important;
-  font-size: 0.78rem !important;
-  padding: 4px 10px !important;
-  box-shadow: 0 0 8px rgba(249,115,22,0.2) !important;
-}
-button[aria-label*="Basketball"]:hover {
-  background: rgba(249,115,22,0.32) !important;
-}
-button[aria-label*="Soccer"] {
-  background: rgba(74,222,128,0.18) !important;
-  border: 1px solid rgba(74,222,128,0.5) !important;
-  border-radius: 8px !important;
-  color: #000 !important;
-  font-weight: 800 !important;
-  font-size: 0.78rem !important;
-  padding: 4px 10px !important;
-  box-shadow: 0 0 8px rgba(74,222,128,0.2) !important;
-}
-button[aria-label*="Soccer"]:hover {
-  background: rgba(74,222,128,0.32) !important;
-}
-button[aria-label*="Hockey"] {
-  background: rgba(96,165,250,0.18) !important;
-  border: 1px solid rgba(96,165,250,0.5) !important;
-  border-radius: 8px !important;
-  color: #000 !important;
-  font-weight: 800 !important;
-  font-size: 0.78rem !important;
-  padding: 4px 10px !important;
-  box-shadow: 0 0 8px rgba(96,165,250,0.2) !important;
-}
-button[aria-label*="Hockey"]:hover {
-  background: rgba(96,165,250,0.32) !important;
-}
-button[aria-label*="Baseball"] {
-  background: rgba(239,68,68,0.18) !important;
-  border: 1px solid rgba(239,68,68,0.5) !important;
-  border-radius: 8px !important;
-  color: #000 !important;
-  font-weight: 800 !important;
-  font-size: 0.78rem !important;
-  padding: 4px 10px !important;
-  box-shadow: 0 0 8px rgba(239,68,68,0.2) !important;
-}
-button[aria-label*="Baseball"]:hover {
-  background: rgba(239,68,68,0.32) !important;
-}
-button[aria-label*="Football"] {
-  background: rgba(167,139,250,0.18) !important;
-  border: 1px solid rgba(167,139,250,0.5) !important;
-  border-radius: 8px !important;
-  color: #000 !important;
-  font-weight: 800 !important;
-  font-size: 0.78rem !important;
-  padding: 4px 10px !important;
-  box-shadow: 0 0 8px rgba(167,139,250,0.2) !important;
-}
-button[aria-label*="Football"]:hover {
-  background: rgba(167,139,250,0.32) !important;
 }
 
 
