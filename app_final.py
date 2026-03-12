@@ -884,6 +884,33 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
 
 
 
+
+def _fetch_all_teams_in_league(sport_slug, league_slug):
+    """
+    Obtiene lista de {id, name} de todos los equipos de una liga via ESPN.
+    """
+    try:
+        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+               f"{sport_slug}/{league_slug}/teams?limit=100")
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return []
+        data  = r.json()
+        teams_raw = (data.get("sports", [{}])[0]
+                         .get("leagues", [{}])[0]
+                         .get("teams", []))
+        result = []
+        for t in teams_raw:
+            t_info = t.get("team", {})
+            tid    = str(t_info.get("id", ""))
+            name   = t_info.get("displayName", t_info.get("name", ""))
+            if tid and name:
+                result.append({"id": tid, "name": name})
+        return result
+    except:
+        return []
+
+
 def populate_all_team_profiles(progress_bar=None, status_text=None):
     """
     Recorre todas las ligas, obtiene todos los equipos, guarda perfiles en Sheets.
@@ -4213,30 +4240,7 @@ def _compute_profile_stats(games, sport_group):
     return stats
 
 
-def _fetch_all_teams_in_league(sport_slug, league_slug):
-    """
-    Obtiene lista de {id, name} de todos los equipos de una liga via ESPN.
-    """
-    try:
-        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
-               f"{sport_slug}/{league_slug}/teams?limit=100")
-        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
-            return []
-        data  = r.json()
-        teams_raw = (data.get("sports", [{}])[0]
-                         .get("leagues", [{}])[0]
-                         .get("teams", []))
-        result = []
-        for t in teams_raw:
-            t_info = t.get("team", {})
-            tid    = str(t_info.get("id", ""))
-            name   = t_info.get("displayName", t_info.get("name", ""))
-            if tid and name:
-                result.append({"id": tid, "name": name})
-        return result
-    except:
-        return []
+# [_fetch_all_teams_in_league moved]
 
 
 def _safe_apodo(apodo):
