@@ -3933,64 +3933,117 @@ with tab_picks:
         # ── Filtrar: solo O/U, BTTS, ML — excluir DO como pick principal ──────────
         ALLOWED_MKTS = {"O/U", "BTTS", "ML"}  # DO never a standalone pick
 
-        def _best_allowed_pick(r):
-            """Return best bet dict restricted to allowed markets, or None."""
-            sim = r["sim"]
-            candidates = []
-            # ML
-            for side, ml_key, prob_key in [
-                (r["home_team"], "home_ml", "home_pct"),
-                (r["away_team"], "away_ml", "away_pct"),
-            ]:
-                ml = sim.get(ml_key)
-                ev = sim.get("home_ev" if "home" in ml_key else "away_ev")
-                if ml and ev and ev > 0:
-                    candidates.append({
-                        "market": "ML", "label": side,
-                        "prob": sim.get(prob_key, 0), "ev": ev,
-                        "kelly": sim.get("home_kelly" if "home" in ml_key else "away_kelly", 0),
-                    })
-            # BTTS
-            if sim.get("use_goals") and sim.get("btts_ev", 0) > 0:
-                candidates.append({
-                    "market": "BTTS", "label": "Ambos Anotan (Sí)",
-                    "prob": sim.get("p_btts", 0), "ev": sim["btts_ev"],
-                    "kelly": 0,
-                })
-            # O/U
-            if sim.get("use_goals"):
-                for line, prob_key, ev_key, lbl in [
-                    ("2.5", "p_o25", "o25_ev", "Over 2.5 goles"),
-                    ("3.5", "p_o35", "o35_ev", "Over 3.5 goles"),
-                ]:
-                    _ev = sim.get(ev_key, 0) or 0
-                    _pb = sim.get(prob_key, 0) or 0
-                    if _ev > 0 and _pb > 0:
-                        candidates.append({
-                            "market": "O/U", "label": lbl,
-                            "prob": _pb, "ev": _ev, "kelly": 0,
-                        })
-            if not candidates:
-                return None
-            # Best by probability
-            return max(candidates, key=lambda x: x["prob"])
+        def _all_allowed_picks(r):
+            """Return ALL valid picks (ML, BTTS, O/U) for a game.
+            - ML: team with highest win probability (always included when there are real odds,
+                  or always when sim has a clear favorite)
+            - Basketball/Hockey/Baseball: O/U total (Over or Under the ESPN line)
+            - Soccer: BTTS + Over 2.5/3.5
+            Returns list of pick dicts sorted by probability desc."""
+            sim  = r["sim"]
+            sg   = LEAGUES.get(r["league"], {}).get("group", "Soccer")
+            picks = []
 
-        # Build allowed bets list sorted by prob desc
+            # ── ML: team with highest win probability ─────────────────────────
+            # For non-soccer: always add the favorite (highest prob side) as ML pick
+            # For soccer: only add ML if that side has EV+ (3-way market is harder)
+            h_prob = sim.get("home_pct", 0) or 0
+            a_prob = sim.get("away_pct", 0) or 0
+            h_ml   = sim.get("home_ml")
+            a_ml   = sim.get("away_ml")
+            h_ev   = sim.get("home_ev")
+            a_ev   = sim.get("away_ev")
+            h_k    = sim.get("home_kelly") or 0
+            a_k    = sim.get("away_kelly") or 0
+
+            if sg != "Soccer":
+                # Non-soccer: pick the side with highest probability
+                # Even if EV is slightly negative, the model is pointing at the likely winner
+                if h_prob >= a_prob and h_ml:
+                    picks.append({
+                        "market": "ML", "label": r["home_team"],
+                        "prob": h_prob, "ev": h_ev or 0, "kelly": h_k,
+                    })
+                elif a_ml:
+                    picks.append({
+                        "market": "ML", "label": r["away_team"],
+                        "prob": a_prob, "ev": a_ev or 0, "kelly": a_k,
+                    })
+            else:
+                # Soccer: pick the team with highest win probability (same as non-soccer)
+                # EV+ not required — the model is pointing at the likely winner
+                if h_prob >= a_prob and h_ml:
+                    picks.append({"market":"ML","label":r["home_team"],"prob":h_prob,"ev":h_ev or 0,"kelly":h_k})
+                elif a_ml:
+                    picks.append({"market":"ML","label":r["away_team"],"prob":a_prob,"ev":a_ev or 0,"kelly":a_k})
+                elif h_ml:  # fallback if no away_ml
+                    picks.append({"market":"ML","label":r["home_team"],"prob":h_prob,"ev":h_ev or 0,"kelly":h_k})
+
+            # ── O/U ──────────────────────────────────────────────────────────
+            if sim.get("use_goals"):
+                if sg == "Soccer":
+                    # Soccer: Over 2.5 / Over 3.5
+                    ou_cands = []
+                    for pk, ek, lbl in [("p_o25","o25_ev","Over 2.5 goles"),
+                                        ("p_o35","o35_ev","Over 3.5 goles")]:
+                        _ev = sim.get(ek) or 0
+                        _pb = sim.get(pk) or 0
+                        if _ev > 0 and _pb > 0:
+                            ou_cands.append({"market":"O/U","label":lbl,"prob":_pb,"ev":_ev,"kelly":0})
+                    if ou_cands:
+                        picks.append(max(ou_cands, key=lambda x: x["prob"]))
+                else:
+                    # Basketball / Hockey / Baseball / Football: O/U total from ESPN line
+                    _ou_line = sim.get("ou_line") or ""
+                    _p_over  = sim.get("p_o_total") or 0
+                    _p_under = sim.get("p_u_total") or 0
+                    if _ou_line and (_p_over > 0 or _p_under > 0):
+                        try:
+                            _line = float(_ou_line)
+                            _lbl_o = f"Over {_line:.1f}"
+                            _lbl_u = f"Under {_line:.1f}"
+                        except:
+                            _lbl_o = "Over"
+                            _lbl_u = "Under"
+                        _OU_ML = -110
+                        # Pick whichever side the model favors more
+                        if _p_over >= _p_under:
+                            _ev_ou = round((_p_over/100 * (100/_OU_ML*-1 if _OU_ML<0 else _OU_ML/100) - (1-_p_over/100)) * 100, 1) if _OU_ML else 0
+                            picks.append({"market":"O/U","label":_lbl_o,"prob":_p_over,"ev":_ev_ou,"kelly":0})
+                        else:
+                            _ev_ou = round((_p_under/100 * (100/abs(_OU_ML)) - (1-_p_under/100)) * 100, 1) if _OU_ML else 0
+                            picks.append({"market":"O/U","label":_lbl_u,"prob":_p_under,"ev":_ev_ou,"kelly":0})
+
+            # ── BTTS (Soccer only) ────────────────────────────────────────────
+            if sg == "Soccer" and sim.get("use_goals") and (sim.get("btts_ev") or 0) > 0:
+                picks.append({
+                    "market": "BTTS", "label": "Ambos Anotan",
+                    "prob": sim.get("p_btts", 0) or 0,
+                    "ev": sim["btts_ev"], "kelly": 0,
+                })
+
+            return sorted(picks, key=lambda x: x["prob"], reverse=True)
+
+        # Build allowed bets — one entry per valid pick (not per game)
+        # Each entry: {**r, "_pick": pick_dict}
         allowed_bets = []
         for r in sr_cur:
             g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
-            if g_state == "post": continue   # skip finished games
-            bp = _best_allowed_pick(r)
-            if bp:
+            if g_state == "post": continue
+            for bp in _all_allowed_picks(r):
                 allowed_bets.append({**r, "_pick": bp})
+        # Sort by probability desc
         allowed_bets.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
 
         if not allowed_bets:
-            st.markdown('<div class="warn-banner">No se encontraron picks O/U · BTTS · ML con EV positivo. Intenta con más ligas.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="warn-banner">No se encontraron picks ML · BTTS · O/U con EV positivo. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
         else:
             # ── helpers ──────────────────────────────────────────────────────
             _MKT_COLOR = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
-            _MKT_ICON  = {"ML":"⚽","O/U":"📊","BTTS":"🎯","DO":"🔄"}
+            _SPORT_ICON = {"Basketball":"🏀","Soccer":"⚽","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
+            _sg_pick = LEAGUES.get(r.get("league",""), {}).get("group", "Soccer")
+            _ml_icon = _SPORT_ICON.get(_sg_pick, "⚽")
+            _MKT_ICON  = {"ML": _ml_icon, "O/U":"📊","BTTS":"🎯","DO":"🔄"}
             _CONF_LABEL = lambda p: ("🔥 ALTA" if p>=75 else ("⚡ MEDIA" if p>=55 else "🌡 BAJA"))
             _CONF_COLOR = lambda p: ("#4ade80" if p>=75 else ("#C9A84C" if p>=55 else "#ef4444"))
 
@@ -4288,158 +4341,158 @@ with tab_sim:
                     f'</div>',
                     unsafe_allow_html=True
                 )
-        # ── RE-SIMULAR button (compact, inside games section) ─────────────────
-        _col_rs, _ = st.columns([1, 3])
-        with _col_rs:
-            if st.button(f"🔄 RE-SIMULAR ({n_sims:,}×)", use_container_width=True, key="btn_resim_picks"):
-                t0 = time.time()
-                sr2 = run_all_simulations(games, n=n_sims)
-                elapsed = time.time() - t0
-                st.session_state["sim_results"] = sr2
-                st.session_state["last_sim_demo"] = is_demo
-                n_pos = len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
-                st.toast(f"✓ {len(games)*n_sims:,} sims en {elapsed:.1f}s · {n_pos} value bets", icon="🔮")
-                st.rerun()
-        if is_demo:
-            st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
+    # ── RE-SIMULAR button (compact, inside games section) ─────────────────
+    _col_rs, _ = st.columns([1, 3])
+    with _col_rs:
+        if st.button(f"🔄 RE-SIMULAR ({n_sims:,}×)", use_container_width=True, key="btn_resim_picks"):
+            t0 = time.time()
+            sr2 = run_all_simulations(games, n=n_sims)
+            elapsed = time.time() - t0
+            st.session_state["sim_results"] = sr2
+            st.session_state["last_sim_demo"] = is_demo
+            n_pos = len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
+            st.toast(f"✓ {len(games)*n_sims:,} sims en {elapsed:.1f}s · {n_pos} value bets", icon="🔮")
+            st.rerun()
+    if is_demo:
+        st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
 
-        # Build sim lookup dict
-        _sim_map = {r.get("id", ""): r for r in st.session_state.get("sim_results", [])}
+    # Build sim lookup dict
+    _sim_map = {r.get("id", ""): r for r in st.session_state.get("sim_results", [])}
 
-        def _oracle_card(g, sm):
-            """Full oracle card for a game: bars + goals + best pick."""
-            _r = _sim_map.get(g.get("id", ""))
-            _time = _mx_time_p(g)
-            _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
-            _sd = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
+    def _oracle_card(g, sm):
+        """Full oracle card for a game: bars + goals + best pick."""
+        _r = _sim_map.get(g.get("id", ""))
+        _time = _mx_time_p(g)
+        _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
+        _sd = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
 
-            # Header
-            _low_c = _r["sim"].get("low_confidence", False) if _r else False
-            _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.55rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
-            _html = (
-                f'<div class="game-row{" game-row-ev" if (_r and _r["sim"].get("best_single") and _r["sim"]["best_single"]["ev"]>0) else ""}"'
-                f' style="border-left:3px solid {sm["color"]}88;margin:4px 0;">'
-                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'
-                f'<div>'
-                f'<div class="game-title">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}{_lc_tag}</div>'
-                f'</div>'
-            )
+        # Header
+        _low_c = _r["sim"].get("low_confidence", False) if _r else False
+        _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.55rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
+        _html = (
+            f'<div class="game-row{" game-row-ev" if (_r and _r["sim"].get("best_single") and _r["sim"]["best_single"]["ev"]>0) else ""}"'
+            f' style="border-left:3px solid {sm["color"]}88;margin:4px 0;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'
+            f'<div>'
+            f'<div class="game-title">{g["away_team"]} @ {g["home_team"]}</div>'
+            f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}{_lc_tag}</div>'
+            f'</div>'
+        )
 
-            if not _r:
-                _html += (
-                    f'<div style="color:#3a4a3e;font-size:0.68rem;align-self:center">Sin simular</div>'
-                    f'</div></div>'
-                )
-                return _html
-
-            sim = _r["sim"]
-            bs  = sim.get("best_single")
-            dq  = sim["data_quality"]
-            dqc = "#4ade80" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
-
-            # Badge
-            # Only show pick badge for ML, O/U, BTTS — not DO standalone
-            _show_bs = bs and bs["ev"] > 0 and bs.get("market","") in ("ML","O/U","BTTS")
-            if _show_bs:
-                ev_c  = "#4ade80" if bs["ev"] >= 10 else "#C9A84C"
-                badge = (
-                    f'<span style="color:#FFE87C;margin-right:3px">▶</span>'
-                    f'<span style="font-weight:700;font-size:0.8rem;color:#FFE87C">{bs["label"]}</span>'
-                    f'<span style="color:{ev_c};font-size:0.72rem;margin-left:6px">EV +{bs["ev"]:.1f}</span>'
-                    f'<span style="color:#6B7E6E;font-size:0.65rem;margin-left:4px">· {bs["prob"]:.0f}% · Kelly {bs.get("kelly",0)*100:.0f}%</span>'
-                )
-            else:
-                badge = '<span style="color:#3a4a3e;font-size:0.72rem">Sin EV+</span>'
-
+        if not _r:
             _html += (
-                f'<div style="text-align:right;font-size:0.65rem;color:#6B7E6E;flex-shrink:0">'
-                f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}'
-                f'<br><span style="color:{dqc}">DQ {dq:.0f}%</span>'
-                f'</div>'
-                f'</div>'
-                f'<div style="margin-top:4px">{badge}</div>'
+                f'<div style="color:#3a4a3e;font-size:0.68rem;align-self:center">Sin simular</div>'
+                f'</div></div>'
             )
-
-            # Prob bars
-            _html += f'<div style="margin-top:6px">{bar(sim["away_pct"],"#60a5fa",g["away_team"])}'
-            if sim["is_soccer"]: _html += bar(sim["draw_pct"],"#a78bfa","Empate")
-            _html += bar(sim["home_pct"],"#f97316",g["home_team"]) + "</div>"
-
-            # Goals line
-            if sim.get("use_goals") and sim.get("p_btts") is not None:
-                btc = "#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
-                o2c = "#C9A84C" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
-                o3c = "#C9A84C" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
-                dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
-                _html += (
-                    f'<div style="font-size:0.65rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
-                    f'<span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span>'
-                    f'<span style="color:{o2c}">O2.5 {sim["p_o25"]}%</span>'
-                    f'<span style="color:{o3c}">O3.5 {sim.get("p_o35","—")}%</span>'
-                    f'<span style="color:#3a4a3e;margin-left:auto">{dq_src}</span>'
-                    f'</div>'
-                )
-
-            _html += '</div>'
             return _html
 
-        # Expanders — one per sport, games with oracle inside
-        for _sp_p in _sports_p:
-            _smp   = _SPORT_META_P[_sp_p]
-            _dks_p = sorted(_tree_p[_sp_p].keys())
-            _n_p   = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
-            # Count EV+ picks in this sport
-            _ev_count = sum(
-                1 for dmap in _tree_p[_sp_p].values()
-                for gs in dmap.values() for g in gs
-                if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
-                   _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+        sim = _r["sim"]
+        bs  = sim.get("best_single")
+        dq  = sim["data_quality"]
+        dqc = "#4ade80" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
+
+        # Badge
+        # Only show pick badge for ML, O/U, BTTS — not DO standalone
+        _show_bs = bs and bs["ev"] > 0 and bs.get("market","") in ("ML","O/U","BTTS")
+        if _show_bs:
+            ev_c  = "#4ade80" if bs["ev"] >= 10 else "#C9A84C"
+            badge = (
+                f'<span style="color:#FFE87C;margin-right:3px">▶</span>'
+                f'<span style="font-weight:700;font-size:0.8rem;color:#FFE87C">{bs["label"]}</span>'
+                f'<span style="color:{ev_c};font-size:0.72rem;margin-left:6px">EV +{bs["ev"]:.1f}</span>'
+                f'<span style="color:#6B7E6E;font-size:0.65rem;margin-left:4px">· {bs["prob"]:.0f}% · Kelly {bs.get("kelly",0)*100:.0f}%</span>'
             )
-            _ev_badge = f" 🔥{_ev_count}" if _ev_count else ""
-            with st.expander(
-                f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}',
-                expanded=(_today_mx_p in _tree_p[_sp_p])
-            ):
-                for _dk_p in _dks_p:
-                    # Date header
+        else:
+            badge = '<span style="color:#3a4a3e;font-size:0.72rem">Sin EV+</span>'
+
+        _html += (
+            f'<div style="text-align:right;font-size:0.65rem;color:#6B7E6E;flex-shrink:0">'
+            f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}'
+            f'<br><span style="color:{dqc}">DQ {dq:.0f}%</span>'
+            f'</div>'
+            f'</div>'
+            f'<div style="margin-top:4px">{badge}</div>'
+        )
+
+        # Prob bars
+        _html += f'<div style="margin-top:6px">{bar(sim["away_pct"],"#60a5fa",g["away_team"])}'
+        if sim["is_soccer"]: _html += bar(sim["draw_pct"],"#a78bfa","Empate")
+        _html += bar(sim["home_pct"],"#f97316",g["home_team"]) + "</div>"
+
+        # Goals line
+        if sim.get("use_goals") and sim.get("p_btts") is not None:
+            btc = "#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
+            o2c = "#C9A84C" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
+            o3c = "#C9A84C" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
+            dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
+            _html += (
+                f'<div style="font-size:0.65rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
+                f'<span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span>'
+                f'<span style="color:{o2c}">O2.5 {sim["p_o25"]}%</span>'
+                f'<span style="color:{o3c}">O3.5 {sim.get("p_o35","—")}%</span>'
+                f'<span style="color:#3a4a3e;margin-left:auto">{dq_src}</span>'
+                f'</div>'
+            )
+
+        _html += '</div>'
+        return _html
+
+    # Expanders — one per sport, games with oracle inside
+    for _sp_p in _sports_p:
+        _smp   = _SPORT_META_P[_sp_p]
+        _dks_p = sorted(_tree_p[_sp_p].keys())
+        _n_p   = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
+        # Count EV+ picks in this sport
+        _ev_count = sum(
+            1 for dmap in _tree_p[_sp_p].values()
+            for gs in dmap.values() for g in gs
+            if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
+               _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+        )
+        _ev_badge = f" 🔥{_ev_count}" if _ev_count else ""
+        with st.expander(
+            f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}',
+            expanded=(_today_mx_p in _tree_p[_sp_p])
+        ):
+            for _dk_p in _dks_p:
+                # Date header
+                st.markdown(
+                    f'<div style="font-size:0.62rem;font-weight:700;color:#C9A84C;'
+                    f'letter-spacing:2px;text-transform:uppercase;padding:4px 0 6px 0;'
+                    f'border-bottom:1px solid rgba(201,168,76,0.2);margin-bottom:6px">'
+                    f'{_fmt_date_p(_dk_p)}</div>',
+                    unsafe_allow_html=True
+                )
+                for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
+                    # League header
                     st.markdown(
-                        f'<div style="font-size:0.62rem;font-weight:700;color:#C9A84C;'
-                        f'letter-spacing:2px;text-transform:uppercase;padding:4px 0 6px 0;'
-                        f'border-bottom:1px solid rgba(201,168,76,0.2);margin-bottom:6px">'
-                        f'{_fmt_date_p(_dk_p)}</div>',
+                        f'<div style="font-size:0.58rem;color:{_smp["color"]};font-weight:700;'
+                        f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
+                        f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
                         unsafe_allow_html=True
                     )
-                    for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
-                        # League header
-                        st.markdown(
-                            f'<div style="font-size:0.58rem;color:{_smp["color"]};font-weight:700;'
-                            f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
-                            f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
-                            unsafe_allow_html=True
-                        )
-                        # Each game as full oracle card (1 per row — full width for detail)
-                        for _gg_p in _lg_games_p:
-                            st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
-                    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+                    # Each game as full oracle card (1 per row — full width for detail)
+                    for _gg_p in _lg_games_p:
+                        st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
 
-        # CSV export (collapsed)
-        _sr_all = st.session_state.get("sim_results", [])
-        if _sr_all:
-            with st.expander("⬇ Exportar CSV", expanded=False):
-                csv=["Liga,Visitante,Local,Prob Vis%,Prob Local%,Empate%,ML Vis,ML Local,EV Vis,EV Local,BTTS%,EV BTTS,O2.5%,EV O2.5,O3.5%,DC 1X%,DC X2%,Mejor Mercado,Mejor Pick,Mejor EV,DQ%"]
-                for _cr in _sr_all:
-                    s=_cr["sim"]; bs=s.get("best_single",{}) or {}
-                    csv.append(",".join([_cr['league'],_cr['away_team'],_cr['home_team'],
-                        str(s['away_pct']),str(s['home_pct']),str(s['draw_pct']),
-                        str(s['away_ml']),str(s['home_ml']),
-                        str(s['away_ev'] or ""),str(s['home_ev'] or ""),
-                        str(s['p_btts'] or ""),str(s['btts_ev'] or ""),
-                        str(s['p_o25'] or ""),str(s['o25_ev'] or ""),str(s['p_o35'] or ""),
-                        str(s['p_dc_1x']),str(s['p_dc_x2']),
-                        bs.get('market',""),bs.get('label',""),str(bs.get('ev',"")),str(s['data_quality'])]))
-                st.download_button("⬇ Descargar CSV", data="\n".join(csv),
-                                   file_name=f"gamblers_den_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv")
+    # CSV export (collapsed)
+    _sr_all = st.session_state.get("sim_results", [])
+    if _sr_all:
+        with st.expander("⬇ Exportar CSV", expanded=False):
+            csv=["Liga,Visitante,Local,Prob Vis%,Prob Local%,Empate%,ML Vis,ML Local,EV Vis,EV Local,BTTS%,EV BTTS,O2.5%,EV O2.5,O3.5%,DC 1X%,DC X2%,Mejor Mercado,Mejor Pick,Mejor EV,DQ%"]
+            for _cr in _sr_all:
+                s=_cr["sim"]; bs=s.get("best_single",{}) or {}
+                csv.append(",".join([_cr['league'],_cr['away_team'],_cr['home_team'],
+                    str(s['away_pct']),str(s['home_pct']),str(s['draw_pct']),
+                    str(s['away_ml']),str(s['home_ml']),
+                    str(s['away_ev'] or ""),str(s['home_ev'] or ""),
+                    str(s['p_btts'] or ""),str(s['btts_ev'] or ""),
+                    str(s['p_o25'] or ""),str(s['o25_ev'] or ""),str(s['p_o35'] or ""),
+                    str(s['p_dc_1x']),str(s['p_dc_x2']),
+                    bs.get('market',""),bs.get('label',""),str(bs.get('ev',"")),str(s['data_quality'])]))
+            st.download_button("⬇ Descargar CSV", data="\n".join(csv),
+                               file_name=f"gamblers_den_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv")
 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_parlays:
@@ -5046,6 +5099,129 @@ with tab_all:
         </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTO-RESOLVE PICKS — compara picks pendientes contra resultados ESPN
+# ══════════════════════════════════════════════════════════════════════════════
+def _normalize_team(name):
+    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
+    import unicodedata
+    name = name.lower().strip()
+    name = ''.join(c for c in unicodedata.normalize('NFD', name)
+                   if unicodedata.category(c) != 'Mn')
+    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
+        name = name.replace(suffix, "")
+    return name.strip()
+
+def _team_match(pick_team, game_home, game_away, threshold=0.70):
+    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
+    pt = _normalize_team(pick_team)
+    ht = _normalize_team(game_home)
+    at = _normalize_team(game_away)
+    # Exact substring match first
+    if pt in ht or ht in pt: return "home"
+    if pt in at or at in pt: return "away"
+    # Token overlap
+    pt_tok = set(pt.split())
+    ht_tok = set(ht.split())
+    at_tok = set(at.split())
+    def overlap(a, b):
+        if not a or not b: return 0
+        return len(a & b) / max(len(a), len(b))
+    h_sc = overlap(pt_tok, ht_tok)
+    a_sc = overlap(pt_tok, at_tok)
+    if h_sc >= threshold and h_sc > a_sc: return "home"
+    if a_sc >= threshold: return "away"
+    return None
+
+def _evaluate_pick(pick, game):
+    """
+    Given a finished game and a pick dict, return 'ganado'|'perdido'|'push'|None.
+    pick keys: partido, pick (team/label), mercado (ML|O/U|BTTS|DO), momio
+    game keys: home_team, away_team, home_score, away_score, state
+    """
+    if game.get("state") != "post":
+        return None
+    try:
+        hs = int(str(game.get("home_score","")).strip() or "x")
+        as_ = int(str(game.get("away_score","")).strip() or "x")
+    except:
+        return None  # no score yet
+
+    mercado  = (pick.get("mercado") or "ML").upper()
+    pick_lbl = pick.get("pick","").strip()
+    sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
+
+    # ── ML ────────────────────────────────────────────────────────────────────
+    if mercado == "ML":
+        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
+        if side is None: return None
+        if sg == "Soccer":
+            if hs == as_: return "push"  # draw = push on ML? no, it loses
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        else:
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        # Draw in soccer = ML loses (not a push)
+        if sg == "Soccer" and hs == as_:
+            return "perdido"
+        return "ganado" if won else "perdido"
+
+    # ── O/U ───────────────────────────────────────────────────────────────────
+    if mercado in ("O/U", "OU", "OVER/UNDER"):
+        total = hs + as_
+        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
+        import re
+        lbl_lower = pick_lbl.lower()
+        nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
+        if not nums: return None
+        line = float(nums[0])
+        if total == line: return "push"
+        if "over" in lbl_lower or "o/" in lbl_lower:
+            return "ganado" if total > line else "perdido"
+        if "under" in lbl_lower or "u/" in lbl_lower:
+            return "ganado" if total < line else "perdido"
+        return None
+
+    # ── BTTS ──────────────────────────────────────────────────────────────────
+    if mercado == "BTTS":
+        both_scored = hs > 0 and as_ > 0
+        lbl_lower = pick_lbl.lower()
+        if "no" in lbl_lower or "not" in lbl_lower:
+            return "ganado" if not both_scored else "perdido"
+        return "ganado" if both_scored else "perdido"
+
+    # ── DO (Doble Oportunidad) ─────────────────────────────────────────────────
+    if mercado == "DO":
+        # "Home o Empate (1X)", "Away o Empate (X2)", "Home o Away (12)"
+        lbl_lower = pick_lbl.lower()
+        home_w = hs > as_
+        away_w = as_ > hs
+        draw   = hs == as_
+        if "1x" in lbl_lower or ("empate" in lbl_lower and game["home_team"].lower() in lbl_lower):
+            return "ganado" if (home_w or draw) else "perdido"
+        if "x2" in lbl_lower or ("empate" in lbl_lower and game["away_team"].lower() in lbl_lower):
+            return "ganado" if (away_w or draw) else "perdido"
+        if "12" in lbl_lower or "sin empate" in lbl_lower:
+            return "ganado" if (home_w or away_w) else "perdido"
+        return None
+
+    return None
+
+@st.cache_data(ttl=300)
+def _fetch_finished_games():
+    """Fetch recently finished games across all leagues for auto-resolve."""
+    finished = []
+    for league_name, cfg in LEAGUES.items():
+        try:
+            data = fetch_scoreboard(cfg["sport"], cfg["league"],
+                                    tournament_id=cfg.get("tournament_id"))
+            for g in parse_games(data, league_name):
+                if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
+                    finished.append(g)
+        except:
+            pass
+    return finished
+
 # RETO 13M — Bitácora permanente de bankroll
 # Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -5704,10 +5880,69 @@ with tab_reto:
 
         st.markdown('<div class="den-divider" style="margin:16px 0"></div>', unsafe_allow_html=True)
 
-        # ── Editar resultado de pick pendiente ────────────────────────────────
+        # ── AUTO-RESOLVE: detecta resultados ESPN automáticamente ──────────────
         pendientes = [p for p in picks if p.get("resultado")=="pendiente"]
         if pendientes:
-            st.markdown('<div class="section-heading" style="font-size:0.9rem">⏳ Actualizar Resultado</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" style="font-size:0.9rem">⏳ Picks Pendientes</div>', unsafe_allow_html=True)
+
+            col_auto, col_manual = st.columns([1,1])
+            with col_auto:
+                if st.button("🔍 Auto-Resolver con ESPN", use_container_width=True, key="btn_auto_resolve",
+                             help="Busca los resultados de tus picks pendientes en ESPN automáticamente"):
+                    with st.spinner("Consultando ESPN..."):
+                        finished_games = _fetch_finished_games()
+                    resolved = 0
+                    not_found = []
+                    details = []
+                    for i, p in enumerate(picks):
+                        if p.get("resultado") != "pendiente":
+                            continue
+                        # Parse partido field "Team A vs Team B" or "Team A @ Team B"
+                        partido_txt = p.get("partido","")
+                        sep = " vs " if " vs " in partido_txt.lower() else (" @ " if " @ " in partido_txt else None)
+                        if sep:
+                            parts = partido_txt.split(sep, 1)
+                            t1, t2 = parts[0].strip(), parts[1].strip()
+                        else:
+                            t1, t2 = partido_txt.strip(), ""
+
+                        best_match = None
+                        best_result = None
+                        for g in finished_games:
+                            # Match either team from the pick against the game
+                            m1 = _team_match(t1, g["home_team"], g["away_team"])
+                            m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
+                            if m1 or m2:
+                                res = _evaluate_pick(p, g)
+                                if res:
+                                    best_match = g
+                                    best_result = res
+                                    break
+
+                        if best_result:
+                            picks[i]["resultado"] = best_result
+                            resolved += 1
+                            icon = "✅" if best_result=="ganado" else ("❌" if best_result=="perdido" else "🔄")
+                            details.append(f"{icon} #{p['num']} {partido_txt} → **{best_result.upper()}**")
+                        else:
+                            not_found.append(f"#{p['num']} {partido_txt}")
+
+                    if resolved > 0:
+                        reto["picks"] = picks
+                        _save_reto(reto, apodo_activo)
+                        for d in details:
+                            st.markdown(d)
+                        st.toast(f"✓ {resolved} pick(s) resueltos automáticamente", icon="🔍")
+                        st.rerun()
+                    else:
+                        st.info("No se encontraron resultados aún. Los partidos pueden no haber terminado o los nombres no coinciden.")
+                    if not_found:
+                        with st.expander(f"⚠ {len(not_found)} sin resolver"):
+                            for nf in not_found:
+                                st.caption(nf)
+
+            # ── Manual override ───────────────────────────────────────────────
+            st.markdown('<div style="font-size:0.7rem;color:#6B7E6E;margin:8px 0 4px 0">✏️ Actualizar manualmente</div>', unsafe_allow_html=True)
             pen_options = {f"#{p['num']} · {p['partido']} · {p['pick']}": i
                            for i, p in enumerate(picks) if p.get("resultado")=="pendiente"}
             sel_pen = st.selectbox("Pick pendiente", list(pen_options.keys()), key="sel_pendiente")
