@@ -1942,23 +1942,22 @@ def parse_games(data, league_name):
     """Parse ESPN scoreboard JSON into normalized game dicts."""
     games = []
     from datetime import timedelta as _td
-    _now_utc   = datetime.now(timezone.utc)
-    _now_mx    = _now_utc - _td(hours=6)  # Mexico City offset
-    # Solo partidos de HOY hora CDMX (UTC-6)
+    _now_utc    = datetime.now(timezone.utc)
+    _now_mx     = _now_utc - _td(hours=6)
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
 
     for event in data.get("events", []):
         try:
-            # Convertir fecha UTC del partido a CDMX — solo aceptar HOY CDMX
-            _raw_date = event.get("date","")
+            _raw_date = event.get("date", "")
             if _raw_date:
                 try:
-                    _ev_utc = datetime.strptime(_raw_date[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
+                                        "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
                     if _ev_cdmx_date != _today_cdmx:
-                        continue  # partido de otro día en hora CDMX — excluir
+                        continue
                 except Exception:
-                    pass  # fecha mal formateada — dejar pasar
+                    pass
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
@@ -1971,20 +1970,18 @@ def parse_games(data, league_name):
             ol = comp.get("odds", [])
             if ol:
                 o = ol[0]
-                # ESPN NBA: overUnder sometimes empty — parse from details "IND -3.5 (221.5)"
                 _ou_raw = o.get("overUnder", "") or o.get("total", "") or o.get("overUnderOpen", "") or ""
                 if not _ou_raw:
                     _details_str = o.get("details", "") or ""
                     _ou_match = __import__("re").search(r"\((\d+\.?\d*)\)", _details_str)
                     if _ou_match:
                         _ou_raw = _ou_match.group(1)
-                # Also parse moneyline from awayTeamOdds/homeTeamOdds with multiple fallbacks
                 _home_odds = o.get("homeTeamOdds", {})
                 _away_odds = o.get("awayTeamOdds", {})
-                _home_ml = (_home_odds.get("moneyLine") or _home_odds.get("current",{}).get("moneyLine") or
-                            _home_odds.get("open",{}).get("moneyLine") or "")
-                _away_ml = (_away_odds.get("moneyLine") or _away_odds.get("current",{}).get("moneyLine") or
-                            _away_odds.get("open",{}).get("moneyLine") or "")
+                _home_ml = (_home_odds.get("moneyLine") or _home_odds.get("current", {}).get("moneyLine") or
+                            _home_odds.get("open", {}).get("moneyLine") or "")
+                _away_ml = (_away_odds.get("moneyLine") or _away_odds.get("current", {}).get("moneyLine") or
+                            _away_odds.get("open", {}).get("moneyLine") or "")
                 odds_info = {
                     "spread":     o.get("details", ""),
                     "over_under": str(_ou_raw) if _ou_raw else "",
@@ -1998,79 +1995,116 @@ def parse_games(data, league_name):
             ar = away.get("records", [{}])
             live_stats = _parse_live_stats(comp, home, away)
 
-            # Store team IDs for form lookup
             home_team_id = str(home.get("team", {}).get("id", "") or home.get("id", ""))
             away_team_id = str(away.get("team", {}).get("id", "") or away.get("id", ""))
 
+            _sd  = (status.get("type", {}).get("shortDetail", "") or "").split("\n")[0].strip()
+            _dt  = event.get("date", "")
+            if _sd.lower() in ("scheduled", "") and _dt:
+                try:
+                    _u = datetime.strptime(_dt[:19].replace("T", " "),
+                             "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    _sd = (_u - _td(hours=6)).strftime("%H:%M") + " CDMX"
+                except Exception:
+                    pass
+
             games.append({
-                "id":           event.get("id", ""),
-                "league":       league_name,
-                "home_team":    home.get("team", {}).get("displayName", "Home"),
-                "away_team":    away.get("team", {}).get("displayName", "Away"),
-                "home_score":   home.get("score", ""),
-                "away_score":   away.get("score", ""),
-                "home_record":  hr[0].get("summary", "") if hr else "",
-                "away_record":  ar[0].get("summary", "") if ar else "",
-                "state":        status.get("type", {}).get("state", "pre"),
-                "date":         event.get("date", ""),
-                "status_detail": (lambda _sd, _dt: (
-                    (lambda _u: (_u - _td(hours=6)).strftime("%H:%M") + " CDMX")(
-                        datetime.strptime(_dt[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                    ) if (_sd.lower() in ("scheduled","") and _dt) else _sd
-                ))(
-                    (status.get("type", {}).get("shortDetail", "") or "").split("\n")[0].strip(),
-                    event.get("date", "")
-                ),
-                "venue":        comp.get("venue", {}).get("fullName", ""),
-                "odds":         odds_info,
-                "live_stats":   live_stats,
-                "home_team_id": home_team_id,
-                "away_team_id": away_team_id,
+                "id":            event.get("id", ""),
+                "league":        league_name,
+                "home_team":     home.get("team", {}).get("displayName", "Home"),
+                "away_team":     away.get("team", {}).get("displayName", "Away"),
+                "home_score":    home.get("score", ""),
+                "away_score":    away.get("score", ""),
+                "home_record":   hr[0].get("summary", "") if hr else "",
+                "away_record":   ar[0].get("summary", "") if ar else "",
+                "state":         status.get("type", {}).get("state", "pre"),
+                "date":          event.get("date", ""),
+                "status_detail": _sd,
+                "venue":         comp.get("venue", {}).get("fullName", ""),
+                "odds":          odds_info,
+                "live_stats":    live_stats,
+                "home_team_id":  home_team_id,
+                "away_team_id":  away_team_id,
             })
-        except:
+        except Exception:
             continue
     return games
 
 
 def get_all_games(leagues):
     from datetime import timedelta as _td_g
-    _now_g   = datetime.now(timezone.utc)
-    _now_mx_g = _now_g - _td_g(hours=6)
-    _today_mx_str = _now_mx_g.strftime("%Y%m%d")
-    _today_utc_str = _now_g.strftime("%Y%m%d")
-    _tom_utc_str   = (_now_g + _td_g(days=1)).strftime("%Y%m%d")
+    _now_g        = datetime.now(timezone.utc)
+    _now_mx_g     = _now_g - _td_g(hours=6)
+    _today_mx     = _now_mx_g.strftime("%Y%m%d")
+    _today_utc    = _now_g.strftime("%Y%m%d")
+    _tom_utc      = (_now_g + _td_g(days=1)).strftime("%Y%m%d")
+    _yday_utc     = (_now_g - _td_g(days=1)).strftime("%Y%m%d")
 
-    result=[]; errors=[]
+    def _fetch_soccer(sport, league):
+        """Hit every known ESPN endpoint for soccer to collect all day's events."""
+        base  = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+        core  = f"https://sports.core.api.espn.com/v2/sports/{sport}/leagues/{league}/events"
+        all_evts = {}
+
+        urls = []
+        # Scoreboard with every date variant
+        for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
+            urls += [
+                f"{base}?dates={_d}&limit=100",
+                f"{base}?dates={_d}&limit=100&seasontype=2",
+                f"{base}?dates={_d}&limit=100&seasontype=3",
+                f"{base}?dates={_d}&limit=100&seasontype=4",
+            ]
+        # Core API
+        for _d in [_today_mx, _today_utc, _tom_utc]:
+            urls.append(f"{core}?dates={_d}&limit=100")
+        # Plain scoreboard (no date)
+        urls.append(base)
+
+        for _url in urls:
+            try:
+                _r = requests.get(_url, timeout=7,
+                                  headers={"User-Agent": "Mozilla/5.0",
+                                           "Accept": "application/json"})
+                if _r.status_code != 200:
+                    continue
+                _data = _r.json()
+                # scoreboard format: {"events": [...]}
+                for _e in _data.get("events", []):
+                    if isinstance(_e, dict) and _e.get("id"):
+                        all_evts[_e["id"]] = _e
+                # core API format: {"items": [{"$ref": "url"}]}  -- skip refs, no full data
+                for _e in _data.get("items", []):
+                    if isinstance(_e, dict) and _e.get("id") and _e.get("competitions"):
+                        all_evts[_e["id"]] = _e
+            except Exception:
+                continue
+
+        print(f"[ESPN] soccer/{league}: {len(all_evts)} raw events fetched")
+        return {"events": list(all_evts.values())}
+
+    result = []
+    errors = []
     for name in leagues:
-        cfg=LEAGUES.get(name)
+        cfg = LEAGUES.get(name)
         if not cfg:
             errors.append(f"{name}: liga no configurada")
             continue
         try:
-            # For soccer: force fetch with explicit dates to get ALL games (pre+live+post)
-            # ESPN soccer API only returns live/recent by default — ?dates= forces full day
             if cfg["sport"] == "soccer":
-                base = f"https://site.api.espn.com/apis/site/v2/sports/{cfg['sport']}/{cfg['league']}/scoreboard"
-                all_evts = {}
-                for _date in [_today_mx_str, _today_utc_str, _tom_utc_str]:
-                    try:
-                        _r = requests.get(f"{base}?dates={_date}&limit=100", timeout=8,
-                                          headers={"User-Agent": "Mozilla/5.0"})
-                        if _r.status_code == 200:
-                            for _e in _r.json().get("events", []):
-                                if _e.get("id") not in all_evts:
-                                    all_evts[_e["id"]] = _e
-                    except: pass
-                data = {"events": list(all_evts.values())}
+                data = _fetch_soccer(cfg["sport"], cfg["league"])
             else:
-                data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=cfg.get("tournament_id"))
+                data = fetch_scoreboard(cfg["sport"], cfg["league"],
+                                        tournament_id=cfg.get("tournament_id"))
             parsed = parse_games(data, name)
             result.extend(parsed)
+            print(f"[ESPN] {name}: {len(parsed)} partidos HOY CDMX")
             if not parsed:
-                errors.append(f"{name}: sin partidos en ESPN hoy")
+                errors.append(f"{name}: sin partidos hoy")
         except Exception as e:
             errors.append(f"{name}: {type(e).__name__} — {e}")
     return result, errors
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
