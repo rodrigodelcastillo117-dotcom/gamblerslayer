@@ -1912,13 +1912,27 @@ def parse_games(data, league_name):
             ol = comp.get("odds", [])
             if ol:
                 o = ol[0]
+                # ESPN NBA: overUnder sometimes empty — parse from details "IND -3.5 (221.5)"
+                _ou_raw = o.get("overUnder", "") or o.get("total", "") or o.get("overUnderOpen", "") or ""
+                if not _ou_raw:
+                    _details_str = o.get("details", "") or ""
+                    _ou_match = __import__("re").search(r"\((\d+\.?\d*)\)", _details_str)
+                    if _ou_match:
+                        _ou_raw = _ou_match.group(1)
+                # Also parse moneyline from awayTeamOdds/homeTeamOdds with multiple fallbacks
+                _home_odds = o.get("homeTeamOdds", {})
+                _away_odds = o.get("awayTeamOdds", {})
+                _home_ml = (_home_odds.get("moneyLine") or _home_odds.get("current",{}).get("moneyLine") or
+                            _home_odds.get("open",{}).get("moneyLine") or "")
+                _away_ml = (_away_odds.get("moneyLine") or _away_odds.get("current",{}).get("moneyLine") or
+                            _away_odds.get("open",{}).get("moneyLine") or "")
                 odds_info = {
-                    "spread":   o.get("details", ""),
-                    "over_under": o.get("overUnder", ""),
-                    "home_ml":  o.get("homeTeamOdds", {}).get("moneyLine", ""),
-                    "away_ml":  o.get("awayTeamOdds", {}).get("moneyLine", ""),
-                    "home_wp":  o.get("homeTeamOdds", {}).get("winPercentage", ""),
-                    "away_wp":  o.get("awayTeamOdds", {}).get("winPercentage", ""),
+                    "spread":     o.get("details", ""),
+                    "over_under": str(_ou_raw) if _ou_raw else "",
+                    "home_ml":    str(_home_ml) if _home_ml else "",
+                    "away_ml":    str(_away_ml) if _away_ml else "",
+                    "home_wp":    o.get("homeTeamOdds", {}).get("winPercentage", ""),
+                    "away_wp":    o.get("awayTeamOdds", {}).get("winPercentage", ""),
                 }
 
             hr = home.get("records", [{}])
@@ -6645,32 +6659,53 @@ with tab_reto:
 
         const segmentColors = colors;
 
+        // ── Glow shadow dataset (larger translucent dots behind main dots) ──
+        const glowColors = pointColors.map(c => c + "44");  // 27% opacity
+
         new Chart(ctx, {{
           type: "line",
           data: {{
             labels: labels,
-            datasets: [{{
-              label: "Bankroll",
-              data: values,
-              segment: {{
-                borderColor: ctx => {{
-                  const i = ctx.p0DataIndex;
-                  return i < segmentColors.length ? segmentColors[i] : "#C9A84C";
-                }}
+            datasets: [
+              // Dataset 0: glow/shadow dots (no line, just big translucent circles)
+              {{
+                label: "glow",
+                data: values,
+                borderColor: "transparent",
+                backgroundColor: "transparent",
+                pointBackgroundColor: glowColors,
+                pointBorderColor: "transparent",
+                pointRadius: pointRadius.map(r => r * 2.8),
+                pointHoverRadius: 0,
+                fill: false,
+                tension: 0,
+                order: 2,
               }},
-              backgroundColor: grad,
-              borderWidth: 2.5,
-              pointBackgroundColor: pointColors,
-              pointBorderColor: pointColors.map(c => c + "cc"),
-              pointBorderWidth: 2,
-              pointRadius: pointRadius,
-              pointHoverRadius: pointHover,
-              pointHoverBackgroundColor: pointColors,
-              pointHoverBorderColor: "#ffffff",
-              pointHoverBorderWidth: 2,
-              fill: true,
-              tension: 0.35,
-            }}]
+              // Dataset 1: main line + colored dots
+              {{
+                label: "Bankroll",
+                data: values,
+                segment: {{
+                  borderColor: ctx => {{
+                    const i = ctx.p0DataIndex;
+                    return i < segmentColors.length ? segmentColors[i] : "#C9A84C";
+                  }}
+                }},
+                backgroundColor: grad,
+                borderWidth: 2.5,
+                pointBackgroundColor: pointColors,
+                pointBorderColor: "#000000aa",
+                pointBorderWidth: 1.5,
+                pointRadius: pointRadius.map(r => r + 2),
+                pointHoverRadius: pointRadius.map(r => r + 5),
+                pointHoverBackgroundColor: pointColors,
+                pointHoverBorderColor: "#ffffff",
+                pointHoverBorderWidth: 2,
+                fill: true,
+                tension: 0.2,
+                order: 1,
+              }}
+            ]
           }},
           options: {{
             responsive: true,
@@ -6685,9 +6720,12 @@ with tab_reto:
                 bodyColor: "#b8c8b0",
                 padding: 12,
                 displayColors: false,
+                filter: item => item.datasetIndex === 1,  // only show tooltip for main dataset
                 callbacks: {{
                   title: function(items) {{
-                    const i = items[0].dataIndex;
+                    const filtered = items.filter(it => it.datasetIndex === 1);
+                    if (!filtered.length) return "";
+                    const i = filtered[0].dataIndex;
                     if (i === 0) return "📍 Inicio";
                     const pk = picks[i];
                     if (!pk) return labels[i];
@@ -6695,6 +6733,7 @@ with tab_reto:
                     return icon + " #" + pk.num + " · " + pk.partido;
                   }},
                   label: function(item) {{
+                    if (item.datasetIndex !== 1) return null;
                     const i = item.dataIndex;
                     const bank = "$" + item.parsed.y.toLocaleString("es-MX", {{minimumFractionDigits:2}});
                     if (i === 0) return [" Bankroll: " + bank];
@@ -6702,16 +6741,16 @@ with tab_reto:
                     if (!pk) return [" Bankroll: " + bank];
                     const pnlSign = pk.pnl >= 0 ? "+" : "";
                     const pnlStr = pnlSign + "$" + Math.abs(pk.pnl).toLocaleString("es-MX",{{minimumFractionDigits:2}});
-                    const lines = [
+                    return [
                       " Pick: " + pk.pick,
                       " Mercado: " + pk.mercado + (pk.liga ? "  ·  " + pk.liga : ""),
                       " Stake: $" + pk.stake.toLocaleString("es-MX") + "  @  " + pk.momio,
                       " P&L: " + pnlStr,
                       " Bankroll: " + bank,
                     ];
-                    return lines;
                   }},
                   labelTextColor: function(item) {{
+                    if (item.datasetIndex !== 1) return "transparent";
                     const i = item.dataIndex;
                     if (i === 0) return "#b8c8b0";
                     const pk = picks[i];
