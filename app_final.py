@@ -4522,26 +4522,109 @@ st.markdown("""
 <div class="den-divider"></div>
 """, unsafe_allow_html=True)
 
-# ── MOBILE: JS auto-opens sidebar toggle so user can tap it ─────────────────
+# ── MOBILE: inject gold hamburger button + sidebar overlay logic ─────────────
 st.markdown("""
+<style>
+#den-hamburger {
+  display: none;
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 99999;
+  background: #071610;
+  border: 2px solid #C9A84C;
+  border-radius: 7px;
+  padding: 7px 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 20px rgba(201,168,76,0.45);
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+}
+#den-hamburger span {
+  display: block;
+  width: 22px;
+  height: 2.5px;
+  background: #C9A84C;
+  border-radius: 2px;
+  transition: all 0.2s;
+}
+#den-hamburger:active { transform: scale(0.94); }
+#den-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 9998;
+}
+@media (max-width: 768px) {
+  #den-hamburger { display: flex !important; }
+}
+</style>
+<div id="den-hamburger" onclick="denToggleSidebar()">
+  <span></span><span></span><span></span>
+</div>
+<div id="den-overlay" onclick="denCloseSidebar()"></div>
 <script>
 (function() {
-  function fixMobileSidebar() {
+  function findSidebarBtn() {
+    // Try every known Streamlit sidebar toggle selector
+    var selectors = [
+      '[data-testid="stSidebarCollapsedControl"] button',
+      '[data-testid="collapsedControl"] button',
+      'button[aria-label="Open sidebar"]',
+      'button[aria-label="Abrir barra lateral"]',
+      '[data-testid="stSidebar"] ~ div button',
+      '.stSidebarNavToggleButton button',
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+      var btn = document.querySelector(selectors[i]);
+      if (btn) return btn;
+    }
+    // Fallback: find any button near the sidebar
+    var btns = document.querySelectorAll('button');
+    for (var j = 0; j < btns.length; j++) {
+      var r = btns[j].getBoundingClientRect();
+      if (r.top < 80 && r.left < 80 && r.width > 0) return btns[j];
+    }
+    return null;
+  }
+
+  function getSidebar() {
+    return document.querySelector('[data-testid="stSidebar"]');
+  }
+
+  window.denToggleSidebar = function() {
+    var sidebar = getSidebar();
+    if (!sidebar) { var btn = findSidebarBtn(); if (btn) btn.click(); return; }
+    var isOpen = sidebar.getBoundingClientRect().left >= -10;
+    if (isOpen) {
+      denCloseSidebar();
+    } else {
+      sidebar.style.transform = 'translateX(0)';
+      document.getElementById('den-overlay').style.display = 'block';
+    }
+  };
+
+  window.denCloseSidebar = function() {
+    var sidebar = getSidebar();
+    if (sidebar) sidebar.style.transform = 'translateX(-100%)';
+    document.getElementById('den-overlay').style.display = 'none';
+  };
+
+  // On mobile: collapse sidebar on load
+  function initMobile() {
     if (window.innerWidth > 768) return;
-    // On mobile, make sure sidebar starts collapsed (not covering content)
-    var sidebar = document.querySelector('[data-testid="stSidebar"]');
-    var toggleBtn = document.querySelector('[data-testid="stSidebarCollapsedControl"] button, [data-testid="collapsedControl"] button');
+    var sidebar = getSidebar();
     if (sidebar) {
-      var rect = sidebar.getBoundingClientRect();
-      // If sidebar is open and covering content on first load, collapse it
-      if (rect.left >= 0 && rect.width > 50) {
-        var closeBtn = document.querySelector('[data-testid="stSidebar"] button[aria-label*="Close"], [data-testid="stSidebar"] button[kind="header"]');
-        if (closeBtn) closeBtn.click();
-      }
+      sidebar.style.transition = 'transform 0.25s ease';
+      sidebar.style.transform = 'translateX(-100%)';
     }
   }
-  setTimeout(fixMobileSidebar, 300);
-  setTimeout(fixMobileSidebar, 800);
+  setTimeout(initMobile, 200);
+  setTimeout(initMobile, 600);
+  setTimeout(initMobile, 1200);
 })();
 </script>
 """, unsafe_allow_html=True)
