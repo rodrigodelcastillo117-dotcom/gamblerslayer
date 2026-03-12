@@ -3409,102 +3409,12 @@ with st.sidebar:
     st.caption(f"⚡ {n_sims:,} iteraciones por partido")
     st.divider()
 
-    st.markdown("**LIGAS · HOY**")
-
-    # Sport config: emoji, color, default-on
-    _SPORT_CFG = {
-        "Basketball": {"emoji":"🏀", "color":"#f97316", "default":True},
-        "Baseball":   {"emoji":"⚾", "color":"#ef4444", "default":True},
-        "Football":   {"emoji":"🏈", "color":"#8b5cf6", "default":False},
-        "Hockey":     {"emoji":"🏒", "color":"#60a5fa", "default":True},
-        "Soccer":     {"emoji":"⚽", "color":"#4ade80", "default":True},
-    }
-
-    # Date label
-    from datetime import timedelta as _td_sb
-    _today_sb = datetime.now(timezone.utc) - _td_sb(hours=6)
-    _meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
-    _date_label = f"{_today_sb.day} {_meses[_today_sb.month-1]} {_today_sb.year}"
-    st.markdown(
-        f'<div style="font-size:0.68rem;color:#6B7E6E;letter-spacing:1px;'
-        f'margin-bottom:8px">📅 {_date_label}</div>',
-        unsafe_allow_html=True
-    )
-
-    # Build sport → leagues map
-    _sport_leagues = {}
-    for _ln, _cfg in LEAGUES.items():
-        _sg = _cfg["group"]
-        _sport_leagues.setdefault(_sg, []).append(_ln)
-
-    # Render 3 sports per row as toggle buttons
-    _sports_order = ["Basketball","Soccer","Hockey","Baseball","Football"]
-    _sel_groups_new = []
-
-    # Init session state for sport toggles
-    for _sp in _sports_order:
-        _key = f"_sp_tog_{_sp}"
-        if _key not in st.session_state:
-            st.session_state[_key] = _SPORT_CFG.get(_sp,{}).get("default", False)
-
-    # Render in rows of 3
-    _rows = [_sports_order[i:i+3] for i in range(0, len(_sports_order), 3)]
-    for _row in _rows:
-        _cols = st.columns(len(_row))
-        for _ci, _sp in enumerate(_row):
-            _cfg2 = _SPORT_CFG.get(_sp, {"emoji":"🎯","color":"#9ca3af"})
-            _key  = f"_sp_tog_{_sp}"
-            _active = st.session_state[_key]
-            _btn_style = (
-                f"background:{_cfg2['color']}22;border:1px solid {_cfg2['color']}88;"
-                f"color:{_cfg2['color']};border-radius:8px;padding:4px 6px;"
-                f"font-size:0.7rem;font-weight:700;width:100%;cursor:pointer;"
-                f"{'box-shadow:0 0 8px ' + _cfg2['color'] + '44;' if _active else 'opacity:0.45;'}"
-            )
-            with _cols[_ci]:
-                if st.button(
-                    f"{_cfg2['emoji']} {_sp[:5]}",
-                    key=f"btn_{_sp}",
-                    use_container_width=True,
-                    help=_sp,
-                    type="primary" if _active else "secondary",
-                ):
-                    st.session_state[_key] = not st.session_state[_key]
-                    st.rerun()
-            if st.session_state[_key]:
-                _sel_groups_new.append(_sp)
-
-    sel_groups = _sel_groups_new  # keep compat
-
-    # For each active sport, show league checkboxes in an expander
-    sel_leagues = []
-    for _sp in _sports_order:
-        if _sp not in sel_groups:
-            continue
-        _cfg2  = _SPORT_CFG.get(_sp, {"emoji":"🎯","color":"#9ca3af"})
-        _lgs   = _sport_leagues.get(_sp, [])
-        _exp_label = f"{_cfg2['emoji']} {_sp} — {len(_lgs)} ligas"
-        with st.expander(_exp_label, expanded=True):
-            # Select all / none mini buttons
-            _col_a, _col_b = st.columns(2)
-            with _col_a:
-                if st.button("✓ Todas", key=f"all_{_sp}", use_container_width=True):
-                    for _l in _lgs:
-                        st.session_state[f"_lg_{_l}"] = True
-                    st.rerun()
-            with _col_b:
-                if st.button("✗ Ninguna", key=f"none_{_sp}", use_container_width=True):
-                    for _l in _lgs:
-                        st.session_state[f"_lg_{_l}"] = False
-                    st.rerun()
-            for _l in _lgs:
-                _lkey = f"_lg_{_l}"
-                if _lkey not in st.session_state:
-                    st.session_state[_lkey] = True
-                _checked = st.checkbox(_l, value=st.session_state[_lkey], key=f"chk_{_l}")
-                st.session_state[_lkey] = _checked
-                if _checked:
-                    sel_leagues.append(_l)
+    st.markdown("**LIGAS**")
+    groups=sorted(set(v["group"] for v in LEAGUES.values()))
+    sel_groups=st.multiselect("Grupos",groups,default=["Basketball","Baseball","Soccer","Hockey"],
+                              label_visibility="collapsed")
+    avail=[n for n,cfg in LEAGUES.items() if cfg["group"] in sel_groups]
+    sel_leagues=st.multiselect("Ligas",avail,default=avail,label_visibility="collapsed")
 
     st.markdown("")
     run_sidebar = st.button("▶  ANALIZAR AHORA", use_container_width=True,
@@ -4528,36 +4438,178 @@ with tab_all:
 
         st.markdown('<div class="den-divider" style="margin:12px 0 20px 0"></div>', unsafe_allow_html=True)
 
-    # ── ALL GAMES LIST ─────────────────────────────────────────────────────────
-    cf1,cf2=st.columns(2)
-    with cf1: fs=st.multiselect("Estado",["pre","in","post"],default=["pre","in"],
-                                format_func=lambda x:{"pre":"Próximo","in":"En Vivo","post":"Final"}[x])
-    with cf2: fl=st.multiselect("Liga",list(set(g["league"] for g in games)),
-                                default=list(set(g["league"] for g in games)))
-    filtered=[g for g in games if g["state"] in fs and g["league"] in fl]
-    st.caption(f"{len(filtered)} de {len(games)} partidos {'· DEMO' if is_demo else ''}")
+    # ── ALL GAMES — organizado por deporte → fecha → liga ──────────────────────
+    from datetime import timedelta as _td_pt
+    _now_mx_pt = datetime.now(timezone.utc) - _td_pt(hours=6)
+    _meses_pt  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
-    for g in filtered:
-        si={"in":"🔴","pre":"◉","post":"○"}.get(g["state"],"")
-        live_cls="color:#4ade80;" if g["state"]=="in" else "color:#6B7E6E;"
-        oh=""
-        if g["odds"]:
-            o=g["odds"]; parts=[]
-            if o.get("spread"): parts.append(f"Spread: {o['spread']}")
-            if o.get("over_under"): parts.append(f"O/U {o['over_under']}")
-            if o.get("home_ml"): parts.append(f"ML {o['home_ml']}/{o.get('away_ml','')}")
-            if parts: oh=f'<div style="color:#C9A84C;font-size:0.72rem;margin-top:2px">{" · ".join(parts)}</div>'
-        sh=f' <span style="color:#4ade80">{g["away_score"]}–{g["home_score"]}</span>' if g["state"]=="in" and g.get("home_score") else ""
-        rh=f'<span style="color:#3a4a3e"> · {g.get("away_record","?")} vs {g.get("home_record","?")}</span>' if (g.get("away_record") or g.get("home_record")) else ""
-        _sd_clean = (g.get('status_detail') or '').split('\n')[0].replace('<','').replace('>','').replace('/','').strip()
-        st.markdown(f"""<div class="game-row">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="game-title">{g['away_team']} @ {g['home_team']}{sh}</div>
-            <span style="{live_cls}font-size:0.8rem">{si} {_sd_clean}</span>
-          </div>
-          <div class="game-meta">{g['league']}{rh}</div>
-          {oh}
-        </div>""",unsafe_allow_html=True)
+    # Sport metadata
+    _SPORT_META = {
+        "Basketball": {"emoji":"🏀","color":"#f97316","accent":"rgba(249,115,22,0.12)"},
+        "Soccer":     {"emoji":"⚽","color":"#4ade80","accent":"rgba(74,222,128,0.10)"},
+        "Hockey":     {"emoji":"🏒","color":"#60a5fa","accent":"rgba(96,165,250,0.12)"},
+        "Baseball":   {"emoji":"⚾","color":"#ef4444","accent":"rgba(239,68,68,0.10)"},
+        "Football":   {"emoji":"🏈","color":"#a78bfa","accent":"rgba(167,139,250,0.10)"},
+    }
+    _SPORTS_ORDER = ["Basketball","Soccer","Hockey","Baseball","Football"]
+
+    # Build sport → date → league → games structure
+    _tree = {}
+    for _g in games:
+        _sg   = LEAGUES.get(_g["league"],{}).get("group","Soccer")
+        _raw_date = (_g.get("date") or "")[:10]
+        # Classify date relative to today MX
+        _today_mx_str = _now_mx_pt.strftime("%Y-%m-%d")
+        _tom_mx_str   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
+        _d2_mx_str    = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
+        if _g["state"] == "in":
+            _date_key = _today_mx_str
+        elif _raw_date <= _today_mx_str:
+            _date_key = _today_mx_str
+        elif _raw_date == _tom_mx_str:
+            _date_key = _tom_mx_str
+        else:
+            _date_key = _d2_mx_str
+        _tree.setdefault(_sg,{}).setdefault(_date_key,{}).setdefault(_g["league"],[]).append(_g)
+
+    # Get sim results dict for quick lookup
+    _sr_dict = {}
+    for _r in st.session_state.get("sim_results",[]):
+        _sr_dict[_r.get("id","")] = _r
+
+    def _fmt_date(ds):
+        try:
+            _dt = datetime.strptime(ds, "%Y-%m-%d")
+            _today_s = _now_mx_pt.strftime("%Y-%m-%d")
+            _tom_s   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
+            if ds == _today_s:   return f"📅 Hoy · {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
+            if ds == _tom_s:     return f"📅 Mañana · {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
+            return f"📅 {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
+        except: return ds
+
+    def _game_card_simple(g, sm):
+        """Render a compact game row with pick info if available."""
+        _sd = (g.get("status_detail") or "").split("\n")[0].replace("<","").replace(">","").replace("/","").strip()
+        _si = {"in":"🔴 ","pre":"⏰ ","post":"✅ "}.get(g["state"],"")
+        _live_c = sm["color"] if g["state"]=="in" else "#6B7E6E"
+        _sh = ""
+        if g["state"]=="in" and g.get("home_score") and g.get("away_score"):
+            _sh = f' <b style="color:#4ade80">{g["away_score"]}–{g["home_score"]}</b>'
+        _rec = ""
+        if g.get("away_record") or g.get("home_record"):
+            _rec = f'<span style="color:#3a4a3e;font-size:0.65rem"> · {g.get("away_record","?")} vs {g.get("home_record","?")}</span>'
+        _odds_parts = []
+        _o = g.get("odds",{})
+        if _o.get("over_under"): _odds_parts.append(f"O/U {_o['over_under']}")
+        if _o.get("home_ml"):    _odds_parts.append(f"ML {_o['home_ml']}/{_o.get('away_ml','?')}")
+        _odds_html = f'<span style="color:#C9A84C;font-size:0.68rem"> · {" · ".join(_odds_parts)}</span>' if _odds_parts else ""
+
+        # Pick info from sim_results
+        _pick_html = ""
+        _r = _sr_dict.get(g.get("id",""))
+        if _r:
+            _bs = _r["sim"].get("best_single",{}) or {}
+            if _bs and _bs.get("ev",0) > 0:
+                _mkt  = _bs.get("market","")
+                _lbl  = _bs.get("label","")
+                _ev   = _bs.get("ev",0)
+                _prob = _bs.get("prob",0)
+                _mkt_colors = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
+                _mc   = _mkt_colors.get(_mkt,"#9ca3af")
+                _ev_s = f"+{_ev:.1f}" if _ev >= 0 else f"{_ev:.1f}"
+                _pick_html = (
+                    f'<div style="margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+                    f'<span style="background:{_mc}22;color:{_mc};border:1px solid {_mc}55;'
+                    f'border-radius:4px;padding:1px 6px;font-size:0.62rem;font-weight:700">{_mkt}</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.75rem;font-family:Cinzel,serif">{_lbl}</span>'
+                    f'<span style="color:#4ade80;font-size:0.68rem;margin-left:auto">EV {_ev_s} · {_prob:.0f}%</span>'
+                    f'</div>'
+                )
+
+        return (
+            f'<div style="padding:10px 14px;margin:4px 0;border-radius:8px;'
+            f'background:{sm["accent"]};border-left:3px solid {sm["color"]}44;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+            f'<div style="font-size:0.85rem;font-weight:600;color:#E0F7F0">'
+            f'{g["away_team"]} @ {g["home_team"]}{_sh}</div>'
+            f'<span style="color:{_live_c};font-size:0.7rem;white-space:nowrap;margin-left:8px">{_si}{_sd}</span>'
+            f'</div>'
+            f'<div style="font-size:0.68rem;color:#6B7E6E;margin-top:2px">'
+            f'{g["league"]}{_rec}{_odds_html}</div>'
+            f'{_pick_html}'
+            f'</div>'
+        )
+
+    # ── Render: 3 sports per row ───────────────────────────────────────────────
+    _sports_in_data = [s for s in _SPORTS_ORDER if s in _tree]
+    _total_games_pt = len(games)
+    st.markdown(
+        f'<div style="font-size:0.72rem;color:#6B7E6E;margin-bottom:12px">'
+        f'{_total_games_pt} partidos · {len(_sports_in_data)} deportes</div>',
+        unsafe_allow_html=True
+    )
+
+    _rows_pt = [_sports_in_data[i:i+3] for i in range(0,len(_sports_in_data),3)]
+    for _row_pt in _rows_pt:
+        _cols_pt = st.columns(len(_row_pt))
+        for _ci_pt, _sp_pt in enumerate(_row_pt):
+            _sm = _SPORT_META.get(_sp_pt,{"emoji":"🎯","color":"#9ca3af","accent":"rgba(0,0,0,0.1)"})
+            _dates_in_sport = sorted(_tree[_sp_pt].keys())
+            _n_games_sp = sum(
+                len(gs) for dmap in _tree[_sp_pt].values()
+                for gs in dmap.values()
+            )
+            with _cols_pt[_ci_pt]:
+                # Sport header card
+                st.markdown(
+                    f'<div style="text-align:center;padding:10px 6px;border-radius:10px;'
+                    f'background:{_sm["accent"]};border:1px solid {_sm["color"]}44;margin-bottom:6px">'
+                    f'<div style="font-size:1.6rem">{_sm["emoji"]}</div>'
+                    f'<div style="font-size:0.72rem;font-weight:700;color:{_sm["color"]};'
+                    f'letter-spacing:1px;text-transform:uppercase">{_sp_pt}</div>'
+                    f'<div style="font-size:0.62rem;color:#6B7E6E;margin-top:2px">{_n_games_sp} partidos</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        # Expanders for this row — one per sport, below the cards
+        for _sp_pt in _row_pt:
+            _sm = _SPORT_META.get(_sp_pt,{"emoji":"🎯","color":"#9ca3af","accent":"rgba(0,0,0,0.1)"})
+            _dates_in_sport = sorted(_tree[_sp_pt].keys())
+            _n_games_sp = sum(len(gs) for dmap in _tree[_sp_pt].values() for gs in dmap.values())
+            _today_s2 = _now_mx_pt.strftime("%Y-%m-%d")
+            _has_live = any(
+                g["state"]=="in"
+                for dmap in _tree[_sp_pt].values()
+                for gs in dmap.values()
+                for g in gs
+            )
+            _exp_icon = "🔴 " if _has_live else ""
+            with st.expander(
+                f'{_exp_icon}{_sm["emoji"]} {_sp_pt} — {_n_games_sp} partidos',
+                expanded=(_today_s2 in _tree[_sp_pt])
+            ):
+                for _dk in _dates_in_sport:
+                    _date_leagues = _tree[_sp_pt][_dk]
+                    st.markdown(
+                        f'<div style="font-size:0.7rem;font-weight:700;color:#C9A84C;'
+                        f'letter-spacing:2px;text-transform:uppercase;padding:6px 0 4px 0;'
+                        f'border-bottom:1px solid rgba(201,168,76,0.2);margin-bottom:6px">'
+                        f'{_fmt_date(_dk)}</div>',
+                        unsafe_allow_html=True
+                    )
+                    for _league_name, _league_games in sorted(_date_leagues.items()):
+                        st.markdown(
+                            f'<div style="font-size:0.65rem;color:{_sm["color"]};'
+                            f'letter-spacing:1.5px;text-transform:uppercase;'
+                            f'margin:8px 0 4px 0;font-weight:600">'
+                            f'{_sm["emoji"]} {_league_name} · {len(_league_games)} partidos</div>',
+                            unsafe_allow_html=True
+                        )
+                        _cards_html = "".join(_game_card_simple(g, _sm) for g in _league_games)
+                        st.markdown(_cards_html, unsafe_allow_html=True)
+                    st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # RETO 13M — Bitácora permanente de bankroll
