@@ -5189,16 +5189,10 @@ with tab_sim:
         for _ci_p, _sp_p in enumerate(_sports_p):
             _smp = _SPORT_META_P[_sp_p]
             _n_p = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
-            _ev_sp = sum(
-                1 for dmap in _tree_p[_sp_p].values()
-                for gs in dmap.values() for g in gs
-                if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
-                   _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
-            )
             _is_sel = (_sel_sp == _sp_p)
             _border = f'3px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}55'
             _bg     = _smp["color"] + "22" if _is_sel else _smp["accent"]
-            _ev_badge = f'<div style="font-size:0.594rem;color:#C9A84C;margin-top:1px">🔥{_ev_sp} EV+</div>' if _ev_sp else ""
+            _ev_badge = ""  # computed after _sim_map is built
             with _sp_cols_p[_ci_p]:
                 st.markdown(
                     f'<div style="text-align:center;padding:10px 3px;border-radius:9px;'
