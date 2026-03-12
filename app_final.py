@@ -3215,6 +3215,247 @@ def run_all_simulations(games, n=10_000):
     pb.empty(); st_txt.empty()
     results = build_parlays(results)
     return results
+# ══════════════════════════════════════════════════════════════════════════════
+# PICK HISTORY — Auto-save & track system picks accuracy
+# Pestaña Google Sheets: pick_history
+# Columns: pick_id | fecha | partido | liga | deporte | mercado | pick_label |
+#          prob_pct | resultado | home_score | away_score | fuente
+# ══════════════════════════════════════════════════════════════════════════════
+_PH_TAB     = "pick_history"
+_PH_HEADERS = [
+    "pick_id","fecha","partido","liga","deporte","mercado",
+    "pick_label","prob_pct","resultado","home_score","away_score","fuente"
+]
+
+@st.cache_data(ttl=120)
+def _ph_load():
+    """Load all rows from pick_history sheet. Returns list of dicts."""
+    if not _gsheets_available():
+        return []
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_PH_TAB)
+        except:
+            ws = sh.add_worksheet(title=_PH_TAB, rows=5000, cols=len(_PH_HEADERS))
+            ws.update("A1", [_PH_HEADERS])
+            return []
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return []
+        picks = []
+        for row in rows[1:]:
+            if not row or not row[0]:
+                continue
+            def _c(i, d=""):
+                return row[i] if i < len(row) else d
+            picks.append({
+                "pick_id":   _c(0),
+                "fecha":     _c(1),
+                "partido":   _c(2),
+                "liga":      _c(3),
+                "deporte":   _c(4),
+                "mercado":   _c(5),
+                "pick_label":_c(6),
+                "prob_pct":  float(_c(7) or 0),
+                "resultado": _c(8,"pendiente"),
+                "home_score":_c(9),
+                "away_score":_c(10),
+                "fuente":    _c(11,"RONGOL"),
+            })
+        return picks
+    except Exception as e:
+        return []
+
+def _ph_save_picks(new_picks):
+    """Append new picks to pick_history sheet (skip duplicates by pick_id)."""
+    if not _gsheets_available() or not new_picks:
+        return False
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_PH_TAB)
+        except:
+            ws = sh.add_worksheet(title=_PH_TAB, rows=5000, cols=len(_PH_HEADERS))
+            ws.update("A1", [_PH_HEADERS])
+        # Get existing IDs to avoid duplicates
+        existing = ws.col_values(1)  # pick_id column
+        existing_ids = set(existing[1:])  # skip header
+        rows_to_add = []
+        for p in new_picks:
+            if p["pick_id"] not in existing_ids:
+                rows_to_add.append([
+                    p["pick_id"], p["fecha"], p["partido"], p["liga"],
+                    p["deporte"], p["mercado"], p["pick_label"],
+                    p["prob_pct"], p.get("resultado","pendiente"),
+                    p.get("home_score",""), p.get("away_score",""), p.get("fuente","RONGOL"),
+                ])
+        if rows_to_add:
+            ws.append_rows(rows_to_add, value_input_option="USER_ENTERED")
+        return len(rows_to_add)
+    except Exception as e:
+        return False
+
+def _ph_update_results(updates):
+    """Update resultado/scores for a list of pick_ids. updates = {pick_id: {resultado, home_score, away_score}}"""
+    if not _gsheets_available() or not updates:
+        return False
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        ws  = sh.worksheet(_PH_TAB)
+        ids = ws.col_values(1)  # column A = pick_id
+        batch = []
+        for i, pid in enumerate(ids[1:], start=2):  # row 2 onwards
+            if pid in updates:
+                upd = updates[pid]
+                batch.append({"range": f"I{i}:K{i}", "values": [[
+                    upd.get("resultado","pendiente"),
+                    upd.get("home_score",""),
+                    upd.get("away_score",""),
+                ]]})
+        if batch:
+            ws.batch_update(batch)
+        _ph_load.clear()
+        return len(batch)
+    except Exception as e:
+        return False
+
+def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
+    """
+    Extract picks from simulation results to save to pick_history.
+    Returns list of pick dicts ready for _ph_save_picks.
+    """
+    import hashlib
+    from datetime import datetime as _dt, timezone as _tz
+    fecha = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M")
+    picks = []
+
+    _SPORT_ORDER_PH = ["Soccer","Basketball","Hockey","Baseball","Football"]
+
+    # ── RONGOL picks (1 per sport, same logic as tab) ────────────────────────
+    def _sport_best_ph(r):
+        sim = r["sim"]
+        sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
+        h_prob = sim.get("home_pct",0) or 0
+        a_prob = sim.get("away_pct",0) or 0
+        h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
+
+        def best_ml():
+            if h_prob >= a_prob:
+                t,p,ml = r["home_team"],h_prob,h_ml
+            else:
+                t,p,ml = r["away_team"],a_prob,a_ml
+            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1)} if ml else None
+
+        if sg == "Soccer":
+            cands = []
+            _btts_ev = sim.get("btts_ev") or 0
+            _btts_pb = sim.get("p_btts") or 0
+            if _btts_ev > 0 and _btts_pb > 0:
+                cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan","prob_pct":round(_btts_pb,1)})
+            _o25_ev = sim.get("o25_ev") or 0
+            _o25_pb = sim.get("p_o25") or 0
+            if _o25_ev > 0 and _o25_pb > 0:
+                cands.append({"mercado":"O/U","pick_label":"Over 2.5","prob_pct":round(_o25_pb,1)})
+            _ml = best_ml()
+            if _ml: cands.append(_ml)
+            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
+        elif sg in ("Basketball","Hockey"):
+            cands = []
+            _ml = best_ml()
+            if _ml: cands.append(_ml)
+            _ou_line = sim.get("ou_line") or ""
+            _p_over  = sim.get("p_o_total") or 0
+            if _ou_line and _p_over > 45:
+                try: _line = float(_ou_line)
+                except: _line = None
+                if _line:
+                    cands.append({"mercado":"O/U","pick_label":f"Over {_line:.1f}","prob_pct":round(_p_over,1)})
+            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
+        else:
+            return best_ml()
+
+    # Group by sport, take best per sport
+    sport_pools = {}
+    for r in sr:
+        sg = LEAGUES.get(r["league"],{}).get("group","Soccer")
+        bp = _sport_best_ph(r)
+        if bp:
+            sport_pools.setdefault(sg,[]).append((r, bp))
+
+    for sg in _SPORT_ORDER_PH:
+        pool = sport_pools.get(sg,[])
+        if not pool:
+            continue
+        pool.sort(key=lambda x: x[1]["prob_pct"], reverse=True)
+        r, bp = pool[0]
+        partido  = f'{r["away_team"]} vs {r["home_team"]}'
+        pick_id  = hashlib.md5(f'{fecha[:10]}|{partido}|{bp["mercado"]}|{bp["pick_label"]}'.encode()).hexdigest()[:12]
+        picks.append({
+            "pick_id":   pick_id,
+            "fecha":     fecha,
+            "partido":   partido,
+            "liga":      r.get("league",""),
+            "deporte":   sg,
+            "mercado":   bp["mercado"],
+            "pick_label":bp["pick_label"],
+            "prob_pct":  bp["prob_pct"],
+            "resultado": "pendiente",
+            "home_score":"",
+            "away_score":"",
+            "fuente":    fuente,
+        })
+
+    return picks
+
+def _ph_auto_resolve(picks):
+    """
+    Try to resolve pending picks against finished ESPN games.
+    Returns dict {pick_id: {resultado, home_score, away_score}} for resolved picks.
+    """
+    pending = [p for p in picks if p.get("resultado") == "pendiente"]
+    if not pending:
+        return {}
+    try:
+        finished = _fetch_finished_games()
+    except:
+        return {}
+    resolved = {}
+    for p in pending:
+        partido = p.get("partido","")
+        sep = " vs " if " vs " in partido else (" @ " if " @ " in partido else None)
+        if sep:
+            parts = partido.split(sep, 1)
+            t1, t2 = parts[0].strip(), parts[1].strip()
+        else:
+            t1, t2 = partido.strip(), ""
+        for g in finished:
+            m1 = _team_match(t1, g["home_team"], g["away_team"])
+            m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
+            if not (m1 or m2):
+                continue
+            # Build a fake pick dict for _evaluate_pick
+            fake_pick = {
+                "partido": partido,
+                "pick":    p["pick_label"],
+                "mercado": p["mercado"],
+            }
+            res = _evaluate_pick(fake_pick, g)
+            if res:
+                resolved[p["pick_id"]] = {
+                    "resultado":  res,
+                    "home_score": str(g.get("home_score","")),
+                    "away_score": str(g.get("away_score","")),
+                }
+                break
+    return resolved
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # RENDER HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5622,247 +5863,6 @@ def _fetch_finished_games():
             pass
     return finished
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PICK HISTORY — Auto-save & track system picks accuracy
-# Pestaña Google Sheets: pick_history
-# Columns: pick_id | fecha | partido | liga | deporte | mercado | pick_label |
-#          prob_pct | resultado | home_score | away_score | fuente
-# ══════════════════════════════════════════════════════════════════════════════
-_PH_TAB     = "pick_history"
-_PH_HEADERS = [
-    "pick_id","fecha","partido","liga","deporte","mercado",
-    "pick_label","prob_pct","resultado","home_score","away_score","fuente"
-]
-
-@st.cache_data(ttl=120)
-def _ph_load():
-    """Load all rows from pick_history sheet. Returns list of dicts."""
-    if not _gsheets_available():
-        return []
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-        try:
-            ws = sh.worksheet(_PH_TAB)
-        except:
-            ws = sh.add_worksheet(title=_PH_TAB, rows=5000, cols=len(_PH_HEADERS))
-            ws.update("A1", [_PH_HEADERS])
-            return []
-        rows = ws.get_all_values()
-        if len(rows) < 2:
-            return []
-        picks = []
-        for row in rows[1:]:
-            if not row or not row[0]:
-                continue
-            def _c(i, d=""):
-                return row[i] if i < len(row) else d
-            picks.append({
-                "pick_id":   _c(0),
-                "fecha":     _c(1),
-                "partido":   _c(2),
-                "liga":      _c(3),
-                "deporte":   _c(4),
-                "mercado":   _c(5),
-                "pick_label":_c(6),
-                "prob_pct":  float(_c(7) or 0),
-                "resultado": _c(8,"pendiente"),
-                "home_score":_c(9),
-                "away_score":_c(10),
-                "fuente":    _c(11,"RONGOL"),
-            })
-        return picks
-    except Exception as e:
-        return []
-
-def _ph_save_picks(new_picks):
-    """Append new picks to pick_history sheet (skip duplicates by pick_id)."""
-    if not _gsheets_available() or not new_picks:
-        return False
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-        try:
-            ws = sh.worksheet(_PH_TAB)
-        except:
-            ws = sh.add_worksheet(title=_PH_TAB, rows=5000, cols=len(_PH_HEADERS))
-            ws.update("A1", [_PH_HEADERS])
-        # Get existing IDs to avoid duplicates
-        existing = ws.col_values(1)  # pick_id column
-        existing_ids = set(existing[1:])  # skip header
-        rows_to_add = []
-        for p in new_picks:
-            if p["pick_id"] not in existing_ids:
-                rows_to_add.append([
-                    p["pick_id"], p["fecha"], p["partido"], p["liga"],
-                    p["deporte"], p["mercado"], p["pick_label"],
-                    p["prob_pct"], p.get("resultado","pendiente"),
-                    p.get("home_score",""), p.get("away_score",""), p.get("fuente","RONGOL"),
-                ])
-        if rows_to_add:
-            ws.append_rows(rows_to_add, value_input_option="USER_ENTERED")
-        return len(rows_to_add)
-    except Exception as e:
-        return False
-
-def _ph_update_results(updates):
-    """Update resultado/scores for a list of pick_ids. updates = {pick_id: {resultado, home_score, away_score}}"""
-    if not _gsheets_available() or not updates:
-        return False
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-        ws  = sh.worksheet(_PH_TAB)
-        ids = ws.col_values(1)  # column A = pick_id
-        batch = []
-        for i, pid in enumerate(ids[1:], start=2):  # row 2 onwards
-            if pid in updates:
-                upd = updates[pid]
-                batch.append({"range": f"I{i}:K{i}", "values": [[
-                    upd.get("resultado","pendiente"),
-                    upd.get("home_score",""),
-                    upd.get("away_score",""),
-                ]]})
-        if batch:
-            ws.batch_update(batch)
-        _ph_load.clear()
-        return len(batch)
-    except Exception as e:
-        return False
-
-def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
-    """
-    Extract picks from simulation results to save to pick_history.
-    Returns list of pick dicts ready for _ph_save_picks.
-    """
-    import hashlib
-    from datetime import datetime as _dt, timezone as _tz
-    fecha = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M")
-    picks = []
-
-    _SPORT_ORDER_PH = ["Soccer","Basketball","Hockey","Baseball","Football"]
-
-    # ── RONGOL picks (1 per sport, same logic as tab) ────────────────────────
-    def _sport_best_ph(r):
-        sim = r["sim"]
-        sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
-        h_prob = sim.get("home_pct",0) or 0
-        a_prob = sim.get("away_pct",0) or 0
-        h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
-
-        def best_ml():
-            if h_prob >= a_prob:
-                t,p,ml = r["home_team"],h_prob,h_ml
-            else:
-                t,p,ml = r["away_team"],a_prob,a_ml
-            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1)} if ml else None
-
-        if sg == "Soccer":
-            cands = []
-            _btts_ev = sim.get("btts_ev") or 0
-            _btts_pb = sim.get("p_btts") or 0
-            if _btts_ev > 0 and _btts_pb > 0:
-                cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan","prob_pct":round(_btts_pb,1)})
-            _o25_ev = sim.get("o25_ev") or 0
-            _o25_pb = sim.get("p_o25") or 0
-            if _o25_ev > 0 and _o25_pb > 0:
-                cands.append({"mercado":"O/U","pick_label":"Over 2.5","prob_pct":round(_o25_pb,1)})
-            _ml = best_ml()
-            if _ml: cands.append(_ml)
-            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
-        elif sg in ("Basketball","Hockey"):
-            cands = []
-            _ml = best_ml()
-            if _ml: cands.append(_ml)
-            _ou_line = sim.get("ou_line") or ""
-            _p_over  = sim.get("p_o_total") or 0
-            if _ou_line and _p_over > 45:
-                try: _line = float(_ou_line)
-                except: _line = None
-                if _line:
-                    cands.append({"mercado":"O/U","pick_label":f"Over {_line:.1f}","prob_pct":round(_p_over,1)})
-            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
-        else:
-            return best_ml()
-
-    # Group by sport, take best per sport
-    sport_pools = {}
-    for r in sr:
-        sg = LEAGUES.get(r["league"],{}).get("group","Soccer")
-        bp = _sport_best_ph(r)
-        if bp:
-            sport_pools.setdefault(sg,[]).append((r, bp))
-
-    for sg in _SPORT_ORDER_PH:
-        pool = sport_pools.get(sg,[])
-        if not pool:
-            continue
-        pool.sort(key=lambda x: x[1]["prob_pct"], reverse=True)
-        r, bp = pool[0]
-        partido  = f'{r["away_team"]} vs {r["home_team"]}'
-        pick_id  = hashlib.md5(f'{fecha[:10]}|{partido}|{bp["mercado"]}|{bp["pick_label"]}'.encode()).hexdigest()[:12]
-        picks.append({
-            "pick_id":   pick_id,
-            "fecha":     fecha,
-            "partido":   partido,
-            "liga":      r.get("league",""),
-            "deporte":   sg,
-            "mercado":   bp["mercado"],
-            "pick_label":bp["pick_label"],
-            "prob_pct":  bp["prob_pct"],
-            "resultado": "pendiente",
-            "home_score":"",
-            "away_score":"",
-            "fuente":    fuente,
-        })
-
-    return picks
-
-def _ph_auto_resolve(picks):
-    """
-    Try to resolve pending picks against finished ESPN games.
-    Returns dict {pick_id: {resultado, home_score, away_score}} for resolved picks.
-    """
-    pending = [p for p in picks if p.get("resultado") == "pendiente"]
-    if not pending:
-        return {}
-    try:
-        finished = _fetch_finished_games()
-    except:
-        return {}
-    resolved = {}
-    for p in pending:
-        partido = p.get("partido","")
-        sep = " vs " if " vs " in partido else (" @ " if " @ " in partido else None)
-        if sep:
-            parts = partido.split(sep, 1)
-            t1, t2 = parts[0].strip(), parts[1].strip()
-        else:
-            t1, t2 = partido.strip(), ""
-        for g in finished:
-            m1 = _team_match(t1, g["home_team"], g["away_team"])
-            m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
-            if not (m1 or m2):
-                continue
-            # Build a fake pick dict for _evaluate_pick
-            fake_pick = {
-                "partido": partido,
-                "pick":    p["pick_label"],
-                "mercado": p["mercado"],
-            }
-            res = _evaluate_pick(fake_pick, g)
-            if res:
-                resolved[p["pick_id"]] = {
-                    "resultado":  res,
-                    "home_score": str(g.get("home_score","")),
-                    "away_score": str(g.get("away_score","")),
-                }
-                break
-    return resolved
 
 # RETO 13M — Bitácora permanente de bankroll
 # Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
