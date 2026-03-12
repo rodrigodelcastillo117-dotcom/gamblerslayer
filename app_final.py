@@ -913,69 +913,76 @@ def _fetch_all_teams_in_league(sport_slug, league_slug):
 
 def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
     """
-    Version sin @st.cache_data de fetch_recent_form.
-    Usar dentro de populate_all_team_profiles donde el cache de Streamlit
-    no funciona correctamente fuera del hilo principal.
+    Version sin @st.cache_data. Usa /schedule que devuelve historial completo.
+    El formato de /schedule es diferente al de /events:
+      - No tiene status.type.state — usar comp.get("competitors") directamente
+      - Juegos pasados tienen scores en competitors[].score
+      - Juegos futuros tienen score=None o "0"
     """
     if not team_id or not sport or not league:
         return None
     try:
-        # /schedule endpoint returns historical results regardless of today's games
         url = (f"https://site.api.espn.com/apis/site/v2/sports/"
                f"{sport}/{league}/teams/{team_id}/schedule")
         r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             return None
-        data = r.json()
-        # Schedule returns events nested under "events" directly
-        events = data.get("events", [])
+        events = r.json().get("events", [])
         if not events:
             return None
 
-        results = []
         games_raw_list = []
-        conceded_list = []
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
 
-        for ev in events[:n_games + 3]:
-            competitions = ev.get("competitions", [{}])
+        for ev in events:
+            # Skip future games — compare date string
+            ev_date = ev.get("date", "")
+            if ev_date > now_str:
+                continue
+
+            competitions = ev.get("competitions", [])
             if not competitions:
                 continue
             comp  = competitions[0]
-            if ev.get("status", {}).get("type", {}).get("state", "") != "post":
+            comps = comp.get("competitors", [])
+            if not comps:
                 continue
-            comps     = comp.get("competitors", [])
+
+            # Find this team and opponent
             team_comp = next((c for c in comps if str(c.get("id","")) == str(team_id)), None)
-            if not team_comp:
-                continue
-            home_c = next((c for c in comps if c.get("homeAway") == "home"), None)
-            away_c = next((c for c in comps if c.get("homeAway") == "away"), None)
-            try:
-                hs  = float(home_c.get("score", 0) or 0)
-                as_ = float(away_c.get("score", 0) or 0)
-            except:
-                hs = as_ = None
-
-            is_home = team_comp.get("homeAway") == "home"
-            winner  = team_comp.get("winner", False)
-            is_draw = (hs == as_) if hs is not None else False
-
-            if winner:      results.append(1.0)
-            elif is_draw:   results.append(0.5)
-            else:           results.append(0.0)
-
-            game_date = ev.get("date", "")[:10]
             opp_comp  = next((c for c in comps if str(c.get("id","")) != str(team_id)), None)
-            opp_name  = opp_comp.get("team",{}).get("displayName","") if opp_comp else ""
+            if not team_comp or not opp_comp:
+                continue
 
-            if hs is not None:
-                if is_home:
-                    games_raw_list.append({"scored":hs,"conceded":as_,"home":True,
-                                           "date":game_date,"opp":opp_name})
-                else:
-                    games_raw_list.append({"scored":as_,"conceded":hs,"home":False,
-                                           "date":game_date,"opp":opp_name})
+            # Extract scores — skip if no valid score (game not played)
+            try:
+                team_score = float(team_comp.get("score") or 0)
+                opp_score  = float(opp_comp.get("score")  or 0)
+            except:
+                continue
 
-            if len(results) >= n_games:
+            # Skip if both scores are 0 and boxscoreAvailable is False
+            # (likely a future/cancelled game with default 0s)
+            if team_score == 0 and opp_score == 0:
+                if not comp.get("boxscoreAvailable", False):
+                    continue
+
+            is_home  = team_comp.get("homeAway") == "home"
+            opp_name = opp_comp.get("team", {}).get("displayName", "")
+            game_date = ev_date[:10]
+
+            if is_home:
+                games_raw_list.append({
+                    "scored": team_score, "conceded": opp_score,
+                    "home": True, "date": game_date, "opp": opp_name
+                })
+            else:
+                games_raw_list.append({
+                    "scored": team_score, "conceded": opp_score,
+                    "home": False, "date": game_date, "opp": opp_name
+                })
+
+            if len(games_raw_list) >= n_games:
                 break
 
         return games_raw_list if games_raw_list else None
@@ -1036,18 +1043,14 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
                         data = r.json()
                         events = data.get("events", [])
                         if events:
-                            first = events[0]
-                            log.append(f"  ⚠ {tname} event keys: {list(first.keys())}")
-                            # Check for competitions/score structure
-                            comps = first.get("competitions", first.get("competitors", []))
-                            log.append(f"  ⚠ competitions type: {type(comps).__name__} len={len(comps) if isinstance(comps,list) else 'n/a'}")
-                            if isinstance(comps, list) and comps:
-                                log.append(f"  ⚠ first comp keys: {list(comps[0].keys())[:10]}")
-                            # Check status
-                            status = first.get("status", first.get("completed", "no_status"))
-                            log.append(f"  ⚠ status sample: {str(status)[:100]}")
+                            # Find first past event with scores
+                            for fe in events[:5]:
+                                comps = fe.get("competitions",[{}])[0].get("competitors",[])
+                                scores = [(c.get("id"),c.get("homeAway"),c.get("score")) for c in comps]
+                                log.append(f"  ⚠ {tname} sample scores: {scores} date={fe.get('date','')[:10]}")
+                                break
                         else:
-                            log.append(f"  ⚠ {tname} HTTP {r.status_code}: empty events list")
+                            log.append(f"  ⚠ {tname} empty events")
                     except Exception as e:
                         log.append(f"  ⚠ {tname} request error: {e}")
                 continue
