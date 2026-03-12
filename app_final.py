@@ -3919,7 +3919,17 @@ def render_pick_card(r, rank=None):
 
     dq_html   = dq_warn(dq)
     chip_html = chip(bs["market"])
-    status    = r.get("status_detail", "").replace("<","").replace(">","").replace("/","").strip()
+    _status_raw = r.get("status_detail", "").replace("<","").replace(">","").replace("/","").strip()
+    # Si ESPN devuelve "Scheduled" o vacío, mostrar hora CDMX desde campo date
+    if not _status_raw or _status_raw.lower() in ("scheduled", "cancelado", "postponed"):
+        _raw_dt = r.get("date","")
+        if _raw_dt:
+            try:
+                from datetime import timezone as _tz_s, timedelta as _td_s
+                _u_s = datetime.strptime(_raw_dt[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_s.utc)
+                _status_raw = (_u_s - _td_s(hours=6)).strftime("%H:%M") + " CDMX"
+            except: pass
+    status = _status_raw
 
     # Recent form badges
     form_html = ""
@@ -5313,7 +5323,13 @@ with tab_sim:
         _r    = _sim_map.get(g.get("id",""))
         _time = _mx_time_p(g)
         _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
-        _sd   = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
+        _sd_raw = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
+        # Si ESPN dice "Scheduled" o vacío, mostrar hora CDMX
+        if not _sd_raw or _sd_raw.lower() in ("scheduled", "cancelado", "postponed"):
+            _hora_cdmx = _mx_time_p(g)
+            _sd = (_hora_cdmx + " CDMX") if _hora_cdmx else _sd_raw
+        else:
+            _sd = _sd_raw
         _low_c  = _r["sim"].get("low_confidence",False) if _r else False
         _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.616rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
         _has_ev = bool(_r and _r["sim"].get("best_single") and _r["sim"]["best_single"].get("ev",0)>0)
@@ -6504,27 +6520,19 @@ with tab_all:
                 )
             picks_html += "</div>"
 
+            def _stat_pill(val, lbl, clr):
+                return (f'<span style="font-size:0.75rem;color:{clr};font-weight:700">{val}</span>'
+                        f'<span style="font-size:0.65rem;color:#6B7E6E;margin-left:2px;margin-right:10px">{lbl}</span>')
             stats_html = (
-                f'<div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px 0;'
-                f'border-top:1px solid rgba(255,255,255,0.06);margin-top:8px">'
-                f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#60a5fa;font-weight:700">'
-                f'{sim["away_pct"]:.0f}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">'
-                f'{g["away_team"][:11]}</div></div>'
-                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#a78bfa;font-weight:700">'
-                   f'{sim["draw_pct"]:.0f}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">Empate</div></div>'
-                   if sim["is_soccer"] else '')
-                + f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#f97316;font-weight:700">'
-                f'{sim["home_pct"]:.0f}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">'
-                f'{g["home_team"][:11]}</div></div>'
-                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#4ade80;font-weight:700">'
-                   f'{sim["p_btts"]}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">BTTS%</div></div>'
-                   if sim.get("p_btts") and sport_group == "Soccer" else '')
-                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#C9A84C;font-weight:700">'
-                   f'{sim["p_o25"]}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">O2.5%</div></div>'
-                   if sim.get("p_o25") and sport_group == "Soccer" else '')
-                + f'<div style="margin-left:auto;text-align:right"><div style="font-size:0.728rem;color:#3a4a3e">DQ {dq:.0f}%</div>'
-                f'<div style="font-size:0.728rem;color:#3a4a3e">5,000 sims</div></div>'
-                f'</div>'
+                f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;'
+                f'padding:6px 0 2px 0;border-top:1px solid rgba(255,255,255,0.05);margin-top:6px">'
+                + _stat_pill(f'{sim["away_pct"]:.0f}%', g["away_team"][:10], "#60a5fa")
+                + (_stat_pill(f'{sim["draw_pct"]:.0f}%', "Empate", "#a78bfa") if sim["is_soccer"] else "")
+                + _stat_pill(f'{sim["home_pct"]:.0f}%', g["home_team"][:10], "#f97316")
+                + (_stat_pill(f'{sim["p_btts"]}%', "BTTS%", "#4ade80") if sim.get("p_btts") and sport_group=="Soccer" else "")
+                + (_stat_pill(f'{sim["p_o25"]}%', "O2.5%", "#C9A84C") if sim.get("p_o25") and sport_group=="Soccer" else "")
+                + f'<span style="margin-left:auto;font-size:0.65rem;color:#3a4a3e">DQ {dq:.0f}% · 5k sims</span>'
+                + f'</div>'
             )
 
             # xG validation panel — only for Soccer when there's an O/U pick
@@ -6568,25 +6576,23 @@ with tab_all:
 
             live_html = (
                 '<div style="background:linear-gradient(135deg,#0A1E0F,#071A10);'
-                f'border:2px solid {border_col};border-radius:10px;padding:0;'
-                'margin:10px 0;overflow:hidden;box-shadow:0 0 30px rgba(255,60,60,0.10);">'
-                '<div style="height:3px;background:linear-gradient(90deg,transparent,#ff3c3c,#ff6b6b,#ff3c3c,transparent);'
-                'box-shadow:0 0 10px rgba(255,60,60,0.7)"></div>'
-                '<div style="padding:14px 18px">'
-                '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
-                '<div>'
-                f'<span style="font-family:\'Playfair Display\',serif;font-size:1.176rem;font-weight:700;color:#fff">'
-                f'{g["away_team"]} @ {g["home_team"]}</span>'
-                f' <span style="color:#4ade80;font-weight:700;font-size:1.232rem;margin-left:6px">{score_str}</span>'
-                f'<div style="font-size:0.806rem;color:#8a9e8a;margin-top:3px">{headline}</div>'
+                f'border:2px solid {border_col};border-radius:8px;padding:0;'
+                'margin:6px 0;overflow:hidden">'
+                '<div style="height:2px;background:linear-gradient(90deg,transparent,#ff3c3c,#ff6b6b,#ff3c3c,transparent)"></div>'
+                '<div style="padding:10px 14px">'
+                '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">'
+                '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+                f'<span style="font-size:1.0rem;font-weight:700;color:#fff">{g["away_team"]} @ {g["home_team"]}</span>'
+                f'<span style="color:#4ade80;font-weight:700">{score_str}</span>'
+                f'<span style="font-size:0.75rem;color:#8a9e8a">{headline}</span>'
                 '</div>'
-                '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+                '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">'
                 '<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
-                'border-radius:20px;padding:2px 9px;font-size:0.728rem;letter-spacing:1.5px;font-weight:600">🔴 EN VIVO</span>'
+                'border-radius:20px;padding:1px 8px;font-size:0.68rem;font-weight:600">🔴 EN VIVO</span>'
                 f'<span style="background:rgba(201,168,76,0.1);color:#C9A84C;border:1px solid rgba(201,168,76,0.3);'
-                f'border-radius:20px;padding:2px 9px;font-size:0.728rem">{league_label(g["league"])}</span>'
+                f'border-radius:20px;padding:1px 8px;font-size:0.68rem">{league_label(g["league"])}</span>'
                 + (f'<span style="background:rgba(231,76,60,0.15);color:#e74c3c;border:1px solid rgba(231,76,60,0.3);'
-                   f'border-radius:20px;padding:2px 7px;font-size:0.694rem">⚠ SIN CUOTAS</span>' if dq == 0 else '')
+                   f'border-radius:20px;padding:1px 6px;font-size:0.65rem">⚠ SIN CUOTAS</span>' if dq == 0 else '')
                 + '</div></div>'
                 + picks_html
                 + xg_html
