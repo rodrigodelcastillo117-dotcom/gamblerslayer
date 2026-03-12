@@ -808,42 +808,98 @@ hr { border-color: var(--border) !important; }
   border-radius: 0 0 6px 6px !important;
   padding: 16px 12px !important;
 }
-/* ── Liga collapsible buttons ── */
-[data-testid="stButton"]:has(> button[key^="btn_lg_"]) button,
-div.stButton > button[kind="secondary"] {
-  /* We target via class added below */
-}
-.liga-btn-wrap [data-testid="stButton"] button {
+/* ── Liga collapsible buttons — target by aria-label prefix ── */
+button[aria-label^="▶  "],
+button[aria-label^="▼  "] {
   background: transparent !important;
   border: none !important;
-  border-left: 3px solid rgba(201,168,76,0.35) !important;
-  border-radius: 0 5px 5px 0 !important;
+  border-left: 3px solid rgba(201,168,76,0.45) !important;
+  border-radius: 0 6px 6px 0 !important;
   color: #C9A84C !important;
   font-family: 'Cinzel', serif !important;
-  font-size: 0.72rem !important;
+  font-size: 0.75rem !important;
   font-weight: 700 !important;
   letter-spacing: 1.2px !important;
   text-transform: uppercase !important;
   text-align: left !important;
-  padding: 7px 14px !important;
+  padding: 8px 14px !important;
   width: 100% !important;
   box-shadow: none !important;
-  margin: 5px 0 2px 0 !important;
-  transition: all 0.15s ease !important;
+  margin: 4px 0 2px 0 !important;
+  transition: background 0.15s ease, border-color 0.15s ease !important;
 }
-.liga-btn-wrap [data-testid="stButton"] button:hover {
-  background: rgba(201,168,76,0.07) !important;
+button[aria-label^="▶  "]:hover,
+button[aria-label^="▼  "]:hover {
+  background: rgba(201,168,76,0.08) !important;
   border-left-color: #C9A84C !important;
   color: #F0D080 !important;
 }
-/* Sport tiles ▶ buttons — keep minimal */
-.sport-tile-btn [data-testid="stButton"] button {
-  background: transparent !important;
-  border: 1px solid rgba(201,168,76,0.2) !important;
-  color: #C9A84C !important;
-  font-size: 0.7rem !important;
-  padding: 3px 8px !important;
-  box-shadow: none !important;
+
+/* ── Sport tile buttons — colored by sport ── */
+button[aria-label*="Basketball"] {
+  background: rgba(249,115,22,0.18) !important;
+  border: 1px solid rgba(249,115,22,0.5) !important;
+  border-radius: 8px !important;
+  color: #000 !important;
+  font-weight: 800 !important;
+  font-size: 0.78rem !important;
+  padding: 4px 10px !important;
+  box-shadow: 0 0 8px rgba(249,115,22,0.2) !important;
+}
+button[aria-label*="Basketball"]:hover {
+  background: rgba(249,115,22,0.32) !important;
+}
+button[aria-label*="Soccer"] {
+  background: rgba(74,222,128,0.18) !important;
+  border: 1px solid rgba(74,222,128,0.5) !important;
+  border-radius: 8px !important;
+  color: #000 !important;
+  font-weight: 800 !important;
+  font-size: 0.78rem !important;
+  padding: 4px 10px !important;
+  box-shadow: 0 0 8px rgba(74,222,128,0.2) !important;
+}
+button[aria-label*="Soccer"]:hover {
+  background: rgba(74,222,128,0.32) !important;
+}
+button[aria-label*="Hockey"] {
+  background: rgba(96,165,250,0.18) !important;
+  border: 1px solid rgba(96,165,250,0.5) !important;
+  border-radius: 8px !important;
+  color: #000 !important;
+  font-weight: 800 !important;
+  font-size: 0.78rem !important;
+  padding: 4px 10px !important;
+  box-shadow: 0 0 8px rgba(96,165,250,0.2) !important;
+}
+button[aria-label*="Hockey"]:hover {
+  background: rgba(96,165,250,0.32) !important;
+}
+button[aria-label*="Baseball"] {
+  background: rgba(239,68,68,0.18) !important;
+  border: 1px solid rgba(239,68,68,0.5) !important;
+  border-radius: 8px !important;
+  color: #000 !important;
+  font-weight: 800 !important;
+  font-size: 0.78rem !important;
+  padding: 4px 10px !important;
+  box-shadow: 0 0 8px rgba(239,68,68,0.2) !important;
+}
+button[aria-label*="Baseball"]:hover {
+  background: rgba(239,68,68,0.32) !important;
+}
+button[aria-label*="Football"] {
+  background: rgba(167,139,250,0.18) !important;
+  border: 1px solid rgba(167,139,250,0.5) !important;
+  border-radius: 8px !important;
+  color: #000 !important;
+  font-weight: 800 !important;
+  font-size: 0.78rem !important;
+  padding: 4px 10px !important;
+  box-shadow: 0 0 8px rgba(167,139,250,0.2) !important;
+}
+button[aria-label*="Football"]:hover {
+  background: rgba(167,139,250,0.32) !important;
 }
 
 
@@ -5715,11 +5771,12 @@ with tab_sim:
                     f'</div>',
                     unsafe_allow_html=True
                 )
+                _sp_chev = "▼" if _is_sel else "▶"
                 if st.button(
-                    "▶" if not _is_sel else "▼",
+                    f"{_sp_chev} {_smp['emoji']} {_sp_p} — {_n_p} partidos",
                     key=f"btn_sp_{_sp_p}",
                     use_container_width=True,
-                    help=f"{'Ver' if not _is_sel else 'Cerrar'} partidos de {_sp_p}"
+                    help=f"{'Cerrar' if _is_sel else 'Ver'} partidos de {_sp_p}"
                 ):
                     st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
                     st.rerun()
@@ -5988,9 +6045,8 @@ with tab_sim:
                 _ctry_str  = f" · {_country_p}" if _country_p else ""
                 _lg_label  = f"{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)} partidos"
                 _lg_key    = f"_lg_collapsed_{_lg_p}"
-                _collapsed = st.session_state.get(_lg_key, False)
+                _collapsed = st.session_state.get(_lg_key, True)  # collapsed by default
                 _chev      = "▶" if _collapsed else "▼"
-                st.markdown('<div class="liga-btn-wrap">', unsafe_allow_html=True)
                 if st.button(
                     f"{_chev}  {_lg_label}",
                     key=f"btn_lg_{_lg_p}",
@@ -5999,7 +6055,6 @@ with tab_sim:
                 ):
                     st.session_state[_lg_key] = not _collapsed
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
                 if not _collapsed:
                     for _gi3 in range(0, len(_lg_games_p), 3):
                         _row3 = _lg_games_p[_gi3:_gi3+3]
