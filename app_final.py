@@ -4523,7 +4523,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── MOBILE: inject gold hamburger button + sidebar overlay logic ─────────────
-st.markdown("""
+import streamlit.components.v1 as _components
+_components.html("""
 <style>
 #den-hamburger {
   display: none;
@@ -4568,66 +4569,75 @@ st.markdown("""
 <div id="den-overlay" onclick="denCloseSidebar()"></div>
 <script>
 (function() {
-  function findSidebarBtn() {
-    // Try every known Streamlit sidebar toggle selector
-    var selectors = [
-      '[data-testid="stSidebarCollapsedControl"] button',
-      '[data-testid="collapsedControl"] button',
-      'button[aria-label="Open sidebar"]',
-      'button[aria-label="Abrir barra lateral"]',
-      '[data-testid="stSidebar"] ~ div button',
-      '.stSidebarNavToggleButton button',
-    ];
-    for (var i = 0; i < selectors.length; i++) {
-      var btn = document.querySelector(selectors[i]);
-      if (btn) return btn;
-    }
-    // Fallback: find any button near the sidebar
-    var btns = document.querySelectorAll('button');
-    for (var j = 0; j < btns.length; j++) {
-      var r = btns[j].getBoundingClientRect();
-      if (r.top < 80 && r.left < 80 && r.width > 0) return btns[j];
-    }
-    return null;
-  }
+  var doc = window.parent.document;
 
   function getSidebar() {
-    return document.querySelector('[data-testid="stSidebar"]');
+    return doc.querySelector('[data-testid="stSidebar"]');
   }
 
   window.denToggleSidebar = function() {
     var sidebar = getSidebar();
-    if (!sidebar) { var btn = findSidebarBtn(); if (btn) btn.click(); return; }
-    var isOpen = sidebar.getBoundingClientRect().left >= -10;
+    if (!sidebar) return;
+    var isOpen = sidebar.getBoundingClientRect().left > -20;
     if (isOpen) {
       denCloseSidebar();
     } else {
       sidebar.style.transform = 'translateX(0)';
-      document.getElementById('den-overlay').style.display = 'block';
+      sidebar.style.transition = 'transform 0.25s ease';
+      doc.getElementById('den-overlay') && (doc.getElementById('den-overlay').style.display = 'block');
+      // inject overlay into parent doc if not there
+      if (!doc.getElementById('den-overlay-parent')) {
+        var ov = doc.createElement('div');
+        ov.id = 'den-overlay-parent';
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9998;display:block';
+        ov.onclick = function() { denCloseSidebar(); ov.remove(); };
+        doc.body.appendChild(ov);
+      }
     }
   };
 
   window.denCloseSidebar = function() {
     var sidebar = getSidebar();
-    if (sidebar) sidebar.style.transform = 'translateX(-100%)';
-    document.getElementById('den-overlay').style.display = 'none';
+    if (sidebar) {
+      sidebar.style.transition = 'transform 0.25s ease';
+      sidebar.style.transform = 'translateX(-100%)';
+    }
+    var ov = doc.getElementById('den-overlay-parent');
+    if (ov) ov.remove();
   };
 
-  // On mobile: collapse sidebar on load
   function initMobile() {
-    if (window.innerWidth > 768) return;
+    if (window.parent.innerWidth > 768) return;
     var sidebar = getSidebar();
     if (sidebar) {
       sidebar.style.transition = 'transform 0.25s ease';
       sidebar.style.transform = 'translateX(-100%)';
     }
+    // Show our hamburger button in parent doc
+    if (!doc.getElementById('den-hamburger-parent')) {
+      var btn = doc.createElement('div');
+      btn.id = 'den-hamburger-parent';
+      btn.style.cssText = [
+        'position:fixed','top:14px','left:14px','z-index:99999',
+        'background:#071610','border:2px solid #C9A84C','border-radius:7px',
+        'padding:7px 10px','cursor:pointer',
+        'box-shadow:0 2px 20px rgba(201,168,76,0.45)',
+        'display:flex','flex-direction:column','gap:5px',
+        'align-items:center','justify-content:center'
+      ].join(';');
+      btn.innerHTML = '<span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>' +
+                      '<span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>' +
+                      '<span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>';
+      btn.onclick = function() { denToggleSidebar(); };
+      doc.body.appendChild(btn);
+    }
   }
-  setTimeout(initMobile, 200);
-  setTimeout(initMobile, 600);
-  setTimeout(initMobile, 1200);
+  setTimeout(initMobile, 300);
+  setTimeout(initMobile, 800);
+  setTimeout(initMobile, 1800);
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0, scrolling=False)
 
 if not sel_leagues:
     st.warning("Selecciona al menos una liga en el sidebar.")
