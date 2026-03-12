@@ -911,6 +911,75 @@ def _fetch_all_teams_in_league(sport_slug, league_slug):
         return []
 
 
+def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
+    """
+    Version sin @st.cache_data de fetch_recent_form.
+    Usar dentro de populate_all_team_profiles donde el cache de Streamlit
+    no funciona correctamente fuera del hilo principal.
+    """
+    if not team_id or not sport or not league:
+        return None
+    try:
+        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+               f"{sport}/{league}/teams/{team_id}/events?limit={n_games + 3}")
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        events = r.json().get("events", [])
+        if not events:
+            return None
+
+        results = []
+        games_raw_list = []
+        conceded_list = []
+
+        for ev in events[:n_games + 3]:
+            competitions = ev.get("competitions", [{}])
+            if not competitions:
+                continue
+            comp  = competitions[0]
+            if ev.get("status", {}).get("type", {}).get("state", "") != "post":
+                continue
+            comps     = comp.get("competitors", [])
+            team_comp = next((c for c in comps if str(c.get("id","")) == str(team_id)), None)
+            if not team_comp:
+                continue
+            home_c = next((c for c in comps if c.get("homeAway") == "home"), None)
+            away_c = next((c for c in comps if c.get("homeAway") == "away"), None)
+            try:
+                hs  = float(home_c.get("score", 0) or 0)
+                as_ = float(away_c.get("score", 0) or 0)
+            except:
+                hs = as_ = None
+
+            is_home = team_comp.get("homeAway") == "home"
+            winner  = team_comp.get("winner", False)
+            is_draw = (hs == as_) if hs is not None else False
+
+            if winner:      results.append(1.0)
+            elif is_draw:   results.append(0.5)
+            else:           results.append(0.0)
+
+            game_date = ev.get("date", "")[:10]
+            opp_comp  = next((c for c in comps if str(c.get("id","")) != str(team_id)), None)
+            opp_name  = opp_comp.get("team",{}).get("displayName","") if opp_comp else ""
+
+            if hs is not None:
+                if is_home:
+                    games_raw_list.append({"scored":hs,"conceded":as_,"home":True,
+                                           "date":game_date,"opp":opp_name})
+                else:
+                    games_raw_list.append({"scored":as_,"conceded":hs,"home":False,
+                                           "date":game_date,"opp":opp_name})
+
+            if len(results) >= n_games:
+                break
+
+        return games_raw_list if games_raw_list else None
+    except:
+        return None
+
+
 def populate_all_team_profiles(progress_bar=None, status_text=None):
     """
     Recorre todas las ligas, recolecta todos los perfiles en memoria,
@@ -951,12 +1020,11 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
                     f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
                 )
 
-            form = fetch_recent_form(sport_slug, league_slug, tid, n_games=10)
-            if not isinstance(form, dict) or not form.get("games_raw"):
+            games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
+            if not games:
                 failed += 1
                 continue
-
-            games  = form["games_raw"][:_TP_MAX_GAMES]
+            games = games[:_TP_MAX_GAMES]
             stats  = _compute_profile_stats(games, sport_group)
             if not stats:
                 failed += 1
