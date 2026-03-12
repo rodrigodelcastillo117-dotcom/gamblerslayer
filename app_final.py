@@ -988,7 +988,7 @@ def get_ai_analysis(away_team, home_team, league, sport_group,
         elif "Over 2.5" in best_label:
             note = f"Modelo proyecta partido con >2.5 goles ({prob_pct:.0f}%). El encuentro {away_team} @ {home_team} favorece líneas ofensivas según simulación Poisson."
         elif "Under 2.5" in best_label:
-            note = f"Under 2.5 a {prob_pct:.0f}% — ambos equipos muestran bajo volumen ofensivo. Partido de menos de 3 goles favorecido por el modelo."
+            note = f"Under 2.5 a {prob_pct:.0f}% — el modelo Poisson espera menos de 3 goles totales. Con promedio de liga de {LEAGUE_AVG_GOALS.get(league, 2.7):.2f} goles, la línea O/U sugiere partido defensivo."
         elif draw_pct > 27 and not pick_is_home:
             note = f"Empate en {draw_pct:.0f}% — partidos con equipos tan parejos frecuentemente terminan igualados. Considera la doble oportunidad como cobertura."
         elif spread < 12:
@@ -1281,7 +1281,7 @@ def run_monte_carlo(game, n=10_000):
     # Parse ESPN O/U line once — used inside loop for non-soccer sports
     try: ou_val = float(str(game["odds"].get("over_under","")));  assert 0 < ou_val < 400
     except: ou_val = 0.0
-    hw=aw=d=btts=o15=o25=o35=dc_1x=dc_x2=dc_12=o_total=u_total=0
+    hw=aw=d=btts=o15=o25=o35=u25=u35=dc_1x=dc_x2=dc_12=o_total=u_total=0
     rng=random.Random()
 
     for _ in range(n):
@@ -1297,7 +1297,9 @@ def run_monte_carlo(game, n=10_000):
                 if gh>0 and ga>0: btts+=1
                 if tg>1.5: o15+=1
                 if tg>2.5: o25+=1
+                else: u25+=1        # tg <= 2.5  (Under 2.5)
                 if tg>3.5: o35+=1
+                else: u35+=1        # tg <= 3.5  (Under 3.5)
             else:
                 if is_hockey:
                     # NHL — Poisson is correct (λ ~3 goals/team, small enough)
@@ -1341,7 +1343,8 @@ def run_monte_carlo(game, n=10_000):
     p_o15=o15/n if use_goals else None
     p_o25=o25/n if use_goals else None
     p_o35=o35/n if use_goals else None
-    p_u25=(n-o25)/n if use_goals else None
+    p_u25=u25/n if use_goals else None
+    p_u35=u35/n if use_goals else None
     p_dc_1x=dc_1x/n; p_dc_x2=dc_x2/n; p_dc_12=dc_12/n
 
     hml=game["odds"].get("home_ml",""); aml=game["odds"].get("away_ml","")
@@ -1358,6 +1361,7 @@ def run_monte_carlo(game, n=10_000):
     o25_ev=calc_ev(p_o25,OU_ML) if p_o25 is not None else None
     o35_ev=calc_ev(p_o35,OU_ML) if p_o35 is not None else None
     u25_ev=calc_ev(p_u25,OU_ML) if p_u25 is not None else None
+    u35_ev=calc_ev(p_u35,OU_ML) if p_u35 is not None else None
     dc_1x_ev=calc_ev(p_dc_1x,DC_ML); dc_x2_ev=calc_ev(p_dc_x2,DC_ML); dc_12_ev=calc_ev(p_dc_12,DC_ML)
 
     candidates=[
@@ -1391,6 +1395,7 @@ def run_monte_carlo(game, n=10_000):
             ("O/U","Over 2.5",p_o25,o25_ev,str(OU_ML),quarter_kelly(p_o25,OU_ML)),
             ("O/U","Over 3.5",p_o35,o35_ev,str(OU_ML),quarter_kelly(p_o35,OU_ML)),
             ("O/U","Under 2.5",p_u25,u25_ev,str(OU_ML),quarter_kelly(p_u25,OU_ML)),
+            ("O/U","Under 3.5",p_u35,u35_ev,str(OU_ML),quarter_kelly(p_u35,OU_ML)),
         ]
 
     # DC only meaningful for soccer (3-way markets)
@@ -1448,6 +1453,7 @@ def run_monte_carlo(game, n=10_000):
         "p_o25":round(p_o25*100,1) if p_o25 is not None else None,"o25_ev":o25_ev,
         "p_o35":round(p_o35*100,1) if p_o35 is not None else None,"o35_ev":o35_ev,
         "p_u25":round(p_u25*100,1) if p_u25 is not None else None,"u25_ev":u25_ev,
+        "p_u35":round(p_u35*100,1) if p_u35 is not None else None,"u35_ev":u35_ev,
         "p_dc_1x":round(p_dc_1x*100,1),"dc_1x_ev":dc_1x_ev,
         "p_dc_x2":round(p_dc_x2*100,1),"dc_x2_ev":dc_x2_ev,
         "p_dc_12":round(p_dc_12*100,1),"dc_12_ev":dc_12_ev,
@@ -1682,10 +1688,13 @@ def render_pick_card(r, rank=None):
             goal_entries.append(("BTTS", sim["p_btts"], sim["btts_ev"]))
         if sim.get("p_o25") is not None:
             goal_entries.append(("O2.5", sim["p_o25"], sim.get("o25_ev") or 0))
-        if sim.get("p_o15") is not None:
-            goal_entries.append(("O1.5", sim["p_o15"], None))
+        if sim.get("p_u25") is not None:
+            goal_entries.append(("U2.5", sim["p_u25"], sim.get("u25_ev") or 0))
         if sim.get("p_o35") is not None:
-            goal_entries.append(("O3.5", sim["p_o35"], None))
+            goal_entries.append(("O3.5", sim["p_o35"], sim.get("o35_ev") or 0))
+        if sim.get("p_u35") is not None:
+            goal_entries.append(("U3.5", sim["p_u35"], sim.get("u35_ev") or 0))
+        # Best = highest probability (most likely outcome)
         best_pct_label = max(goal_entries, key=lambda x: x[1])[0] if goal_entries else ""
         pills = []
         for lbl, pct, ev_v in goal_entries:
