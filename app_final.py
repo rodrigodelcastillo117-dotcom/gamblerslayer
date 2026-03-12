@@ -2756,18 +2756,29 @@ def run_monte_carlo(game, n=10_000):
     MARKET_PREF = {"BTTS": 4, "O/U": 3, "ML": 2, "DO": 1}
     best_single=None; best_ev_v=-999; best_pref=-1
 
+    # Pre-filter: si hay candidatos BTTS o O/U con EV positivo, excluir DO del concurso
+    # DO(sin empate) tiene EV ficticio alto (~+17) porque DC_ML=-200 fijo
+    # Solo usar DO cuando no hay ningún mercado de goles positivo disponible
+    _has_pos_goals = any(mt in ("BTTS","O/U") and ev is not None and ev > 0
+                         for mt,lb,pr,ev,ml,k in candidates)
+    if _has_pos_goals:
+        candidates_main = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
+                           if mt not in ("DO",)]
+    else:
+        candidates_main = candidates
+
     if _parejo:
         # Partido parejo with real ML: Claude recommends goal markets → pick by highest PROBABILITY
-        goal_candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
+        goal_candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates_main
                            if mt in ("BTTS","O/U") and pr is not None]
         if goal_candidates:
             best_goal = max(goal_candidates, key=lambda x: x[2])  # highest prob
             mt,lb,pr,ev,ml,k = best_goal
             best_single = {"market":mt,"label":lb,"prob":pr,"ev":ev or 0,"ml":ml,"kelly":k or 0}
-        # Done — parejo always uses goal market by prob, no ML/DC override
+        # Done — parejo always uses goal market by prob, no ML/DO override
     else:
         # Normal case: pick by highest EV, with BTTS preferred on ties
-        for mtype,label,prob,ev,ml,kelly in candidates:
+        for mtype,label,prob,ev,ml,kelly in candidates_main:
             if prob is None or ev is None:
                 continue
             pref = MARKET_PREF.get(mtype, 0)
@@ -3487,13 +3498,14 @@ st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 # [team profiles badge — moved below after function definitions]
 
 # ── Team Profiles — cargar y mostrar badge ────────────────────────────────
-# Limpiar cache si nunca hemos visto datos (primera vez con datos)
-if st.session_state.get("_tp_ever_loaded") is None:
-    _load_all_team_profiles.clear()
+# Forzar recarga si la cache tiene 0 equipos (puede estar cacheando vacío)
 _tp_profiles_now = _load_all_team_profiles()
+if len(_tp_profiles_now) == 0:
+    _load_all_team_profiles.clear()
+    _tp_profiles_now = _load_all_team_profiles()
 _tp_count_now    = len(_tp_profiles_now)
-if _tp_count_now > 0:
-    st.session_state["_tp_ever_loaded"] = True
+_tp_err_now      = st.session_state.get("_tp_load_error","")
+
 if _tp_count_now > 0:
     _tp_total_games = sum(p.get("n_games",0) for p in _tp_profiles_now.values())
     _tp_leagues     = len({p.get("league","") for p in _tp_profiles_now.values()})
@@ -3505,13 +3517,18 @@ if _tp_count_now > 0:
         f'<b>{_tp_leagues}</b> ligas</div>',
         unsafe_allow_html=True
     )
-else:
-    _tp_err = st.session_state.get("_tp_load_error","")
-    _err_txt = f" · error: {_tp_err[:60]}" if _tp_err else ""
+elif _tp_err_now:
     st.markdown(
         f'<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
-        f'color:#6B7E6E;letter-spacing:1px">'
-        f'🧠 Memoria: aprendiendo...{_err_txt}</div>',
+        f'color:#ef4444;letter-spacing:1px">'
+        f'🧠 Memoria: error — {_tp_err_now[:80]}</div>',
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        '<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
+        'color:#6B7E6E;letter-spacing:1px">'
+        '🧠 Memoria: aprendiendo... · <b>↓ Poblar Memoria</b> en el sidebar</div>',
         unsafe_allow_html=True
     )
 
@@ -4398,10 +4415,11 @@ with tab_all:
             if parts: oh=f'<div style="color:#C9A84C;font-size:0.72rem;margin-top:2px">{" · ".join(parts)}</div>'
         sh=f' <span style="color:#4ade80">{g["away_score"]}–{g["home_score"]}</span>' if g["state"]=="in" and g.get("home_score") else ""
         rh=f'<span style="color:#3a4a3e"> · {g.get("away_record","?")} vs {g.get("home_record","?")}</span>' if (g.get("away_record") or g.get("home_record")) else ""
+        _sd_clean = (g.get('status_detail') or '').split('\n')[0].replace('<','').replace('>','').replace('/','').strip()
         st.markdown(f"""<div class="game-row">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div class="game-title">{g['away_team']} @ {g['home_team']}{sh}</div>
-            <span style="{live_cls}font-size:0.8rem">{si} {g['status_detail']}</span>
+            <span style="{live_cls}font-size:0.8rem">{si} {_sd_clean}</span>
           </div>
           <div class="game-meta">{g['league']}{rh}</div>
           {oh}
