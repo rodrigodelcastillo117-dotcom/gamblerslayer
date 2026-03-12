@@ -2113,10 +2113,16 @@ def parse_games(data, league_name):
                     _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
-                    # Accept today CDMX + tomorrow CDMX
-                    # Evening games (6-11 PM CDMX) = next UTC day, ESPN stores them as tomorrow
+                    # Accept today CDMX always.
+                    # For games stored with tomorrow's UTC date: only include if
+                    # their CDMX time is still "today" (i.e. hour < 6 AM next day = late tonight)
                     _tomorrow_cdmx = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
-                    if _ev_cdmx_date not in (_today_cdmx, _tomorrow_cdmx):
+                    _ev_cdmx_hour  = (_ev_utc - _td(hours=6)).hour
+                    if _ev_cdmx_date == _today_cdmx:
+                        pass  # always include
+                    elif _ev_cdmx_date == _tomorrow_cdmx and _ev_cdmx_hour < 5:
+                        pass  # late-night game stored as tomorrow UTC but still today CDMX
+                    else:
                         continue
                 except Exception:
                     pass
@@ -5677,8 +5683,11 @@ with tab_sim:
         if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
-        if _gd not in (_today_mx_p, _tom_mx_p): continue
-        # Normalize tomorrow-CDMX games to today bucket so they show up
+        # Only include tomorrow-date games if they are really late-night today (hour < 5 CDMX)
+        if _gd == _today_mx_p:
+            pass
+        else:
+            continue  # genuinely tomorrow — skip
         _bucket = _today_mx_p
         _tree_p.setdefault(_sg_p, {}).setdefault(_bucket, {}).setdefault(_g["league"], []).append(_g)
 
