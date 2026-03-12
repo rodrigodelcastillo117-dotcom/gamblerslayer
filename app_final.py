@@ -5780,51 +5780,83 @@ with tab_parlays:
             if _soccer_btts_o25 else None
         )
 
-        # ── PARLAY COMBINADO MULTI-DEPORTE ────────────────────────────────
-        # Toma el pick INDIVIDUAL más seguro por deporte (no el combo 2-patas)
-        # Soccer: mejor ML o BTTS  |  Basketball/Hockey: ML o O/U
-        def _best_single_leg(sg):
-            """Retorna el single leg más alto de probabilidad para el parlay multi."""
-            pool = _sport_game_pools.get(sg, [])
-            if not pool: return None
-            # Flatten: extraer leg1 y leg2 de cada combo, tomar el de mayor prob
-            _legs = []
-            for gp in pool:
-                _g = gp["game"]
-                for _leg in [gp["leg1"], gp["leg2"]]:
-                    _legs.append({
-                        "sport": sg,
-                        "game": _g,
-                        "league": _g.get("league",""),
-                        "market": _leg["market"],
-                        "label": _leg["label"],
-                        "prob": _leg["prob"],
-                    })
-            if not _legs: return None
-            return max(_legs, key=lambda x: x["prob"])
+        # ── PARLAY COMBINADO MULTI-DEPORTE ─────────────────────────────────
+        # Busca directamente en sr_current el mejor pick individual por deporte
+        # filtrando solo partidos de HOY CDMX
+        _gmap_par = {g.get("id",""): g for g in games}
+
+        def _best_leg_for_sport(sg_target):
+            """Mejor pick individual (1 sola pata) del deporte, solo hoy CDMX."""
+            _candidates = []
+            for _r in sr_current:
+                _gid = _r.get("id","")
+                _g   = _gmap_par.get(_gid)
+                if not _g: continue
+                if _g["state"] == "post": continue
+                if _game_date_par(_gid) != _today_par: continue
+                _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
+                if _sg != sg_target: continue
+                _sim = _r["sim"]
+                # --- Soccer: mejor entre ML favorito y BTTS ---
+                if sg_target == "Soccer":
+                    _hp = _sim.get("home_pct") or 0
+                    _ap = _sim.get("away_pct") or 0
+                    _bp = _sim.get("p_btts") or 0
+                    _o25 = _sim.get("p_o25") or 0
+                    for _mkt, _lbl, _prob in [
+                        ("ML", _r["home_team"] if _hp >= _ap else _r["away_team"], max(_hp,_ap)),
+                        ("BTTS", "Ambos Anotan", _bp),
+                        ("O/U", "Over 2.5", _o25),
+                    ]:
+                        if _prob > 0:
+                            _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                                                "market":_mkt,"label":_lbl,"prob":_prob})
+                # --- Basketball / Hockey: ML o mejor O/U ---
+                else:
+                    _hp = _sim.get("home_pct") or 0
+                    _ap = _sim.get("away_pct") or 0
+                    _ml_prob = max(_hp, _ap)
+                    _ml_lbl  = _r["home_team"] if _hp >= _ap else _r["away_team"]
+                    if _ml_prob > 0:
+                        _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                                            "market":"ML","label":_ml_lbl,"prob":_ml_prob})
+                    # O/U from multi_lines — pick best edge
+                    _multi_r = _sim.get("multi_lines",{})
+                    if _multi_r:
+                        for _l, _d in _multi_r.items():
+                            _po = _d["over"]; _pu = _d["under"]
+                            if _po >= _pu and _po >= 52:
+                                _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                                                    "market":"O/U","label":f"Over {_l:.1f}","prob":_po})
+                            elif _pu > _po and _pu >= 52:
+                                _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                                                    "market":"O/U","label":f"Under {_l:.1f}","prob":_pu})
+            if not _candidates: return None
+            return max(_candidates, key=lambda x: x["prob"])
 
         _multi_legs = []
-        _used_game_ids = set()
+        _used_game_ids_m = set()
         for _sg_m in ["Soccer", "Basketball", "Hockey", "Baseball", "Football"]:
-            _leg = _best_single_leg(_sg_m)
-            if _leg and _leg["game"].get("id","") not in _used_game_ids:
+            _leg = _best_leg_for_sport(_sg_m)
+            if _leg and _leg["game"].get("id","") not in _used_game_ids_m:
                 _multi_legs.append(_leg)
-                _used_game_ids.add(_leg["game"].get("id",""))
+                _used_game_ids_m.add(_leg["game"].get("id",""))
             if len(_multi_legs) >= 3:
                 break
 
-        # Calcular prob combinada del multi-parlay
+        # Calcular prob combinada
         if len(_multi_legs) >= 2:
             _multi_prob = 1.0
             for _l in _multi_legs:
                 _multi_prob *= (_l["prob"] / 100)
             _multi_prob_pct = round(_multi_prob * 100, 1)
-            _multi_payout = round((1 / _multi_prob) * 100, 0) if _multi_prob > 0 else 0
+            _multi_payout   = round((1 / _multi_prob) * 100, 0) if _multi_prob > 0 else 0
         else:
             _multi_prob_pct = 0
-            _multi_payout = 0
+            _multi_payout   = 0
 
-        if _day_parlays:
+        _has_any_parlay = bool(_multi_legs) or bool(_day_parlays)
+        if _has_any_parlay:
             n_post  = len([g for g in games if g["state"]=="post"])
             n_live  = len([g for g in games if g["state"]=="in"])
             n_pre   = len([g for g in games if g["state"]=="pre"])
@@ -5836,7 +5868,7 @@ with tab_parlays:
                 unsafe_allow_html=True
             )
 
-            st.markdown('<div class="section-heading">🎰 PARLAYS DEL DÍA · 1 POR DEPORTE</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading">🎰 PARLAYS DEL DÍA</div>', unsafe_allow_html=True)
 
             # ── Helper: render a generic 2-leg parlay card ────────────────────
             def _render_parlay_card(dp, featured=False):
@@ -5966,21 +5998,21 @@ with tab_parlays:
                 )
                 st.markdown('<div class="den-divider" style="margin:8px 0"></div>', unsafe_allow_html=True)
 
-            # ── FEATURED: AA + O2.5 soccer combo ─────────────────────────────
-            if _best_btts_o25:
+            # ── FEATURED: AA + O2.5 soccer combo (si no está ya en multi) ──
+            _multi_game_ids = {l["game"].get("id","") for l in _multi_legs}
+            if _best_btts_o25 and _best_btts_o25["game"].get("id","") not in _multi_game_ids:
                 st.markdown(
-                    '<div style="font-size:0.762rem;color:#4ade80;letter-spacing:2px;'
-                    'text-transform:uppercase;margin:4px 0 2px 0">'
+                    '<div style="font-size:0.694rem;color:#4ade80;letter-spacing:2px;'
+                    'text-transform:uppercase;margin:12px 0 4px 0">'
                     '⚽ COMBO GOLES DESTACADO · Ambos Anotan + Over 2.5</div>',
                     unsafe_allow_html=True
                 )
                 st.markdown(_render_parlay_card(_best_btts_o25, featured=True), unsafe_allow_html=True)
-                st.markdown('<div class="den-divider" style="margin:10px 0"></div>', unsafe_allow_html=True)
 
             st.markdown(
                 '<div class="warn-banner" style="margin-top:12px">'
-                '⚠ Cuotas de BTTS/O/U asumidas a −110/−115. Verifica en tu casa. '
-                'Parlays = alta varianza — usa máx 1-2% del bankroll por parlay.</div>',
+                '⚠ Cuotas asumidas a −110/−115. Verifica en tu casa. '
+                'Parlays = alta varianza — usa máx 1-2% del bankroll.</div>',
                 unsafe_allow_html=True
             )
         elif pending_games:
@@ -7190,21 +7222,23 @@ with tab_reto:
                   font: {{ size: 10 }},
                   callback: function(v) {{
                     if (v >= 1000000) return "$" + (v/1000000).toFixed(1) + "M";
-                    if (v >= 1000)    return "$" + (v/1000).toFixed(0) + "k";
+                    if (v >= 1000)    return "$" + (v/1000).toFixed(1) + "k";
                     return "$" + v.toLocaleString("es-MX");
                   }},
-                  maxTicksLimit: 8
+                  maxTicksLimit: 7
                 }},
                 grid: {{ color: "rgba(255,255,255,0.05)" }},
-                min: 0,
-                max: (function() {{
-                  const cur = Math.max(...values);
-                  if (cur <= 10000)   return 10000;
-                  if (cur <= 100000)  return 100000;
-                  if (cur <= 1000000) return 1000000;
-                  return d.meta * 1.05;
+                min: (function() {{
+                  const lo = Math.min(...values);
+                  const pad = (Math.max(...values) - lo) * 0.15 || lo * 0.05 || 50;
+                  return Math.max(0, lo - pad);
                 }})(),
-                suggestedMin: 0
+                max: (function() {{
+                  const hi = Math.max(...values);
+                  const lo = Math.min(...values);
+                  const pad = (hi - lo) * 0.15 || hi * 0.05 || 50;
+                  return hi + pad;
+                }})()
               }}
             }}
           }}
