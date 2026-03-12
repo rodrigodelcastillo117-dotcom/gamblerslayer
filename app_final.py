@@ -681,7 +681,9 @@ def _load_all_team_profiles():
             except:
                 continue
         return profiles
-    except:
+    except Exception as _e:
+        # Surface error in badge so we can debug
+        st.session_state["_tp_load_error"] = str(_e)
         return {}
 
 
@@ -2741,10 +2743,10 @@ def run_monte_carlo(game, n=10_000):
     _has_real_signal = _has_ml or _has_scoring or _has_form
 
     if is_soccer and not _has_real_signal:
-        # Sin ninguna señal real: eliminar DC también (EV ficticio -200)
-        # Solo dejar ML si existe, o nada — evita picks de DC siempre ganando
+        # Sin señal real: quitar O/U y BTTS (Poisson puro no tiene valor)
+        # Mantener DO y ML — al menos reflejan identidad del equipo
         candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
-                      if mt not in ("O/U","BTTS","DO")]
+                      if mt not in ("O/U","BTTS")]
 
     # Detect "partido parejo" — requires real ML signal to be meaningful
     # Without ML, hp≈aw≈0.37 always → _parejo always True → always picks U3.5
@@ -3485,8 +3487,13 @@ st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 # [team profiles badge — moved below after function definitions]
 
 # ── Team Profiles — cargar y mostrar badge ────────────────────────────────
+# Limpiar cache si nunca hemos visto datos (primera vez con datos)
+if st.session_state.get("_tp_ever_loaded") is None:
+    _load_all_team_profiles.clear()
 _tp_profiles_now = _load_all_team_profiles()
 _tp_count_now    = len(_tp_profiles_now)
+if _tp_count_now > 0:
+    st.session_state["_tp_ever_loaded"] = True
 if _tp_count_now > 0:
     _tp_total_games = sum(p.get("n_games",0) for p in _tp_profiles_now.values())
     _tp_leagues     = len({p.get("league","") for p in _tp_profiles_now.values()})
@@ -3499,10 +3506,12 @@ if _tp_count_now > 0:
         unsafe_allow_html=True
     )
 else:
+    _tp_err = st.session_state.get("_tp_load_error","")
+    _err_txt = f" · error: {_tp_err[:60]}" if _tp_err else ""
     st.markdown(
-        '<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
-        'color:#6B7E6E;letter-spacing:1px">'
-        '🧠 Memoria: aprendiendo... (se llena automáticamente con cada partido)</div>',
+        f'<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
+        f'color:#6B7E6E;letter-spacing:1px">'
+        f'🧠 Memoria: aprendiendo...{_err_txt}</div>',
         unsafe_allow_html=True
     )
 
