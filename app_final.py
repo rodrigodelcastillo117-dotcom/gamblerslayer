@@ -1140,10 +1140,21 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
                 failed += 1
                 continue
 
+            # Sanitize games to plain Python types for JSON serialization
+            games_clean = [
+                {
+                    "scored":   float(g.get("scored", 0)),
+                    "conceded": float(g.get("conceded", 0)),
+                    "home":     bool(g.get("home", False)),
+                    "date":     str(g.get("date", "")),
+                    "opp":      str(g.get("opp", "")),
+                }
+                for g in games
+            ]
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             all_rows.append([
                 str(tid), tname, league, sport_group, now,
-                json.dumps(games, ensure_ascii=False),
+                json.dumps(games_clean, ensure_ascii=False),
                 stats["n_games"],
                 stats["avg_scored"],      stats["avg_conceded"],
                 stats["avg_scored_home"], stats["avg_conceded_home"],
