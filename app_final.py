@@ -5748,6 +5748,59 @@ with tab_sim:
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
 
+    # ── JS: style buttons by aria-label after Streamlit renders them ─────────
+    import streamlit.components.v1 as _cmp_picks
+    _cmp_picks.html("""
+<script>
+(function stylePickBtns() {
+  var SPORT = {
+    'Basketball': {bg:'rgba(249,115,22,0.28)', border:'#f97316', glow:'rgba(249,115,22,0.35)'},
+    'Soccer':     {bg:'rgba(74,222,128,0.28)',  border:'#4ade80', glow:'rgba(74,222,128,0.35)'},
+    'Hockey':     {bg:'rgba(96,165,250,0.28)',  border:'#60a5fa', glow:'rgba(96,165,250,0.35)'},
+    'Baseball':   {bg:'rgba(239,68,68,0.28)',   border:'#ef4444', glow:'rgba(239,68,68,0.35)'},
+    'Football':   {bg:'rgba(167,139,250,0.28)', border:'#a78bfa', glow:'rgba(167,139,250,0.35)'}
+  };
+  function applyStyles() {
+    var doc = window.parent.document;
+    // Sport tile buttons
+    doc.querySelectorAll('button').forEach(function(btn) {
+      var lbl = btn.getAttribute('aria-label') || btn.innerText || '';
+      for (var sport in SPORT) {
+        if (lbl.indexOf(sport) !== -1) {
+          var s = SPORT[sport];
+          btn.style.setProperty('background', s.bg, 'important');
+          btn.style.setProperty('border', '1px solid ' + s.border, 'important');
+          btn.style.setProperty('color', '#000', 'important');
+          btn.style.setProperty('font-weight', '800', 'important');
+          btn.style.setProperty('box-shadow', '0 0 10px ' + s.glow, 'important');
+          btn.style.setProperty('border-radius', '8px', 'important');
+        }
+      }
+      // Liga buttons (start with ▶  or ▼ )
+      if (lbl.startsWith('\u25b6  ') || lbl.startsWith('\u25bc  ')) {
+        btn.style.setProperty('background', 'rgba(8,18,12,0.9)', 'important');
+        btn.style.setProperty('border', '1px solid rgba(201,168,76,0.25)', 'important');
+        btn.style.setProperty('border-left', '3px solid rgba(201,168,76,0.65)', 'important');
+        btn.style.setProperty('border-radius', '0 6px 6px 0', 'important');
+        btn.style.setProperty('color', '#C9A84C', 'important');
+        btn.style.setProperty('font-weight', '700', 'important');
+        btn.style.setProperty('text-align', 'left', 'important');
+        btn.style.setProperty('box-shadow', 'none', 'important');
+      }
+    });
+  }
+  // Run immediately + after short delays to catch re-renders
+  applyStyles();
+  setTimeout(applyStyles, 300);
+  setTimeout(applyStyles, 800);
+  setTimeout(applyStyles, 1800);
+  // Also observe DOM mutations
+  var obs = new MutationObserver(function() { applyStyles(); });
+  obs.observe(window.parent.document.body, {childList:true, subtree:true});
+})();
+</script>
+""", height=0)
+
     # Build sim lookup dict
     _sim_map = {r.get("id", ""): r for r in st.session_state.get("sim_results", [])}
 
