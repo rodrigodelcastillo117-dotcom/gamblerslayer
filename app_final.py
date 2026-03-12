@@ -3668,17 +3668,23 @@ def build_parlays(results):
     from datetime import timedelta as _td2
     _now_u   = datetime.now(timezone.utc)
     _now_mx2 = _now_u - _td2(hours=6)
-    _valid_parlay = set()
-    for _d in range(-1, 3):
-        _valid_parlay.add((_now_u  + _td2(days=_d)).strftime("%Y-%m-%d"))
-        _valid_parlay.add((_now_mx2 + _td2(days=_d)).strftime("%Y-%m-%d"))
+    # ESPN sends local dates — today CDMX + late-night tomorrow (hour < 6)
+    _today_parlay    = _now_mx2.strftime("%Y-%m-%d")
+    _tomorrow_parlay = (_now_mx2 + _td2(days=1)).strftime("%Y-%m-%d")
+    _valid_parlay = {_today_parlay, _tomorrow_parlay}  # tomorrow handles late-night games
 
     def is_today(r):
-        """Return True if game is in valid window or demo."""
-        d = (r.get("date") or "")[:10]
+        """Return True if game is today CDMX or late-night tonight (hour < 6 tomorrow)."""
+        raw = (r.get("date") or "")
+        d = raw[:10]
         if d == "" and str(r.get("id","")).startswith("d"):
             return True
-        return d in _valid_parlay
+        if d == _today_parlay:
+            return True
+        if d == _tomorrow_parlay:
+            try: return int(raw[11:13]) < 6
+            except: return False
+        return False
 
     # Only consider games in window
     results_today = [r for r in results if is_today(r)]
@@ -5124,7 +5130,9 @@ with tab_picks:
         # ── Build 1 pick per sport group — HOY CDMX únicamente ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
         _now_rp      = datetime.now(_tz_rp.utc)
-        _today_rp    = (_now_rp - _td_rp(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-6
+        _now_mx_rp   = _now_rp - _td_rp(hours=6)
+        _today_rp    = _now_mx_rp.strftime("%Y-%m-%d")  # approx CDMX
+        _dt_today_rp = _now_mx_rp  # for tomorrow comparison
 
         # Build id→game map for quick lookup
         _gmap_rp = {g.get("id", ""): g for g in games}
@@ -5137,27 +5145,43 @@ with tab_picks:
             # Filter to today CDMX only
             _raw_date = _g.get("date", "")
             if _raw_date:
-                try:
-                    from datetime import datetime as _dt_rp
-                    _gdt = _dt_rp.fromisoformat(_raw_date.replace("Z", "+00:00"))
-                    _gdate_cdmx = (_gdt - _td_rp(hours=6)).strftime("%Y-%m-%d")
-                    if _gdate_cdmx != _today_rp:
-                        continue
-                except:
-                    pass  # si no parsea, incluir igual
+                # ESPN sends local dates directly — just compare date part + allow late-night
+                _gdate_raw = _raw_date[:10]
+                _ghour_raw = int(_raw_date[11:13]) if len(_raw_date) >= 13 else 12
+                if _gdate_raw == _today_rp:
+                    pass  # today — include
+                elif _gdate_raw == (_dt_today_rp + _td_rp(days=1)).strftime("%Y-%m-%d") and _ghour_raw < 6:
+                    pass  # late-night tonight — include
+                else:
+                    continue
             bp = _sport_best_pick(r)
             if bp:
                 sg = LEAGUES.get(r["league"], {}).get("group", "Soccer")
                 _sport_pools.setdefault(sg, []).append({**r, "_pick": bp})
 
-        # Sort each pool by prob desc, take top 1
+        # Take top 1 per sport available, ordered by sport priority, max 5
         _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
         rongol_picks = []
+        _seen_leagues = set()
+        # First pass: best pick per sport
         for _sg in _SPORT_ORDER_R:
             pool = _sport_pools.get(_sg, [])
             if pool:
-                pool.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
+                pool.sort(key=lambda x: x["_pick"]["ev"], reverse=True)
                 rongol_picks.append(pool[0])
+                _seen_leagues.add(pool[0]["league"])
+        # Second pass: if fewer than 3, fill with next best from any sport
+        if len(rongol_picks) < 3:
+            _all_extra = []
+            for _sg, pool in _sport_pools.items():
+                for _r in pool:
+                    if _r["league"] not in _seen_leagues:
+                        _all_extra.append(_r)
+            _all_extra.sort(key=lambda x: x["_pick"]["ev"], reverse=True)
+            for _r in _all_extra:
+                if len(rongol_picks) >= 5: break
+                rongol_picks.append(_r)
+                _seen_leagues.add(_r["league"])
 
         # Legacy: keep allowed_bets for DO parlay logic below
         allowed_bets = rongol_picks
