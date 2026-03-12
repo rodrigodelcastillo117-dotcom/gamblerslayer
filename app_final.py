@@ -590,23 +590,15 @@ def get_demo_games():
 def fetch_recent_form(sport, league, team_id, n_games=5):
     """
     Fetch last N results for a team from ESPN team events API.
-    Returns form_score: float 0.0-1.0 (win rate last N games, weighted by recency).
+    Returns dict with:
+      - form_score:    float 0.0-1.0 (weighted W/L/D rate)
+      - avg_scored:    float — avg goals/points scored last N games   (Signal B)
+      - avg_conceded:  float — avg goals/points conceded last N games (Signal B)
+      - last_game_date: str YYYY-MM-DD — date of most recent game     (Signal C)
     Returns None if unavailable.
-
-    Endpoint: /apis/site/v2/sports/{sport}/{league}/teams/{team_id}/events
-    Works for: soccer, basketball, baseball, hockey, football
-    NOT for: tennis (no team_id concept)
     """
     if not team_id or not sport or not league:
         return None
-    # Map our league names to ESPN sport/league slugs
-    SPORT_SLUG = {
-        "soccer":     ("soccer",  None),   # league slug varies
-        "basketball": ("basketball", None),
-        "baseball":   ("baseball", None),
-        "hockey":     ("hockey", None),
-        "football":   ("football", None),
-    }
     try:
         url = (f"https://site.api.espn.com/apis/site/v2/sports/"
                f"{sport}/{league}/teams/{team_id}/events?limit={n_games + 3}")
@@ -618,37 +610,54 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
         if not events:
             return None
 
-        results = []
+        results       = []   # W/L/D as 1.0/0.0/0.5
+        scored_list   = []   # goals/pts scored by this team
+        conceded_list = []   # goals/pts conceded by this team
+        last_date     = None
+
         for ev in events[:n_games + 3]:
             competitions = ev.get("competitions", [{}])
             if not competitions:
                 continue
-            comp = competitions[0]
-            # Only completed games
+            comp  = competitions[0]
             state = ev.get("status", {}).get("type", {}).get("state", "")
             if state != "post":
                 continue
-            comps = comp.get("competitors", [])
+            comps     = comp.get("competitors", [])
             team_comp = next((c for c in comps if str(c.get("id","")) == str(team_id)), None)
             if not team_comp:
                 continue
-            winner = team_comp.get("winner", False)
-            # Also check score for draw detection (soccer)
+
+            # Scores (Signal B)
             home_c = next((c for c in comps if c.get("homeAway") == "home"), None)
             away_c = next((c for c in comps if c.get("homeAway") == "away"), None)
             try:
-                hs = int(home_c.get("score", 0) or 0)
-                as_ = int(away_c.get("score", 0) or 0)
-                is_draw = (hs == as_)
+                hs = float(home_c.get("score", 0) or 0)
+                as_ = float(away_c.get("score", 0) or 0)
             except:
-                is_draw = False
+                hs = as_ = None
 
-            if winner:
-                results.append(1.0)   # Win
-            elif is_draw:
-                results.append(0.5)   # Draw
-            else:
-                results.append(0.0)   # Loss
+            is_home   = team_comp.get("homeAway") == "home"
+            winner    = team_comp.get("winner", False)
+            is_draw   = (hs == as_) if hs is not None else False
+
+            # W/L/D
+            if winner:          results.append(1.0)
+            elif is_draw:       results.append(0.5)
+            else:               results.append(0.0)
+
+            # Scored / Conceded
+            if hs is not None:
+                if is_home:
+                    scored_list.append(hs); conceded_list.append(as_)
+                else:
+                    scored_list.append(as_); conceded_list.append(hs)
+
+            # Last game date (Signal C) — first post game found = most recent
+            if last_date is None:
+                raw_date = ev.get("date", "")[:10]  # "YYYY-MM-DD"
+                if raw_date:
+                    last_date = raw_date
 
             if len(results) >= n_games:
                 break
@@ -656,12 +665,21 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
         if not results:
             return None
 
-        # Weighted average — more recent games count more
-        # weights: [n, n-1, n-2, ...] normalized
-        weights = [len(results) - i for i in range(len(results))]
-        total_w = sum(weights)
-        form_score = sum(r * w for r, w in zip(results, weights)) / total_w
-        return round(form_score, 4)
+        # Weighted form score — recent games weight more
+        weights     = [len(results) - i for i in range(len(results))]
+        total_w     = sum(weights)
+        form_score  = sum(r * w for r, w in zip(results, weights)) / total_w
+
+        avg_scored   = round(sum(scored_list)   / len(scored_list),   2) if scored_list   else None
+        avg_conceded = round(sum(conceded_list)  / len(conceded_list), 2) if conceded_list else None
+
+        return {
+            "form_score":     round(form_score, 4),
+            "avg_scored":     avg_scored,
+            "avg_conceded":   avg_conceded,
+            "last_game_date": last_date,
+            "n_games":        len(results),
+        }
 
     except Exception:
         return None
@@ -694,6 +712,153 @@ def get_team_ids(sport, league_slug, team_name):
     except:
         return None
 
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INJURY FEED — Signal 6
+# ESPN endpoint: /teams/{id}/injuries
+# Returns list of active injuries with status and position.
+#
+# Impact model per sport:
+#   Soccer:     positional weight (FW=0.35, MF=0.20, DF=0.12, GK=0.18)
+#               only "Out" players count (no "Questionable")
+#   Basketball: "Out" star = -8% win prob, "Doubtful" = -4%, "Questionable" = -1.5%
+#               position weights: G=0.35, F=0.30, C=0.20
+#   Hockey:     "Out" key player = -5%, "Doubtful" = -3%
+#               F=0.30, D=0.20, G=0.22
+#   Baseball:   Without pitcher info, injury impact limited to lineup
+#               "Out" = -3% per key bat (1B/OF/DH), no pitcher position data
+#   Football:   QB Out = -15%, QB Doubtful = -8%, skill position Out = -5%
+#               QB=0.45, WR/TE=0.20, RB=0.12, OL=0.08, DEF=0.10
+#
+# injury_factor stored as:
+#   game["home_injury_factor"] = float 0.0-1.0 (1.0 = no impact, 0.0 = catastrophic)
+#   game["home_injuries"]      = list of dicts {name, status, position, impact}
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Position impact weights per sport group
+INJURY_POS_WEIGHTS = {
+    "Soccer": {
+        "F": 0.35, "FW": 0.35, "ATT": 0.35,           # forwards
+        "M": 0.20, "MF": 0.20, "MID": 0.20,            # midfielders
+        "D": 0.12, "DF": 0.12, "DEF": 0.12,            # defenders
+        "G": 0.18, "GK": 0.18, "GKP": 0.18,            # goalkeeper
+    },
+    "Basketball": {
+        "G": 0.35, "PG": 0.35, "SG": 0.35,             # guards
+        "F": 0.30, "SF": 0.30, "PF": 0.30,             # forwards
+        "C": 0.20,                                       # center
+    },
+    "Hockey": {
+        "F": 0.30, "LW": 0.30, "RW": 0.30, "C": 0.30, # forwards
+        "D": 0.20,                                       # defense
+        "G": 0.22,                                       # goalie
+    },
+    "Baseball": {
+        "SP": 0.40, "RP": 0.10,                         # pitchers (if available)
+        "C": 0.12, "1B": 0.14, "2B": 0.12, "3B": 0.14,
+        "SS": 0.14, "OF": 0.14, "DH": 0.14,
+    },
+    "Football": {
+        "QB": 0.45,
+        "WR": 0.20, "TE": 0.20,
+        "RB": 0.12, "FB": 0.12,
+        "OL": 0.08, "OT": 0.08, "OG": 0.08, "C": 0.08,
+        "DE": 0.10, "DT": 0.10, "LB": 0.10, "CB": 0.10, "S": 0.10,
+    },
+}
+
+# Status multiplier: how much of the position weight to apply
+INJURY_STATUS_MULT = {
+    "Out":          1.00,
+    "Injured Reserve":  1.00,
+    "IR":           1.00,
+    "Doubtful":     0.65,
+    "Questionable": 0.30,
+    "Day-To-Day":   0.20,
+    "Probable":     0.05,
+}
+
+# Max total impact per team (cap to avoid absurd values with many injuries)
+INJURY_MAX_IMPACT = {
+    "Soccer": 0.55, "Basketball": 0.50, "Hockey": 0.40,
+    "Baseball": 0.30, "Football": 0.60,
+}
+
+
+@st.cache_data(ttl=1800)
+def fetch_injuries(sport_slug, league_slug, team_id):
+    """
+    Fetch active injury list for a team from ESPN.
+    Endpoint: /apis/site/v2/sports/{sport}/{league}/teams/{id}/injuries
+    Returns list of {name, status, position, impact_score} sorted by impact desc.
+    Returns empty list if unavailable.
+    """
+    if not team_id:
+        return []
+    try:
+        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+               f"{sport_slug}/{league_slug}/teams/{team_id}/injuries")
+        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        items = data.get("injuries", [])
+        if not items:
+            return []
+        result = []
+        for item in items:
+            athlete    = item.get("athlete", {})
+            name       = athlete.get("displayName", "Unknown")
+            status_raw = item.get("status", "")
+            pos_raw    = athlete.get("position", {})
+            pos_abbr   = pos_raw.get("abbreviation", "") if isinstance(pos_raw, dict) else str(pos_raw)
+            result.append({
+                "name":     name,
+                "status":   status_raw,
+                "position": pos_abbr.upper(),
+            })
+        return result
+    except Exception:
+        return []
+
+
+def compute_injury_impact(injuries, sport_grp):
+    """
+    Given a list of injury dicts and sport group, compute:
+      - injury_factor: float 0-1 (1=no impact, lower=worse)
+      - annotated list with impact_score per player
+    
+    injury_factor = max(1 - total_impact, 1 - max_cap)
+    total_impact is capped by INJURY_MAX_IMPACT per sport.
+    """
+    pos_weights  = INJURY_POS_WEIGHTS.get(sport_grp, {})
+    status_mults = INJURY_STATUS_MULT
+    max_cap      = INJURY_MAX_IMPACT.get(sport_grp, 0.40)
+
+    annotated    = []
+    total_impact = 0.0
+
+    for inj in injuries:
+        pos    = inj.get("position", "")
+        status = inj.get("status", "")
+        # Match position to weight (try exact, then first char prefix)
+        pos_w  = pos_weights.get(pos) or pos_weights.get(pos[:2] if len(pos)>=2 else pos) or 0.10
+        st_m   = 0.0
+        for s_key, mult in status_mults.items():
+            if s_key.lower() in status.lower():
+                st_m = mult
+                break
+        impact = pos_w * st_m
+        annotated.append({**inj, "impact_score": round(impact, 4)})
+        total_impact += impact
+
+    total_impact  = min(total_impact, max_cap)
+    injury_factor = round(max(0.40, 1.0 - total_impact), 4)  # floor at 0.40
+
+    # Sort by impact descending so UI shows worst first
+    annotated.sort(key=lambda x: x["impact_score"], reverse=True)
+    return injury_factor, annotated
 
 # ── FORM SCORE CACHE: game_id → (home_form, away_form) ──────────────────────
 # Populated lazily during simulation, used in compute_base_prob via game dict.
@@ -747,21 +912,71 @@ def enrich_game_with_form(game):
     home_id = game.get("home_team_id") or get_team_ids(sport_slug, league_slug, game["home_team"])
     away_id = game.get("away_team_id") or get_team_ids(sport_slug, league_slug, game["away_team"])
 
+    from datetime import date as _date
+
+    def _rest_days(last_date_str):
+        """Days since last game. Returns None if unknown."""
+        if not last_date_str:
+            return None
+        try:
+            last = _date.fromisoformat(last_date_str)
+            return (_date.today() - last).days
+        except:
+            return None
+
     if home_id:
         hf = fetch_recent_form(sport_slug, league_slug, home_id)
-        # Only store if valid — 0.0 could mean 5 straight losses (keep) or API failure (discard)
-        # We keep 0.0 since it's a valid form score
-        game["home_form"] = hf
+        if isinstance(hf, dict):
+            game["home_form"]          = hf.get("form_score")
+            game["home_avg_scored"]    = hf.get("avg_scored")
+            game["home_avg_conceded"]  = hf.get("avg_conceded")
+            game["home_rest_days"]     = _rest_days(hf.get("last_game_date"))
+        else:
+            game["home_form"] = hf  # None or legacy float
+
     if away_id:
         af = fetch_recent_form(sport_slug, league_slug, away_id)
-        game["away_form"] = af
+        if isinstance(af, dict):
+            game["away_form"]          = af.get("form_score")
+            game["away_avg_scored"]    = af.get("avg_scored")
+            game["away_avg_conceded"]  = af.get("avg_conceded")
+            game["away_rest_days"]     = _rest_days(af.get("last_game_date"))
+        else:
+            game["away_form"] = af  # None or legacy float
 
-    # Log for debugging (visible in Streamlit session state)
+    # Back-to-back flag (≤1 rest day) — used for fatigue adjustment (Signal C)
+    h_rest = game.get("home_rest_days")
+    a_rest = game.get("away_rest_days")
+    game["home_back2back"] = (h_rest is not None and h_rest <= 1)
+    game["away_back2back"] = (a_rest is not None and a_rest <= 1)
+
     hf_val = game.get("home_form")
     af_val = game.get("away_form")
     if hf_val is None and af_val is None and (home_id or away_id):
-        # Both failed — likely network issue or ESPN doesn't have this league's team events
         game["_form_unavailable"] = True
+
+    # ── Signal 6: Injury Feed ─────────────────────────────────────────────────
+    # Fetch active injuries for both teams and compute impact factor.
+    # injury_factor in [0.40, 1.0]: 1.0 = fully healthy, lower = key players out.
+    # Stored on game dict for use in compute_base_prob (Signal 6) and get_lambda.
+    sport_grp_inj = group  # already resolved above
+    if home_id:
+        h_inj_raw = fetch_injuries(sport_slug, league_slug, home_id)
+        h_factor, h_inj = compute_injury_impact(h_inj_raw, sport_grp_inj)
+        game["home_injury_factor"]  = h_factor
+        game["home_injuries"]       = h_inj
+    else:
+        game["home_injury_factor"]  = 1.0
+        game["home_injuries"]       = []
+
+    if away_id:
+        a_inj_raw = fetch_injuries(sport_slug, league_slug, away_id)
+        a_factor, a_inj = compute_injury_impact(a_inj_raw, sport_grp_inj)
+        game["away_injury_factor"]  = a_factor
+        game["away_injuries"]       = a_inj
+    else:
+        game["away_injury_factor"]  = 1.0
+        game["away_injuries"]       = []
 
 
 @st.cache_data(ttl=300)
@@ -1200,6 +1415,25 @@ def compute_base_prob(game):
     boost = HOME_BOOST.get(league, 0.03) * (0.3 if has_ml else 1.0)
     home_p = min(0.95, max(0.05, home_p + boost))
 
+    # ── Signal 6: Injury adjustment ───────────────────────────────────────────
+    # injury_factor = 1.0 (healthy) → 0.40 (multiple key players out)
+    # If home team is hurt: reduce home_p proportionally
+    # If away team is hurt: increase home_p proportionally
+    # Effect is dampened when moneyline is present (market may already price it in)
+    # Dampening: 50% when ML present (market partially aware), 100% when ML absent
+    h_inj_f = game.get("home_injury_factor", 1.0)
+    a_inj_f = game.get("away_injury_factor", 1.0)
+
+    if h_inj_f < 1.0 or a_inj_f < 1.0:
+        # impact_delta: positive = home weakened relative to away, negative = away weakened
+        # Net effect on home_p: home injuries → lower home_p, away injuries → higher home_p
+        h_impact = 1.0 - h_inj_f  # 0.0 if healthy
+        a_impact = 1.0 - a_inj_f  # 0.0 if healthy
+        net_delta = (a_impact - h_impact) * 0.25  # scale: max raw delta ≈ 0.55 → max shift ±0.14%
+        # Dampen when moneyline present (market already partially reflects injuries)
+        dampen = 0.50 if has_ml else 1.0
+        home_p = min(0.95, max(0.05, home_p + net_delta * dampen))
+
     # ── Data Quality ──────────────────────────────────────────────────────────
     # DQ = fraction of "hard evidence" weight vs ideal (ML=4 + ESPN=3 + record=2 = 9)
     hard_weight = sum(w for s, w in zip(signals, weights)
@@ -1239,37 +1473,401 @@ SOCCER_LEAGUES = {
 
 def get_lambda(game):
     """
-    Estimate expected goals per team using Poisson model.
+    Estimate expected goals/points per team using Poisson model.
 
     Priority:
-      1. ESPN O/U line (most accurate — reflects current market)
-      2. League historical average (LEAGUE_AVG_GOALS = total goals per game)
+      1. ESPN O/U line (most accurate — current market)
+      2. Scoring Trend — avg scored/conceded last 5 games (Signal B)
+         Blended 60% real / 40% league avg to avoid small-sample overfit
+      3. League historical average fallback
 
-    LEAGUE_AVG_GOALS stores TOTAL goals for soccer (e.g. 2.7 = avg both teams).
-    For basketball/NFL/etc it stores total points (e.g. 114 for NBA).
-    The fallback is: total = avg (NOT avg*2 which was a bug).
+    LEAGUE_AVG_GOALS stores TOTAL goals (both teams) for soccer,
+    total points for basketball/football/hockey.
     """
     league = game["league"]
     avg    = LEAGUE_AVG_GOALS.get(league)
-    if avg is None: return None, None  # non-goal sport
+    if avg is None: return None, None
 
     ou = game["odds"].get("over_under", "")
     try:
         total = float(str(ou))
         if total <= 0 or total > 300: raise ValueError
+        # ESPN line available — most accurate, use directly
+        has_ou_line = True
     except:
-        # No O/U line: use league historical average directly as total
-        total = avg
+        has_ou_line = False
+        total = None
 
-    base       = compute_base_prob(game)
-    hp         = base["home_prob"]
-    ap         = base["away_prob"]
+    base = compute_base_prob(game)
+    hp   = base["home_prob"]
+    ap   = base["away_prob"]
 
-    # Home team scores slightly more (home advantage in attack)
-    home_share = (hp + 0.52) / (hp + ap + 1.04)
-    lam_home   = max(0.1, total * home_share)
-    lam_away   = max(0.1, total * (1.0 - home_share))
-    return lam_home, lam_away
+    # ── Signal B: Scoring Trend ───────────────────────────────────────
+    # If both teams have recent scoring data, estimate λ via Dixon-Coles
+    h_scored   = game.get("home_avg_scored")
+    h_conceded = game.get("home_avg_conceded")
+    a_scored   = game.get("away_avg_scored")
+    a_conceded = game.get("away_avg_conceded")
+
+    lam_home_real = None
+    lam_away_real = None
+
+    # Sport-specific Signal B config
+    # home_boost: home scoring advantage factor (source: historical home/away splits)
+    # defence_floor: min defence strength ratio — prevents extreme λ from small samples
+    #   Soccer: floor=0.20 (goals 1-3, defender can hold to near-0)
+    #   Basketball: floor=0.70 (you always score SOME points, defense can't go to 0)
+    #   Hockey: floor=0.25 (similar to soccer but slightly higher)
+    #   Baseball: floor=0.60 (pitching dominant but ~3 runs minimum realistic)
+    #   Football: floor=0.55 (even great defense gives up ~14 pts)
+    # NCAAF: Signal B disabled — 150+ teams, huge level disparity, no SOS adjustment
+    lg_info     = LEAGUES.get(league, {})
+    sport_grp_b = lg_info.get("group", "")
+    HOME_BOOST_B  = {"Soccer":0.05, "Basketball":0.03, "Hockey":0.04, "Baseball":0.02, "Football":0.02}
+    DEFENCE_FLOOR = {"Soccer":0.20, "Basketball":0.70, "Hockey":0.25, "Baseball":0.60, "Football":0.55}
+    home_boost_b  = HOME_BOOST_B.get(sport_grp_b, 0.03)
+    def_floor     = DEFENCE_FLOOR.get(sport_grp_b, 0.30)
+    signal_b_ok   = sport_grp_b != "Football" or league != "NCAAF"  # disable for NCAAF
+
+    if signal_b_ok and h_scored is not None and a_conceded is not None and h_scored > 0:
+        avg_per_team = max(0.5, avg / 2.0)
+        h_attack  = h_scored   / avg_per_team
+        a_defence = max(def_floor, a_conceded / avg_per_team)
+        lam_home_real = max(0.1, avg_per_team * h_attack * a_defence * (1.0 + home_boost_b))
+
+    if signal_b_ok and a_scored is not None and h_conceded is not None and a_scored > 0:
+        avg_per_team = max(0.5, avg / 2.0)
+        a_attack  = a_scored   / avg_per_team
+        h_defence = max(def_floor, h_conceded / avg_per_team)
+        lam_away_real = max(0.1, avg_per_team * a_attack * h_defence)
+
+    # ── Build final lambdas ───────────────────────────────────────────
+    if has_ou_line:
+        # ESPN line → use it for total, split by home_share
+        home_share = (hp + 0.52) / (hp + ap + 1.04)
+        lam_home   = max(0.1, total * home_share)
+        lam_away   = max(0.1, total * (1.0 - home_share))
+        # If scoring trend available, blend it in (20% weight — line dominates)
+        if lam_home_real is not None:
+            lam_home = 0.80 * lam_home + 0.20 * lam_home_real
+        if lam_away_real is not None:
+            lam_away = 0.80 * lam_away + 0.20 * lam_away_real
+        # Store for Signal D + display even when ESPN line present
+        if lam_home_real is not None and lam_away_real is not None:
+            game["_lam_real_h"] = round(lam_home_real, 3)
+            game["_lam_real_a"] = round(lam_away_real, 3)
+            game["_lam_league"] = round(avg, 2)
+
+    elif lam_home_real is not None and lam_away_real is not None:
+        # No ESPN line but full scoring trend — blend 60/40 with league avg
+        home_share = (hp + 0.52) / (hp + ap + 1.04)
+        lam_league_h = max(0.1, avg * home_share)
+        lam_league_a = max(0.1, avg * (1.0 - home_share))
+        lam_home = 0.60 * lam_home_real + 0.40 * lam_league_h
+        lam_away = 0.60 * lam_away_real + 0.40 * lam_league_a
+        # Store for Signal D arbiter and display
+        game["_lam_real_h"] = round(lam_home_real, 3)
+        game["_lam_real_a"] = round(lam_away_real, 3)
+        game["_lam_league"] = round(avg, 2)
+
+    else:
+        # Full fallback: league average
+        home_share = (hp + 0.52) / (hp + ap + 1.04)
+        lam_home   = max(0.1, avg * home_share)
+        lam_away   = max(0.1, avg * (1.0 - home_share))
+
+    # ── Injury λ reduction ────────────────────────────────────────────────────
+    # Injured team scores less and potentially concedes more (weakened defense)
+    # injury_factor 1.0=healthy, 0.40=worst case
+    # Scoring reduction: proportional to injury severity on offensive positions
+    # Defense weakening: partial (0.4x) — harder to isolate from scoring data
+    h_inj_f = game.get("home_injury_factor", 1.0)
+    a_inj_f = game.get("away_injury_factor", 1.0)
+
+    if h_inj_f < 1.0:
+        # Home team hurt: reduce home scoring λ
+        lam_home = max(0.1, lam_home * (0.70 + 0.30 * h_inj_f))
+        # Away scores slightly more against weakened home defense
+        lam_away = max(0.1, lam_away * (1.0 + (1.0 - h_inj_f) * 0.15))
+    if a_inj_f < 1.0:
+        # Away team hurt: reduce away scoring λ
+        lam_away = max(0.1, lam_away * (0.70 + 0.30 * a_inj_f))
+        # Home scores slightly more against weakened away defense
+        lam_home = max(0.1, lam_home * (1.0 + (1.0 - a_inj_f) * 0.15))
+
+    return max(0.1, lam_home), max(0.1, lam_away)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOCCER O/U CALIBRATION — post-simulation correction per league
+# Source: FBref 2024-25 real frequencies vs Poisson model output
+# Format: (Δ_u25, Δ_u35, Δ_btts) as fractions (e.g. +0.06 = +6%)
+# Applied AFTER simulation to correct systematic Poisson bias per league.
+# Positive Δ = model underestimates → add. Negative → subtract.
+# O2.5/O3.5 are always = 1 - U2.5/U3.5 after calibration (enforced).
+# ═══════════════════════════════════════════════════════════════════════════════
+SOCCER_CALIB = {
+    "Premier League":         ( -0.015,  +0.020, -0.015),
+    "La Liga":                ( -0.030,   0.000, -0.010),
+    "Bundesliga":             ( +0.030,  +0.045, -0.050),
+    "Serie A":                ( -0.020,  +0.010, -0.020),
+    "Ligue 1":                ( -0.015,  +0.005, -0.025),
+    "Liga MX":                ( +0.010,  +0.040, -0.070),
+    "Liga de Expansión":      ( +0.015,  +0.045, -0.060),  # similar to Liga MX
+    "Champions League":       ( -0.015,  +0.005, -0.015),
+    "Europa League":          ( -0.020,  +0.010, -0.035),
+    "Conference League":      ( -0.010,  +0.015, -0.030),
+    "CONCACAF Champions Cup": ( +0.060,  +0.080, -0.100),
+    "MLS":                    ( +0.030,  +0.055, -0.065),
+}
+
+def apply_soccer_calib(league, p_u25, p_u35, p_btts, p_o25, p_o35):
+    """
+    Apply per-league calibration to O/U and BTTS probabilities.
+    Enforces constraints: O + U = 1.0, all probs in [0.01, 0.99].
+    Only applied for soccer leagues with known calibration data.
+    """
+    cal = SOCCER_CALIB.get(league)
+    if cal is None:
+        return p_u25, p_u35, p_btts, p_o25, p_o35
+
+    du25, du35, dbtts = cal
+
+    def clamp(x): return max(0.01, min(0.99, x))
+
+    # Apply deltas
+    p_u25_c  = clamp(p_u25  + du25)  if p_u25  is not None else None
+    p_u35_c  = clamp(p_u35  + du35)  if p_u35  is not None else None
+    p_btts_c = clamp(p_btts + dbtts) if p_btts is not None else None
+
+    # Enforce O = 1 - U (keeps sum = 1.0)
+    p_o25_c = clamp(1.0 - p_u25_c)  if p_u25_c is not None else p_o25
+    p_o35_c = clamp(1.0 - p_u35_c)  if p_u35_c is not None else p_o35
+
+    return p_u25_c, p_u35_c, p_btts_c, p_o25_c, p_o35_c
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NHL / NBA / MLB NO-LINE CALIBRATION
+# Root cause: when ESPN has no O/U line (ou_val=0), the model compares
+# sim_total vs λ_expected (the mean) → produces ~50/50 by construction.
+# Real O/U hit rates differ from 50% (source: 2024-25 season data):
+#   NHL Under: 52.1% (Hockey-Reference, ~1312 games) → +3.1%
+#   NBA Under: 48.8% (TeamRankings,    ~1230 games)  → -1.2%
+#   MLB Under: 51.8% (2024-25 season,  ~2430 games)  → +1.8%
+# When ESPN provides a real line, the market IS the calibration — don't touch it.
+# ═══════════════════════════════════════════════════════════════════════════════
+NHL_NO_LINE_UNDER = +0.031
+NBA_NO_LINE_UNDER = -0.012
+MLB_NO_LINE_UNDER = +0.018
+
+def apply_nonsoccer_calib(sport_grp, is_hockey, p_u_total, p_o_total, ou_val):
+    """Apply calibration only when ou_val=0 (no ESPN line). O+U enforced=1.0."""
+    if p_u_total is None or p_o_total is None or ou_val != 0.0:
+        return p_u_total, p_o_total
+    def clamp(x): return max(0.01, min(0.99, x))
+    if is_hockey:
+        p_u_total = clamp(p_u_total + NHL_NO_LINE_UNDER)
+    elif sport_grp == "Basketball":
+        p_u_total = clamp(p_u_total + NBA_NO_LINE_UNDER)
+    elif sport_grp == "Baseball":
+        p_u_total = clamp(p_u_total + MLB_NO_LINE_UNDER)
+    return p_u_total, clamp(1.0 - p_u_total)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIGNAL D — CONSENSUS ARBITER
+# Aggregates votes from all 4 signals for the best pick candidate.
+# Weights: MC=40%, Form=25%, ScoringTrend=25%, Fatigue=10%
+# Output stored in sim dict as "consensus_score", "consensus_label",
+# "consensus_signals", "conflict_note"
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_consensus(game, sim):
+    """
+    Evaluate 4 signals for the best pick and return consensus metadata.
+    Modifies sim in-place. Called at end of run_monte_carlo.
+    """
+    best = sim.get("best_pick", {})
+    market = best.get("market", "")
+    label  = best.get("label", "")
+    prob   = best.get("prob", 0)           # 0-1 from simulation (NOT * 100)
+
+    votes   = []   # list of (weight, vote, signal_name, detail)
+    W_MC    = 0.40
+    W_FORM  = 0.25
+    W_SCORE = 0.25
+    W_FAT   = 0.10
+
+    # ── Signal 1: Monte Carlo probability ─────────────────────────────────────
+    if prob >= 0.55:    votes.append((W_MC,  +1, "MC",   f"MC {prob*100:.0f}%"))
+    elif prob <= 0.48:  votes.append((W_MC,  -1, "MC",   f"MC {prob*100:.0f}%"))
+    else:               votes.append((W_MC,   0, "MC",   f"MC {prob*100:.0f}% (neutral)"))
+
+    # ── Signal 2: Form — does win rate support the pick? ──────────────────────
+    home_form = game.get("home_form")
+    away_form = game.get("away_form")
+    form_vote = 0; form_detail = "sin forma"
+
+    sport_grp_c = LEAGUES.get(game.get("league",""), {}).get("group", "Soccer")
+    is_soccer_c = sport_grp_c == "Soccer"
+
+    if home_form is not None or away_form is not None:
+        # ML picks: form win rate is universally predictive
+        if market == "ML":
+            is_home_pick = game.get("home_team","") in label
+            team_form = home_form if is_home_pick else away_form
+            if team_form is not None:
+                if team_form >= 0.60:   form_vote = +1; form_detail = f"forma {team_form*100:.0f}%"
+                elif team_form <= 0.35: form_vote = -1; form_detail = f"forma baja {team_form*100:.0f}%"
+                else:                   form_detail = f"forma neutral {team_form*100:.0f}%"
+
+        # O/U picks — use scoring pace for non-soccer, W/L form for soccer
+        elif "Over" in label or "Under" in label:
+            pick_is_over = "Over" in label
+            h_scored  = game.get("home_avg_scored")
+            a_scored  = game.get("away_avg_scored")
+            h_concede = game.get("home_avg_conceded")
+            a_concede = game.get("away_avg_conceded")
+            league_avg = LEAGUE_AVG_GOALS.get(game.get("league",""), 0)
+
+            if not is_soccer_c and h_scored is not None and a_scored is not None and league_avg > 0:
+                # Non-soccer: use scoring pace as proxy
+                # Combined expected scoring (attack only — no defender data needed)
+                pace = (h_scored + a_scored) / max(0.1, league_avg)
+                if pace >= 1.05 and pick_is_over:       form_vote = +1; form_detail = f"pace ofensivo {pace:.2f}x liga"
+                elif pace <= 0.95 and not pick_is_over: form_vote = +1; form_detail = f"pace defensivo {pace:.2f}x liga"
+                elif pace >= 1.05 and not pick_is_over: form_vote = -1; form_detail = f"pace ofensivo contradice Under"
+                elif pace <= 0.95 and pick_is_over:     form_vote = -1; form_detail = f"pace defensivo contradice Over"
+                else:                                    form_detail = f"pace neutro {pace:.2f}x liga"
+            else:
+                # Soccer or no scoring data: use W/L form
+                h_f = home_form or 0.5; a_f = away_form or 0.5
+                avg_form = (h_f + a_f) / 2
+                if avg_form >= 0.60 and pick_is_over:       form_vote = +1; form_detail = f"forma ofensiva {avg_form*100:.0f}%"
+                elif avg_form <= 0.40 and not pick_is_over: form_vote = +1; form_detail = f"forma defensiva {avg_form*100:.0f}%"
+                elif avg_form >= 0.60 and not pick_is_over: form_vote = -1; form_detail = f"forma ofensiva contradice Under"
+                elif avg_form <= 0.40 and pick_is_over:     form_vote = -1; form_detail = f"forma defensiva contradice Over"
+
+        # BTTS (soccer only)
+        elif "BTTS" in label or "Ambos" in label:
+            h_f = home_form or 0.5; a_f = away_form or 0.5
+            if h_f >= 0.55 and a_f >= 0.55: form_vote = +1; form_detail = "ambos en forma"
+            elif h_f <= 0.35 or a_f <= 0.35: form_vote = -1; form_detail = "uno sin forma"
+
+    votes.append((W_FORM, form_vote, "Forma", form_detail))
+
+    # ── Signal 3: Scoring Trend — λ_real vs λ_liga ────────────────────────────
+    lam_real_h = game.get("_lam_real_h")
+    lam_real_a = game.get("_lam_real_a")
+    lam_league = game.get("_lam_league")
+    score_vote = 0; score_detail = "sin trend"
+
+    if lam_real_h is not None and lam_real_a is not None and lam_league is not None:
+        lam_real_total = lam_real_h + lam_real_a
+        score_detail = f"λreal={lam_real_total:.1f} vs liga={lam_league:.1f}"
+        if "Over 2.5" in label or "Over" in label:
+            score_vote = +1 if lam_real_total > lam_league * 1.05 else (-1 if lam_real_total < lam_league * 0.95 else 0)
+        elif "Under 2.5" in label or "Under" in label:
+            score_vote = +1 if lam_real_total < lam_league * 0.95 else (-1 if lam_real_total > lam_league * 1.05 else 0)
+        elif "BTTS" in label or "Ambos" in label:
+            score_vote = +1 if (lam_real_h >= 0.9 and lam_real_a >= 0.9) else 0
+
+    votes.append((W_SCORE, score_vote, "ScoringTrend", score_detail))
+
+    # ── Signal 4: Fatigue ─────────────────────────────────────────────────────
+    home_b2b = game.get("home_back2back", False)
+    away_b2b = game.get("away_back2back", False)
+    fat_vote = 0; fat_detail = ""
+
+    _sport_grp_fat = LEAGUES.get(game.get("league",""), {}).get("group", "")
+    _is_football_fat = _sport_grp_fat == "Football"
+    _rest_term = "semana corta" if _is_football_fat else "back-to-back"
+    if home_b2b and not away_b2b:
+        fat_detail = f"🔋 {game.get('home_team','')} en {_rest_term}"
+        if market == "ML":
+            if game.get("away_team","") in label: fat_vote = +1  # pick = fresh team
+            elif game.get("home_team","") in label: fat_vote = -1
+        else: fat_vote = 0  # O/U neutral to fatigue
+    elif away_b2b and not home_b2b:
+        fat_detail = f"🔋 {game.get('away_team','')} en {_rest_term}"
+        if market == "ML":
+            if game.get("home_team","") in label: fat_vote = +1
+            elif game.get("away_team","") in label: fat_vote = -1
+        else: fat_vote = 0
+    else:
+        fat_detail = "sin ventaja de descanso"
+
+    votes.append((W_FAT, fat_vote, "Fatiga", fat_detail))
+
+    # ── Signal 4b: Injury impact on consensus ─────────────────────────────────
+    # Note: injuries already baked into hp (via compute_base_prob Signal 6)
+    # and λ (via get_lambda). The consensus vote here is informational only —
+    # it notes when a significant injury exists that should make bettor cautious.
+    # We re-use the fatigue vote slot by upgrading its signal if injury > fatigue
+    h_inj_f = game.get("home_injury_factor", 1.0)
+    a_inj_f = game.get("away_injury_factor", 1.0)
+    h_inj   = game.get("home_injuries", [])
+    a_inj   = game.get("away_injuries", [])
+
+    # Build a compact injury note if significant injuries exist
+    inj_note_parts = []
+    for inj in (h_inj or [])[:2]:  # top 2 by impact
+        if inj.get("impact_score", 0) >= 0.08:
+            inj_note_parts.append(f"🤕 {inj['name']} ({inj['status']}, {game.get('home_team','')})")
+    for inj in (a_inj or [])[:2]:
+        if inj.get("impact_score", 0) >= 0.08:
+            inj_note_parts.append(f"🤕 {inj['name']} ({inj['status']}, {game.get('away_team','')})")
+
+    injury_note = " · ".join(inj_note_parts) if inj_note_parts else ""
+
+    # ── Aggregate ─────────────────────────────────────────────────────────────
+    weighted_sum = sum(w * v for w, v, _, _ in votes)
+    max_possible = sum(w for w, _, _, _ in votes)  # = 1.0
+    consensus_score = weighted_sum / max_possible   # -1.0 to +1.0
+
+    # Count signals in agreement (vote != 0)
+    signals_for     = [n for w, v, n, _ in votes if v > 0]
+    signals_against = [n for w, v, n, _ in votes if v < 0]
+    signals_neutral = [n for w, v, n, _ in votes if v == 0]
+
+    total_active = len(signals_for) + len(signals_against)
+    n_for        = len(signals_for)
+    n_against    = len(signals_against)
+
+    # Label
+    if consensus_score >= 0.50:
+        c_label = f"★ CONSENSO {n_for}/{total_active if total_active else 4}"
+        c_color = "#4ade80"
+    elif consensus_score >= 0.20:
+        c_label = f"⚡ APOYO {n_for}/{total_active if total_active else 4}"
+        c_color = "#60a5fa"
+    elif consensus_score <= -0.30:
+        c_label = f"⚠ CONFLICTO {n_against} vs {n_for}"
+        c_color = "#f97316"
+    else:
+        c_label = "◈ NEUTRAL"
+        c_color = "#9ca3af"
+
+    # Conflict note — explain the disagreement
+    conflict_note = ""
+    if n_for > 0 and n_against > 0:
+        conflict_note = (f"Señales a favor: {', '.join(signals_for)} · "
+                         f"Señales en contra: {', '.join(signals_against)}")
+    elif fat_detail and "back-to-back" in fat_detail:
+        conflict_note = fat_detail
+
+    sim["consensus_score"]   = round(consensus_score, 3)
+    sim["consensus_label"]   = c_label
+    sim["consensus_color"]   = c_color
+    sim["consensus_votes"]   = [(n, v, d) for w, v, n, d in votes]
+    sim["conflict_note"]     = conflict_note
+    sim["signals_for"]       = signals_for
+    sim["signals_against"]   = signals_against
+    sim["fatigue_note"]      = fat_detail if "back-to-back" in fat_detail or "semana corta" in fat_detail else ""
+    sim["injury_note"]       = injury_note
+
+    return sim
+
 
 def run_monte_carlo(game, n=10_000):
     base=compute_base_prob(game)
@@ -1281,6 +1879,37 @@ def run_monte_carlo(game, n=10_000):
     # Parse ESPN O/U line once — used inside loop for non-soccer sports
     try: ou_val = float(str(game["odds"].get("over_under","")));  assert 0 < ou_val < 400
     except: ou_val = 0.0
+    # ── Signal C: Fatigue / Rest Disadvantage ────────────────────────────────
+    # NBA/NHL/MLB: back-to-back = ≤1 rest day (very common, well-studied)
+    #   Sources: NBA -3.8% (Huyghe et al.), NHL -3.2%, MLB -1.5%, Soccer -2.0%
+    # NFL: back-to-back NEVER occurs (weekly schedule). Use "short week" instead:
+    #   Short week = ≤5 rest days (Thu Night Football has 4 days rest)
+    #   Effect: -2.5% win prob (Osborne 2020, NFL short-week analysis)
+    # NCAAF: same logic as NFL (weekly schedule)
+    FATIGUE_BY_GROUP = {"Basketball": 0.038, "Hockey": 0.032, "Baseball": 0.015,
+                        "Soccer": 0.020, "Football": 0.025}
+    fatigue_delta = FATIGUE_BY_GROUP.get(sport_grp, 0.02)
+
+    is_football = sport_grp == "Football"
+    # Football uses short_week (≤5 days); all others use back2back (≤1 day)
+    if is_football:
+        h_rest = game.get("home_rest_days")
+        a_rest = game.get("away_rest_days")
+        home_b2b = (h_rest is not None and h_rest <= 5)
+        away_b2b = (a_rest is not None and a_rest <= 5)
+        # Only flag if one team has significantly less rest than the other
+        if home_b2b and away_b2b:
+            home_b2b = away_b2b = False  # both short week → symmetric, no edge
+    else:
+        home_b2b = game.get("home_back2back", False)
+        away_b2b = game.get("away_back2back", False)
+
+    if home_b2b and not away_b2b:
+        hp = max(0.05, hp - fatigue_delta)  # home tired, away fresh
+    elif away_b2b and not home_b2b:
+        hp = min(0.95, hp + fatigue_delta)  # away tired → home benefits
+    # Symmetric fatigue → no adjustment
+
     hw=aw=d=btts=o15=o25=o35=u25=u35=dc_1x=dc_x2=dc_12=o_total=u_total=0
     rng=random.Random()
 
@@ -1345,6 +1974,17 @@ def run_monte_carlo(game, n=10_000):
     p_o35=o35/n if use_goals else None
     p_u25=u25/n if use_goals else None
     p_u35=u35/n if use_goals else None
+
+    # ── Per-league calibration (soccer only) ──────────────────────────────────
+    if is_soccer and use_goals:
+        p_u25, p_u35, p_btts, p_o25, p_o35 = apply_soccer_calib(
+            game["league"], p_u25, p_u35, p_btts, p_o25, p_o35)
+
+    # ── NHL / NBA / MLB calibration ────────────────────────────────────────────
+    if not is_soccer and use_goals and p_u_total is not None:
+        p_u_total, p_o_total = apply_nonsoccer_calib(
+            sport_grp, is_hockey, p_u_total, p_o_total, ou_val)
+
     p_dc_1x=dc_1x/n; p_dc_x2=dc_x2/n; p_dc_12=dc_12/n
 
     hml=game["odds"].get("home_ml",""); aml=game["odds"].get("away_ml","")
@@ -1441,7 +2081,7 @@ def run_monte_carlo(game, n=10_000):
               if prob is not None and ev is not None and ev>0 and mtype not in ("DC",)]
     pos_legs.sort(key=lambda x:x[3],reverse=True)
 
-    return {
+    sim = {
         "home_pct":round(sh*100,1),"away_pct":round(sa*100,1),"draw_pct":round(sd*100,1),
         "data_quality":round(dq*100,0),
         "home_ev":home_ev,"away_ev":away_ev,
@@ -1462,7 +2102,18 @@ def run_monte_carlo(game, n=10_000):
         "p_u_total":round(p_u_total*100,1) if p_u_total is not None else None,
         "ou_line":str(ou) if ou else None,
         "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
+        "lam_real_h":game.get("_lam_real_h"),"lam_real_a":game.get("_lam_real_a"),
+        "lam_league":game.get("_lam_league"),
+        "home_back2back":game.get("home_back2back",False),"away_back2back":game.get("away_back2back",False),
+        "home_rest_days":game.get("home_rest_days"),"away_rest_days":game.get("away_rest_days"),
+        "home_injury_factor":game.get("home_injury_factor",1.0),
+        "away_injury_factor":game.get("away_injury_factor",1.0),
+        "home_injuries":game.get("home_injuries",[]),
+        "away_injuries":game.get("away_injuries",[]),
     }
+    sim["best_pick"] = best_single or {}
+    compute_consensus(game, sim)
+    return sim
 
 def _ml_dec(ml):
     """Convert American moneyline to decimal odds."""
@@ -1761,6 +2412,107 @@ def render_pick_card(r, rank=None):
             '</div>'
         )
 
+    # ── Consensus badge (Signal D) ──────────────────────────────────────────────
+    consensus_html = ""
+    c_label       = sim.get("consensus_label","")
+    c_color       = sim.get("consensus_color","#9ca3af")
+    conflict_note = sim.get("conflict_note","")
+    fatigue_note  = sim.get("fatigue_note","")
+    injury_note   = sim.get("injury_note","")
+    votes_list    = sim.get("consensus_votes",[])
+
+    if c_label:
+        votes_html = ""
+        if votes_list:
+            vote_parts = []
+            for sig_name, v, detail in votes_list:
+                icon = "✅" if v > 0 else ("❌" if v < 0 else "◾")
+                vote_parts.append(f'<span style="font-size:0.68rem;color:#9ca3af">{icon} {sig_name}: {detail}</span>')
+            votes_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' + "".join(vote_parts) + '</div>'
+
+        conflict_html = ""
+        if conflict_note:
+            conflict_html = (f'<div style="font-size:0.7rem;color:#f97316;margin-top:3px;font-style:italic">'
+                             f'⚠ {conflict_note}</div>')
+        elif fatigue_note:
+            conflict_html = (f'<div style="font-size:0.7rem;color:#60a5fa;margin-top:3px">'
+                             f'{fatigue_note}</div>')
+
+        consensus_html = (
+            f'<div style="margin-top:8px;padding:8px 12px;background:rgba(0,0,0,0.2);'
+            f'border-left:3px solid {c_color};border-radius:0 6px 6px 0">'
+            f'<span style="font-size:0.75rem;font-weight:700;color:{c_color};'
+            f'letter-spacing:1px">{c_label}</span>'
+            + votes_html + conflict_html +
+            '</div>'
+        )
+
+    # ── Injury Report block ──────────────────────────────────────────────────
+    injury_html = ""
+    h_inj = sim.get("home_injuries", [])
+    a_inj = sim.get("away_injuries", [])
+    h_f   = sim.get("home_injury_factor", 1.0)
+    a_f   = sim.get("away_injury_factor", 1.0)
+    _home = r.get("home_team", "Local")
+    _away = r.get("away_team", "Visita")
+
+    def _inj_color(factor):
+        if factor < 0.72: return "#ef4444"
+        if factor < 0.88: return "#f97316"
+        if factor < 0.97: return "#C9A84C"
+        return None
+
+    def _inj_label(factor):
+        if factor < 0.72: return "⛔ Bajas graves"
+        if factor < 0.88: return "⚠ Bajas moderadas"
+        return "ℹ Bajas menores"
+
+    inj_parts = []
+    for team_name, inj_list, factor in [(_home, h_inj, h_f), (_away, a_inj, a_f)]:
+        color = _inj_color(factor)
+        if color is None:
+            continue
+        top_inj = [i for i in inj_list if i.get("impact_score", 0) >= 0.05][:3]
+        if not top_inj:
+            continue
+        names_str = " · ".join(f'{i["name"]} ({i["status"]})' for i in top_inj)
+        sev_lbl   = _inj_label(factor)
+        inj_parts.append(
+            f'<div style="font-size:0.70rem;color:{color};margin-bottom:2px">'
+            f'{sev_lbl} <span style="color:#9ca3af">[{team_name}]</span> {names_str}</div>'
+        )
+
+    if inj_parts:
+        injury_html = (
+            '<div style="margin-top:7px;padding:7px 12px;background:rgba(239,68,68,0.06);'
+            'border-left:3px solid rgba(239,68,68,0.4);border-radius:0 6px 6px 0">'
+            '<div style="font-size:0.65rem;color:rgba(239,68,68,0.6);letter-spacing:2px;'
+            'text-transform:uppercase;margin-bottom:4px">🏥 Injury Report</div>'
+            + "".join(inj_parts) +
+            '</div>'
+        )
+
+    # ── Scoring Trend note (Signal B) ────────────────────────────────────────
+    scoring_trend_html = ""
+    lam_rh = sim.get("lam_real_h"); lam_ra = sim.get("lam_real_a"); lam_lg = sim.get("lam_league")
+    if lam_rh is not None and lam_ra is not None and lam_lg is not None:
+        lam_real_total = lam_rh + lam_ra
+        delta = lam_real_total - lam_lg
+        delta_str = f"+{delta:.1f}" if delta >= 0 else f"{delta:.1f}"
+        # Color thresholds relative to league avg (not absolute) so NBA/NHL/MLB
+        # and soccer all show green/amber/orange at meaningful deviation levels
+        _rel = abs(delta) / max(0.1, lam_lg)
+        color = "#4ade80" if _rel < 0.05 else ("#f97316" if _rel > 0.15 else "#C9A84C")
+        # Sport-specific unit and caveat
+        sport_grp_d = LEAGUES.get(r.get("league",""), {}).get("group", "Soccer")
+        unit = "pts" if sport_grp_d in ("Basketball","Football") else ("runs" if sport_grp_d == "Baseball" else "goles")
+        caveat = " ⚠ sin pitcher" if sport_grp_d == "Baseball" else ""
+        scoring_trend_html = (
+            f'<div style="margin-top:5px;font-size:0.68rem;color:{color};opacity:0.85">'
+            f'📈 Scoring trend: λreal={lam_real_total:.1f} vs λliga={lam_lg:.1f} '
+            f'({delta_str} {unit} vs promedio{caveat})</div>'
+        )
+
     return (
         '<div class="pick-card">'
           '<div class="pick-header">'
@@ -1803,6 +2555,9 @@ def render_pick_card(r, rank=None):
             '</div>'
             + form_html
             + goals_html
+            + consensus_html
+            + scoring_trend_html
+            + injury_html
             + ai_html
           + '</div>'
         '</div>'
