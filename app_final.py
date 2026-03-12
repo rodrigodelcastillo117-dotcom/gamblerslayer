@@ -5709,41 +5709,11 @@ with tab_sim:
             f'{_total_p} partidos · {len(_sports_p)} deportes · hora CDMX</div>',
             unsafe_allow_html=True
         )
-        # ── Sport selector tiles — clickable ─────────────────────────────────
+        # ── Sport accordions — tile + leagues inline, one per row ─────────────
         _sel_sp = st.session_state.get("_picks_sel_sport", None)
         if _sel_sp and _sel_sp not in _sports_p:
             _sel_sp = None
             st.session_state["_picks_sel_sport"] = None
-
-        _sp_cols_p = st.columns(len(_sports_p))
-        for _ci_p, _sp_p in enumerate(_sports_p):
-            _smp = _SPORT_META_P[_sp_p]
-            _n_p = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
-            _is_sel = (_sel_sp == _sp_p)
-            _border = f'3px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}55'
-            _bg     = _smp["color"] + "22" if _is_sel else _smp["accent"]
-            _ev_badge = ""  # computed after _sim_map is built
-            with _sp_cols_p[_ci_p]:
-                st.markdown(
-                    f'<div style="text-align:center;padding:10px 3px;border-radius:9px;'
-                    f'background:{_bg};border:{_border};margin-bottom:8px;cursor:pointer">'
-                    f'<div style="font-size:1.8rem;line-height:1">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.68rem;font-weight:700;color:{_smp["color"]};'
-                    f'letter-spacing:0.5px;text-transform:uppercase;margin-top:4px">{_sp_p}</div>'
-                    f'<div style="font-size:0.62rem;color:#6B7E6E;margin-top:2px">{_n_p} juegos</div>'
-                    f'{_ev_badge}'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-                _sp_chev = "▼" if _is_sel else "▶"
-                if st.button(
-                    f"{_sp_chev} {_smp['emoji']} {_sp_p} — {_n_p} partidos",
-                    key=f"btn_sp_{_sp_p}",
-                    use_container_width=True,
-                    help=f"{'Cerrar' if _is_sel else 'Ver'} partidos de {_sp_p}"
-                ):
-                    st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
-                    st.rerun()
 
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
@@ -6057,11 +6027,8 @@ with tab_sim:
         )
         return _html
 
-    # ── Show all sports expanded directly — no click needed ─────────────────
-    _sel_sp_now = st.session_state.get("_picks_sel_sport", None)
-    _sports_to_show = [_sel_sp_now] if (_sel_sp_now and _sel_sp_now in _sports_p) else _sports_p
-
-    for _sp_p in _sports_to_show:
+    # ── Unified sport accordion — tile + ligas + partidos inline ────────────
+    for _sp_p in _sports_p:
         _smp   = _SPORT_META_P[_sp_p]
         _dks_p = sorted(_tree_p[_sp_p].keys())
         _n_p   = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
@@ -6072,37 +6039,60 @@ with tab_sim:
                _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
         )
         _ev_badge = f" 🔥{_ev_count}" if _ev_count else ""
-        # Always show expanded — sport heading + leagues + 3-per-row cards
+        _sp_key  = f"_sp_collapsed_{_sp_p}"
+        _sp_open = st.session_state.get(_sp_key, False)  # collapsed by default
+        _sp_chev = "▼" if _sp_open else "▶"
+
+        # Sport tile header
         st.markdown(
-            f'<div style="font-size:0.75rem;font-weight:700;color:{_smp["color"]};'
-            f'letter-spacing:1px;text-transform:uppercase;margin:14px 0 8px 0;'
-            f'border-bottom:1px solid {_smp["color"]}33;padding-bottom:4px">'
-            f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}</div>',
+            f'<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;'
+            f'border-radius:10px;background:{_smp["accent"]};'
+            f'border:{"2px" if _sp_open else "1px"} solid {_smp["color"]}{"88" if _sp_open else "44"};'
+            f'margin:6px 0 0 0">>'
+            f'<div style="font-size:1.6rem;line-height:1">{_smp["emoji"]}</div>'
+            f'<div>'
+            f'<div style="font-size:0.75rem;font-weight:800;color:{_smp["color"]};'
+            f'letter-spacing:1px;text-transform:uppercase">{_sp_p}</div>'
+            f'<div style="font-size:0.65rem;color:#6B7E6E">{_n_p} juegos{_ev_badge}</div>'
+            f'</div>'
+            f'<div style="margin-left:auto;font-size:0.9rem;color:{_smp["color"]}88">{_sp_chev}</div>'
+            f'</div>',
             unsafe_allow_html=True
         )
-        for _dk_p in _dks_p:
-            for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
-                _country_p = LEAGUES.get(_lg_p,{}).get("country","")
-                _ctry_str  = f" · {_country_p}" if _country_p else ""
-                _lg_label  = f"{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)} partidos"
-                _lg_key    = f"_lg_collapsed_{_lg_p}"
-                _collapsed = st.session_state.get(_lg_key, True)  # collapsed by default
-                _chev      = "▶" if _collapsed else "▼"
-                if st.button(
-                    f"{_chev}  {_lg_label}",
-                    key=f"btn_lg_{_lg_p}",
-                    use_container_width=True,
-                    help=f"{'Mostrar' if _collapsed else 'Colapsar'} {league_label(_lg_p)}"
-                ):
-                    st.session_state[_lg_key] = not _collapsed
-                    st.rerun()
-                if not _collapsed:
-                    for _gi3 in range(0, len(_lg_games_p), 3):
-                        _row3 = _lg_games_p[_gi3:_gi3+3]
-                        _c3 = st.columns(len(_row3))
-                        for _ci3, _gg_p in enumerate(_row3):
-                            with _c3[_ci3]:
-                                st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+        if st.button(
+            f"{_sp_chev} {_smp['emoji']} {_sp_p} — {_n_p} partidos{_ev_badge}",
+            key=f"btn_sp_{_sp_p}",
+            use_container_width=True,
+            help=f"{'Cerrar' if _sp_open else 'Ver'} partidos de {_sp_p}"
+        ):
+            st.session_state[_sp_key] = not _sp_open
+            st.rerun()
+
+        # Leagues + games inline — only if open
+        if _sp_open:
+            for _dk_p in _dks_p:
+                for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
+                    _country_p = LEAGUES.get(_lg_p,{}).get("country","")
+                    _ctry_str  = f" · {_country_p}" if _country_p else ""
+                    _lg_label  = f"{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)} partidos"
+                    _lg_key    = f"_lg_collapsed_{_lg_p}"
+                    _collapsed = st.session_state.get(_lg_key, True)
+                    _chev      = "▶" if _collapsed else "▼"
+                    if st.button(
+                        f"{_chev}  {_lg_label}",
+                        key=f"btn_lg_{_lg_p}",
+                        use_container_width=True,
+                        help=f"{'Mostrar' if _collapsed else 'Colapsar'} {league_label(_lg_p)}"
+                    ):
+                        st.session_state[_lg_key] = not _collapsed
+                        st.rerun()
+                    if not _collapsed:
+                        for _gi3 in range(0, len(_lg_games_p), 3):
+                            _row3 = _lg_games_p[_gi3:_gi3+3]
+                            _c3 = st.columns(len(_row3))
+                            for _ci3, _gg_p in enumerate(_row3):
+                                with _c3[_ci3]:
+                                    st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
