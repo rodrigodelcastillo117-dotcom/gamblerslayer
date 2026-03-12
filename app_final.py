@@ -5612,13 +5612,16 @@ with tab_sim:
         )
 
     # Build tree — pre + live games, by sport → date → league
+    # Accept today + tomorrow CDMX (evening games stored as next UTC day by ESPN)
     _tree_p = {}
     for _g in games:
         if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
-        if _gd != _today_mx_p: continue
-        _tree_p.setdefault(_sg_p, {}).setdefault(_gd, {}).setdefault(_g["league"], []).append(_g)
+        if _gd not in (_today_mx_p, _tom_mx_p): continue
+        # Normalize tomorrow-CDMX games to today bucket so they show up
+        _bucket = _today_mx_p
+        _tree_p.setdefault(_sg_p, {}).setdefault(_bucket, {}).setdefault(_g["league"], []).append(_g)
 
     _sports_p = [s for s in _SPORTS_ORDER_P if s in _tree_p]
     _total_p  = sum(len(gs) for sp in _sports_p for dmap in _tree_p[sp].values() for gs in dmap.values())
