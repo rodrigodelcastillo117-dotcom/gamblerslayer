@@ -3933,117 +3933,100 @@ with tab_picks:
         # ── Filtrar: solo O/U, BTTS, ML — excluir DO como pick principal ──────────
         ALLOWED_MKTS = {"O/U", "BTTS", "ML"}  # DO never a standalone pick
 
-        def _all_allowed_picks(r):
-            """Return ALL valid picks (ML, BTTS, O/U) for a game.
-            - ML: team with highest win probability (always included when there are real odds,
-                  or always when sim has a clear favorite)
-            - Basketball/Hockey/Baseball: O/U total (Over or Under the ESPN line)
-            - Soccer: BTTS + Over 2.5/3.5
-            Returns list of pick dicts sorted by probability desc."""
-            sim  = r["sim"]
-            sg   = LEAGUES.get(r["league"], {}).get("group", "Soccer")
-            picks = []
+        # ── Sport-aware pick selection ─────────────────────────────────────────
+        # Per sport, pick the BEST candidate by these rules:
+        #   Soccer:     best of {BTTS, O2.5} by prob  +  ML (highest win%)
+        #               NO O/U Under, no U3.5
+        #   Basketball: ML (highest win%)  +  O/U total (model side)
+        #   Hockey:     ML (highest win%)  +  O/U total (model side, uses ESPN line)
+        #   Baseball:   ML (highest win%) only
+        #   Football:   ML (highest win%) only
 
-            # ── ML: team with highest win probability ─────────────────────────
-            # For non-soccer: always add the favorite (highest prob side) as ML pick
-            # For soccer: only add ML if that side has EV+ (3-way market is harder)
+        def _sport_best_pick(r):
+            """Return the single best pick for a game, per sport rules."""
+            sim = r["sim"]
+            sg  = LEAGUES.get(r["league"], {}).get("group", "Soccer")
             h_prob = sim.get("home_pct", 0) or 0
             a_prob = sim.get("away_pct", 0) or 0
-            h_ml   = sim.get("home_ml")
-            a_ml   = sim.get("away_ml")
-            h_ev   = sim.get("home_ev")
-            a_ev   = sim.get("away_ev")
-            h_k    = sim.get("home_kelly") or 0
-            a_k    = sim.get("away_kelly") or 0
+            h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
+            h_ev = sim.get("home_ev") or 0; a_ev = sim.get("away_ev") or 0
+            h_k  = sim.get("home_kelly") or 0; a_k = sim.get("away_kelly") or 0
 
-            if sg != "Soccer":
-                # Non-soccer: pick the side with highest probability
-                # Even if EV is slightly negative, the model is pointing at the likely winner
-                if h_prob >= a_prob and h_ml:
-                    picks.append({
-                        "market": "ML", "label": r["home_team"],
-                        "prob": h_prob, "ev": h_ev or 0, "kelly": h_k,
-                    })
-                elif a_ml:
-                    picks.append({
-                        "market": "ML", "label": r["away_team"],
-                        "prob": a_prob, "ev": a_ev or 0, "kelly": a_k,
-                    })
-            else:
-                # Soccer: pick the team with highest win probability (same as non-soccer)
-                # EV+ not required — the model is pointing at the likely winner
-                if h_prob >= a_prob and h_ml:
-                    picks.append({"market":"ML","label":r["home_team"],"prob":h_prob,"ev":h_ev or 0,"kelly":h_k})
-                elif a_ml:
-                    picks.append({"market":"ML","label":r["away_team"],"prob":a_prob,"ev":a_ev or 0,"kelly":a_k})
-                elif h_ml:  # fallback if no away_ml
-                    picks.append({"market":"ML","label":r["home_team"],"prob":h_prob,"ev":h_ev or 0,"kelly":h_k})
-
-            # ── O/U ──────────────────────────────────────────────────────────
-            if sim.get("use_goals"):
-                if sg == "Soccer":
-                    # Soccer: Over 2.5 / Over 3.5
-                    ou_cands = []
-                    for pk, ek, lbl in [("p_o25","o25_ev","Over 2.5 goles"),
-                                        ("p_o35","o35_ev","Over 3.5 goles")]:
-                        _ev = sim.get(ek) or 0
-                        _pb = sim.get(pk) or 0
-                        if _ev > 0 and _pb > 0:
-                            ou_cands.append({"market":"O/U","label":lbl,"prob":_pb,"ev":_ev,"kelly":0})
-                    if ou_cands:
-                        picks.append(max(ou_cands, key=lambda x: x["prob"]))
+            def best_ml():
+                if h_prob >= a_prob:
+                    team, prob, ev, kelly, ml = r["home_team"], h_prob, h_ev, h_k, h_ml
                 else:
-                    # Basketball / Hockey / Baseball / Football: O/U total from ESPN line
-                    _ou_line = sim.get("ou_line") or ""
-                    _p_over  = sim.get("p_o_total") or 0
-                    _p_under = sim.get("p_u_total") or 0
-                    if _ou_line and (_p_over > 0 or _p_under > 0):
-                        try:
-                            _line = float(_ou_line)
-                            _lbl_o = f"Over {_line:.1f}"
-                            _lbl_u = f"Under {_line:.1f}"
-                        except:
-                            _lbl_o = "Over"
-                            _lbl_u = "Under"
-                        _OU_ML = -110
-                        # Pick whichever side the model favors more
-                        if _p_over >= _p_under:
-                            _ev_ou = round((_p_over/100 * (100/_OU_ML*-1 if _OU_ML<0 else _OU_ML/100) - (1-_p_over/100)) * 100, 1) if _OU_ML else 0
-                            picks.append({"market":"O/U","label":_lbl_o,"prob":_p_over,"ev":_ev_ou,"kelly":0})
-                        else:
-                            _ev_ou = round((_p_under/100 * (100/abs(_OU_ML)) - (1-_p_under/100)) * 100, 1) if _OU_ML else 0
-                            picks.append({"market":"O/U","label":_lbl_u,"prob":_p_under,"ev":_ev_ou,"kelly":0})
+                    team, prob, ev, kelly, ml = r["away_team"], a_prob, a_ev, a_k, a_ml
+                if not ml: return None
+                return {"market":"ML","label":team,"prob":prob,"ev":ev,"kelly":kelly}
 
-            # ── BTTS (Soccer only) ────────────────────────────────────────────
-            if sg == "Soccer" and sim.get("use_goals") and (sim.get("btts_ev") or 0) > 0:
-                picks.append({
-                    "market": "BTTS", "label": "Ambos Anotan",
-                    "prob": sim.get("p_btts", 0) or 0,
-                    "ev": sim["btts_ev"], "kelly": 0,
-                })
+            if sg == "Soccer":
+                # Candidates: BTTS and O2.5 only (no Under picks in RONGOL)
+                cands = []
+                if sim.get("use_goals"):
+                    _btts_ev = sim.get("btts_ev") or 0
+                    _btts_pb = sim.get("p_btts") or 0
+                    if _btts_ev > 0 and _btts_pb > 0:
+                        cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev,"kelly":0})
+                    _o25_ev = sim.get("o25_ev") or 0
+                    _o25_pb = sim.get("p_o25") or 0
+                    if _o25_ev > 0 and _o25_pb > 0:
+                        cands.append({"market":"O/U","label":"Over 2.5 goles","prob":_o25_pb,"ev":_o25_ev,"kelly":0})
+                # Add ML (always, highest win%)
+                _ml = best_ml()
+                if _ml: cands.append(_ml)
+                # Return best by probability
+                return max(cands, key=lambda x: x["prob"]) if cands else None
 
-            return sorted(picks, key=lambda x: x["prob"], reverse=True)
+            elif sg in ("Basketball", "Hockey"):
+                # ML + O/U Over only (no Under in RONGOL for Hockey/Basketball)
+                # Hockey: line comes from ESPN (5.5, 6.5, etc.)
+                # Basketball: line comes from ESPN (typically 210-240)
+                cands = []
+                _ml = best_ml()
+                if _ml: cands.append(_ml)
+                _ou_line = sim.get("ou_line") or ""
+                _p_over  = sim.get("p_o_total") or 0
+                if _ou_line and _p_over > 0:
+                    try: _line = float(_ou_line)
+                    except: _line = None
+                    if _line:
+                        _ev_ou = round((_p_over/100*(100/110) - (1-_p_over/100))*100, 1)
+                        cands.append({"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over,"ev":_ev_ou,"kelly":0})
+                return max(cands, key=lambda x: x["prob"]) if cands else None
 
-        # Build allowed bets — one entry per valid pick (not per game)
-        # Each entry: {**r, "_pick": pick_dict}
-        allowed_bets = []
+            else:  # Baseball, Football, NCAAF
+                return best_ml()
+
+        # ── Build 1 pick per sport group ──────────────────────────────────────
+        # For each sport: take the game with the HIGHEST probability pick
+        _sport_pools = {}  # sg -> list of (r, pick_dict)
         for r in sr_cur:
             g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
             if g_state == "post": continue
-            for bp in _all_allowed_picks(r):
-                allowed_bets.append({**r, "_pick": bp})
-        # Sort by probability desc
-        allowed_bets.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
+            bp = _sport_best_pick(r)
+            if bp:
+                sg = LEAGUES.get(r["league"], {}).get("group", "Soccer")
+                _sport_pools.setdefault(sg, []).append({**r, "_pick": bp})
 
-        if not allowed_bets:
-            st.markdown('<div class="warn-banner">No se encontraron picks ML · BTTS · O/U con EV positivo. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
+        # Sort each pool by prob desc, take top 1
+        _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
+        rongol_picks = []
+        for _sg in _SPORT_ORDER_R:
+            pool = _sport_pools.get(_sg, [])
+            if pool:
+                pool.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
+                rongol_picks.append(pool[0])
+
+        # Legacy: keep allowed_bets for DO parlay logic below
+        allowed_bets = rongol_picks
+
+        if not rongol_picks:
+            st.markdown('<div class="warn-banner">No se encontraron picks. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
         else:
             # ── helpers ──────────────────────────────────────────────────────
             _MKT_COLOR = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
             _SPORT_ICON = {"Basketball":"🏀","Soccer":"⚽","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
-            _sg_pick = LEAGUES.get(r.get("league",""), {}).get("group", "Soccer")
-            _ml_icon = _SPORT_ICON.get(_sg_pick, "⚽")
-            _MKT_ICON  = {"ML": _ml_icon, "O/U":"📊","BTTS":"🎯","DO":"🔄"}
             _CONF_LABEL = lambda p: ("🔥 ALTA" if p>=75 else ("⚡ MEDIA" if p>=55 else "🌡 BAJA"))
             _CONF_COLOR = lambda p: ("#4ade80" if p>=75 else ("#C9A84C" if p>=55 else "#ef4444"))
 
@@ -4061,7 +4044,10 @@ with tab_picks:
 
             def _pick_diamante_card(r, tp, rank=0):
                 mc    = _MKT_COLOR.get(tp["market"],"#9ca3af")
-                icon  = _MKT_ICON.get(tp["market"],"🎲")
+                _sg_r = LEAGUES.get(r.get("league",""),{}).get("group","Soccer")
+                _ml_i = _SPORT_ICON.get(_sg_r,"⚽")
+                _mkt_icon_map = {"ML":_ml_i,"O/U":"📊","BTTS":"🎯","DO":"🔄"}
+                icon  = _mkt_icon_map.get(tp["market"],"🎲")
                 ev_s  = f'+{tp["ev"]:.1f}' if tp["ev"]>=0 else f'{tp["ev"]:.1f}'
                 prob  = tp["prob"]
                 conf_lbl = _CONF_LABEL(prob)
@@ -4124,11 +4110,24 @@ with tab_picks:
                     f'</div>'
                 )
 
-            # ── PICK DIAMANTE ─────────────────────────────────────────────────
-            st.markdown('<div class="section-heading">💎 PICK DIAMANTE</div>', unsafe_allow_html=True)
-            _top = allowed_bets[0]
-            _tp  = _top["_pick"]
-            st.markdown(_pick_diamante_card(_top, _tp, rank=0), unsafe_allow_html=True)
+            # ── RONGOL PICKS — 2×2 grid (max 5 cards) ────────────────────────
+            _n_picks = len(rongol_picks)
+            _sport_labels = {"Soccer":"⚽ Fútbol","Basketball":"🏀 Basketball",
+                             "Hockey":"🏒 Hockey","Baseball":"⚾ Baseball","Football":"🏈 Football"}
+            st.markdown(f'<div class="section-heading">🃏 RONGOL PICKS · {_n_picks} deportes</div>', unsafe_allow_html=True)
+            # Render in rows of 2
+            for _row_i in range(0, _n_picks, 2):
+                _row_picks = rongol_picks[_row_i:_row_i+2]
+                _cols = st.columns(len(_row_picks))
+                for _ci, _rp in enumerate(_row_picks):
+                    with _cols[_ci]:
+                        _sg_label = _sport_labels.get(LEAGUES.get(_rp["league"],{}).get("group","Soccer"), "")
+                        st.markdown(
+                            f'<div style="font-size:0.6rem;color:#6B7E6E;letter-spacing:1.5px;'
+                            f'text-transform:uppercase;margin-bottom:4px">{_sg_label}</div>',
+                            unsafe_allow_html=True
+                        )
+                        st.markdown(_pick_diamante_card(_rp, _rp["_pick"], rank=_row_i+_ci), unsafe_allow_html=True)
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
@@ -4192,11 +4191,7 @@ with tab_picks:
                     unsafe_allow_html=True
                 )
 
-            # ── PICKS FUEGO ───────────────────────────────────────────────────
-            if len(allowed_bets) > 1:
-                st.markdown(f'<div class="section-heading" style="margin-top:20px">🔥 PICKS FUEGO ({len(allowed_bets)-1})</div>', unsafe_allow_html=True)
-                for _ri, _ab in enumerate(allowed_bets[1:9], 1):
-                    st.markdown(_pick_diamante_card(_ab, _ab["_pick"], rank=_ri), unsafe_allow_html=True)
+            # (PICKS FUEGO removed — 1 per sport shown in grid above)
 
         # Avoid
         avoid=[r for r in sr_cur if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
@@ -4336,7 +4331,7 @@ with tab_sim:
                     f'<div style="font-size:1.5rem;line-height:1">{_smp["emoji"]}</div>'
                     f'<div style="font-size:0.58rem;font-weight:700;color:{_smp["color"]};'
                     f'letter-spacing:0.5px;text-transform:uppercase;margin-top:3px">'
-                    f'{_sp_p[:4].upper()}</div>'
+                    f'{_sp_p}</div>'
                     f'<div style="font-size:0.55rem;color:#6B7E6E;margin-top:1px">{_n_p} juegos</div>'
                     f'</div>',
                     unsafe_allow_html=True
@@ -4563,7 +4558,6 @@ with tab_parlays:
         parlays.sort(key=lambda x: x["sim"]["best_parlay"]["ev"], reverse=True)
 
         if parlays:
-            # Indicador de estado de partidos
             n_post  = len([g for g in games if g["state"]=="post"])
             n_live  = len([g for g in games if g["state"]=="in"])
             n_pre   = len([g for g in games if g["state"]=="pre"])
@@ -4574,8 +4568,102 @@ with tab_parlays:
                 f'{n_pre} próximos · {n_post} terminados</div>',
                 unsafe_allow_html=True
             )
+
+            # ── PARLAY DEL DÍA: 1 Soccer + 1 otro deporte, mayor EV combinado ──
+            # DO solo permitido si viene con BTTS o O/U (DO+AA ó DO+O2.5)
+            def _valid_parlay_legs(bp):
+                """Returns True if parlay legs are allowed: DO only with BTTS or O/U companion."""
+                legs = bp.get("legs", [])
+                mkts = [leg[0] for leg in legs]
+                if "DO" in mkts:
+                    # DO must be paired with BTTS or O/U
+                    has_companion = any(m in ("BTTS","O/U") for m in mkts)
+                    if not has_companion:
+                        return False
+                return True
+
+            # Build cross-sport parlay: find best Soccer pick + best non-Soccer pick
+            _soccer_rs  = [r for r in parlays if LEAGUES.get(r["league"],{}).get("group")=="Soccer"]
+            _other_rs   = [r for r in parlays if LEAGUES.get(r["league"],{}).get("group") != "Soccer"]
+
+            _cross_parlay = None
+            if _soccer_rs and _other_rs:
+                # Best soccer EV + best other EV = cross-sport parlay
+                _s = max(_soccer_rs, key=lambda r: r["sim"]["best_parlay"]["ev"])
+                _o = max(_other_rs,  key=lambda r: r["sim"]["best_parlay"]["ev"])
+                _s_bp = _s["sim"]["best_parlay"]
+                _o_bp = _o["sim"]["best_parlay"]
+                _s_pick = _s_bp["legs"][0]  # (mtype, label, prob, ev, ml)
+                _o_pick = _o_bp["legs"][0]
+                _s_sg = "Fútbol"
+                _o_sg = LEAGUES.get(_o["league"],{}).get("group","")
+                _cross_ev = round(_s_bp["ev"] + _o_bp["ev"], 1)
+                _cross_prob = round(_s_bp.get("prob",0) * _o_bp.get("prob",0), 4)
+                _cross_payout = round((1/_cross_prob)*100 if _cross_prob > 0 else 0, 0)
+                _cross_parlay = {
+                    "soccer": _s, "other": _o,
+                    "s_pick": _s_pick, "o_pick": _o_pick,
+                    "s_sg": _s_sg, "o_sg": _o_sg,
+                    "combined_ev": _cross_ev,
+                    "combined_prob": round(_cross_prob*100, 1),
+                    "payout": _cross_payout,
+                }
+
+            if _cross_parlay:
+                _c = _cross_parlay
+                _s_mc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}.get(_c["s_pick"][0],"#9ca3af")
+                _o_mc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}.get(_c["o_pick"][0],"#9ca3af")
+                st.markdown(
+                    f'<div style="border-radius:12px;padding:16px;margin:8px 0 12px 0;'
+                    f'background:linear-gradient(135deg,rgba(74,222,128,0.10) 0%,#0a1a16 50%,rgba(96,165,250,0.08) 100%);'
+                    f'border:1px solid rgba(74,222,128,0.4);box-shadow:0 0 28px rgba(74,222,128,0.10)">'
+                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-16px -16px 14px -16px;'
+                    f'background:linear-gradient(90deg,transparent,#4ade80,#60a5fa,transparent)"></div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
+                    f'<div>'
+                    f'<div style="font-size:0.6rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">'
+                    f'⚡ PARLAY DEL DÍA · CROSS-SPORT</div>'
+                    f'<div style="font-size:0.75rem;color:#E0F7F0;font-weight:600">'
+                    f'⚽ {_c["soccer"]["away_team"]} @ {_c["soccer"]["home_team"]} '
+                    f'+ {_c["o_sg"]} · {_c["other"]["away_team"]} @ {_c["other"]["home_team"]}</div>'
+                    f'</div>'
+                    f'<div style="text-align:right;flex-shrink:0">'
+                    f'<div style="font-size:1.2rem;font-weight:900;color:#4ade80;font-family:Cinzel,serif">EV +{_c["combined_ev"]:.1f}</div>'
+                    f'<div style="font-size:0.58rem;color:#6B7E6E">combinado</div>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">'
+                    f'<div style="display:flex;align-items:center;gap:8px">'
+                    f'<span style="background:{_s_mc}22;color:{_s_mc};border:1px solid {_s_mc}55;'
+                    f'border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:800">{_c["s_pick"][0]}</span>'
+                    f'<span style="font-size:0.85rem;color:#E0F7F0">{_c["s_pick"][1]}</span>'
+                    f'<span style="color:#6B7E6E;font-size:0.65rem;margin-left:auto">{_c["s_pick"][2]*100:.0f}% · EV +{_c["s_pick"][3]:.1f}</span>'
+                    f'</div>'
+                    f'<div style="display:flex;align-items:center;gap:8px">'
+                    f'<span style="background:{_o_mc}22;color:{_o_mc};border:1px solid {_o_mc}55;'
+                    f'border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:800">{_c["o_pick"][0]}</span>'
+                    f'<span style="font-size:0.85rem;color:#E0F7F0">{_c["o_pick"][1]}</span>'
+                    f'<span style="color:#6B7E6E;font-size:0.65rem;margin-left:auto">{_c["o_pick"][2]*100:.0f}% · EV +{_c["o_pick"][3]:.1f}</span>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div style="display:flex;gap:20px;margin-top:12px;padding-top:10px;'
+                    f'border-top:1px solid rgba(74,222,128,0.15);flex-wrap:wrap">'
+                    f'<span style="font-size:0.68rem;color:#2EE8C0">Prob: {_c["combined_prob"]}%</span>'
+                    f'<span style="font-size:0.68rem;color:#C9A84C">Pago: +${_c["payout"]:.0f}/100</span>'
+                    f'</div>'
+                    f'<div style="margin-top:10px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);'
+                    f'border-radius:6px;padding:6px 10px;font-size:0.68rem;color:#ef4444;display:flex;align-items:center;gap:6px">'
+                    f'⚠️ STAKE BAJO · Parlay = alta varianza · Usa máx 1-2% del bankroll</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+            st.markdown('<div style="font-size:0.75rem;color:#6B7E6E;margin:8px 0 4px 0;letter-spacing:1px">TODOS LOS PARLAYS EV+</div>', unsafe_allow_html=True)
             for r in parlays:
-                st.markdown(render_parlay_card(r), unsafe_allow_html=True)
+                bp = r["sim"]["best_parlay"]
+                if _valid_parlay_legs(bp):
+                    st.markdown(render_parlay_card(r), unsafe_allow_html=True)
+
             st.markdown(
                 '<div class="warn-banner">⚠ Cuotas de BTTS/O/U asumidas a −110/−115 estándar. ' +
                 'Verifica precio real en tu casa. Parlays son de alta varianza — usa sizing conservador.</div>',
