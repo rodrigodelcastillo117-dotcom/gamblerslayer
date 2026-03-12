@@ -686,6 +686,66 @@ def _load_all_team_profiles():
 
 
 
+def _compute_profile_stats(games, sport_group):
+    """Calcula todas las stats y rates a partir de la lista de partidos."""
+    if not games:
+        return {}
+    all_s  = [g["scored"]   for g in games]
+    all_c  = [g["conceded"] for g in games]
+    home_g = [g for g in games if g.get("home")]
+    away_g = [g for g in games if not g.get("home")]
+
+    def safe_avg(lst): return round(sum(lst)/len(lst), 3) if lst else 0.0
+    def rate(lst, fn): return round(sum(1 for x in lst if fn(x))/len(lst), 3) if lst else 0.0
+
+    stats = {
+        "n_games":           len(games),
+        "avg_scored":        safe_avg(all_s),
+        "avg_conceded":      safe_avg(all_c),
+        "avg_scored_home":   safe_avg([g["scored"]   for g in home_g]),
+        "avg_conceded_home": safe_avg([g["conceded"] for g in home_g]),
+        "avg_scored_away":   safe_avg([g["scored"]   for g in away_g]),
+        "avg_conceded_away": safe_avg([g["conceded"] for g in away_g]),
+    }
+
+    if sport_group == "Soccer":
+        stats.update({
+            "rate_o15":       rate(games,  lambda g: g["scored"]+g["conceded"] > 1.5),
+            "rate_o25":       rate(games,  lambda g: g["scored"]+g["conceded"] > 2.5),
+            "rate_o35":       rate(games,  lambda g: g["scored"]+g["conceded"] > 3.5),
+            "rate_btts":      rate(games,  lambda g: g["scored"]>0 and g["conceded"]>0),
+            "rate_o15_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 1.5),
+            "rate_o25_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 2.5),
+            "rate_o35_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 3.5),
+            "rate_btts_home": rate(home_g, lambda g: g["scored"]>0 and g["conceded"]>0),
+            "rate_o15_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 1.5),
+            "rate_o25_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 2.5),
+            "rate_o35_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 3.5),
+            "rate_btts_away": rate(away_g, lambda g: g["scored"]>0 and g["conceded"]>0),
+            "thresholds": {},
+        })
+    else:
+        thresholds = {}
+        for key, thresh in _TP_THRESHOLDS.get(sport_group, []):
+            thresholds[key]         = rate(games,  lambda g, t=thresh: g["scored"] > t)
+            thresholds[key+"_home"] = rate(home_g, lambda g, t=thresh: g["scored"] > t)
+            thresholds[key+"_away"] = rate(away_g, lambda g, t=thresh: g["scored"] > t)
+        stats.update({
+            "rate_o15":0.0,"rate_o25":0.0,"rate_o35":0.0,"rate_btts":0.0,
+            "rate_o15_home":0.0,"rate_o25_home":0.0,"rate_o35_home":0.0,"rate_btts_home":0.0,
+            "rate_o15_away":0.0,"rate_o25_away":0.0,"rate_o35_away":0.0,"rate_btts_away":0.0,
+            "thresholds": thresholds,
+        })
+    return stats
+
+
+# [_fetch_all_teams_in_league moved]
+
+
+
+
+
+
 def update_team_profile(team_id, team_name, league, sport_group, new_games):
     """
     Fusiona new_games con el perfil existente (últimos 10 partidos).
@@ -1020,121 +1080,7 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
         return None
 
 
-def populate_all_team_profiles(progress_bar=None, status_text=None):
-    """
-    Recorre todas las ligas, recolecta todos los perfiles en memoria,
-    y los escribe al Sheet EN UNA SOLA llamada batch al final.
-    Esto evita timeouts de Streamlit Cloud en conexiones largas.
-    """
-    if not _gsheets_available():
-        return 0, 0, ["❌ Google Sheets no configurado"]
-
-    log           = []
-    failed        = 0
-    all_rows      = []   # acumula todas las filas en memoria
-    leagues       = list(_ALL_LEAGUE_SLUGS.items())
-    total_leagues = len(leagues)
-
-    # ── Fase 1: recolectar datos de ESPN (sin tocar Sheets) ───────────────────
-    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
-        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
-
-        if status_text:
-            status_text.markdown(f"🔍 **{league}** — obteniendo equipos...")
-
-        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
-        if not teams:
-            log.append(f"⚠ {league}: sin equipos en ESPN")
-            if progress_bar:
-                progress_bar.progress((li + 1) / total_leagues * 0.85)
-            continue
-
-        log.append(f"📋 {league}: {len(teams)} equipos")
-
-        for ti, team in enumerate(teams):
-            tid   = team["id"]
-            tname = team["name"]
-
-            if status_text:
-                status_text.markdown(
-                    f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
-                )
-
-            try:
-                games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
-                if not isinstance(games, list):
-                    games = []
-                games = games[:_TP_MAX_GAMES]
-            except Exception as _e:
-                games = []
-                if ti == 0:
-                    log.append(f"  ⚠ {tname} fetch error: {_e}")
-            if not games:
-                failed += 1
-                continue
-            stats  = _compute_profile_stats(games, sport_group)
-            if not stats:
-                failed += 1
-                continue
-
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            all_rows.append([
-                str(tid), tname, league, sport_group, now,
-                json.dumps(games, ensure_ascii=False),
-                stats["n_games"],
-                stats["avg_scored"],      stats["avg_conceded"],
-                stats["avg_scored_home"], stats["avg_conceded_home"],
-                stats["avg_scored_away"], stats["avg_conceded_away"],
-                stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
-                stats["rate_o15_home"], stats["rate_o25_home"],
-                stats["rate_o35_home"], stats["rate_btts_home"],
-                stats["rate_o15_away"], stats["rate_o25_away"],
-                stats["rate_o35_away"], stats["rate_btts_away"],
-                json.dumps(stats.get("thresholds", {}), ensure_ascii=False),
-            ])
-            log.append(f"  ✅ {tname}: {len(games)} partidos")
-
-        if progress_bar:
-            progress_bar.progress((li + 1) / total_leagues * 0.85)
-
-    if not all_rows:
-        return 0, failed, log + ["❌ Sin datos para escribir"]
-
-    # ── Fase 2: escribir TODO al Sheet en una sola llamada batch ──────────────
-    if status_text:
-        status_text.markdown(f"💾 Escribiendo **{len(all_rows)}** equipos al Sheet...")
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-
-        # Crear/limpiar pestaña team_profiles
-        try:
-            ws = sh.worksheet(_TP_TAB)
-            ws.clear()
-        except:
-            ws = sh.add_worksheet(title=_TP_TAB, rows=len(all_rows)+10, cols=len(_TP_HEADERS))
-
-        # Escribir header + datos en una sola llamada
-        ws.update("A1", [_TP_HEADERS] + all_rows, value_input_option="RAW")
-        written = len(all_rows)
-        log.append(f"✅ {written} filas escritas al Sheet en batch")
-
-    except Exception as e:
-        log.append(f"❌ Error escribiendo al Sheet: {e}")
-        return 0, failed, log
-
-    if progress_bar:
-        progress_bar.progress(1.0)
-    if status_text:
-        status_text.markdown(f"✅ Completado: **{written}** equipos en memoria")
-
-    _load_all_team_profiles.clear()
-    return written, failed, log
-
-
-# [fetch_recent_form moved]
-
+# populate_all_team_profiles moved below _compute_profile_stats
 @st.cache_data(ttl=1800)
 def get_team_ids(sport, league_slug, team_name):
     """
@@ -4346,60 +4292,121 @@ import json, os as _os, re as _re
 # [_load_all_team_profiles moved to top]
 
 
-def _compute_profile_stats(games, sport_group):
-    """Calcula todas las stats y rates a partir de la lista de partidos."""
-    if not games:
-        return {}
-    all_s  = [g["scored"]   for g in games]
-    all_c  = [g["conceded"] for g in games]
-    home_g = [g for g in games if g.get("home")]
-    away_g = [g for g in games if not g.get("home")]
+# _compute_profile_stats moved to top
+def populate_all_team_profiles(progress_bar=None, status_text=None):
+    """
+    Recorre todas las ligas, recolecta todos los perfiles en memoria,
+    y los escribe al Sheet EN UNA SOLA llamada batch al final.
+    Esto evita timeouts de Streamlit Cloud en conexiones largas.
+    """
+    if not _gsheets_available():
+        return 0, 0, ["❌ Google Sheets no configurado"]
 
-    def safe_avg(lst): return round(sum(lst)/len(lst), 3) if lst else 0.0
-    def rate(lst, fn): return round(sum(1 for x in lst if fn(x))/len(lst), 3) if lst else 0.0
+    log           = []
+    failed        = 0
+    all_rows      = []   # acumula todas las filas en memoria
+    leagues       = list(_ALL_LEAGUE_SLUGS.items())
+    total_leagues = len(leagues)
 
-    stats = {
-        "n_games":           len(games),
-        "avg_scored":        safe_avg(all_s),
-        "avg_conceded":      safe_avg(all_c),
-        "avg_scored_home":   safe_avg([g["scored"]   for g in home_g]),
-        "avg_conceded_home": safe_avg([g["conceded"] for g in home_g]),
-        "avg_scored_away":   safe_avg([g["scored"]   for g in away_g]),
-        "avg_conceded_away": safe_avg([g["conceded"] for g in away_g]),
-    }
+    # ── Fase 1: recolectar datos de ESPN (sin tocar Sheets) ───────────────────
+    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
+        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
 
-    if sport_group == "Soccer":
-        stats.update({
-            "rate_o15":       rate(games,  lambda g: g["scored"]+g["conceded"] > 1.5),
-            "rate_o25":       rate(games,  lambda g: g["scored"]+g["conceded"] > 2.5),
-            "rate_o35":       rate(games,  lambda g: g["scored"]+g["conceded"] > 3.5),
-            "rate_btts":      rate(games,  lambda g: g["scored"]>0 and g["conceded"]>0),
-            "rate_o15_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 1.5),
-            "rate_o25_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 2.5),
-            "rate_o35_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 3.5),
-            "rate_btts_home": rate(home_g, lambda g: g["scored"]>0 and g["conceded"]>0),
-            "rate_o15_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 1.5),
-            "rate_o25_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 2.5),
-            "rate_o35_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 3.5),
-            "rate_btts_away": rate(away_g, lambda g: g["scored"]>0 and g["conceded"]>0),
-            "thresholds": {},
-        })
-    else:
-        thresholds = {}
-        for key, thresh in _TP_THRESHOLDS.get(sport_group, []):
-            thresholds[key]         = rate(games,  lambda g, t=thresh: g["scored"] > t)
-            thresholds[key+"_home"] = rate(home_g, lambda g, t=thresh: g["scored"] > t)
-            thresholds[key+"_away"] = rate(away_g, lambda g, t=thresh: g["scored"] > t)
-        stats.update({
-            "rate_o15":0.0,"rate_o25":0.0,"rate_o35":0.0,"rate_btts":0.0,
-            "rate_o15_home":0.0,"rate_o25_home":0.0,"rate_o35_home":0.0,"rate_btts_home":0.0,
-            "rate_o15_away":0.0,"rate_o25_away":0.0,"rate_o35_away":0.0,"rate_btts_away":0.0,
-            "thresholds": thresholds,
-        })
-    return stats
+        if status_text:
+            status_text.markdown(f"🔍 **{league}** — obteniendo equipos...")
+
+        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
+        if not teams:
+            log.append(f"⚠ {league}: sin equipos en ESPN")
+            if progress_bar:
+                progress_bar.progress((li + 1) / total_leagues * 0.85)
+            continue
+
+        log.append(f"📋 {league}: {len(teams)} equipos")
+
+        for ti, team in enumerate(teams):
+            tid   = team["id"]
+            tname = team["name"]
+
+            if status_text:
+                status_text.markdown(
+                    f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
+                )
+
+            try:
+                games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
+                if not isinstance(games, list):
+                    games = []
+                games = games[:_TP_MAX_GAMES]
+            except Exception as _e:
+                games = []
+                if ti == 0:
+                    log.append(f"  ⚠ {tname} fetch error: {_e}")
+            if not games:
+                failed += 1
+                continue
+            stats  = _compute_profile_stats(games, sport_group)
+            if not stats:
+                failed += 1
+                continue
+
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            all_rows.append([
+                str(tid), tname, league, sport_group, now,
+                json.dumps(games, ensure_ascii=False),
+                stats["n_games"],
+                stats["avg_scored"],      stats["avg_conceded"],
+                stats["avg_scored_home"], stats["avg_conceded_home"],
+                stats["avg_scored_away"], stats["avg_conceded_away"],
+                stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
+                stats["rate_o15_home"], stats["rate_o25_home"],
+                stats["rate_o35_home"], stats["rate_btts_home"],
+                stats["rate_o15_away"], stats["rate_o25_away"],
+                stats["rate_o35_away"], stats["rate_btts_away"],
+                json.dumps(stats.get("thresholds", {}), ensure_ascii=False),
+            ])
+            log.append(f"  ✅ {tname}: {len(games)} partidos")
+
+        if progress_bar:
+            progress_bar.progress((li + 1) / total_leagues * 0.85)
+
+    if not all_rows:
+        return 0, failed, log + ["❌ Sin datos para escribir"]
+
+    # ── Fase 2: escribir TODO al Sheet en una sola llamada batch ──────────────
+    if status_text:
+        status_text.markdown(f"💾 Escribiendo **{len(all_rows)}** equipos al Sheet...")
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+
+        # Crear/limpiar pestaña team_profiles
+        try:
+            ws = sh.worksheet(_TP_TAB)
+            ws.clear()
+        except:
+            ws = sh.add_worksheet(title=_TP_TAB, rows=len(all_rows)+10, cols=len(_TP_HEADERS))
+
+        # Escribir header + datos en una sola llamada
+        ws.update("A1", [_TP_HEADERS] + all_rows, value_input_option="RAW")
+        written = len(all_rows)
+        log.append(f"✅ {written} filas escritas al Sheet en batch")
+
+    except Exception as e:
+        log.append(f"❌ Error escribiendo al Sheet: {e}")
+        return 0, failed, log
+
+    if progress_bar:
+        progress_bar.progress(1.0)
+    if status_text:
+        status_text.markdown(f"✅ Completado: **{written}** equipos en memoria")
+
+    _load_all_team_profiles.clear()
+    return written, failed, log
 
 
-# [_fetch_all_teams_in_league moved]
+# [fetch_recent_form moved]
 
 
 def _safe_apodo(apodo):
