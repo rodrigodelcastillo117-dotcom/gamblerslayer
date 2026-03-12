@@ -642,6 +642,74 @@ hr { border-color: var(--border) !important; }
     padding: 7px 7px !important;
   }
 }
+
+/* ══════════════════════════════════════════════════
+   DARK EXPANDER THEME — all expanders
+   ══════════════════════════════════════════════════ */
+
+/* Header (the clickable bar) */
+[data-testid="stExpander"] > details > summary,
+.streamlit-expanderHeader,
+[data-testid="stExpander"] summary {
+  background: #0d1f14 !important;
+  color: #C9A84C !important;
+  border: 1px solid rgba(201,168,76,0.25) !important;
+  border-radius: 6px !important;
+  padding: 10px 16px !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  transition: background 0.2s, border-color 0.2s !important;
+}
+[data-testid="stExpander"] > details[open] > summary,
+[data-testid="stExpander"] summary[aria-expanded="true"] {
+  border-radius: 6px 6px 0 0 !important;
+  border-bottom-color: rgba(201,168,76,0.15) !important;
+  background: #122218 !important;
+}
+[data-testid="stExpander"] summary:hover {
+  background: #162b1c !important;
+  border-color: rgba(201,168,76,0.5) !important;
+}
+/* Expand arrow icon */
+[data-testid="stExpander"] summary svg {
+  fill: #C9A84C !important;
+  color: #C9A84C !important;
+}
+/* Content area */
+[data-testid="stExpander"] > details > div,
+[data-testid="stExpander"] .streamlit-expanderContent {
+  background: #0a1a10 !important;
+  border: 1px solid rgba(201,168,76,0.15) !important;
+  border-top: none !important;
+  border-radius: 0 0 6px 6px !important;
+  padding: 12px 10px !important;
+}
+/* Nested expanders (date inside sport) */
+[data-testid="stExpander"] [data-testid="stExpander"] > details > summary {
+  background: #0f2218 !important;
+  color: #E0F7F0 !important;
+  border-color: rgba(224,247,240,0.15) !important;
+  font-weight: 600 !important;
+}
+[data-testid="stExpander"] [data-testid="stExpander"] > details[open] > summary {
+  background: #132a1e !important;
+}
+[data-testid="stExpander"] [data-testid="stExpander"] summary:hover {
+  background: #1a3326 !important;
+  border-color: rgba(201,168,76,0.4) !important;
+}
+[data-testid="stExpander"] [data-testid="stExpander"] > details > div {
+  background: #0b1d13 !important;
+  border-color: rgba(224,247,240,0.08) !important;
+}
+/* Remove Streamlit's default white bg on expander wrapper */
+[data-testid="stExpander"] {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -4944,7 +5012,7 @@ with tab_sim:
                 cands.append({"market":"O/U","label":"Over 2.5","prob":_o25_pb,"ev":_o25_ev})
         else:
             _ou_line = sim.get("ou_line") or ""
-            _p_over  = sim.get("p_o_total") or 0
+            _p_over  = sim.get("p_o_total") or 0   # stored as 0-100 percentage
             _p_under = sim.get("p_u_total") or 0
             if _ou_line and (_p_over > 0 or _p_under > 0):
                 try: _line = float(_ou_line.lstrip("~"))
@@ -4952,10 +5020,17 @@ with tab_sim:
                 _implicit = _ou_line.startswith("~")
                 _tag = " (avg)" if _implicit else ""
                 if _line:
-                    if _p_over >= _p_under:
-                        cands.append({"market":"O/U","label":f"Over {_line:.1f}{_tag}","prob":_p_over,"ev":0})
-                    else:
-                        cands.append({"market":"O/U","label":f"Under {_line:.1f}{_tag}","prob":_p_under,"ev":0})
+                    if sg in ("Basketball", "Hockey"):
+                        # Never show Under for NBA/NHL — historically -EV, confusing
+                        # Only add Over if model genuinely favors it (>45%)
+                        if _p_over >= 45:
+                            cands.append({"market":"O/U","label":f"Over {_line:.1f}{_tag}","prob":_p_over,"ev":0})
+                        # else: ML only — already in cands
+                    else:  # Baseball / Football
+                        if _p_over >= _p_under:
+                            cands.append({"market":"O/U","label":f"Over {_line:.1f}{_tag}","prob":_p_over,"ev":0})
+                        else:
+                            cands.append({"market":"O/U","label":f"Under {_line:.1f}{_tag}","prob":_p_under,"ev":0})
         return max(cands, key=lambda x: x["prob"])
 
     def _oracle_card(g, sm):
