@@ -4438,8 +4438,26 @@ is_demo=False
 if use_demo:
     games=get_demo_games(); is_demo=True
 else:
-    with st.spinner("Consultando ESPN..."):
-        games,fetch_errors=get_all_games(sel_leagues)
+    # ── ESPN cache: only re-fetch when leagues change, on first load, or when user clicks ANALIZAR
+    from datetime import timedelta as _td_espn_cache
+    _espn_cache_key = ",".join(sorted(sel_leagues))
+    _espn_date_key  = (datetime.now(timezone.utc) - _td_espn_cache(hours=6)).strftime("%Y-%m-%d")
+    _espn_full_key  = _espn_cache_key + "|" + _espn_date_key
+    _espn_prev_key  = st.session_state.get("_espn_key", "")
+    _need_espn      = (
+        _espn_full_key != _espn_prev_key          # leagues or date changed
+        or "games_cache" not in st.session_state  # first load
+        or run_sidebar                             # user pressed ANALIZAR
+    )
+    if _need_espn:
+        with st.spinner("Consultando ESPN..."):
+            games, fetch_errors = get_all_games(sel_leagues)
+        st.session_state["games_cache"]  = games
+        st.session_state["fetch_errors"] = fetch_errors
+        st.session_state["_espn_key"]    = _espn_full_key
+    else:
+        games        = st.session_state["games_cache"]
+        fetch_errors = st.session_state.get("fetch_errors", [])
 
     # ── Persist pre-game soccer matches across refreshes ─────────────────────
     # ESPN soccer API often only returns active games. We cache pre-game soccer
@@ -7713,3 +7731,4 @@ with tab_reto:
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;font-family:\'Cinzel\',serif;font-size:0.672rem;color:#2a3a2e;letter-spacing:3px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
+
