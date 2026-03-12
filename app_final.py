@@ -6429,7 +6429,33 @@ with tab_all:
         st.markdown('<div class="section-heading">🔴 Picks En Vivo</div>', unsafe_allow_html=True)
         st.caption("Análisis contextual: marcador actual + minuto + probabilidades de simulación.")
 
-        for g in live_games:
+        # ── Filtros: deporte / país / liga ────────────────────────────────────
+        _lv_sports = sorted(set(LEAGUES.get(g["league"],{}).get("group","Soccer") for g in live_games))
+        _lv_countries = sorted(set(LEAGUES.get(g["league"],{}).get("country","") for g in live_games if LEAGUES.get(g["league"],{}).get("country","")))
+        _lv_leagues = sorted(set(g["league"] for g in live_games))
+
+        _fc1, _fc2, _fc3 = st.columns(3)
+        with _fc1:
+            _sel_sport = st.selectbox("⚡ Deporte", ["Todos"] + _lv_sports, key="lv_sport_sel")
+        with _fc2:
+            _sel_country = st.selectbox("🌎 País", ["Todos"] + _lv_countries, key="lv_country_sel")
+        with _fc3:
+            _sel_league = st.selectbox("🏆 Liga", ["Todas"] + [league_label(l) for l in _lv_leagues], key="lv_league_sel")
+
+        # Apply filters
+        _live_filtered = []
+        for _g in live_games:
+            _sg = LEAGUES.get(_g["league"],{}).get("group","Soccer")
+            _cty = LEAGUES.get(_g["league"],{}).get("country","")
+            _llbl = league_label(_g["league"])
+            if _sel_sport != "Todos" and _sg != _sel_sport: continue
+            if _sel_country != "Todos" and _cty != _sel_country: continue
+            if _sel_league != "Todas" and _llbl != _sel_league: continue
+            _live_filtered.append(_g)
+
+        st.markdown(f'<div style="font-size:0.78rem;color:#6B7E6E;margin:4px 0 12px 0">{len(_live_filtered)} de {len(live_games)} partidos en vivo</div>', unsafe_allow_html=True)
+
+        for g in _live_filtered:
             sim         = run_monte_carlo(g, n=5_000)
             dq          = sim["data_quality"]
             sport_group = LEAGUES.get(g["league"], {}).get("group", "Soccer")
@@ -6460,29 +6486,23 @@ with tab_all:
             prob_color  = "#4ade80" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
             border_col  = "rgba(255,60,60,0.7)"
 
-            # Build HTML
-            picks_html = ""
+            # Build HTML — compact 3-per-row grid
+            picks_html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">'
             for i, pk in enumerate(picks):
                 pc = "#4ade80" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
+                _bg = "rgba(255,232,124,0.08)" if i == 0 else "rgba(255,255,255,0.02)"
+                _bd = "#FFE87C44" if i == 0 else "#2a3a2e"
                 picks_html += (
-                    f'<div style="display:flex;align-items:center;gap:10px;'
-                    f'padding:8px 12px;margin-bottom:6px;'
-                    f'background:rgba(255,232,124,{0.08 if i==0 else 0.03});'
-                    f'border-radius:6px;border-left:3px solid {"#FFE87C" if i==0 else "#3a4a3e"}">'
-                    f'<span style="color:#FFE87C;font-size:{1.3 if i==0 else 1.0}rem">&#9658;</span>'
-                    f'<div style="flex:1">'
-                    f'<span style="font-family:Cinzel,serif;font-size:{1.15 if i==0 else 0.95}rem;'
-                    f'font-weight:{"900" if i==0 else "600"};color:#FFE87C;letter-spacing:1.5px">'
-                    f'{pk["label"]}</span>'
-                    f'<div style="font-size:0.84rem;color:#8a9e8a;margin-top:3px;line-height:1.4">'
-                    f'{pk["rationale"]}</div>'
+                    f'<div style="background:{_bg};border:1px solid {_bd};border-radius:6px;padding:7px 9px">'
+                    f'<div style="font-size:0.76rem;font-weight:700;color:#FFE87C;margin-bottom:3px;'
+                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["label"]}</div>'
+                    f'<div style="font-family:Cinzel,serif;font-size:1.1rem;color:{pc};font-weight:700">{pk["prob"]:.0f}%</div>'
+                    f'<div style="font-size:0.67rem;color:#6B7E6E;margin-top:3px;line-height:1.3;'
+                    f'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'
+                    f'{pk["rationale"][:90]}</div>'
                     f'</div>'
-                    f'<div style="text-align:center;min-width:48px">'
-                    f'<div style="font-family:Cinzel,serif;font-size:1.232rem;color:{pc};font-weight:700">'
-                    f'{pk["prob"]:.0f}%</div>'
-                    f'<div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">PROB</div>'
-                    f'</div></div>'
                 )
+            picks_html += "</div>"
 
             stats_html = (
                 f'<div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px 0;'
@@ -7122,84 +7142,77 @@ with tab_reto:
         _lbls = _cd["labels"]
         _pks  = _cd["picks"]
 
-        # Fixed scale: 0 → 5000
-        Y_MIN, Y_MAX = 0, 5000
-        W, H = 760, 260
-        PAD_L, PAD_R, PAD_T, PAD_B = 58, 24, 20, 36
+        # Fixed scale: 0 → 5000, pure Python SVG (no f-string nesting issues)
+        _Y_MIN, _Y_MAX = 0, 5000
+        _W, _H = 760, 260
+        _PL, _PR, _PT, _PB = 58, 24, 20, 36
 
         def _vy(v):
-            """Convert value to SVG Y coordinate."""
-            ratio = (v - Y_MIN) / (Y_MAX - Y_MIN)
-            return PAD_T + (1 - ratio) * (H - PAD_T - PAD_B)
+            r = (v - _Y_MIN) / (_Y_MAX - _Y_MIN)
+            return _PT + (1 - r) * (_H - _PT - _PB)
 
-        def _vx(i, n):
-            """Convert index to SVG X coordinate."""
-            if n <= 1: return PAD_L + (W - PAD_L - PAD_R) / 2
-            return PAD_L + i * (W - PAD_L - PAD_R) / (n - 1)
+        def _vx(i, nn):
+            if nn <= 1: return _PL + (_W - _PL - _PR) / 2
+            return _PL + i * (_W - _PL - _PR) / (nn - 1)
 
-        n = len(_vals)
-        RES_CLR = {"ganado":"#4ade80","perdido":"#ef4444","pendiente":"#f59e0b"}
+        _n = len(_vals)
+        _RES_CLR = {"ganado":"#4ade80","perdido":"#ef4444","pendiente":"#f59e0b"}
 
-        # Build polyline points
-        pts = " ".join(f"{{_vx(i,n):.1f}},{{_vy(v):.1f}}" for i,v in enumerate(_vals))
+        # Y axis grid lines and labels
+        _ytick_parts = []
+        for _yt in [0, 1000, 2000, 3000, 4000, 5000]:
+            _yy = _vy(_yt)
+            _ylbl = ("$" + str(_yt // 1000) + "k") if _yt >= 1000 else "$0"
+            _ytick_parts.append(
+                '<line x1="' + str(_PL) + '" y1="' + str(round(_yy,1)) + '" x2="' + str(_W-_PR) + '" y2="' + str(round(_yy,1)) + '" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>'
+                + '<text x="' + str(_PL-6) + '" y="' + str(round(_yy+4,1)) + '" fill="#5a7060" font-size="10" text-anchor="end">' + _ylbl + '</text>'
+            )
+        _ytick_svg = "".join(_ytick_parts)
 
-        # Y axis ticks: 0, 1000, 2000, 3000, 4000, 5000
-        y_ticks = [0, 1000, 2000, 3000, 4000, 5000]
-        y_tick_svg = ""
-        for yt in y_ticks:
-            yy = _vy(yt)
-            lbl = f"${{yt//1000}}k" if yt >= 1000 else "$0"
-            y_tick_svg += f'''<line x1="{PAD_L}" y1="{yy:.1f}" x2="{W-PAD_R}" y2="{yy:.1f}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
-<text x="{PAD_L-6}" y="{yy+4:.1f}" fill="#5a7060" font-size="10" text-anchor="end">{lbl}</text>'''
+        # Segments
+        _seg_parts = []
+        for _i in range(_n - 1):
+            _x1, _y1 = _vx(_i, _n), _vy(_vals[_i])
+            _x2, _y2 = _vx(_i+1, _n), _vy(_vals[_i+1])
+            _sc = "#4ade80" if _vals[_i+1] >= _vals[_i] else "#ef4444"
+            _seg_parts.append('<line x1="' + str(round(_x1,1)) + '" y1="' + str(round(_y1,1)) + '" x2="' + str(round(_x2,1)) + '" y2="' + str(round(_y2,1)) + '" stroke="' + _sc + '" stroke-width="2.5" stroke-linecap="round"/>')
+        _seg_svg = "".join(_seg_parts)
 
-        # Segments (colored lines between points)
-        seg_svg = ""
-        for i in range(n-1):
-            x1,y1 = _vx(i,n), _vy(_vals[i])
-            x2,y2 = _vx(i+1,n), _vy(_vals[i+1])
-            clr = "#4ade80" if _vals[i+1] >= _vals[i] else "#ef4444"
-            seg_svg += f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{clr}" stroke-width="2.5" stroke-linecap="round"/>'
+        # Fill polygon
+        _pts_list = " ".join(str(round(_vx(_i,_n),1)) + "," + str(round(_vy(_v),1)) for _i,_v in enumerate(_vals))
+        _fill_pts = str(_PL) + "," + str(round(_vy(_Y_MIN),1)) + " " + _pts_list + " " + str(round(_vx(_n-1,_n),1)) + "," + str(round(_vy(_Y_MIN),1))
 
-        # Fill area under line
-        fill_pts = f"{{PAD_L}},{{_vy(Y_MIN):.1f}} " + pts + f" {{_vx(n-1,n):.1f}},{{_vy(Y_MIN):.1f}}"
+        # Dots and labels
+        _dot_parts = []
+        for _i, (_v, _lb) in enumerate(zip(_vals, _lbls)):
+            _pk = _pks[_i] if _i < len(_pks) else None
+            _res = _pk["res"] if _pk else None
+            _clr = "#C9A84C" if _i == 0 else _RES_CLR.get(_res, "#C9A84C")
+            _cx, _cy = _vx(_i, _n), _vy(_v)
+            _rb = 9 if _res in ("ganado","perdido") else 7
+            _vlbl = "$" + "{:,.0f}".format(_v)
+            _slbl = _lb[:12]
+            _dot_parts.append(
+                '<circle cx="' + str(round(_cx,1)) + '" cy="' + str(round(_cy,1)) + '" r="' + str(_rb+5) + '" fill="' + _clr + '" opacity="0.18"/>'
+                + '<circle cx="' + str(round(_cx,1)) + '" cy="' + str(round(_cy,1)) + '" r="' + str(_rb) + '" fill="' + _clr + '" stroke="#000" stroke-width="1.5"/>'
+                + '<text x="' + str(round(_cx,1)) + '" y="' + str(round(_cy-14,1)) + '" fill="' + _clr + '" font-size="10" font-weight="bold" text-anchor="middle">' + _vlbl + '</text>'
+                + '<text x="' + str(round(_cx,1)) + '" y="' + str(round(_H-_PB+14,1)) + '" fill="#3a5040" font-size="9" text-anchor="middle">' + _slbl + '</text>'
+            )
+        _dot_svg = "".join(_dot_parts)
 
-        # Dots + labels
-        dot_svg = ""
-        for i,(v,lbl) in enumerate(zip(_vals,_lbls)):
-            pk = _pks[i] if i < len(_pks) else None
-            res = pk["res"] if pk else None
-            clr = RES_CLR.get(res, "#C9A84C")
-            if i == 0: clr = "#C9A84C"
-            cx,cy = _vx(i,n), _vy(v)
-            r_big = 9 if res in ("ganado","perdido") else 7
-            # glow
-            dot_svg += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r_big+5}" fill="{clr}" opacity="0.18"/>'
-            # dot
-            dot_svg += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r_big}" fill="{clr}" stroke="#000" stroke-width="1.5"/>'
-            # value label above dot
-            v_lbl = f"${{v:,.0f}}"
-            dot_svg += f'<text x="{cx:.1f}" y="{cy-14:.1f}" fill="{clr}" font-size="10" font-weight="bold" text-anchor="middle">{v_lbl}</text>'
-            # x label below
-            short_lbl = lbl[:12]
-            dot_svg += f'<text x="{cx:.1f}" y="{H-PAD_B+14:.1f}" fill="#3a5040" font-size="9" text-anchor="middle">{short_lbl}</text>'
-
-        svg_html = f'''
-        <div style="background:#060C08;padding:16px;border-radius:8px;border:1px solid rgba(201,168,76,0.25);overflow:hidden">
-        <svg viewBox="0 0 {W} {H}" width="100%" height="{H}" style="display:block">
-          <defs>
-            <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#C9A84C" stop-opacity="0.15"/>
-              <stop offset="100%" stop-color="#C9A84C" stop-opacity="0.01"/>
-            </linearGradient>
-          </defs>
-          {y_tick_svg}
-          <polygon points="{fill_pts}" fill="url(#fillGrad)"/>
-          {seg_svg}
-          {dot_svg}
-        </svg>
-        </div>
-        '''
-        st.markdown(svg_html, unsafe_allow_html=True)
+        _svg_html = (
+            '<div style="background:#060C08;padding:16px;border-radius:8px;border:1px solid rgba(201,168,76,0.25);overflow:hidden">'
+            + '<svg viewBox="0 0 ' + str(_W) + ' ' + str(_H) + '" width="100%" height="' + str(_H) + '" style="display:block">'
+            + '<defs><linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">'
+            + '<stop offset="0%" stop-color="#C9A84C" stop-opacity="0.15"/>'
+            + '<stop offset="100%" stop-color="#C9A84C" stop-opacity="0.01"/>'
+            + '</linearGradient></defs>'
+            + _ytick_svg
+            + '<polygon points="' + _fill_pts + '" fill="url(#fillGrad)"/>'
+            + _seg_svg + _dot_svg
+            + '</svg></div>'
+        )
+        st.markdown(_svg_html, unsafe_allow_html=True)
 
     elif not picks:
         st.markdown('''<div class="empty-state">
