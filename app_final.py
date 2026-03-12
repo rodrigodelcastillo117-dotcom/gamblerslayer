@@ -515,8 +515,6 @@ hr { border-color: var(--border) !important; }
 # ═══════════════════════════════════════════════════════════════════════════════
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
-    "WNBA":             {"sport":"basketball","league":"wnba",                   "group":"Basketball"},
-    "NCAAB":            {"sport":"basketball","league":"mens-college-basketball","group":"Basketball"},
     "MLB":              {"sport":"baseball",  "league":"mlb",                    "group":"Baseball"},
     "NCAA Baseball":    {"sport":"baseball",  "league":"college-baseball",       "group":"Baseball"},
     "NFL":              {"sport":"football",  "league":"nfl",                    "group":"Football"},
@@ -534,27 +532,21 @@ LEAGUES = {
     "Conference League":      {"sport":"soccer", "league":"UEFA.CONFERENCE",     "group":"Soccer"},
     "CONCACAF Champions Cup": {"sport":"soccer", "league":"CONCACAF.CHAMPIONS",  "group":"Soccer"},
     "Liga de Expansión":      {"sport":"soccer", "league":"mex.2",               "group":"Soccer"},
-    "ATP":              {"sport":"tennis",    "league":"atp",                    "group":"Tennis"},
-    "WTA":              {"sport":"tennis",    "league":"wta",                    "group":"Tennis"},
-    "Indian Wells ATP": {"sport":"tennis",    "league":"atp",                    "group":"Tennis", "tournament_id":"411"},
-    "Indian Wells WTA": {"sport":"tennis",    "league":"wta",                    "group":"Tennis", "tournament_id":"411"},
 }
 HOME_BOOST = {
-    "NBA":0.035,"WNBA":0.03,"NCAAB":0.05,"MLB":0.025,"NCAA Baseball":0.02,
+    "NBA":0.035,"MLB":0.025,"NCAA Baseball":0.02,
     "NFL":0.035,"NCAAF":0.045,"NHL":0.03,"MLS":0.04,"Liga MX":0.045,
     "Premier League":0.038,"La Liga":0.04,"Bundesliga":0.042,"Serie A":0.04,
     "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,"Conference League":0.032,"CONCACAF Champions Cup":0.04,
-    "Liga de Expansión":0.05,"ATP":0.01,"WTA":0.01,
-    "Indian Wells ATP":0.0,"Indian Wells WTA":0.0,
+    "Liga de Expansión":0.05,
 }
 LEAGUE_AVG_GOALS = {
-    "NBA":114.0,"WNBA":83.0,"NCAAB":72.0,"MLB":4.5,"NCAA Baseball":5.5,
-    "NFL":23.0,"NCAAF":28.0,"NHL":3.1,
-    "MLS":2.8,"Liga MX":2.6,"Premier League":2.7,"La Liga":2.6,
-    "Bundesliga":3.1,"Serie A":2.6,"Ligue 1":2.7,
-    "Champions League":2.9,"Europa League":2.7,"Conference League":2.6,"CONCACAF Champions Cup":2.7,"Liga de Expansión":2.5,
-    "ATP":None,"WTA":None,
-    "Indian Wells ATP":None,"Indian Wells WTA":None,
+    "NBA":228.0,"MLB":9.0,"NCAA Baseball":10.5,
+    "NFL":46.0,"NCAAF":56.0,"NHL":6.2,
+    "MLS":2.96,"Liga MX":2.72,"Premier League":2.81,"La Liga":2.63,
+    "Bundesliga":3.24,"Serie A":2.72,"Ligue 1":2.61,
+    "Champions League":3.14,"Europa League":2.89,"Conference League":2.71,"CONCACAF Champions Cup":2.85,"Liga de Expansión":2.55,
+
 }
 ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
 
@@ -592,25 +584,10 @@ def get_demo_games():
          "home_score":"","away_score":"","home_record":"41-18-6","away_record":"38-22-5",
          "state":"pre","status_detail":"7:00 PM ET","date":"","venue":"Amerant Bank Arena",
          "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
-        {"id":"d9","league":"Indian Wells ATP","home_team":"Carlos Alcaraz","away_team":"Casper Ruud",
-         "home_score":"","away_score":"","home_record":"","away_record":"",
-         "state":"pre","status_detail":"R16 · Stadium 1 · 5:00 PM","date":"","venue":"BNP Paribas Open",
-         "odds":{"spread":"","over_under":"","home_ml":"-280","away_ml":"+220","home_wp":"72","away_wp":"28"}},
-        {"id":"d10","league":"Indian Wells ATP","home_team":"Novak Djokovic","away_team":"Jack Draper",
-         "home_score":"","away_score":"","home_record":"","away_record":"",
-         "state":"pre","status_detail":"R16 · Stadium 1 · 9:00 PM","date":"","venue":"BNP Paribas Open",
-         "odds":{"spread":"","over_under":"","home_ml":"-145","away_ml":"+120","home_wp":"55","away_wp":"45"}},
-        {"id":"d11","league":"Indian Wells WTA","home_team":"Jessica Pegula","away_team":"Belinda Bencic",
-         "home_score":"5","away_score":"4","home_record":"","away_record":"",
-         "state":"in","status_detail":"1er Set · En vivo","date":"","venue":"BNP Paribas Open",
-         "odds":{"spread":"","over_under":"","home_ml":"-130","away_ml":"+108","home_wp":"55","away_wp":"45"}},
-        {"id":"d12","league":"Indian Wells WTA","home_team":"Elena Rybakina","away_team":"Sonay Kartal",
-         "home_score":"","away_score":"","home_record":"","away_record":"",
-         "state":"pre","status_detail":"R16 · Stadium 2 · 7:30 PM","date":"","venue":"BNP Paribas Open",
-         "odds":{"spread":"","over_under":"","home_ml":"-400","away_ml":"+300","home_wp":"78","away_wp":"22"}},
     ]
 
 @st.cache_data(ttl=1800)  # Cache 30min — form doesn't change mid-day
+@st.cache_data(ttl=1800)
 def fetch_recent_form(sport, league, team_id, n_games=5):
     """
     Fetch last N results for a team from ESPN team events API.
@@ -738,15 +715,12 @@ def enrich_game_with_form(game):
     sport   = lg_info.get("sport", "")
     group   = lg_info.get("group", "")
 
-    # Tennis has no team concept — skip
-    if group == "Tennis" or not sport:
+    if not sport:  # skip if no sport defined
         return
 
     # ESPN league slug for team lookup
     LEAGUE_SLUGS = {
         "NBA": ("basketball", "nba"),
-        "WNBA": ("basketball", "wnba"),
-        "NCAAB": ("basketball", "mens-college-basketball"),
         "NFL": ("football", "nfl"),
         "NCAAF": ("football", "college-football"),
         "MLB": ("baseball", "mlb"),
@@ -775,9 +749,20 @@ def enrich_game_with_form(game):
     away_id = game.get("away_team_id") or get_team_ids(sport_slug, league_slug, game["away_team"])
 
     if home_id:
-        game["home_form"] = fetch_recent_form(sport_slug, league_slug, home_id)
+        hf = fetch_recent_form(sport_slug, league_slug, home_id)
+        # Only store if valid — 0.0 could mean 5 straight losses (keep) or API failure (discard)
+        # We keep 0.0 since it's a valid form score
+        game["home_form"] = hf
     if away_id:
-        game["away_form"] = fetch_recent_form(sport_slug, league_slug, away_id)
+        af = fetch_recent_form(sport_slug, league_slug, away_id)
+        game["away_form"] = af
+
+    # Log for debugging (visible in Streamlit session state)
+    hf_val = game.get("home_form")
+    af_val = game.get("away_form")
+    if hf_val is None and af_val is None and (home_id or away_id):
+        # Both failed — likely network issue or ESPN doesn't have this league's team events
+        game["_form_unavailable"] = True
 
 
 @st.cache_data(ttl=300)
@@ -790,11 +775,8 @@ def fetch_scoreboard(sport, league, tournament_id=None):
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     base  = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
 
-    if sport == "tennis":
-        urls = [
-            f"{base}?dates={today}&limit=100",          # today's matches (primary)
-            f"{base}?tournamentId={tournament_id}&dates={today}" if tournament_id else None,
-            f"{base}?tournamentId={tournament_id}&limit=100"     if tournament_id else None,
+    if False:  # tennis removed
+        urls = [None,
             f"{base}?limit=100",                         # no date filter fallback
         ]
     elif tournament_id:
@@ -818,329 +800,19 @@ def fetch_scoreboard(sport, league, tournament_id=None):
     return {}
 
 
-def _tennis_player_name(c):
-    """Extract player name from a tennis competitor block — tries all known locations."""
-    for path in [
-        lambda x: x.get("athlete", {}).get("displayName", ""),
-        lambda x: x.get("athlete", {}).get("fullName", ""),
-        lambda x: x.get("team", {}).get("displayName", ""),
-        lambda x: x.get("team", {}).get("name", ""),
-        lambda x: x.get("displayName", ""),
-    ]:
-        try:
-            v = path(c)
-            if v: return v
-        except: pass
-    return "Player"
-
-def _parse_tennis_event(event, league_name):
-    """Parse a single tennis event dict into our game format."""
-    # competitions[0] or direct match block
-    comp  = event.get("competitions", [event])[0]
-    comps = comp.get("competitors", [])
-    if len(comps) < 2:
-        return None
-    p1, p2 = comps[0], comps[1]
-    status = event.get("status", {})
-    state  = status.get("type", {}).get("state", "pre")
-    detail = status.get("type", {}).get("shortDetail", "") or status.get("type", {}).get("description", "")
-
-    # Score — tennis uses set scores, grab total sets won or current score string
-    def tennis_score(c):
-        sc = c.get("score", "")
-        if sc: return str(sc)
-        # linescores = sets
-        ls = c.get("linescores", [])
-        if ls: return "-".join(str(s.get("value","")) for s in ls)
-        return ""
-
-    # Odds
-    odds_info = {"spread":"","over_under":"","home_ml":"","away_ml":"","home_wp":"","away_wp":""}
-    for odds_src in [comp.get("odds",[]), event.get("odds",[])]:
-        if odds_src:
-            o = odds_src[0]
-            # Try multiple field names ESPN uses for tennis moneylines
-            ml1 = (o.get("homeTeamOdds",{}).get("moneyLine","") or
-                   o.get("team1Odds",{}).get("moneyLine","") or
-                   o.get("competitor1Odds",{}).get("moneyLine",""))
-            ml2 = (o.get("awayTeamOdds",{}).get("moneyLine","") or
-                   o.get("team2Odds",{}).get("moneyLine","") or
-                   o.get("competitor2Odds",{}).get("moneyLine",""))
-            wp1 = (o.get("homeTeamOdds",{}).get("winPercentage","") or
-                   o.get("team1Odds",{}).get("winPercentage",""))
-            wp2 = (o.get("awayTeamOdds",{}).get("winPercentage","") or
-                   o.get("team2Odds",{}).get("winPercentage",""))
-            if ml1 or ml2:
-                odds_info.update({"home_ml":ml1,"away_ml":ml2,"home_wp":wp1,"away_wp":wp2})
-            break
-
-    # Tournament name as venue
-    tournament = (event.get("tournament",{}).get("displayName","") or
-                  event.get("league",{}).get("name","") or
-                  comp.get("venue",{}).get("fullName","") or
-                  league_name)
-
-    return {
-        "id":            event.get("id",""),
-        "league":        league_name,
-        "home_team":     _tennis_player_name(p1),
-        "away_team":     _tennis_player_name(p2),
-        "home_score":    tennis_score(p1),
-        "away_score":    tennis_score(p2),
-        "home_record":   "",
-        "away_record":   "",
-        "state":         state,
-        "status_detail": detail,
-        "date":          event.get("date",""),
-        "venue":         tournament,
-        "odds":          odds_info,
-    }
-
-def parse_tennis(data, league_name):
-    """
-    ESPN tennis JSON has several possible structures:
-      A) data["events"] — flat list (standard, used during major tournaments)
-      B) data["leagues"][i]["events"] — grouped by league/tour
-      C) data["events"] empty but data["leagues"] has nested tournament brackets
-    We try all paths and deduplicate by event id.
-    """
-    games = []
-    seen  = set()
-
-    def add(event):
-        g = _parse_tennis_event(event, league_name)
-        if g and g["id"] not in seen and g["home_team"] != "Player":
-            seen.add(g["id"])
-            games.append(g)
-
-    # Path A: flat events list
-    for event in data.get("events", []):
-        try: add(event)
-        except: pass
-
-    # Path B: leagues → events
-    for league in data.get("leagues", []):
-        for event in league.get("events", []):
-            try: add(event)
-            except: pass
-
-    # Path C: leagues → seasons → types → weeks → events (college/challenger)
-    for league in data.get("leagues", []):
-        for season in league.get("season", {}).get("types", []):
-            for week in season.get("weeks", []):
-                for event in week.get("events", []):
-                    try: add(event)
-                    except: pass
-
-    return games
-
-def _parse_live_stats(comp, home, away):
-    """Extract live match stats from ESPN. Returns dict or None."""
-    stats = {}
-    def get_stat(competitor, *keys):
-        s = competitor.get("statistics", {})
-        if isinstance(s, list):
-            for item in s:
-                n = (item.get("name") or item.get("abbreviation") or "").lower()
-                for k in keys:
-                    if k.lower() in n:
-                        try: return float(item.get("value", item.get("displayValue", 0)) or 0)
-                        except: pass
-        elif isinstance(s, dict):
-            for k in keys:
-                if k in s:
-                    try: return float(s[k] or 0)
-                    except: pass
-        return None
-    for key, hkeys in [
-        ("shots",           ["shots","totalShots","Shots"]),
-        ("shots_on_target", ["shotsOnTarget","onTarget","ShotsOnGoal"]),
-        ("possession",      ["possession","possessionPct","Possession"]),
-        ("corners",         ["corners","cornerKicks","Corners"]),
-        ("attacks",         ["dangerousAttacks","attacks","Attacks"]),
-        ("yellow_cards",    ["yellowCards","Yellow"]),
-    ]:
-        hv = get_stat(home, *hkeys)
-        av = get_stat(away, *hkeys)
-        if hv is not None or av is not None:
-            stats[key] = {"home": hv or 0, "away": av or 0}
-    return stats if stats else None
-
-
-def parse_games(data, league_name):
-    games = []
-    for event in data.get("events",[]):
-        try:
-            comp=event.get("competitions",[{}])[0]; comps=comp.get("competitors",[])
-            if len(comps)<2: continue
-            home=next((c for c in comps if c.get("homeAway")=="home"),comps[0])
-            away=next((c for c in comps if c.get("homeAway")=="away"),comps[1])
-            status=event.get("status",{})
-            odds_info={}
-            ol=comp.get("odds",[])
-            if ol:
-                o=ol[0]
-                odds_info={"spread":o.get("details",""),"over_under":o.get("overUnder",""),
-                           "home_ml":o.get("homeTeamOdds",{}).get("moneyLine",""),
-                           "away_ml":o.get("awayTeamOdds",{}).get("moneyLine",""),
-                           "home_wp":o.get("homeTeamOdds",{}).get("winPercentage",""),
-                           "away_wp":o.get("awayTeamOdds",{}).get("winPercentage","")}
-            hr=home.get("records",[{}]); ar=away.get("records",[{}])
-            live_stats = _parse_live_stats(comp, home, away)
-            games.append({"id":event.get("id",""),"league":league_name,
-                "home_team":home.get("team",{}).get("displayName","Home"),
-                "away_team":away.get("team",{}).get("displayName","Away"),
-                "home_score":home.get("score",""),"away_score":away.get("score",""),
-                "home_record":hr[0].get("summary","") if hr else "",
-                "away_record":ar[0].get("summary","") if ar else "",
-                "state":status.get("type",{}).get("state","pre"),
-                "status_detail":status.get("type",{}).get("shortDetail",""),
-                "date":event.get("date",""),
-                "venue":comp.get("venue",{}).get("fullName",""),
-                "odds":odds_info,
-                "live_stats": live_stats})
-        except: continue
-    return games
-
-@st.cache_data(ttl=300)
-def fetch_tsdb_tennis():
-    """
-    TheSportsDB fallback for tennis — no API key needed (uses public key '3').
-    Returns list of normalized game dicts compatible with the rest of the app.
-    Endpoint: /api/v1/json/3/eventsday.php?d=YYYY-MM-DD&s=Tennis
-    Fields used: strHomeTeam, strAwayTeam, intHomeScore, intAwayScore,
-                 strStatus, strTime, strLeague, idEvent
-    """
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    url   = f"https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d={today}&s=Tennis"
-    try:
-        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
-            return []
-        events = r.json().get("events") or []
-    except:
-        return []
-
-    games = []
-    for ev in events:
-        try:
-            league_raw = ev.get("strLeague", "")
-            # Map TSDB league names → our league names
-            if "WTA" in league_raw or "Women" in league_raw.lower():
-                league_name = "Indian Wells WTA" if "Indian Wells" in league_raw or "BNP" in league_raw else "WTA"
-            else:
-                league_name = "Indian Wells ATP" if "Indian Wells" in league_raw or "BNP" in league_raw else "ATP"
-
-            status_raw = (ev.get("strStatus") or "").lower()
-            if status_raw in ("finished", "ft", "aet", "pen"):
-                state = "post"
-            elif status_raw in ("live", "in progress", "1st set", "2nd set", "3rd set", "4th set", "5th set"):
-                state = "in"
-            else:
-                state = "pre"
-
-            hs = ev.get("intHomeScore") or ""
-            as_ = ev.get("intAwayScore") or ""
-            detail = ev.get("strStatus") or ev.get("strTime") or ""
-            round_info = ev.get("strRound") or ev.get("intRound") or ""
-            if round_info:
-                detail = f"R{round_info} · {detail}" if detail else f"R{round_info}"
-
-            games.append({
-                "id":            ev.get("idEvent", ""),
-                "league":        league_name,
-                "home_team":     ev.get("strHomeTeam", "Player 1"),
-                "away_team":     ev.get("strAwayTeam", "Player 2"),
-                "home_score":    str(hs) if hs != "" else "",
-                "away_score":    str(as_) if as_ != "" else "",
-                "home_record":   "",
-                "away_record":   "",
-                "state":         state,
-                "status_detail": detail,
-                "date":          ev.get("dateEvent", ""),
-                "venue":         ev.get("strVenue") or ev.get("strCountry") or "",
-                "odds":          {},
-                "live_stats":    None,
-                "source":        "tsdb",
-            })
-        except:
-            continue
-    return games
-
-
-SOCCER_KEYWORDS = {
-    "fc", "cf", "sc", "ac", "as", "rc", "sd", "cd", "ud", "real", "atletico",
-    "united", "city", "wanderers", "victory", "rovers", "athletic", "sporting",
-    "dynamo", "dynamo", "olympic", "olimpia", "deportivo", "county", "rangers",
-    "hotspur", "rovers", "albion", "wednesday", "palace", "villa", "forest",
-    "wednesday", "county", "wanderers", "rovers", "celtic", "arsenal", "chelsea",
-}
-
-def _is_tennis_match(home, away):
-    """Return True if both names look like tennis players (not soccer clubs)."""
-    def looks_like_player(name):
-        parts = name.lower().split()
-        # Reject if any word is a known club keyword
-        if any(p in SOCCER_KEYWORDS for p in parts):
-            return False
-        # Reject names longer than 4 words (team names tend to be long)
-        if len(parts) > 4:
-            return False
-        return True
-    return looks_like_player(home) and looks_like_player(away)
 
 
 def get_all_games(leagues):
     result=[]; errors=[]
-    tennis_leagues = [n for n in leagues if LEAGUES[n]["group"] == "Tennis"]
-    other_leagues  = [n for n in leagues if LEAGUES[n]["group"] != "Tennis"]
-
-    # ── Non-tennis leagues via ESPN ───────────────────────────────────────────
-    for name in other_leagues:
-        cfg=LEAGUES[name]
+    for name in leagues:
+        cfg=LEAGUES.get(name)
+        if not cfg:
+            continue
         try:
             data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=cfg.get("tournament_id"))
             result.extend(parse_games(data, name))
-        except Exception as e: errors.append(f"{name}: {e}")
-
-    # ── Tennis: ESPN first ────────────────────────────────────────────────────
-    tennis_espn = []
-    for name in tennis_leagues:
-        cfg=LEAGUES[name]
-        try:
-            tid  = cfg.get("tournament_id")
-            data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=tid)
-            # NEVER fall back to parse_games for tennis — it would parse soccer
-            parsed = parse_tennis(data, name)
-            # Extra guard: filter out any non-tennis names that slipped through
-            parsed = [g for g in parsed if _is_tennis_match(g["home_team"], g["away_team"])]
-            tennis_espn.extend(parsed)
         except Exception as e:
-            errors.append(f"{name} (ESPN): {e}")
-
-    # ── TheSportsDB fallback — ALWAYS try if ESPN gave us nothing ─────────────
-    if not tennis_espn and tennis_leagues:
-        try:
-            tsdb_games = fetch_tsdb_tennis()
-            configured = set(tennis_leagues)
-            for g in tsdb_games:
-                if not _is_tennis_match(g["home_team"], g["away_team"]):
-                    continue
-                if g["league"] in configured:
-                    tennis_espn.append(g)
-                elif "ATP" in g["league"] and any("ATP" in n for n in configured):
-                    g["league"] = next(n for n in configured if "ATP" in n)
-                    tennis_espn.append(g)
-                elif "WTA" in g["league"] and any("WTA" in n for n in configured):
-                    g["league"] = next(n for n in configured if "WTA" in n)
-                    tennis_espn.append(g)
-            # If still nothing matched by league, accept all validated TSDB games
-            if tsdb_games and not tennis_espn:
-                tennis_espn = [g for g in tsdb_games if _is_tennis_match(g["home_team"], g["away_team"])]
-        except Exception as e:
-            errors.append(f"TheSportsDB tennis fallback: {e}")
-
-    result.extend(tennis_espn)
+            errors.append(f"{name}: {e}")
     return result, errors
 
 
@@ -1166,13 +838,6 @@ You specialize in: DVOA efficiency metrics, quarterback matchups, offensive line
 weather impact on totals, division games (tighter spreads), home field primetime effect, and playoff seeding motivation.
 Key edge areas: home dogs in divisional games, bad weather collapsing totals, public money inflating favorites.
 Respond in 2-3 sharp sentences. Lead with the single biggest factor. Be direct, no fluff.""",
-
-    "Tennis": """You are a professional tennis betting analyst covering ATP and WTA tours.
-You specialize in: surface matchups (clay/grass/hard court specialists), head-to-head patterns,
-current form (last 10 matches), serve dominance (ace rate, 1st serve %), return game quality,
-tournament round fatigue, and ranking-implied win probabilities vs market odds.
-Key edge areas: H2H dominance overriding ranking, surface specialists, tired favorites deep in tournaments.
-Respond in 2-3 sharp sentences. Lead with the most decisive factor (surface? H2H? form?). Be direct.""",
 
     "Hockey": """You are a sharp NHL betting analyst.
 You specialize in: goaltender matchup quality, 5-on-5 expected goals differential, power play efficiency,
@@ -1250,17 +915,8 @@ def get_ai_analysis(away_team, home_team, league, sport_group,
         else:
             note = f"Modelo da {fav} como favorito ({fav_p:.0f}% vs {dog_p:.0f}%). EV de +{ev:.1f} sugiere que la línea actual subestima ligeramente a {fav if pick_is_home == is_home_fav else dog}."
 
-    # ── Tennis ────────────────────────────────────────────────────────────────
-    elif sport_group == "Tennis":
-        if spread > 40:
-            note = f"{fav} domina con {fav_p:.0f}% — diferencia de ranking importante. En tenis, favoritos tan marcados suelen ganar en sets directos."
-        elif spread < 10:
-            note = f"Partido muy parejo ({home_pct:.0f}% / {away_pct:.0f}%). En tenis H2H y superficie son determinantes — el EV de +{ev:.1f} sugiere ineficiencia de línea."
-        elif pick_is_dog:
-            note = f"{dog} como underdog a {dog_p:.0f}% — upsets en tenis son comunes (30%+ de prob.). Moneyline de underdog puede tener valor real si la superficie favorece su juego."
-        elif dq < 30:
-            note = f"Sin momios ESPN para tenis (DQ {dq:.0f}%). Modelo basado en probabilidades estimadas. Confirma en Bet365 o Pinnacle antes de apostar."
-        else:
+    elif False:  # tennis removed
+        if False:
             note = f"{fav} favorito ({fav_p:.0f}%). En tenis el servicio y la superficie son decisivos — verifica récords en la superficie actual del torneo."
 
     # ── Hockey ────────────────────────────────────────────────────────────────
@@ -1325,18 +981,17 @@ def win_pct_strict(rec):
 # ── League-level historical home win rates (used when no record data available)
 # Source: multi-season averages. Home advantage is real but varies by sport.
 LEAGUE_HOME_RATE = {
-    "NBA": 0.595, "WNBA": 0.570, "NCAAB": 0.620,
+    "NBA": 0.595,
     "MLB": 0.540, "NCAA Baseball": 0.540,
     "NFL": 0.570, "NCAAF": 0.610,
     "NHL": 0.550,
-    "MLS": 0.480, "Liga MX": 0.485,
-    "Premier League": 0.460, "La Liga": 0.470, "Bundesliga": 0.465,
+    "MLS": 0.470, "Liga MX": 0.470,
+    "Premier League": 0.440, "La Liga": 0.455, "Bundesliga": 0.460,
     "Serie A": 0.455, "Ligue 1": 0.455,
     "Champions League": 0.475, "Europa League": 0.465,
     "Conference League": 0.460, "CONCACAF Champions Cup": 0.480,
-    "Liga de Expansión": 0.480,
-    "ATP": 0.500, "WTA": 0.500,  # No home court in tennis
-    "Indian Wells ATP": 0.500, "Indian Wells WTA": 0.500,
+    "Liga de Expansión": 0.460,
+
 }
 
 def calc_ev(prob, ml):
@@ -1365,8 +1020,9 @@ def compute_base_prob(game):
     Multi-signal probability estimator. Signals by descending reliability:
       1. Moneyline (vig-adjusted)         weight 4.0  — best signal, market consensus
       2. ESPN win% (from odds block)      weight 3.0  — ESPN's own model
-      3. Record ratio (W-L-D)             weight 2.0  — season performance
-      4. League home rate prior           weight 0.6  — fallback when no data
+      3. Season record ratio (W-L-D)      weight 2.0  — full season performance
+      4. Recent form (last 5 games)       weight 2.5  — recency-weighted win rate
+      5. League home rate prior           weight 0.6  — anchor when data is thin
 
     DQ (data quality) = how much hard evidence we have, 0-100%.
     When DQ is low, Monte Carlo uncertainty (sigma) is higher.
@@ -1375,7 +1031,6 @@ def compute_base_prob(game):
     odds   = game["odds"]
     league = game["league"]
     is_soccer = LEAGUES.get(league, {}).get("group") == "Soccer"
-    is_tennis = LEAGUES.get(league, {}).get("group") == "Tennis"
 
     # ── Signal 1: Moneyline (strongest — vig-adjusted market probability) ──────
     hml = odds.get("home_ml", ""); aml = odds.get("away_ml", "")
@@ -1427,17 +1082,18 @@ def compute_base_prob(game):
         total_form = home_form + away_form
         if total_form > 0:
             signals.append(home_form / total_form)
-            weights.append(2.5)
+            # When no moneyline available, form carries more weight (up to 3.5)
+            has_ml_signal = bool(hml and aml)
+            form_w = 2.5 if has_ml_signal else 3.5
+            weights.append(form_w)
     elif home_form is not None:
-        # Only home form available — compare against 0.5 baseline
         signals.append((home_form + 0.5) / (home_form + 1.0))
-        weights.append(1.2)
+        weights.append(1.5)
     elif away_form is not None:
         signals.append(1.0 - (away_form + 0.5) / (away_form + 1.0))
-        weights.append(1.2)
-        weights.append(1.2)
+        weights.append(1.5)
 
-    # ── Signal 4: League historical home rate (prior / fallback) ─────────────
+    # ── Signal 5: League historical home rate (prior / fallback) ─────────────
     # Always add as a weak anchor — prevents wild swings when data is thin
     league_prior = LEAGUE_HOME_RATE.get(league, 0.50)
     signals.append(league_prior)
@@ -1480,30 +1136,44 @@ def compute_base_prob(game):
         "is_soccer":  False,
     }
 
+# LEAGUE_AVG_GOALS values = expected TOTAL goals per game (both teams combined).
+# For basketball/football they are total points.
+# avg * 2 was a bug for soccer — removed.
+SOCCER_LEAGUES = {
+    "MLS","Liga MX","Liga de Expansión","Premier League","La Liga","Bundesliga",
+    "Serie A","Ligue 1","Champions League","Europa League","Conference League",
+    "CONCACAF Champions Cup",
+}
+
 def get_lambda(game):
     """
     Estimate expected goals per team using Poisson model.
-    Uses O/U line when available, otherwise falls back to league historical average.
-    Home team gets slightly more share (home advantage in scoring).
+
+    Priority:
+      1. ESPN O/U line (most accurate — reflects current market)
+      2. League historical average (LEAGUE_AVG_GOALS = total goals per game)
+
+    LEAGUE_AVG_GOALS stores TOTAL goals for soccer (e.g. 2.7 = avg both teams).
+    For basketball/NFL/etc it stores total points (e.g. 114 for NBA).
+    The fallback is: total = avg (NOT avg*2 which was a bug).
     """
     league = game["league"]
     avg    = LEAGUE_AVG_GOALS.get(league)
-    if avg is None: return None, None  # Tennis / non-goal sport
+    if avg is None: return None, None  # non-goal sport
 
     ou = game["odds"].get("over_under", "")
     try:
         total = float(str(ou))
-        # Sanity check — O/U line sometimes comes in weird formats
         if total <= 0 or total > 300: raise ValueError
     except:
-        # No O/U line: use league historical average
-        # Slight noise so identical games get different lambdas
-        total = avg * 2
+        # No O/U line: use league historical average directly as total
+        total = avg
 
     base       = compute_base_prob(game)
     hp         = base["home_prob"]
     ap         = base["away_prob"]
-    # Home team scores more on average (home advantage in attack)
+
+    # Home team scores slightly more (home advantage in attack)
     home_share = (hp + 0.52) / (hp + ap + 1.04)
     lam_home   = max(0.1, total * home_share)
     lam_away   = max(0.1, total * (1.0 - home_share))
@@ -1513,8 +1183,13 @@ def run_monte_carlo(game, n=10_000):
     base=compute_base_prob(game)
     hp,dp,dq=base["home_prob"],base["draw_prob"],base["dq"]
     is_soccer=base["is_soccer"]; sigma=(1-dq)*0.15
+    sport_grp = LEAGUES.get(game["league"],{}).get("group","")
+    is_hockey = sport_grp == "Hockey"
     lam_h,lam_a=get_lambda(game); use_goals=lam_h is not None
-    hw=aw=d=btts=o15=o25=o35=dc_1x=dc_x2=dc_12=0
+    # Parse ESPN O/U line once — used inside loop for non-soccer sports
+    try: ou_val = float(str(game["odds"].get("over_under","")));  assert 0 < ou_val < 400
+    except: ou_val = 0.0
+    hw=aw=d=btts=o15=o25=o35=dc_1x=dc_x2=dc_12=o_total=u_total=0
     rng=random.Random()
 
     for _ in range(n):
@@ -1527,13 +1202,33 @@ def run_monte_carlo(game, n=10_000):
                 if gh>ga: hw+=1; dc_1x+=1; dc_12+=1
                 elif gh==ga: d+=1; dc_1x+=1; dc_x2+=1
                 else: aw+=1; dc_x2+=1; dc_12+=1
+                if gh>0 and ga>0: btts+=1
+                if tg>1.5: o15+=1
+                if tg>2.5: o25+=1
+                if tg>3.5: o35+=1
             else:
-                if gh>ga: hw+=1; dc_1x+=1; dc_12+=1
-                else: aw+=1; dc_x2+=1; dc_12+=1
-            if gh>0 and ga>0: btts+=1
-            if tg>1.5: o15+=1
-            if tg>2.5: o25+=1
-            if tg>3.5: o35+=1
+                if is_hockey:
+                    # NHL — Poisson is correct (λ ~3 goals/team, small enough)
+                    # No draw in regulation resolution for O/U purposes (OT/SO ignored)
+                    if gh > ga: hw += 1; dc_1x += 1; dc_12 += 1
+                    elif gh < ga: aw += 1; dc_x2 += 1; dc_12 += 1
+                    else:  # tie after 60 min — 50/50 OT
+                        if rng.random() < 0.5: hw += 1; dc_1x += 1; dc_12 += 1
+                        else: aw += 1; dc_x2 += 1; dc_12 += 1
+                    if ou_val > 0:
+                        if tg > ou_val: o_total += 1
+                        else: u_total += 1
+                else:
+                    # NBA / MLB / NFL — normal distribution (Poisson breaks for large λ)
+                    std = max(1.0, (lh + la) * 0.08)
+                    sim_h = max(0, lh + rng.gauss(0, std * 0.55))
+                    sim_a = max(0, la + rng.gauss(0, std * 0.55))
+                    sim_total = sim_h + sim_a
+                    if sim_h > sim_a: hw += 1; dc_1x += 1; dc_12 += 1
+                    else: aw += 1; dc_x2 += 1; dc_12 += 1
+                    if ou_val > 0:
+                        if sim_total > ou_val: o_total += 1
+                        else: u_total += 1
         else:
             if is_soccer:
                 pd=max(0.01,min(0.50,dp+rng.gauss(0,sigma*0.5)))
@@ -1547,6 +1242,9 @@ def run_monte_carlo(game, n=10_000):
                 else: aw+=1; dc_x2+=1; dc_12+=1
 
     sh=hw/n; sa=aw/n; sd=d/n
+    # NBA/NHL/MLB: O/U over the actual line (lam_h + lam_a = expected total)
+    p_o_total = o_total/n if (use_goals and not is_soccer and (o_total+u_total)>0) else None
+    p_u_total = u_total/n if (use_goals and not is_soccer and (o_total+u_total)>0) else None
     p_btts=btts/n if use_goals else None
     p_o15=o15/n if use_goals else None
     p_o25=o25/n if use_goals else None
@@ -1575,10 +1273,24 @@ def run_monte_carlo(game, n=10_000):
         ("ML",game["away_team"]+" ML",sa,away_ev,aml,ak),
     ]
 
-    # BTTS + O/U markets — ONLY for soccer (and hockey uses total goals differently)
-    # For basketball/football/baseball the O/U line is points, not goals, skip these markets
-    soccer_ou_leagues = {"Soccer"}
     sport_group = LEAGUES.get(game["league"], {}).get("group", "")
+
+    # ── NBA / NHL / MLB O/U (total points/goals line from ESPN) ──────────────
+    if p_o_total is not None and ou:
+        try:
+            ou_line = float(str(ou))
+            ou_label = f"Over {ou_line:.1f}"
+            uu_label = f"Under {ou_line:.1f}"
+            o_total_ev = calc_ev(p_o_total, OU_ML)
+            u_total_ev = calc_ev(p_u_total, OU_ML)
+            candidates += [
+                ("O/U", ou_label,  p_o_total, o_total_ev, str(OU_ML), quarter_kelly(p_o_total, OU_ML)),
+                ("O/U", uu_label,  p_u_total, u_total_ev, str(OU_ML), quarter_kelly(p_u_total, OU_ML)),
+            ]
+        except:
+            pass
+
+    # ── Soccer: BTTS + O/U goals ──────────────────────────────────────────────
     if p_btts is not None and sport_group == "Soccer":
         candidates+=[
             ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
@@ -1648,6 +1360,9 @@ def run_monte_carlo(game, n=10_000):
         "p_dc_x2":round(p_dc_x2*100,1),"dc_x2_ev":dc_x2_ev,
         "p_dc_12":round(p_dc_12*100,1),"dc_12_ev":dc_12_ev,
         "best_single":best_single,"best_parlay":best_parlay,"pos_legs":pos_legs,
+        "p_o_total":round(p_o_total*100,1) if p_o_total is not None else None,
+        "p_u_total":round(p_u_total*100,1) if p_u_total is not None else None,
+        "ou_line":str(ou) if ou else None,
         "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
     }
 
@@ -1917,6 +1632,8 @@ def render_pick_card(r, rank=None):
                      form_badge(hf, r.get("home_team","Local")) +
                      form_badge(af, r.get("away_team","Visita")) +
                      '<span style="font-size:0.65rem;color:#3a4a3e">· últimos 5 juegos</span></div>')
+    elif r.get("_form_unavailable"):
+        form_html = '<div style="margin-top:5px;opacity:0.5;font-size:0.65rem;color:#3a4a3e">📡 Forma reciente no disponible (ESPN sin historial para esta liga)</div>' 
 
     # ── AI Sport Analyst (only for top picks to save API calls) ──────────────
     ai_html = ""
@@ -1930,7 +1647,7 @@ def render_pick_card(r, rank=None):
         draw_pct=sim.get("draw_pct", 0), dq=dq,
     )
     if ai_text:
-        sport_icon = {"Basketball":"🏀","Soccer":"⚽","Football":"🏈","Tennis":"🎾","Hockey":"🏒","Baseball":"⚾"}.get(sport_group,"🎯")
+        sport_icon = {"Basketball":"🏀","Soccer":"⚽","Football":"🏈","Hockey":"🏒","Baseball":"⚾"}.get(sport_group,"🎯")
         ai_html = (
             '<div style="margin-top:10px;padding:10px 14px;'
             'background:rgba(201,168,76,0.06);border-left:3px solid rgba(201,168,76,0.5);'
@@ -2134,18 +1851,8 @@ else:
         with col_b:
             if st.button("🧪 Usar demo"): st.session_state["force_demo"]=True; st.rerun()
 
-        # Specific message if only tennis was selected
-        only_tennis = all(LEAGUES.get(l,{}).get("group")=="Tennis" for l in sel_leagues)
-        if only_tennis:
-            st.markdown("""<div class="warn-banner">
-            🎾 <b>ATP / WTA — Sin partidos disponibles.</b><br>
-            ESPN solo publica partidos de tenis durante semanas de torneo activo (ej: Indian Wells, Miami Open, Roland Garros).
-            Fuera de esas semanas el scoreboard aparece vacío.<br>
-            <b>Solución:</b> Agrega otras ligas (NBA, Soccer) o activa Modo Demo para ver cómo funciona la app.
-            </div>""", unsafe_allow_html=True)
-        else:
-            leagues_str = ", ".join(sel_leagues[:6])
-            st.markdown(f'<div class="warn-banner">ESPN no retornó partidos para: <b>{leagues_str}</b>.<br>Puede que no haya juegos programados hoy o que la API esté temporalmente caída. Usa el modo demo o selecciona otras ligas.</div>',unsafe_allow_html=True)
+        leagues_str = ", ".join(sel_leagues[:6])
+        st.markdown(f'<div class="warn-banner">ESPN no retornó partidos para: <b>{leagues_str}</b>.<br>Puede que no haya juegos programados hoy o que la API esté temporalmente caída. Usa el modo demo o selecciona otras ligas.</div>',unsafe_allow_html=True)
         st.stop()
     else:
         sel_set=set(sel_leagues)
@@ -2697,8 +2404,7 @@ with tab_all:
                 rationale = f"Partido cerrado ({as_}-{hs}). {team} tiene ligera ventaja de {prob:.0f}% según simulación — considera ML o spread reducido."
             elif diff >= 15:
                 rationale = f"{team} con ventaja de {diff} pts. Probabilidad alta de mantener resultado: {prob:.0f}%."
-        elif sport_group == "Tennis":
-            rationale = f"{team} lidera en sets/games. Modelo estima {prob:.0f}% de ganar el match."
+
         return {
             "picks": [{"label": label, "prob": prob, "market": "ML", "rationale": rationale}],
             "headline": f"{as_}-{hs} · {status}"
