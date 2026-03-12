@@ -5736,24 +5736,35 @@ with tab_parlays:
         _now_par   = datetime.now(_tz_par.utc)
         _today_par = (_now_par - _td_par(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-6
 
-        def _game_date_par(gid):
-            """Returns CDMX date string for a game, or None if can't determine."""
+        def _game_date_par(gid, r_obj=None):
+            """Returns CDMX date string for a game, or None if can't determine.
+            Tries sim result r_obj first (has date field), then games list."""
+            # Try from sim result directly (most reliable)
+            if r_obj:
+                raw = r_obj.get("date","")
+                if raw:
+                    try:
+                        _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_par.utc)
+                        return (_u - _td_par(hours=6)).strftime("%Y-%m-%d")
+                    except:
+                        pass
+            # Fallback: look in games list
             g_obj = next((g for g in games if g.get("id") == gid), None)
             if not g_obj: return None
             raw = g_obj.get("date","")
             if not raw: return None
             try:
                 _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_par.utc)
-                return (_u - _td_par(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-5 (DST)
+                return (_u - _td_par(hours=6)).strftime("%Y-%m-%d")
             except:
                 return None
 
         _seen_par = set()
         for r in sr_current:
             gid     = r.get("id","")
-            g_state = next((g["state"] for g in games if g.get("id")==gid), "pre")
+            g_state = r.get("state") or next((g["state"] for g in games if g.get("id")==gid), "pre")
             if g_state == "post": continue
-            _gd_par = _game_date_par(gid)
+            _gd_par = _game_date_par(gid, r)
             if _gd_par is None or _gd_par != _today_par: continue  # ← TODAY only
             if gid in _seen_par: continue                    # ← deduplicate
             _seen_par.add(gid)
@@ -5789,10 +5800,10 @@ with tab_parlays:
             _candidates = []
             for _r in sr_current:
                 _gid = _r.get("id","")
-                _g   = _gmap_par.get(_gid)
-                if not _g: continue
-                if _g["state"] == "post": continue
-                _gd_m = _game_date_par(_gid)
+                # Use state from sim result or from games map
+                _g_state = _r.get("state") or (_gmap_par.get(_gid) or {}).get("state","pre")
+                if _g_state == "post": continue
+                _gd_m = _game_date_par(_gid, _r)
                 if _gd_m is None or _gd_m != _today_par: continue
                 _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
                 if _sg != sg_target: continue
@@ -7055,179 +7066,91 @@ with tab_reto:
             "meta": meta,
         })
 
-        st.components.v1.html(f'''
-        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-        <div style="background:#060C08;padding:20px 20px 16px 20px;border-radius:8px;
-            border:1px solid rgba(201,168,76,0.2);position:relative">
-          <canvas id="retoChart" height="260"></canvas>
+        # SVG chart — pure HTML, no external deps, always visible in Streamlit
+        import json as _json2
+        _cd = _json.loads(chart_data)
+        _vals = _cd["values"]
+        _lbls = _cd["labels"]
+        _pks  = _cd["picks"]
+
+        # Fixed scale: 0 → 5000
+        Y_MIN, Y_MAX = 0, 5000
+        W, H = 760, 260
+        PAD_L, PAD_R, PAD_T, PAD_B = 58, 24, 20, 36
+
+        def _vy(v):
+            """Convert value to SVG Y coordinate."""
+            ratio = (v - Y_MIN) / (Y_MAX - Y_MIN)
+            return PAD_T + (1 - ratio) * (H - PAD_T - PAD_B)
+
+        def _vx(i, n):
+            """Convert index to SVG X coordinate."""
+            if n <= 1: return PAD_L + (W - PAD_L - PAD_R) / 2
+            return PAD_L + i * (W - PAD_L - PAD_R) / (n - 1)
+
+        n = len(_vals)
+        RES_CLR = {{"ganado":"#4ade80","perdido":"#ef4444","pendiente":"#f59e0b",None:"#C9A84C"}}
+
+        # Build polyline points
+        pts = " ".join(f"{{_vx(i,n):.1f}},{{_vy(v):.1f}}" for i,v in enumerate(_vals))
+
+        # Y axis ticks: 0, 1000, 2000, 3000, 4000, 5000
+        y_ticks = [0, 1000, 2000, 3000, 4000, 5000]
+        y_tick_svg = ""
+        for yt in y_ticks:
+            yy = _vy(yt)
+            lbl = f"${{yt//1000}}k" if yt >= 1000 else "$0"
+            y_tick_svg += f'''<line x1="{PAD_L}" y1="{yy:.1f}" x2="{W-PAD_R}" y2="{yy:.1f}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+<text x="{PAD_L-6}" y="{yy+4:.1f}" fill="#5a7060" font-size="10" text-anchor="end">{lbl}</text>'''
+
+        # Segments (colored lines between points)
+        seg_svg = ""
+        for i in range(n-1):
+            x1,y1 = _vx(i,n), _vy(_vals[i])
+            x2,y2 = _vx(i+1,n), _vy(_vals[i+1])
+            clr = "#4ade80" if _vals[i+1] >= _vals[i] else "#ef4444"
+            seg_svg += f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{clr}" stroke-width="2.5" stroke-linecap="round"/>'
+
+        # Fill area under line
+        fill_pts = f"{{PAD_L}},{{_vy(Y_MIN):.1f}} " + pts + f" {{_vx(n-1,n):.1f}},{{_vy(Y_MIN):.1f}}"
+
+        # Dots + labels
+        dot_svg = ""
+        for i,(v,lbl) in enumerate(zip(_vals,_lbls)):
+            pk = _pks[i] if i < len(_pks) else None
+            res = pk["res"] if pk else None
+            clr = RES_CLR.get(res, "#C9A84C")
+            if i == 0: clr = "#C9A84C"
+            cx,cy = _vx(i,n), _vy(v)
+            r_big = 9 if res in ("ganado","perdido") else 7
+            # glow
+            dot_svg += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r_big+5}" fill="{clr}" opacity="0.18"/>'
+            # dot
+            dot_svg += f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r_big}" fill="{clr}" stroke="#000" stroke-width="1.5"/>'
+            # value label above dot
+            v_lbl = f"${{v:,.0f}}"
+            dot_svg += f'<text x="{cx:.1f}" y="{cy-14:.1f}" fill="{clr}" font-size="10" font-weight="bold" text-anchor="middle">{v_lbl}</text>'
+            # x label below
+            short_lbl = lbl[:12]
+            dot_svg += f'<text x="{cx:.1f}" y="{H-PAD_B+14:.1f}" fill="#3a5040" font-size="9" text-anchor="middle">{short_lbl}</text>'
+
+        svg_html = f'''
+        <div style="background:#060C08;padding:16px;border-radius:8px;border:1px solid rgba(201,168,76,0.25);overflow:hidden">
+        <svg viewBox="0 0 {W} {H}" width="100%" height="{H}" style="display:block">
+          <defs>
+            <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#C9A84C" stop-opacity="0.15"/>
+              <stop offset="100%" stop-color="#C9A84C" stop-opacity="0.01"/>
+            </linearGradient>
+          </defs>
+          {y_tick_svg}
+          <polygon points="{fill_pts}" fill="url(#fillGrad)"/>
+          {seg_svg}
+          {dot_svg}
+        </svg>
         </div>
-        <script>
-        const d = {chart_data};
-        const labels = d.labels;
-        const values = d.values;
-        const colors = d.colors;
-        const picks  = d.picks;   // null for index 0 (Inicio), object for each pick
-
-        // ── Point styling ──────────────────────────────────────────────────
-        // index 0 = Inicio → gold dot
-        // ganado → green, perdido → red, pendiente → amber, Inicio → gold
-        const RES_COLOR = {{ ganado:"#4ade80", perdido:"#ef4444", pendiente:"#f59e0b" }};
-        const pointColors = values.map((v, i) => {{
-          if (i === 0) return "#C9A84C";
-          const pk = picks[i];
-          if (!pk) return "#C9A84C";
-          return RES_COLOR[pk.res] || "#C9A84C";
-        }});
-        // Bigger dot for result picks, small for inicio
-        const pointRadius = values.map((v, i) => {{
-          if (i === 0) return 4;
-          const pk = picks[i];
-          if (!pk) return 4;
-          return pk.res === "pendiente" ? 5 : 6;
-        }});
-        const pointHover = values.map((v, i) => i === 0 ? 6 : 9);
-
-        // ── Gradient fill ──────────────────────────────────────────────────
-        const ctx = document.getElementById("retoChart").getContext("2d");
-        const grad = ctx.createLinearGradient(0, 0, 0, 260);
-        grad.addColorStop(0, "rgba(201,168,76,0.18)");
-        grad.addColorStop(1, "rgba(201,168,76,0.01)");
-
-        const segmentColors = colors;
-
-        // ── Glow shadow dataset (larger translucent dots behind main dots) ──
-        const glowColors = pointColors.map(c => c + "44");  // 27% opacity
-
-        new Chart(ctx, {{
-          type: "line",
-          data: {{
-            labels: labels,
-            datasets: [
-              // Dataset 0: glow/shadow dots (no line, just big translucent circles)
-              {{
-                label: "glow",
-                data: values,
-                borderColor: "transparent",
-                backgroundColor: "transparent",
-                pointBackgroundColor: glowColors,
-                pointBorderColor: "transparent",
-                pointRadius: pointRadius.map(r => r * 2.8),
-                pointHoverRadius: 0,
-                fill: false,
-                tension: 0,
-                order: 2,
-              }},
-              // Dataset 1: main line + colored dots
-              {{
-                label: "Bankroll",
-                data: values,
-                segment: {{
-                  borderColor: ctx => {{
-                    const i = ctx.p0DataIndex;
-                    return i < segmentColors.length ? segmentColors[i] : "#C9A84C";
-                  }}
-                }},
-                backgroundColor: grad,
-                borderWidth: 2.5,
-                pointBackgroundColor: pointColors,
-                pointBorderColor: "#000000aa",
-                pointBorderWidth: 1.5,
-                pointRadius: pointRadius.map(r => r + 2),
-                pointHoverRadius: pointRadius.map(r => r + 5),
-                pointHoverBackgroundColor: pointColors,
-                pointHoverBorderColor: "#ffffff",
-                pointHoverBorderWidth: 2,
-                fill: true,
-                tension: 0.2,
-                order: 1,
-              }}
-            ]
-          }},
-          options: {{
-            responsive: true,
-            clip: {{ left: 20, right: 20, top: 20, bottom: 20 }},
-            interaction: {{ mode: "index", intersect: false }},
-            plugins: {{
-              legend: {{ display: false }},
-              tooltip: {{
-                backgroundColor: "#0a1a10",
-                borderColor: "#C9A84C",
-                borderWidth: 1,
-                titleColor: "#C9A84C",
-                bodyColor: "#b8c8b0",
-                padding: 12,
-                displayColors: false,
-                filter: item => item.datasetIndex === 1,  // only show tooltip for main dataset
-                callbacks: {{
-                  title: function(items) {{
-                    const filtered = items.filter(it => it.datasetIndex === 1);
-                    if (!filtered.length) return "";
-                    const i = filtered[0].dataIndex;
-                    if (i === 0) return "📍 Inicio";
-                    const pk = picks[i];
-                    if (!pk) return labels[i];
-                    const icon = pk.res==="ganado" ? "✅" : pk.res==="perdido" ? "❌" : "⏳";
-                    return icon + " #" + pk.num + " · " + pk.partido;
-                  }},
-                  label: function(item) {{
-                    if (item.datasetIndex !== 1) return null;
-                    const i = item.dataIndex;
-                    const bank = "$" + item.parsed.y.toLocaleString("es-MX", {{minimumFractionDigits:2}});
-                    if (i === 0) return [" Bankroll: " + bank];
-                    const pk = picks[i];
-                    if (!pk) return [" Bankroll: " + bank];
-                    const pnlSign = pk.pnl >= 0 ? "+" : "";
-                    const pnlStr = pnlSign + "$" + Math.abs(pk.pnl).toLocaleString("es-MX",{{minimumFractionDigits:2}});
-                    return [
-                      " Pick: " + pk.pick,
-                      " Mercado: " + pk.mercado + (pk.liga ? "  ·  " + pk.liga : ""),
-                      " Stake: $" + pk.stake.toLocaleString("es-MX") + "  @  " + pk.momio,
-                      " P&L: " + pnlStr,
-                      " Bankroll: " + bank,
-                    ];
-                  }},
-                  labelTextColor: function(item) {{
-                    if (item.datasetIndex !== 1) return "transparent";
-                    const i = item.dataIndex;
-                    if (i === 0) return "#b8c8b0";
-                    const pk = picks[i];
-                    if (!pk) return "#b8c8b0";
-                    if (item.label && item.label.startsWith(" P&L")) {{
-                      return pk.pnl >= 0 ? "#4ade80" : "#ef4444";
-                    }}
-                    return "#b8c8b0";
-                  }}
-                }}
-              }}
-            }},
-            layout: {{
-              padding: {{ top: 20, right: 40, bottom: 20, left: 8 }}
-            }},
-            scales: {{
-              x: {{
-                ticks: {{ color: "#3a4a3e", font: {{ size: 10 }}, maxRotation: 45 }},
-                grid: {{ color: "rgba(255,255,255,0.03)" }}
-              }},
-              y: {{
-                ticks: {{
-                  color: "#6B7E6E",
-                  font: {{ size: 10 }},
-                  callback: function(v) {{
-                    if (v >= 1000000) return "$" + (v/1000000).toFixed(1) + "M";
-                    if (v >= 1000)    return "$" + (v/1000).toFixed(1) + "k";
-                    return "$" + v.toLocaleString("es-MX");
-                  }},
-                  maxTicksLimit: 7
-                }},
-                grid: {{ color: "rgba(255,255,255,0.05)" }},
-                min: 0,
-                max: 5000
-              }}
-            }}
-          }}
-        }});
-        </script>
-        ''', height=360, scrolling=False)
+        '''
+        st.markdown(svg_html, unsafe_allow_html=True)
 
     elif not picks:
         st.markdown('''<div class="empty-state">
