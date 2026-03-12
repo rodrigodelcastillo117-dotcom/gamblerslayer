@@ -2835,8 +2835,7 @@ def run_monte_carlo(game, n=10_000):
             candidates.append(("O/U","Over 3.5", p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35,OU_ML)))
         if _ou_edge(p_u25, _pu25_pr):
             candidates.append(("O/U","Under 2.5",p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25,OU_ML)))
-        if _ou_edge(p_u35, _pu35_pr):
-            candidates.append(("O/U","Under 3.5",p_u35, u35_ev, str(OU_ML), quarter_kelly(p_u35,OU_ML)))
+        # U3.5 eliminated — always wins by default %, useless noise
 
     # DC only meaningful for soccer WITH real ESPN moneyline (DC_ML is fictitious otherwise)
     # Without real ML odds, DO EV is calculated vs a made-up -200 → always looks positive
@@ -2922,8 +2921,7 @@ def run_monte_carlo(game, n=10_000):
             candidates.append(("O/U","Over 3.5",  p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35, OU_ML)))
         if _edge2(p_u25, _pv2[1]):
             candidates.append(("O/U","Under 2.5", p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25, OU_ML)))
-        if _edge2(p_u35, _pv2[2]):
-            candidates.append(("O/U","Under 3.5", p_u35, u35_ev, str(OU_ML), quarter_kelly(p_u35, OU_ML)))
+        # U3.5 eliminated — always wins by default %, useless noise (profile blend block)
 
     # ── No-signal guard: block O/U and BTTS when all signals are blind ──────────
     # Without moneyline + form + scoring trend, O/U probs are pure Poisson league avg
@@ -3307,8 +3305,7 @@ def render_pick_card(r, rank=None):
             goal_entries.append(("U2.5", sim["p_u25"], sim.get("u25_ev") or 0))
         if sim.get("p_o35") is not None:
             goal_entries.append(("O3.5", sim["p_o35"], sim.get("o35_ev") or 0))
-        if sim.get("p_u35") is not None:
-            goal_entries.append(("U3.5", sim["p_u35"], sim.get("u35_ev") or 0))
+        # U3.5 not shown
         # Best = highest probability (most likely outcome)
         best_pct_label = max(goal_entries, key=lambda x: x[1])[0] if goal_entries else ""
         pills = []
@@ -3964,10 +3961,12 @@ with tab_picks:
                 # Candidates: BTTS and O2.5 only (no Under picks in RONGOL)
                 cands = []
                 if sim.get("use_goals"):
+                    # BTTS: only "Ambos Anotan SÍ" (never NO), only if EV+
                     _btts_ev = sim.get("btts_ev") or 0
                     _btts_pb = sim.get("p_btts") or 0
                     if _btts_ev > 0 and _btts_pb > 0:
                         cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev,"kelly":0})
+                    # O/U: only Over 2.5 (never Under anything), only if EV+
                     _o25_ev = sim.get("o25_ev") or 0
                     _o25_pb = sim.get("p_o25") or 0
                     if _o25_ev > 0 and _o25_pb > 0:
@@ -3980,8 +3979,9 @@ with tab_picks:
 
             elif sg in ("Basketball", "Hockey"):
                 # ML + O/U Over only (no Under in RONGOL for Hockey/Basketball)
-                # Hockey: line comes from ESPN (5.5, 6.5, etc.)
-                # Basketball: line comes from ESPN (typically 210-240)
+                # Hockey: ESPN line is 5.5 or 6.5 (comes from odds.over_under)
+                # Basketball: ESPN line typically 210-240
+                # If no line available, MLB-style: use ML only
                 cands = []
                 _ml = best_ml()
                 if _ml: cands.append(_ml)
@@ -3990,9 +3990,12 @@ with tab_picks:
                 if _ou_line and _p_over > 0:
                     try: _line = float(_ou_line)
                     except: _line = None
-                    if _line:
+                    if _line and _p_over > 45:  # only if model actually favors Over (>45%)
                         _ev_ou = round((_p_over/100*(100/110) - (1-_p_over/100))*100, 1)
                         cands.append({"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over,"ev":_ev_ou,"kelly":0})
+                # Always include ML as fallback — ensures Basketball always has a pick
+                if not cands and _ml:
+                    cands.append(_ml)
                 return max(cands, key=lambda x: x["prob"]) if cands else None
 
             else:  # Baseball, Football, NCAAF
@@ -4042,7 +4045,7 @@ with tab_picks:
                     f'margin-top:1px">{prob:.0f}%</div>'
                 )
 
-            def _pick_diamante_card(r, tp, rank=0):
+            def _pick_diamante_card(r, tp, rank=0, is_fire=False):
                 mc    = _MKT_COLOR.get(tp["market"],"#9ca3af")
                 _sg_r = LEAGUES.get(r.get("league",""),{}).get("group","Soccer")
                 _ml_i = _SPORT_ICON.get(_sg_r,"⚽")
@@ -4054,8 +4057,14 @@ with tab_picks:
                 conf_c   = _CONF_COLOR(prob)
                 is_diamond = rank == 0
 
-                # gradient border glow for diamond
-                if is_diamond:
+                # gradient border glow for diamond / fire
+                if is_fire:
+                    outer = (f'background:linear-gradient(135deg,rgba(255,106,0,0.18) 0%,#0d1f1a 55%,{mc}22 100%);'
+                             f'border:1px solid rgba(255,106,0,0.6);'
+                             f'box-shadow:0 0 28px rgba(255,106,0,0.25),inset 0 1px 0 rgba(255,106,0,0.15);')
+                    title_size = "0.95rem"
+                    label_size = "1.0rem"
+                elif is_diamond:
                     outer = (f'background:linear-gradient(135deg,{mc}44 0%,#0d1f1a 60%,{mc}22 100%);'
                              f'border:1px solid {mc}88;box-shadow:0 0 24px {mc}33,inset 0 1px 0 {mc}22;')
                     title_size = "1.05rem"
@@ -4072,15 +4081,21 @@ with tab_picks:
                     'border-radius:3px;padding:1px 7px;font-size:0.58rem;font-weight:700;'
                     'letter-spacing:1px;margin-right:6px">⚠ SIN CUOTAS</span>' if _low_conf else ""
                 )
+                _fire_inline = (
+                    '<span style="background:rgba(255,106,0,0.2);color:#ff6a00;'
+                    'border:1px solid rgba(255,106,0,0.55);border-radius:3px;'
+                    'padding:1px 7px;font-size:0.58rem;font-weight:900;'
+                    'letter-spacing:1px;margin-right:6px">🔥 FUEGO</span>'
+                ) if is_fire else ""
                 rank_badge = (
                     f'<span style="background:{mc}22;color:{mc};border:1px solid {mc}55;'
                     f'border-radius:3px;padding:1px 7px;font-size:0.58rem;font-weight:700;'
-                    f'letter-spacing:1px;margin-right:8px">#{rank+1}</span>' if not is_diamond else ""
-                ) + _lc_badge
+                    f'letter-spacing:1px;margin-right:8px">#{rank+1}</span>' if not is_diamond and not is_fire else ""
+                ) + _fire_inline + _lc_badge
                 top_stripe = (
                     f'<div style="height:3px;border-radius:8px 8px 0 0;margin:-14px -14px 10px -14px;'
-                    f'background:linear-gradient(90deg,transparent,{mc},{mc}aa,transparent);'
-                    f'box-shadow:0 0 12px {mc}88"></div>' if is_diamond else ""
+                    f'background:linear-gradient(90deg,transparent,{"#ff6a00" if is_fire else mc},{"#ff6a00aa" if is_fire else mc+"aa"},transparent);'
+                    f'box-shadow:0 0 12px {"rgba(255,106,0,0.6)" if is_fire else mc+"88"}"></div>' if (is_diamond or is_fire) else ""
                 )
 
                 return (
@@ -4115,19 +4130,37 @@ with tab_picks:
             _sport_labels = {"Soccer":"⚽ Fútbol","Basketball":"🏀 Basketball",
                              "Hockey":"🏒 Hockey","Baseball":"⚾ Baseball","Football":"🏈 Football"}
             st.markdown(f'<div class="section-heading">🃏 RONGOL PICKS · {_n_picks} deportes</div>', unsafe_allow_html=True)
+
+            # Find top-2 picks by probability for 🔥 badge
+            _all_probs_ranked = sorted(
+                [(_row_i*2+_ci, _rp["_pick"]["prob"])
+                 for _row_i in range(0, _n_picks, 2)
+                 for _ci, _rp in enumerate(rongol_picks[_row_i:_row_i+2])],
+                key=lambda x: x[1], reverse=True
+            )
+            _fire_indices = {idx for idx, _ in _all_probs_ranked[:2]}
+
             # Render in rows of 2
             for _row_i in range(0, _n_picks, 2):
                 _row_picks = rongol_picks[_row_i:_row_i+2]
                 _cols = st.columns(len(_row_picks))
                 for _ci, _rp in enumerate(_row_picks):
+                    _abs_idx = _row_i + _ci
+                    _is_fire = _abs_idx in _fire_indices
                     with _cols[_ci]:
                         _sg_label = _sport_labels.get(LEAGUES.get(_rp["league"],{}).get("group","Soccer"), "")
+                        _fire_badge = (
+                            '<span style="display:inline-block;background:rgba(255,100,0,0.18);'
+                            'color:#ff6a00;border:1px solid rgba(255,106,0,0.5);border-radius:4px;'
+                            'padding:1px 7px;font-size:0.6rem;font-weight:900;margin-left:6px;'
+                            'vertical-align:middle">🔥 TOP</span>'
+                        ) if _is_fire else ""
                         st.markdown(
                             f'<div style="font-size:0.6rem;color:#6B7E6E;letter-spacing:1.5px;'
-                            f'text-transform:uppercase;margin-bottom:4px">{_sg_label}</div>',
+                            f'text-transform:uppercase;margin-bottom:4px">{_sg_label}{_fire_badge}</div>',
                             unsafe_allow_html=True
                         )
-                        st.markdown(_pick_diamante_card(_rp, _rp["_pick"], rank=_row_i+_ci), unsafe_allow_html=True)
+                        st.markdown(_pick_diamante_card(_rp, _rp["_pick"], rank=_row_i+_ci, is_fire=_is_fire), unsafe_allow_html=True)
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
@@ -4557,7 +4590,123 @@ with tab_parlays:
         parlays = [r for r in sr_current if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0]
         parlays.sort(key=lambda x: x["sim"]["best_parlay"]["ev"], reverse=True)
 
-        if parlays:
+        # ── Helpers para armar el parlay de 2 patas de un mismo partido ──────
+        _MKT_C = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
+        _SG_ICON = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
+        _SG_COLOR = {"Soccer":"#4ade80","Basketball":"#f97316","Hockey":"#60a5fa",
+                     "Baseball":"#ef4444","Football":"#a78bfa"}
+
+        def _build_game_parlays(r):
+            """
+            Build candidate 2-leg parlays from a single game.
+            Soccer generates up to 3 candidates:
+              a) ML + BTTS (Ambos Anotan)
+              b) ML + Over 2.5
+              c) BTTS + Over 2.5  ← combo goles pura
+            Non-soccer generates 1 candidate:
+              ML + O/U (better side by prob)
+            Returns list of parlay dicts (may be empty).
+            """
+            sim = r["sim"]
+            sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
+
+            def _make(leg1, leg2, combo_type=""):
+                p1 = leg1["prob"] / 100
+                p2 = leg2["prob"] / 100
+                cp = p1 * p2
+                return {
+                    "game": r, "sg": sg,
+                    "leg1": leg1, "leg2": leg2,
+                    "combo_type": combo_type,
+                    "comb_prob": cp,
+                    "comb_prob_pct": round(cp * 100, 1),
+                    "payout": round((1/cp)*100, 0) if cp > 0 else 0,
+                }
+
+            results = []
+
+            if sg == "Soccer":
+                _btts_pb = sim.get("p_btts") or 0
+                _o25_pb  = sim.get("p_o25")  or 0
+                h_prob   = sim.get("home_pct") or 0
+                a_prob   = sim.get("away_pct") or 0
+                h_ml     = sim.get("home_ml"); a_ml = sim.get("away_ml")
+                ml_team  = r["home_team"] if h_prob >= a_prob else r["away_team"]
+                ml_prob  = h_prob if h_prob >= a_prob else a_prob
+                ml_ml    = h_ml if h_prob >= a_prob else a_ml
+
+                leg_ml   = {"market":"ML",   "label": ml_team,        "prob": ml_prob} if ml_ml else None
+                leg_btts = {"market":"BTTS",  "label": "Ambos Anotan", "prob": _btts_pb} if _btts_pb > 0 else None
+                leg_o25  = {"market":"O/U",   "label": "Over 2.5",     "prob": _o25_pb}  if _o25_pb  > 0 else None
+
+                # a) ML + BTTS
+                if leg_ml and leg_btts:
+                    results.append(_make(leg_ml, leg_btts, "ML + AA"))
+                # b) ML + O2.5
+                if leg_ml and leg_o25:
+                    results.append(_make(leg_ml, leg_o25, "ML + O2.5"))
+                # c) BTTS + O2.5  ← combo goles pura (sin ML)
+                if leg_btts and leg_o25:
+                    results.append(_make(leg_btts, leg_o25, "AA + O2.5"))
+
+            else:
+                # Non-soccer: ML + best O/U side
+                h_prob = sim.get("home_pct") or 0
+                a_prob = sim.get("away_pct") or 0
+                h_ml   = sim.get("home_ml"); a_ml = sim.get("away_ml")
+                ml_team = r["home_team"] if h_prob >= a_prob else r["away_team"]
+                ml_prob = h_prob if h_prob >= a_prob else a_prob
+                ml_ml   = h_ml if h_prob >= a_prob else a_ml
+                if not ml_ml:
+                    return results  # no ML = skip
+
+                leg_ml = {"market":"ML","label":ml_team,"prob":ml_prob}
+                _ou_line = sim.get("ou_line") or ""
+                _p_over  = sim.get("p_o_total") or 0
+                _p_under = sim.get("p_u_total") or 0
+                if _ou_line and (_p_over > 0 or _p_under > 0):
+                    try: _line = float(_ou_line)
+                    except: _line = None
+                    if _line:
+                        if _p_over >= _p_under:
+                            leg_ou = {"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over}
+                        else:
+                            leg_ou = {"market":"O/U","label":f"Under {_line:.1f}","prob":_p_under}
+                        results.append(_make(leg_ml, leg_ou, "ML + O/U"))
+
+            return results
+
+        # ── Build parlays per sport ───────────────────────────────────────────
+        # Soccer: pick best among ALL combos (ML+AA, ML+O2.5, AA+O2.5) by comb_prob
+        #         Also always show AA+O2.5 if available (separate featured card)
+        # Others: 1 best game (ML+O/U) per sport
+        _SPORT_ORDER_PAR = ["Soccer","Basketball","Hockey","Baseball","Football"]
+        _sport_game_pools = {}
+        _soccer_btts_o25  = []  # collect AA+O2.5 combos separately
+
+        for r in sr_current:
+            g_state = next((g["state"] for g in games if g.get("id")==r.get("id")), "pre")
+            if g_state == "post": continue
+            for gp in _build_game_parlays(r):
+                _sport_game_pools.setdefault(gp["sg"], []).append(gp)
+                if gp["combo_type"] == "AA + O2.5":
+                    _soccer_btts_o25.append(gp)
+
+        # Best 1 per sport (highest combined prob among all combo types)
+        _day_parlays = []
+        for _sg in _SPORT_ORDER_PAR:
+            pool = _sport_game_pools.get(_sg, [])
+            if pool:
+                pool.sort(key=lambda x: x["comb_prob"], reverse=True)
+                _day_parlays.append(pool[0])
+
+        # Best AA+O2.5 soccer combo (featured separately)
+        _best_btts_o25 = (
+            max(_soccer_btts_o25, key=lambda x: x["comb_prob"])
+            if _soccer_btts_o25 else None
+        )
+
+        if _day_parlays:
             n_post  = len([g for g in games if g["state"]=="post"])
             n_live  = len([g for g in games if g["state"]=="in"])
             n_pre   = len([g for g in games if g["state"]=="pre"])
@@ -4569,104 +4718,93 @@ with tab_parlays:
                 unsafe_allow_html=True
             )
 
-            # ── PARLAY DEL DÍA: 1 Soccer + 1 otro deporte, mayor EV combinado ──
-            # DO solo permitido si viene con BTTS o O/U (DO+AA ó DO+O2.5)
-            def _valid_parlay_legs(bp):
-                """Returns True if parlay legs are allowed: DO only with BTTS or O/U companion."""
-                legs = bp.get("legs", [])
-                mkts = [leg[0] for leg in legs]
-                if "DO" in mkts:
-                    # DO must be paired with BTTS or O/U
-                    has_companion = any(m in ("BTTS","O/U") for m in mkts)
-                    if not has_companion:
-                        return False
-                return True
+            st.markdown('<div class="section-heading">🎰 PARLAYS DEL DÍA · 1 POR DEPORTE</div>', unsafe_allow_html=True)
 
-            # Build cross-sport parlay: find best Soccer pick + best non-Soccer pick
-            _soccer_rs  = [r for r in parlays if LEAGUES.get(r["league"],{}).get("group")=="Soccer"]
-            _other_rs   = [r for r in parlays if LEAGUES.get(r["league"],{}).get("group") != "Soccer"]
+            # ── Helper: render a generic 2-leg parlay card ────────────────────
+            def _render_parlay_card(dp, featured=False):
+                """Render any 2-leg parlay dict (leg1+leg2, generic labels)."""
+                _sg   = dp["sg"]
+                _g    = dp["game"]
+                _l1   = dp["leg1"]
+                _l2   = dp["leg2"]
+                _ct   = dp.get("combo_type","")
+                _mc1  = _MKT_C.get(_l1["market"],"#60a5fa")
+                _mc2  = _MKT_C.get(_l2["market"],"#C9A84C")
+                _sgc  = "#4ade80" if featured else _SG_COLOR.get(_sg,"#4ade80")
+                _sgi  = _SG_ICON.get(_sg,"🎯")
+                _lg   = league_label(_g["league"])
+                _matchup = f'{_g["away_team"]} @ {_g["home_team"]}'
+                _border_extra = "box-shadow:0 0 30px rgba(74,222,128,0.22);" if featured else ""
+                _feat_stripe  = (
+                    f'background:linear-gradient(90deg,transparent,#4ade80,#C9A84C,transparent)'
+                ) if featured else f'background:linear-gradient(90deg,transparent,{_sgc},transparent)'
+                _feat_label = (
+                    '<span style="background:rgba(74,222,128,0.18);color:#4ade80;'
+                    'border:1px solid rgba(74,222,128,0.5);border-radius:3px;'
+                    'padding:1px 7px;font-size:0.58rem;font-weight:900;margin-left:6px">'
+                    '⚽ GOLES COMBO</span>'
+                ) if featured else ""
 
-            _cross_parlay = None
-            if _soccer_rs and _other_rs:
-                # Best soccer EV + best other EV = cross-sport parlay
-                _s = max(_soccer_rs, key=lambda r: r["sim"]["best_parlay"]["ev"])
-                _o = max(_other_rs,  key=lambda r: r["sim"]["best_parlay"]["ev"])
-                _s_bp = _s["sim"]["best_parlay"]
-                _o_bp = _o["sim"]["best_parlay"]
-                _s_pick = _s_bp["legs"][0]  # (mtype, label, prob, ev, ml)
-                _o_pick = _o_bp["legs"][0]
-                _s_sg = "Fútbol"
-                _o_sg = LEAGUES.get(_o["league"],{}).get("group","")
-                _cross_ev = round(_s_bp["ev"] + _o_bp["ev"], 1)
-                _cross_prob = round(_s_bp.get("prob",0) * _o_bp.get("prob",0), 4)
-                _cross_payout = round((1/_cross_prob)*100 if _cross_prob > 0 else 0, 0)
-                _cross_parlay = {
-                    "soccer": _s, "other": _o,
-                    "s_pick": _s_pick, "o_pick": _o_pick,
-                    "s_sg": _s_sg, "o_sg": _o_sg,
-                    "combined_ev": _cross_ev,
-                    "combined_prob": round(_cross_prob*100, 1),
-                    "payout": _cross_payout,
-                }
-
-            if _cross_parlay:
-                _c = _cross_parlay
-                _s_mc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}.get(_c["s_pick"][0],"#9ca3af")
-                _o_mc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}.get(_c["o_pick"][0],"#9ca3af")
-                st.markdown(
-                    f'<div style="border-radius:12px;padding:16px;margin:8px 0 12px 0;'
-                    f'background:linear-gradient(135deg,rgba(74,222,128,0.10) 0%,#0a1a16 50%,rgba(96,165,250,0.08) 100%);'
-                    f'border:1px solid rgba(74,222,128,0.4);box-shadow:0 0 28px rgba(74,222,128,0.10)">'
-                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-16px -16px 14px -16px;'
-                    f'background:linear-gradient(90deg,transparent,#4ade80,#60a5fa,transparent)"></div>'
+                return (
+                    f'<div style="border-radius:10px;padding:14px 16px;margin:8px 0;'
+                    f'background:linear-gradient(135deg,{_sgc}14 0%,#0a1a16 60%,{_sgc}08 100%);'
+                    f'border:1px solid {_sgc}{"66" if featured else "44"};{_border_extra}">'
+                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-14px -16px 12px -16px;{_feat_stripe}"></div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
                     f'<div>'
-                    f'<div style="font-size:0.6rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">'
-                    f'⚡ PARLAY DEL DÍA · CROSS-SPORT</div>'
-                    f'<div style="font-size:0.75rem;color:#E0F7F0;font-weight:600">'
-                    f'⚽ {_c["soccer"]["away_team"]} @ {_c["soccer"]["home_team"]} '
-                    f'+ {_c["o_sg"]} · {_c["other"]["away_team"]} @ {_c["other"]["home_team"]}</div>'
+                    f'<div style="font-size:0.58rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">'
+                    f'{_sgi} {_sg} · {_lg}{_feat_label}</div>'
+                    f'<div style="font-size:0.88rem;font-weight:700;color:#E0F7F0">{_matchup}</div>'
+                    f'<div style="font-size:0.65rem;color:#6B7E6E;margin-top:2px">{_ct}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.2rem;font-weight:900;color:#4ade80;font-family:Cinzel,serif">EV +{_c["combined_ev"]:.1f}</div>'
-                    f'<div style="font-size:0.58rem;color:#6B7E6E">combinado</div>'
+                    f'<div style="font-size:1.1rem;font-weight:900;color:{_sgc};font-family:Cinzel,serif">{dp["comb_prob_pct"]}%</div>'
+                    f'<div style="font-size:0.55rem;color:#6B7E6E">prob. combinada</div>'
                     f'</div>'
                     f'</div>'
-                    f'<div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">'
+                    f'<div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">'
                     f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="background:{_s_mc}22;color:{_s_mc};border:1px solid {_s_mc}55;'
-                    f'border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:800">{_c["s_pick"][0]}</span>'
-                    f'<span style="font-size:0.85rem;color:#E0F7F0">{_c["s_pick"][1]}</span>'
-                    f'<span style="color:#6B7E6E;font-size:0.65rem;margin-left:auto">{_c["s_pick"][2]*100:.0f}% · EV +{_c["s_pick"][3]:.1f}</span>'
+                    f'<span style="background:{_mc1}22;color:{_mc1};border:1px solid {_mc1}55;'
+                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_l1["market"]}</span>'
+                    f'<span style="font-size:0.88rem;color:#E0F7F0;font-weight:600">{_l1["label"]}</span>'
+                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_mc1};font-weight:700">{_l1["prob"]:.0f}%</span>'
                     f'</div>'
+                    f'<div style="font-size:0.62rem;color:#3a4a3e;text-align:center;letter-spacing:3px">✕ COMBO ✕</div>'
                     f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="background:{_o_mc}22;color:{_o_mc};border:1px solid {_o_mc}55;'
-                    f'border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:800">{_c["o_pick"][0]}</span>'
-                    f'<span style="font-size:0.85rem;color:#E0F7F0">{_c["o_pick"][1]}</span>'
-                    f'<span style="color:#6B7E6E;font-size:0.65rem;margin-left:auto">{_c["o_pick"][2]*100:.0f}% · EV +{_c["o_pick"][3]:.1f}</span>'
+                    f'<span style="background:{_mc2}22;color:{_mc2};border:1px solid {_mc2}55;'
+                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_l2["market"]}</span>'
+                    f'<span style="font-size:0.88rem;color:#E0F7F0;font-weight:600">{_l2["label"]}</span>'
+                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_mc2};font-weight:700">{_l2["prob"]:.0f}%</span>'
                     f'</div>'
                     f'</div>'
-                    f'<div style="display:flex;gap:20px;margin-top:12px;padding-top:10px;'
-                    f'border-top:1px solid rgba(74,222,128,0.15);flex-wrap:wrap">'
-                    f'<span style="font-size:0.68rem;color:#2EE8C0">Prob: {_c["combined_prob"]}%</span>'
-                    f'<span style="font-size:0.68rem;color:#C9A84C">Pago: +${_c["payout"]:.0f}/100</span>'
+                    f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
+                    f'border-top:1px solid {_sgc}22;flex-wrap:wrap">'
+                    f'<span style="font-size:0.62rem;color:#2EE8C0">Pago est. +${dp["payout"]:.0f}/100</span>'
+                    f'<span style="margin-left:auto;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);'
+                    f'border-radius:4px;padding:2px 8px;font-size:0.6rem;color:#ef4444">⚠️ STAKE BAJO</span>'
                     f'</div>'
-                    f'<div style="margin-top:10px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);'
-                    f'border-radius:6px;padding:6px 10px;font-size:0.68rem;color:#ef4444;display:flex;align-items:center;gap:6px">'
-                    f'⚠️ STAKE BAJO · Parlay = alta varianza · Usa máx 1-2% del bankroll</div>'
-                    f'</div>',
-                    unsafe_allow_html=True
+                    f'</div>'
                 )
 
-            st.markdown('<div style="font-size:0.75rem;color:#6B7E6E;margin:8px 0 4px 0;letter-spacing:1px">TODOS LOS PARLAYS EV+</div>', unsafe_allow_html=True)
-            for r in parlays:
-                bp = r["sim"]["best_parlay"]
-                if _valid_parlay_legs(bp):
-                    st.markdown(render_parlay_card(r), unsafe_allow_html=True)
+            # ── FEATURED: AA + O2.5 soccer combo ─────────────────────────────
+            if _best_btts_o25:
+                st.markdown(
+                    '<div style="font-size:0.68rem;color:#4ade80;letter-spacing:2px;'
+                    'text-transform:uppercase;margin:4px 0 2px 0">'
+                    '⚽ COMBO GOLES DESTACADO · Ambos Anotan + Over 2.5</div>',
+                    unsafe_allow_html=True
+                )
+                st.markdown(_render_parlay_card(_best_btts_o25, featured=True), unsafe_allow_html=True)
+                st.markdown('<div class="den-divider" style="margin:10px 0"></div>', unsafe_allow_html=True)
+
+            # ── 1 per sport ───────────────────────────────────────────────────
+            for _dp in _day_parlays:
+                st.markdown(_render_parlay_card(_dp), unsafe_allow_html=True)
 
             st.markdown(
-                '<div class="warn-banner">⚠ Cuotas de BTTS/O/U asumidas a −110/−115 estándar. ' +
-                'Verifica precio real en tu casa. Parlays son de alta varianza — usa sizing conservador.</div>',
+                '<div class="warn-banner" style="margin-top:12px">'
+                '⚠ Cuotas de BTTS/O/U asumidas a −110/−115. Verifica en tu casa. '
+                'Parlays = alta varianza — usa máx 1-2% del bankroll por parlay.</div>',
                 unsafe_allow_html=True
             )
         elif pending_games:
