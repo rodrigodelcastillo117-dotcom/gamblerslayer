@@ -5944,18 +5944,39 @@ with tab_sim:
             for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
                 _country_p = LEAGUES.get(_lg_p,{}).get("country","")
                 _ctry_str  = f" · {_country_p}" if _country_p else ""
+                _lg_label  = f"{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)} partidos"
+                # Collapsed state per league — persists across reruns
+                _lg_key    = f"_lg_collapsed_{_lg_p}"
+                _collapsed  = st.session_state.get(_lg_key, False)
+                # League header — clickable chevron
+                _chev = "▶" if _collapsed else "▼"
+                _chev_c = f"{_smp['color']}88"
                 st.markdown(
-                    f'<div style="font-size:0.70rem;color:{_smp["color"]}99;font-weight:600;'
-                    f'letter-spacing:1px;text-transform:uppercase;margin:6px 0 4px 8px">'
-                    f'{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)}</div>',
+                    f'<div style="display:flex;align-items:center;gap:6px;'
+                    f'font-size:0.72rem;color:{_smp["color"]}cc;font-weight:700;'
+                    f'letter-spacing:1px;text-transform:uppercase;'
+                    f'margin:8px 0 4px 0;padding:5px 8px;'
+                    f'background:{_smp["color"]}0d;border-radius:5px;'
+                    f'border-left:2px solid {_smp["color"]}55">'
+                    f'<span style="color:{_chev_c}">{_chev}</span>'
+                    f'{_lg_label}</div>',
                     unsafe_allow_html=True
                 )
-                for _gi3 in range(0, len(_lg_games_p), 3):
-                    _row3 = _lg_games_p[_gi3:_gi3+3]
-                    _c3 = st.columns(len(_row3))
-                    for _ci3, _gg_p in enumerate(_row3):
-                        with _c3[_ci3]:
-                            st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                if st.button(
+                    f"{'▶ Mostrar' if _collapsed else '▼ Colapsar'} {league_label(_lg_p)}",
+                    key=f"btn_lg_{_lg_p}",
+                    use_container_width=False,
+                    help=f"{'Mostrar' if _collapsed else 'Colapsar'} {league_label(_lg_p)}"
+                ):
+                    st.session_state[_lg_key] = not _collapsed
+                    st.rerun()
+                if not _collapsed:
+                    for _gi3 in range(0, len(_lg_games_p), 3):
+                        _row3 = _lg_games_p[_gi3:_gi3+3]
+                        _c3 = st.columns(len(_row3))
+                        for _ci3, _gg_p in enumerate(_row3):
+                            with _c3[_ci3]:
+                                st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
@@ -6910,11 +6931,11 @@ with tab_all:
                     xg_html = (
                         f'<div style="margin:4px 0;padding:5px 8px;background:rgba(96,165,250,0.04);'
                         f'border:1px solid rgba(96,165,250,0.15);border-radius:5px;'
-                        f'display:flex;justify-content:space-between;align-items:center">'
-                        f'<span style="font-size:0.62rem;color:rgba(96,165,250,0.6)">📡 xG</span>'
-                        f'<span style="font-size:0.75rem;color:{adj_c};font-weight:700">{adj:.0f}%</span>'
-                        f'<span style="font-size:0.65rem;color:{dc}">{ds}</span>'
-                        f'<span style="font-size:0.60rem;color:{conf_c}">conf.{conf}</span>'
+                        f'display:flex;flex-wrap:wrap;gap:4px;justify-content:space-between;align-items:center">'
+                        f'<span style="font-size:0.62rem;color:rgba(96,165,250,0.6);flex-shrink:0">📡 xG</span>'
+                        f'<span style="font-size:0.75rem;color:{adj_c};font-weight:700;flex-shrink:0">{adj:.0f}%</span>'
+                        f'<span style="font-size:0.65rem;color:{dc};flex-shrink:0">{ds}</span>'
+                        f'<span style="font-size:0.60rem;color:{conf_c};flex-shrink:0">conf.{conf}</span>'
                         f'</div>'
                     )
 
