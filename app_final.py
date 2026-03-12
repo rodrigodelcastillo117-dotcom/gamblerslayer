@@ -5707,15 +5707,20 @@ with tab_sim:
 
     # DEBUG — muestra todos los Soccer games y su estado (temporal)
     _dbg_soccer = [g for g in games if LEAGUES.get(g["league"],{}).get("group","Soccer") == "Soccer"]
+    _now_utc_dbg = datetime.now(timezone.utc)
+    _today_cdmx_dbg = (_now_utc_dbg - timedelta(hours=5)).strftime("%Y-%m-%d")
     if _dbg_soccer:
-        with st.expander(f"🔍 DEBUG Soccer ({len(_dbg_soccer)} games en feed)", expanded=False):
+        with st.expander(f"🔍 DEBUG Soccer ({len(_dbg_soccer)} games en feed) — hoy CDMX={_today_cdmx_dbg}", expanded=False):
             for _dg in _dbg_soccer:
-                from datetime import timezone as _dtz
+                _raw = _dg.get("date","")
                 try:
-                    _du = datetime.strptime(_dg["date"][:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_dtz.utc)
-                    _dc = (_du - timedelta(hours=6)).strftime("%m-%d %H:%M")
-                except: _dc = _dg["date"][:16]
-                st.write(f"`{_dg['league']}` · {_dg['away_team']} @ {_dg['home_team']} · state=**{_dg['state']}** · CDMX={_dc}")
+                    _du = datetime.strptime(_raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    _dc5 = (_du - timedelta(hours=5)).strftime("%m-%d %H:%M")
+                    _dc6 = (_du - timedelta(hours=6)).strftime("%m-%d %H:%M")
+                    _cdmx_date5 = (_du - timedelta(hours=5)).strftime("%Y-%m-%d")
+                    _in_tree = "✅" if _cdmx_date5 == _today_cdmx_dbg else "❌"
+                except: _dc5 = _dc6 = _raw[:16]; _in_tree = "?"
+                st.write(f"{_in_tree} `{_dg['league']}` · {_dg['away_team']} @ {_dg['home_team']} · **{_dg['state']}** · RAW={_raw[:16]} · UTC-5={_dc5} · UTC-6={_dc6}")
 
     # ── Header row: título + botón RE-SIMULAR alineados ─────────────────────
     _hdr_col1, _hdr_col2 = st.columns([3, 1])
