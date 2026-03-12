@@ -3968,8 +3968,14 @@ if (not _already_simulated or _leagues_changed or run_sidebar) and games:
             _ph_new = _ph_build_picks_from_sim(_sr, fuente="RONGOL")
             _ph_saved = _ph_save_picks(_ph_new)
             _ph_load.clear()  # invalidate cache
-            if run_sidebar and _ph_saved:
-                st.toast(f"📋 {_ph_saved} pick(s) guardados en historial", icon="📋")
+            if _ph_saved and _ph_saved > 0:
+                _ph_labels = " · ".join(
+                    f'{p["deporte"]} {p["mercado"]} {p["pick_label"][:12]}'
+                    for p in _ph_new[:3]
+                )
+                st.toast(f"📋 {_ph_saved} pick(s) guardados → {_ph_labels}", icon="📋")
+            elif run_sidebar and _ph_new:
+                st.toast(f"📋 Historial al día ({len(_ph_new)} picks ya registrados)", icon="📋")
         except Exception as _ph_err:
             pass  # never block the main flow
     if run_sidebar:
@@ -4393,6 +4399,84 @@ with tab_picks:
                         )
                 else:
                     st.info("Aún no hay picks resueltos. Pulsa 🔍 Actualizar Resultados para traer los resultados de ESPN.")
+
+                # ── TABLA DE AUDITORÍA — todos los picks guardados ────────────
+                st.markdown(
+                    '<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:1.5px;'
+                    'text-transform:uppercase;margin:16px 0 8px 0;border-top:1px solid '
+                    'rgba(255,255,255,0.06);padding-top:12px">📋 Historial Completo — Auditoría</div>',
+                    unsafe_allow_html=True
+                )
+
+                if _ph_all:
+                    # Sort: pending first, then by date desc
+                    _audit_sorted = sorted(
+                        _ph_all,
+                        key=lambda x: (0 if x["resultado"]=="pendiente" else 1, x["fecha"]),
+                        reverse=False
+                    )
+                    _audit_sorted = sorted(_ph_all, key=lambda x: x["fecha"], reverse=True)
+
+                    _RES_COLOR = {
+                        "ganado":   ("#4ade80", "✅"),
+                        "perdido":  ("#ef4444", "❌"),
+                        "push":     ("#C9A84C", "🔄"),
+                        "pendiente":("#6B7E6E", "⏳"),
+                    }
+                    _MKT_C2 = {"ML":"#60a5fa","BTTS":"#4ade80","O/U":"#C9A84C","DO":"#a78bfa"}
+                    _SGI2   = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
+
+                    # Table header
+                    st.markdown(
+                        '<div style="display:grid;grid-template-columns:90px 1fr 60px 60px 70px 70px;'
+                        'gap:4px;padding:4px 6px;background:rgba(255,255,255,0.04);border-radius:6px 6px 0 0;'
+                        'font-size:0.58rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase;'
+                        'border-bottom:1px solid rgba(255,255,255,0.08)">'
+                        '<span>Fecha</span><span>Partido</span>'
+                        '<span style="text-align:center">Mkt</span>'
+                        '<span style="text-align:center">Deporte</span>'
+                        '<span style="text-align:center">Prob</span>'
+                        '<span style="text-align:center">Resultado</span>'
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    for _ap in _audit_sorted[:50]:  # max 50 rows
+                        _res   = _ap.get("resultado","pendiente")
+                        _rc, _ri = _RES_COLOR.get(_res, ("#6B7E6E","⏳"))
+                        _mc2   = _MKT_C2.get(_ap["mercado"],"#9ca3af")
+                        _sgi2  = _SGI2.get(_ap.get("deporte",""),"🎯")
+                        _fecha = _ap["fecha"][:10]
+                        _score = ""
+                        if _ap.get("home_score") and _ap.get("away_score"):
+                            _score = f' <span style="color:#3a4a3e">({_ap["away_score"]}-{_ap["home_score"]})</span>'
+                        _row_bg = "rgba(74,222,128,0.04)" if _res=="ganado" else                                   "rgba(239,68,68,0.04)"  if _res=="perdido" else                                   "rgba(255,255,255,0.02)"
+                        st.markdown(
+                            f'<div style="display:grid;grid-template-columns:90px 1fr 60px 60px 70px 70px;'
+                            f'gap:4px;padding:5px 6px;background:{_row_bg};'
+                            f'border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.68rem;align-items:center">'
+                            f'<span style="color:#6B7E6E;font-size:0.6rem">{_fecha}</span>'
+                            f'<div>'
+                            f'<div style="color:#E0F7F0;font-size:0.7rem;white-space:nowrap;overflow:hidden;'
+                            f'text-overflow:ellipsis;max-width:180px">{_ap["partido"]}</div>'
+                            f'<div style="color:#FFE87C;font-size:0.62rem">{_ap["pick_label"]}{_score}</div>'
+                            f'</div>'
+                            f'<span style="text-align:center">'
+                            f'<span style="background:{_mc2}22;color:{_mc2};border:1px solid {_mc2}44;'
+                            f'border-radius:3px;padding:1px 5px;font-size:0.6rem;font-weight:800">'
+                            f'{_ap["mercado"]}</span></span>'
+                            f'<span style="text-align:center;font-size:0.75rem">{_sgi2}</span>'
+                            f'<span style="text-align:center;color:#C9A84C;font-size:0.7rem;font-weight:700">'
+                            f'{_ap["prob_pct"]:.0f}%</span>'
+                            f'<span style="text-align:center;color:{_rc};font-size:0.75rem">{_ri}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                    if len(_ph_all) > 50:
+                        st.caption(f"Mostrando últimos 50 de {len(_ph_all)} picks. Ver historial completo en Google Sheets.")
+                else:
+                    st.caption("Sin picks guardados aún.")
 
         if not rongol_picks:
             st.markdown('<div class="warn-banner">No se encontraron picks. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
