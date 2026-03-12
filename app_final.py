@@ -3721,6 +3721,16 @@ if (not _already_simulated or _leagues_changed or run_sidebar) and games:
     st.session_state["last_sim_demo"] = is_demo
     st.session_state["_sim_key"] = _leagues_key
     _n_pos = len([r for r in _sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
+    # ── AUTO-SAVE picks to pick_history (skip demo mode) ──────────────────
+    if not is_demo and _gsheets_available():
+        try:
+            _ph_new = _ph_build_picks_from_sim(_sr, fuente="RONGOL")
+            _ph_saved = _ph_save_picks(_ph_new)
+            _ph_load.clear()  # invalidate cache
+            if run_sidebar and _ph_saved:
+                st.toast(f"📋 {_ph_saved} pick(s) guardados en historial", icon="📋")
+        except Exception as _ph_err:
+            pass  # never block the main flow
     if run_sidebar:
         st.toast(f"✓ {len(games)*n_sims:,} sims en {_elapsed:.1f}s · {_n_pos} value bets", icon="🔮")
     st.rerun()
@@ -4023,6 +4033,125 @@ with tab_picks:
 
         # Legacy: keep allowed_bets for DO parlay logic below
         allowed_bets = rongol_picks
+
+        # ── STATS PANEL — accuracy from pick_history ─────────────────────────
+        with st.expander("📊 Accuracy del Sistema", expanded=False):
+            _ph_all = _ph_load()
+            _ph_resolved = [p for p in _ph_all if p["resultado"] in ("ganado","perdido","push")]
+            _ph_pending  = [p for p in _ph_all if p["resultado"] == "pendiente"]
+
+            if not _ph_all:
+                st.info("Aún no hay historial. Los picks se guardan automáticamente al analizar.")
+            else:
+                # ── Auto-resolve button ───────────────────────────────────────
+                col_ar, col_info = st.columns([1,2])
+                with col_ar:
+                    if st.button("🔍 Actualizar Resultados", key="btn_ph_resolve",
+                                 use_container_width=True,
+                                 help="Busca resultados de picks pendientes en ESPN"):
+                        if _ph_pending:
+                            with st.spinner("Consultando ESPN..."):
+                                _ph_updates = _ph_auto_resolve(_ph_pending)
+                            if _ph_updates:
+                                _ph_update_results(_ph_updates)
+                                _ph_load.clear()
+                                st.toast(f"✓ {len(_ph_updates)} pick(s) resueltos", icon="🔍")
+                                st.rerun()
+                            else:
+                                st.info("No se encontraron resultados nuevos aún.")
+                        else:
+                            st.info("No hay picks pendientes.")
+                with col_info:
+                    st.caption(f"📋 {len(_ph_all)} picks totales · {len(_ph_pending)} pendientes · {len(_ph_resolved)} resueltos")
+
+                if _ph_resolved:
+                    _n_gan = sum(1 for p in _ph_resolved if p["resultado"]=="ganado")
+                    _n_per = sum(1 for p in _ph_resolved if p["resultado"]=="perdido")
+                    _n_psh = sum(1 for p in _ph_resolved if p["resultado"]=="push")
+                    _n_tot = len(_ph_resolved)
+                    _wr    = round(_n_gan/_n_tot*100, 1) if _n_tot else 0
+                    _wr_c  = "#4ade80" if _wr>=55 else ("#C9A84C" if _wr>=45 else "#ef4444")
+
+                    # ── Global stats tiles ────────────────────────────────────
+                    st.markdown(
+                        f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">'
+                        f'<div style="flex:1;min-width:80px;background:rgba(74,222,128,0.10);'
+                        f'border:1px solid rgba(74,222,128,0.3);border-radius:8px;padding:10px;text-align:center">'
+                        f'<div style="font-size:1.5rem;font-weight:900;color:{_wr_c};font-family:Cinzel,serif">{_wr}%</div>'
+                        f'<div style="font-size:0.6rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase">Win Rate</div>'
+                        f'</div>'
+                        f'<div style="flex:1;min-width:70px;background:rgba(74,222,128,0.07);'
+                        f'border:1px solid rgba(74,222,128,0.2);border-radius:8px;padding:10px;text-align:center">'
+                        f'<div style="font-size:1.3rem;font-weight:800;color:#4ade80">{_n_gan}</div>'
+                        f'<div style="font-size:0.6rem;color:#6B7E6E;text-transform:uppercase">✅ Ganados</div>'
+                        f'</div>'
+                        f'<div style="flex:1;min-width:70px;background:rgba(239,68,68,0.07);'
+                        f'border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:10px;text-align:center">'
+                        f'<div style="font-size:1.3rem;font-weight:800;color:#ef4444">{_n_per}</div>'
+                        f'<div style="font-size:0.6rem;color:#6B7E6E;text-transform:uppercase">❌ Perdidos</div>'
+                        f'</div>'
+                        f'<div style="flex:1;min-width:70px;background:rgba(201,168,76,0.07);'
+                        f'border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;text-align:center">'
+                        f'<div style="font-size:1.3rem;font-weight:800;color:#C9A84C">{_n_psh}</div>'
+                        f'<div style="font-size:0.6rem;color:#6B7E6E;text-transform:uppercase">🔄 Push</div>'
+                        f'</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    # ── Breakdown por mercado ─────────────────────────────────
+                    _mkts = {}
+                    for p in _ph_resolved:
+                        m = p["mercado"]
+                        _mkts.setdefault(m, {"gan":0,"per":0,"psh":0})
+                        _mkts[m][{"ganado":"gan","perdido":"per","push":"psh"}[p["resultado"]]] += 1
+
+                    _mkt_color = {"ML":"#60a5fa","BTTS":"#4ade80","O/U":"#C9A84C","DO":"#a78bfa"}
+                    st.markdown('<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Mercado</div>', unsafe_allow_html=True)
+                    for _m, _mc in sorted(_mkts.items()):
+                        _mt = _mc["gan"] + _mc["per"] + _mc["psh"]
+                        _mwr = round(_mc["gan"]/_mt*100,1) if _mt else 0
+                        _mc_c = _mkt_color.get(_m,"#9ca3af")
+                        _bar_w = _mwr
+                        st.markdown(
+                            f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
+                            f'<span style="background:{_mc_c}22;color:{_mc_c};border:1px solid {_mc_c}44;'
+                            f'border-radius:3px;padding:1px 7px;font-size:0.62rem;font-weight:800;min-width:48px;text-align:center">{_m}</span>'
+                            f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:6px;overflow:hidden">'
+                            f'<div style="width:{_bar_w}%;height:100%;background:{_mc_c};border-radius:4px"></div></div>'
+                            f'<span style="font-size:0.7rem;font-weight:700;color:{_mc_c};min-width:38px;text-align:right">{_mwr}%</span>'
+                            f'<span style="font-size:0.58rem;color:#6B7E6E;min-width:60px">{_mc["gan"]}G {_mc["per"]}P {_mc["psh"]}X</span>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                    # ── Breakdown por deporte ─────────────────────────────────
+                    _sgps = {}
+                    for p in _ph_resolved:
+                        sg = p.get("deporte","?")
+                        _sgps.setdefault(sg, {"gan":0,"per":0,"psh":0})
+                        _sgps[sg][{"ganado":"gan","perdido":"per","push":"psh"}[p["resultado"]]] += 1
+
+                    _sg_ico = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
+                    st.markdown('<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Deporte</div>', unsafe_allow_html=True)
+                    for _sg, _sc in sorted(_sgps.items()):
+                        _st = _sc["gan"] + _sc["per"] + _sc["psh"]
+                        _swr = round(_sc["gan"]/_st*100,1) if _st else 0
+                        _sgc = "#4ade80" if _swr>=60 else ("#C9A84C" if _swr>=45 else "#ef4444")
+                        _ico = _sg_ico.get(_sg,"🎯")
+                        st.markdown(
+                            f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
+                            f'<span style="font-size:0.75rem;min-width:20px">{_ico}</span>'
+                            f'<span style="font-size:0.72rem;color:#E0F7F0;min-width:90px">{_sg}</span>'
+                            f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:6px;overflow:hidden">'
+                            f'<div style="width:{_swr}%;height:100%;background:{_sgc};border-radius:4px"></div></div>'
+                            f'<span style="font-size:0.7rem;font-weight:700;color:{_sgc};min-width:38px;text-align:right">{_swr}%</span>'
+                            f'<span style="font-size:0.58rem;color:#6B7E6E;min-width:60px">{_sc["gan"]}G {_sc["per"]}P {_sc["psh"]}X</span>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                else:
+                    st.info("Aún no hay picks resueltos. Pulsa 🔍 Actualizar Resultados para traer los resultados de ESPN.")
 
         if not rongol_picks:
             st.markdown('<div class="warn-banner">No se encontraron picks. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
@@ -4387,19 +4516,59 @@ with tab_sim:
     # Build sim lookup dict
     _sim_map = {r.get("id", ""): r for r in st.session_state.get("sim_results", [])}
 
+    def _oracle_pick(r):
+        """Always return best pick for a game — no EV+ required.
+        Soccer:     best of {ML, BTTS(EV+), Over2.5(EV+)} by prob
+        Basketball/Hockey: best of {ML, Over or Under line} by prob
+        Baseball/Football: best of {ML, Over/Under line} by prob
+        """
+        sim = r["sim"]
+        sg  = LEAGUES.get(r.get("league",""),{}).get("group","Soccer")
+        h_prob = sim.get("home_pct",0) or 0
+        a_prob = sim.get("away_pct",0) or 0
+        h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
+        if h_prob >= a_prob:
+            _ml_t, _ml_p, _ml_ev = r["home_team"], h_prob, sim.get("home_ev") or 0
+        else:
+            _ml_t, _ml_p, _ml_ev = r["away_team"], a_prob, sim.get("away_ev") or 0
+        ml_pick = {"market":"ML","label":_ml_t,"prob":_ml_p,"ev":_ml_ev}
+        cands = [ml_pick]
+
+        if sg == "Soccer":
+            _btts_ev = sim.get("btts_ev") or 0
+            _btts_pb = sim.get("p_btts") or 0
+            _o25_ev  = sim.get("o25_ev")  or 0
+            _o25_pb  = sim.get("p_o25")   or 0
+            if _btts_ev > 0 and _btts_pb > 0:
+                cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev})
+            if _o25_ev > 0 and _o25_pb > 0:
+                cands.append({"market":"O/U","label":"Over 2.5","prob":_o25_pb,"ev":_o25_ev})
+        else:
+            _ou_line = sim.get("ou_line") or ""
+            _p_over  = sim.get("p_o_total") or 0
+            _p_under = sim.get("p_u_total") or 0
+            if _ou_line and (_p_over > 0 or _p_under > 0):
+                try: _line = float(_ou_line)
+                except: _line = None
+                if _line:
+                    if _p_over >= _p_under:
+                        cands.append({"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over,"ev":0})
+                    else:
+                        cands.append({"market":"O/U","label":f"Under {_line:.1f}","prob":_p_under,"ev":0})
+        return max(cands, key=lambda x: x["prob"])
+
     def _oracle_card(g, sm):
-        """Full oracle card for a game: bars + goals + best pick."""
-        _r = _sim_map.get(g.get("id", ""))
+        """Full oracle card for a game — always shows a pick, no EV+ gate."""
+        _r    = _sim_map.get(g.get("id",""))
         _time = _mx_time_p(g)
         _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
-        _sd = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
-
-        # Header
-        _low_c = _r["sim"].get("low_confidence", False) if _r else False
+        _sd   = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
+        _low_c  = _r["sim"].get("low_confidence",False) if _r else False
         _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.55rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
+        _has_ev = bool(_r and _r["sim"].get("best_single") and _r["sim"]["best_single"].get("ev",0)>0)
+
         _html = (
-            f'<div class="game-row{" game-row-ev" if (_r and _r["sim"].get("best_single") and _r["sim"]["best_single"]["ev"]>0) else ""}"'
-            f' style="border-left:3px solid {sm["color"]}88;margin:4px 0;">'
+            f'<div class="game-row{" game-row-ev" if _has_ev else ""}" style="border-left:3px solid {sm["color"]}88;margin:4px 0;">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'
             f'<div>'
             f'<div class="game-title">{g["away_team"]} @ {g["home_team"]}</div>'
@@ -4408,46 +4577,41 @@ with tab_sim:
         )
 
         if not _r:
-            _html += (
-                f'<div style="color:#3a4a3e;font-size:0.68rem;align-self:center">Sin simular</div>'
-                f'</div></div>'
-            )
+            _html += '<div style="color:#3a4a3e;font-size:0.68rem;align-self:center">Sin simular</div></div></div>'
             return _html
 
         sim = _r["sim"]
-        bs  = sim.get("best_single")
         dq  = sim["data_quality"]
         dqc = "#4ade80" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
 
-        # Badge
-        # Only show pick badge for ML, O/U, BTTS — not DO standalone
-        _show_bs = bs and bs["ev"] > 0 and bs.get("market","") in ("ML","O/U","BTTS")
-        if _show_bs:
-            ev_c  = "#4ade80" if bs["ev"] >= 10 else "#C9A84C"
-            badge = (
-                f'<span style="color:#FFE87C;margin-right:3px">▶</span>'
-                f'<span style="font-weight:700;font-size:0.8rem;color:#FFE87C">{bs["label"]}</span>'
-                f'<span style="color:{ev_c};font-size:0.72rem;margin-left:6px">EV +{bs["ev"]:.1f}</span>'
-                f'<span style="color:#6B7E6E;font-size:0.65rem;margin-left:4px">· {bs["prob"]:.0f}% · Kelly {bs.get("kelly",0)*100:.0f}%</span>'
-            )
-        else:
-            badge = '<span style="color:#3a4a3e;font-size:0.72rem">Sin EV+</span>'
+        # ── Pick badge — always one pick, no EV+ required ────────────────────
+        bp  = _oracle_pick(_r)
+        _bc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80"}.get(bp["market"],"#9ca3af")
+        _ev = bp.get("ev",0) or 0
+        _ev_str = f"+{_ev:.1f}" if _ev >= 0 else f"{_ev:.1f}"
+        _ev_c   = "#4ade80" if _ev>=10 else ("#C9A84C" if _ev>=0 else "#ef4444")
+        badge = (
+            f'<span style="background:{_bc}22;color:{_bc};border:1px solid {_bc}55;'
+            f'border-radius:3px;padding:1px 6px;font-size:0.62rem;font-weight:800;margin-right:5px">{bp["market"]}</span>'
+            f'<span style="font-weight:700;font-size:0.8rem;color:#FFE87C">{bp["label"]}</span>'
+            f'<span style="color:{_ev_c};font-size:0.68rem;margin-left:6px">EV {_ev_str}</span>'
+            f'<span style="color:#6B7E6E;font-size:0.62rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
+        )
 
         _html += (
             f'<div style="text-align:right;font-size:0.65rem;color:#6B7E6E;flex-shrink:0">'
             f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}'
-            f'<br><span style="color:{dqc}">DQ {dq:.0f}%</span>'
-            f'</div>'
+            f'<br><span style="color:{dqc}">DQ {dq:.0f}%</span></div>'
             f'</div>'
             f'<div style="margin-top:4px">{badge}</div>'
         )
 
-        # Prob bars
-        _html += f'<div style="margin-top:6px">{bar(sim["away_pct"],"#60a5fa",g["away_team"])}'
+        # Win probability bars
+        _html += f'<div style="margin-top:6px">{bar(sim["away_pct"],"#60a5fa",g["away_team"])}' 
         if sim["is_soccer"]: _html += bar(sim["draw_pct"],"#a78bfa","Empate")
         _html += bar(sim["home_pct"],"#f97316",g["home_team"]) + "</div>"
 
-        # Goals line
+        # Goals / totals footer
         if sim.get("use_goals") and sim.get("p_btts") is not None:
             btc = "#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
             o2c = "#C9A84C" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
@@ -4459,6 +4623,16 @@ with tab_sim:
                 f'<span style="color:{o2c}">O2.5 {sim["p_o25"]}%</span>'
                 f'<span style="color:{o3c}">O3.5 {sim.get("p_o35","—")}%</span>'
                 f'<span style="color:#3a4a3e;margin-left:auto">{dq_src}</span>'
+                f'</div>'
+            )
+        elif sim.get("ou_line") and sim.get("p_o_total") is not None:
+            _otc = "#C9A84C" if (sim.get("p_o_total") or 0)>=50 else "#6B7E6E"
+            _utc = "#C9A84C" if (sim.get("p_u_total") or 0)>=50 else "#6B7E6E"
+            _html += (
+                f'<div style="font-size:0.65rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
+                f'<span style="color:#6B7E6E">Total {sim["ou_line"]}</span>'
+                f'<span style="color:{_otc}">Over {sim.get("p_o_total","—")}%</span>'
+                f'<span style="color:{_utc}">Under {sim.get("p_u_total","—")}%</span>'
                 f'</div>'
             )
 
@@ -5447,6 +5621,248 @@ def _fetch_finished_games():
         except:
             pass
     return finished
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PICK HISTORY — Auto-save & track system picks accuracy
+# Pestaña Google Sheets: pick_history
+# Columns: pick_id | fecha | partido | liga | deporte | mercado | pick_label |
+#          prob_pct | resultado | home_score | away_score | fuente
+# ══════════════════════════════════════════════════════════════════════════════
+_PH_TAB     = "pick_history"
+_PH_HEADERS = [
+    "pick_id","fecha","partido","liga","deporte","mercado",
+    "pick_label","prob_pct","resultado","home_score","away_score","fuente"
+]
+
+@st.cache_data(ttl=120)
+def _ph_load():
+    """Load all rows from pick_history sheet. Returns list of dicts."""
+    if not _gsheets_available():
+        return []
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_PH_TAB)
+        except:
+            ws = sh.add_worksheet(title=_PH_TAB, rows=5000, cols=len(_PH_HEADERS))
+            ws.update("A1", [_PH_HEADERS])
+            return []
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return []
+        picks = []
+        for row in rows[1:]:
+            if not row or not row[0]:
+                continue
+            def _c(i, d=""):
+                return row[i] if i < len(row) else d
+            picks.append({
+                "pick_id":   _c(0),
+                "fecha":     _c(1),
+                "partido":   _c(2),
+                "liga":      _c(3),
+                "deporte":   _c(4),
+                "mercado":   _c(5),
+                "pick_label":_c(6),
+                "prob_pct":  float(_c(7) or 0),
+                "resultado": _c(8,"pendiente"),
+                "home_score":_c(9),
+                "away_score":_c(10),
+                "fuente":    _c(11,"RONGOL"),
+            })
+        return picks
+    except Exception as e:
+        return []
+
+def _ph_save_picks(new_picks):
+    """Append new picks to pick_history sheet (skip duplicates by pick_id)."""
+    if not _gsheets_available() or not new_picks:
+        return False
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_PH_TAB)
+        except:
+            ws = sh.add_worksheet(title=_PH_TAB, rows=5000, cols=len(_PH_HEADERS))
+            ws.update("A1", [_PH_HEADERS])
+        # Get existing IDs to avoid duplicates
+        existing = ws.col_values(1)  # pick_id column
+        existing_ids = set(existing[1:])  # skip header
+        rows_to_add = []
+        for p in new_picks:
+            if p["pick_id"] not in existing_ids:
+                rows_to_add.append([
+                    p["pick_id"], p["fecha"], p["partido"], p["liga"],
+                    p["deporte"], p["mercado"], p["pick_label"],
+                    p["prob_pct"], p.get("resultado","pendiente"),
+                    p.get("home_score",""), p.get("away_score",""), p.get("fuente","RONGOL"),
+                ])
+        if rows_to_add:
+            ws.append_rows(rows_to_add, value_input_option="USER_ENTERED")
+        return len(rows_to_add)
+    except Exception as e:
+        return False
+
+def _ph_update_results(updates):
+    """Update resultado/scores for a list of pick_ids. updates = {pick_id: {resultado, home_score, away_score}}"""
+    if not _gsheets_available() or not updates:
+        return False
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        ws  = sh.worksheet(_PH_TAB)
+        ids = ws.col_values(1)  # column A = pick_id
+        batch = []
+        for i, pid in enumerate(ids[1:], start=2):  # row 2 onwards
+            if pid in updates:
+                upd = updates[pid]
+                batch.append({"range": f"I{i}:K{i}", "values": [[
+                    upd.get("resultado","pendiente"),
+                    upd.get("home_score",""),
+                    upd.get("away_score",""),
+                ]]})
+        if batch:
+            ws.batch_update(batch)
+        _ph_load.clear()
+        return len(batch)
+    except Exception as e:
+        return False
+
+def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
+    """
+    Extract picks from simulation results to save to pick_history.
+    Returns list of pick dicts ready for _ph_save_picks.
+    """
+    import hashlib
+    from datetime import datetime as _dt, timezone as _tz
+    fecha = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M")
+    picks = []
+
+    _SPORT_ORDER_PH = ["Soccer","Basketball","Hockey","Baseball","Football"]
+
+    # ── RONGOL picks (1 per sport, same logic as tab) ────────────────────────
+    def _sport_best_ph(r):
+        sim = r["sim"]
+        sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
+        h_prob = sim.get("home_pct",0) or 0
+        a_prob = sim.get("away_pct",0) or 0
+        h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
+
+        def best_ml():
+            if h_prob >= a_prob:
+                t,p,ml = r["home_team"],h_prob,h_ml
+            else:
+                t,p,ml = r["away_team"],a_prob,a_ml
+            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1)} if ml else None
+
+        if sg == "Soccer":
+            cands = []
+            _btts_ev = sim.get("btts_ev") or 0
+            _btts_pb = sim.get("p_btts") or 0
+            if _btts_ev > 0 and _btts_pb > 0:
+                cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan","prob_pct":round(_btts_pb,1)})
+            _o25_ev = sim.get("o25_ev") or 0
+            _o25_pb = sim.get("p_o25") or 0
+            if _o25_ev > 0 and _o25_pb > 0:
+                cands.append({"mercado":"O/U","pick_label":"Over 2.5","prob_pct":round(_o25_pb,1)})
+            _ml = best_ml()
+            if _ml: cands.append(_ml)
+            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
+        elif sg in ("Basketball","Hockey"):
+            cands = []
+            _ml = best_ml()
+            if _ml: cands.append(_ml)
+            _ou_line = sim.get("ou_line") or ""
+            _p_over  = sim.get("p_o_total") or 0
+            if _ou_line and _p_over > 45:
+                try: _line = float(_ou_line)
+                except: _line = None
+                if _line:
+                    cands.append({"mercado":"O/U","pick_label":f"Over {_line:.1f}","prob_pct":round(_p_over,1)})
+            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
+        else:
+            return best_ml()
+
+    # Group by sport, take best per sport
+    sport_pools = {}
+    for r in sr:
+        sg = LEAGUES.get(r["league"],{}).get("group","Soccer")
+        bp = _sport_best_ph(r)
+        if bp:
+            sport_pools.setdefault(sg,[]).append((r, bp))
+
+    for sg in _SPORT_ORDER_PH:
+        pool = sport_pools.get(sg,[])
+        if not pool:
+            continue
+        pool.sort(key=lambda x: x[1]["prob_pct"], reverse=True)
+        r, bp = pool[0]
+        partido  = f'{r["away_team"]} vs {r["home_team"]}'
+        pick_id  = hashlib.md5(f'{fecha[:10]}|{partido}|{bp["mercado"]}|{bp["pick_label"]}'.encode()).hexdigest()[:12]
+        picks.append({
+            "pick_id":   pick_id,
+            "fecha":     fecha,
+            "partido":   partido,
+            "liga":      r.get("league",""),
+            "deporte":   sg,
+            "mercado":   bp["mercado"],
+            "pick_label":bp["pick_label"],
+            "prob_pct":  bp["prob_pct"],
+            "resultado": "pendiente",
+            "home_score":"",
+            "away_score":"",
+            "fuente":    fuente,
+        })
+
+    return picks
+
+def _ph_auto_resolve(picks):
+    """
+    Try to resolve pending picks against finished ESPN games.
+    Returns dict {pick_id: {resultado, home_score, away_score}} for resolved picks.
+    """
+    pending = [p for p in picks if p.get("resultado") == "pendiente"]
+    if not pending:
+        return {}
+    try:
+        finished = _fetch_finished_games()
+    except:
+        return {}
+    resolved = {}
+    for p in pending:
+        partido = p.get("partido","")
+        sep = " vs " if " vs " in partido else (" @ " if " @ " in partido else None)
+        if sep:
+            parts = partido.split(sep, 1)
+            t1, t2 = parts[0].strip(), parts[1].strip()
+        else:
+            t1, t2 = partido.strip(), ""
+        for g in finished:
+            m1 = _team_match(t1, g["home_team"], g["away_team"])
+            m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
+            if not (m1 or m2):
+                continue
+            # Build a fake pick dict for _evaluate_pick
+            fake_pick = {
+                "partido": partido,
+                "pick":    p["pick_label"],
+                "mercado": p["mercado"],
+            }
+            res = _evaluate_pick(fake_pick, g)
+            if res:
+                resolved[p["pick_id"]] = {
+                    "resultado":  res,
+                    "home_score": str(g.get("home_score","")),
+                    "away_score": str(g.get("away_score","")),
+                }
+                break
+    return resolved
 
 # RETO 13M — Bitácora permanente de bankroll
 # Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
