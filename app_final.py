@@ -5694,6 +5694,18 @@ with tab_sim:
     _sports_p = [s for s in _SPORTS_ORDER_P if s in _tree_p]
     _total_p  = sum(len(gs) for sp in _sports_p for dmap in _tree_p[sp].values() for gs in dmap.values())
 
+    # DEBUG — muestra todos los Soccer games y su estado (temporal)
+    _dbg_soccer = [g for g in games if LEAGUES.get(g["league"],{}).get("group","Soccer") == "Soccer"]
+    if _dbg_soccer:
+        with st.expander(f"🔍 DEBUG Soccer ({len(_dbg_soccer)} games en feed)", expanded=False):
+            for _dg in _dbg_soccer:
+                from datetime import timezone as _dtz
+                try:
+                    _du = datetime.strptime(_dg["date"][:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_dtz.utc)
+                    _dc = (_du - timedelta(hours=6)).strftime("%m-%d %H:%M")
+                except: _dc = _dg["date"][:16]
+                st.write(f"`{_dg['league']}` · {_dg['away_team']} @ {_dg['home_team']} · state=**{_dg['state']}** · CDMX={_dc}")
+
     # ── Header row: título + botón RE-SIMULAR alineados ─────────────────────
     _hdr_col1, _hdr_col2 = st.columns([3, 1])
     with _hdr_col1:
