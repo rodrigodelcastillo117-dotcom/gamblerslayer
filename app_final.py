@@ -1867,12 +1867,14 @@ def fetch_scoreboard(sport, league, tournament_id=None):
         _now      = datetime.now(timezone.utc)
         _now_mx   = _now - timedelta(hours=6)
         today_utc = _now.strftime("%Y%m%d")
+        tom_utc   = (_now + timedelta(days=1)).strftime("%Y%m%d")
         today_mx  = _now_mx.strftime("%Y%m%d")
         base_url  = ESPN_URL.format(sport=sport, league=league)
         urls = [
             base_url,                                        # default (today)
             f"{base_url}?dates={today_mx}&limit=100",       # MX today
             f"{base_url}?dates={today_utc}&limit=100",      # UTC today
+            f"{base_url}?dates={tom_utc}&limit=100",        # UTC tomorrow (catches CDMX evening games)
         ]
 
     all_events = []
@@ -5193,7 +5195,7 @@ with tab_sim:
         if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
-        if _gd < _today_mx_p or _gd > _d2_mx_p: continue
+        if _gd != _today_mx_p: continue
         _tree_p.setdefault(_sg_p, {}).setdefault(_gd, {}).setdefault(_g["league"], []).append(_g)
 
     _sports_p = [s for s in _SPORTS_ORDER_P if s in _tree_p]
@@ -5493,16 +5495,9 @@ with tab_sim:
         )
         return _html
 
-    # ── Expanders — show only selected sport (or all if none selected) ──────
+    # ── Show all sports expanded directly — no click needed ─────────────────
     _sel_sp_now = st.session_state.get("_picks_sel_sport", None)
     _sports_to_show = [_sel_sp_now] if (_sel_sp_now and _sel_sp_now in _sports_p) else _sports_p
-
-    if not _sel_sp_now:
-        st.markdown(
-            '<div style="font-size:0.75rem;color:#6B7E6E;margin:4px 0 10px 0">'
-            '👆 Pulsa un deporte arriba para ver sus partidos</div>',
-            unsafe_allow_html=True
-        )
 
     for _sp_p in _sports_to_show:
         _smp   = _SPORT_META_P[_sp_p]
@@ -5515,66 +5510,30 @@ with tab_sim:
                _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
         )
         _ev_badge = f" 🔥{_ev_count}" if _ev_count else ""
-        # When a sport is selected, show it fully expanded (no outer expander)
-        if _sel_sp_now == _sp_p:
-            st.markdown(
-                f'<div style="font-size:0.75rem;font-weight:700;color:{_smp["color"]};'
-                f'letter-spacing:1px;text-transform:uppercase;margin:6px 0 10px 0">'
-                f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}</div>',
-                unsafe_allow_html=True
-            )
-            for _dk_p in _dks_p:
-                _n_day = sum(len(gs) for gs in _tree_p[_sp_p][_dk_p].values())
-                _ev_day = sum(
-                    1 for gs in _tree_p[_sp_p][_dk_p].values()
-                    for g in gs
-                    if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
-                       _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+        # Always show expanded — sport heading + leagues + 3-per-row cards
+        st.markdown(
+            f'<div style="font-size:0.75rem;font-weight:700;color:{_smp["color"]};'
+            f'letter-spacing:1px;text-transform:uppercase;margin:14px 0 8px 0;'
+            f'border-bottom:1px solid {_smp["color"]}33;padding-bottom:4px">'
+            f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}</div>',
+            unsafe_allow_html=True
+        )
+        for _dk_p in _dks_p:
+            for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
+                _country_p = LEAGUES.get(_lg_p,{}).get("country","")
+                _ctry_str  = f" · {_country_p}" if _country_p else ""
+                st.markdown(
+                    f'<div style="font-size:0.70rem;color:{_smp["color"]}99;font-weight:600;'
+                    f'letter-spacing:1px;text-transform:uppercase;margin:6px 0 4px 8px">'
+                    f'{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)}</div>',
+                    unsafe_allow_html=True
                 )
-                _day_label = f"{_fmt_date_p(_dk_p)} · {_n_day} partidos" + (f" 🔥{_ev_day}" if _ev_day else "")
-                with st.expander(_day_label, expanded=(_dk_p == _today_mx_p)):
-                    for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
-                        st.markdown(
-                            f'<div style="font-size:0.728rem;color:{_smp["color"]};font-weight:700;'
-                            f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
-                            f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
-                            unsafe_allow_html=True
-                        )
-                        for _gi3 in range(0, len(_lg_games_p), 3):
-                            _row3 = _lg_games_p[_gi3:_gi3+3]
-                            _c3 = st.columns(len(_row3))
-                            for _ci3, _gg_p in enumerate(_row3):
-                                with _c3[_ci3]:
-                                    st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
-        else:
-            # No sport selected — show collapsed expanders for all sports
-            with st.expander(
-                f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}',
-                expanded=False
-            ):
-                for _dk_p in _dks_p:
-                    _n_day = sum(len(gs) for gs in _tree_p[_sp_p][_dk_p].values())
-                    _ev_day = sum(
-                        1 for gs in _tree_p[_sp_p][_dk_p].values()
-                        for g in gs
-                        if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
-                           _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
-                    )
-                    _day_label = f"{_fmt_date_p(_dk_p)} · {_n_day} partidos" + (f" 🔥{_ev_day}" if _ev_day else "")
-                    with st.expander(_day_label, expanded=(_dk_p == _today_mx_p)):
-                        for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
-                            st.markdown(
-                                f'<div style="font-size:0.728rem;color:{_smp["color"]};font-weight:700;'
-                                f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
-                                f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
-                                unsafe_allow_html=True
-                            )
-                            for _gi3 in range(0, len(_lg_games_p), 3):
-                                _row3 = _lg_games_p[_gi3:_gi3+3]
-                                _c3 = st.columns(len(_row3))
-                                for _ci3, _gg_p in enumerate(_row3):
-                                    with _c3[_ci3]:
-                                        st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                for _gi3 in range(0, len(_lg_games_p), 3):
+                    _row3 = _lg_games_p[_gi3:_gi3+3]
+                    _c3 = st.columns(len(_row3))
+                    for _ci3, _gg_p in enumerate(_row3):
+                        with _c3[_ci3]:
+                            st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
@@ -5826,7 +5785,6 @@ with tab_parlays:
             _candidates = []
             for _r in sr_current:
                 _gid = _r.get("id","")
-                # Use state from sim result or from games map
                 _g_state = _r.get("state") or (_gmap_par.get(_gid) or {}).get("state","pre")
                 if _g_state == "post": continue
                 _gd_m = _game_date_par(_gid, _r)
@@ -5834,7 +5792,7 @@ with tab_parlays:
                 _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
                 if _sg != sg_target: continue
                 _sim = _r["sim"]
-                # --- Soccer: mejor entre ML favorito y BTTS ---
+                _game_obj = _gmap_par.get(_gid, _r)  # use games map for full game obj
                 if sg_target == "Soccer":
                     _hp = _sim.get("home_pct") or 0
                     _ap = _sim.get("away_pct") or 0
@@ -5846,42 +5804,49 @@ with tab_parlays:
                         ("O/U", "Over 2.5", _o25),
                     ]:
                         if _prob > 0:
-                            _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                            _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
                                                 "market":_mkt,"label":_lbl,"prob":_prob})
-                # --- Basketball / Hockey: ML o mejor O/U ---
                 else:
                     _hp = _sim.get("home_pct") or 0
                     _ap = _sim.get("away_pct") or 0
                     _ml_prob = max(_hp, _ap)
                     _ml_lbl  = _r["home_team"] if _hp >= _ap else _r["away_team"]
                     if _ml_prob > 0:
-                        _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                        _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
                                             "market":"ML","label":_ml_lbl,"prob":_ml_prob})
-                    # O/U from multi_lines — pick best edge
                     _multi_r = _sim.get("multi_lines",{})
                     if _multi_r:
                         for _l, _d in _multi_r.items():
                             _po = _d["over"]; _pu = _d["under"]
                             if _po >= _pu and _po >= 52:
-                                _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                                _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
                                                     "market":"O/U","label":f"Over {_l:.1f}","prob":_po})
                             elif _pu > _po and _pu >= 52:
-                                _candidates.append({"sport":sg_target,"game":_g,"league":_r["league"],
+                                _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
                                                     "market":"O/U","label":f"Under {_l:.1f}","prob":_pu})
             if not _candidates: return None
             return max(_candidates, key=lambda x: x["prob"])
 
+        # Force exactly Soccer + Basketball + Hockey (1 per sport, best pick)
+        _PARLAY_SPORTS = ["Soccer", "Basketball", "Hockey"]
         _multi_legs = []
         _used_game_ids_m = set()
-        for _sg_m in ["Soccer", "Basketball", "Hockey", "Baseball", "Football"]:
+        for _sg_m in _PARLAY_SPORTS:
             _leg = _best_leg_for_sport(_sg_m)
             if _leg and _leg["game"].get("id","") not in _used_game_ids_m:
                 _multi_legs.append(_leg)
                 _used_game_ids_m.add(_leg["game"].get("id",""))
-            if len(_multi_legs) >= 3:
-                break
 
-        # Fallback: si no hay legs por filtro de fecha, usar sr_current directo
+        # Fallback: si no hay los 3 deportes, completar con Baseball/Football
+        if len(_multi_legs) < 3:
+            for _sg_m in ["Baseball", "Football"]:
+                if len(_multi_legs) >= 3: break
+                _leg = _best_leg_for_sport(_sg_m)
+                if _leg and _leg["game"].get("id","") not in _used_game_ids_m:
+                    _multi_legs.append(_leg)
+                    _used_game_ids_m.add(_leg["game"].get("id",""))
+
+        # Fallback final: si aún <2 legs, tomar directamente de sr_current por prob
         if len(_multi_legs) < 2 and sr_current:
             _used_fb = set()
             _all_fb_legs = []
@@ -5892,21 +5857,17 @@ with tab_parlays:
                 if _st == "post": continue
                 _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
                 _sim = _r["sim"]
-                # Best pick for this game
+                _game_obj = _gmap_par.get(_gid, _r)
                 if _sg == "Soccer":
                     _hp = _sim.get("home_pct") or 0
                     _ap = _sim.get("away_pct") or 0
                     _bp = _sim.get("p_btts") or 0
                     _o25 = _sim.get("p_o25") or 0
                     _best_p = max(_hp, _ap, _bp, _o25)
-                    if _hp >= _ap and _hp == _best_p:
-                        _lbl, _mkt = _r["home_team"], "ML"
-                    elif _ap == _best_p:
-                        _lbl, _mkt = _r["away_team"], "ML"
-                    elif _bp == _best_p:
-                        _lbl, _mkt = "Ambos Anotan", "BTTS"
-                    else:
-                        _lbl, _mkt = "Over 2.5", "O/U"
+                    if _hp >= _ap and _hp == _best_p: _lbl, _mkt = _r["home_team"], "ML"
+                    elif _ap == _best_p: _lbl, _mkt = _r["away_team"], "ML"
+                    elif _bp == _best_p: _lbl, _mkt = "Ambos Anotan", "BTTS"
+                    else: _lbl, _mkt = "Over 2.5", "O/U"
                     _prob = _best_p
                 else:
                     _hp = _sim.get("home_pct") or 0
@@ -5915,16 +5876,16 @@ with tab_parlays:
                     _lbl = _r["home_team"] if _hp >= _ap else _r["away_team"]
                     _mkt = "ML"
                 if _prob > 0:
-                    _all_fb_legs.append({"sport":_sg,"game":_r,"league":_r["league"],
+                    _all_fb_legs.append({"sport":_sg,"game":_game_obj,"league":_r["league"],
                                          "market":_mkt,"label":_lbl,"prob":_prob})
                 _used_fb.add(_gid)
-            # Sort by prob, pick top 3 from different sports if possible
             _all_fb_legs.sort(key=lambda x: x["prob"], reverse=True)
             _fb_sports_used = set()
             _fb_ids_used = set()
             for _fl in _all_fb_legs:
                 _fgid = _fl["game"].get("id","")
                 if _fgid in _fb_ids_used: continue
+                if _fl["sport"] in _fb_sports_used: continue  # 1 por deporte
                 _fb_ids_used.add(_fgid)
                 _fb_sports_used.add(_fl["sport"])
                 _multi_legs.append(_fl)
