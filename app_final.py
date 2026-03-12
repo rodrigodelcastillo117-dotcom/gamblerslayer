@@ -374,6 +374,11 @@ st.markdown("""
 
 /* ── PROB BARS ── */
 .bar-wrap { margin: 4px 0; }
+
+/* ── Live picks grid: uses CSS var set per-card ── */
+.live-picks-grid {
+  grid-template-columns: repeat(var(--lp-cols, 1), 1fr);
+}
 .bar-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
 .bar-team { font-family: 'DM Sans',sans-serif; font-size: 0.806rem; color:var(--muted); }
 .bar-pct  { font-family: 'Cinzel',sans-serif; font-size: 0.806rem; font-weight:700; }
@@ -659,6 +664,11 @@ hr { border-color: var(--border) !important; }
 
   /* ── Warn / demo banners ── */
   .warn-banner, .demo-banner { font-size: 0.784rem !important; padding: 6px 10px !important; }
+
+  /* ── Live picks grid: 1 column on mobile ── */
+  .live-picks-grid {
+    grid-template-columns: 1fr !important;
+  }
 
   /* ── Main header: smaller on mobile, no word-break ── */
   .den-logo {
@@ -6863,18 +6873,22 @@ with tab_all:
             best     = max(picks, key=lambda p: p["prob"])
             prob_color = "#4ade80" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
 
-            # Picks mini-grid (up to 3 cols)
+            # Picks mini-grid — 1 col on mobile, up to 3 on desktop
             _cols = min(len(picks), 3)
-            ph = f'<div style="display:grid;grid-template-columns:repeat({_cols},1fr);gap:4px;margin-bottom:6px">'
+            ph = (
+                f'<div style="display:grid;gap:5px;margin-bottom:6px;'
+                f'--lp-cols:{_cols}"'
+                f' class="live-picks-grid">'
+            )
             for i, pk in enumerate(picks):
                 pc = "#4ade80" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
                 _bg = "rgba(255,232,124,0.08)" if i == 0 else "rgba(255,255,255,0.02)"
                 _bd = "#FFE87C44" if i == 0 else "#2a3a2e"
                 ph += (
-                    f'<div style="background:{_bg};border:1px solid {_bd};border-radius:5px;padding:5px 7px">'
-                    f'<div style="font-size:0.72rem;font-weight:700;color:#FFE87C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["label"]}</div>'
-                    f'<div style="font-size:1.0rem;color:{pc};font-weight:700">{pk["prob"]:.0f}%</div>'
-                    f'<div style="font-size:0.62rem;color:#6B7E6E;line-height:1.2;overflow:hidden;max-height:2.4em">{pk["rationale"][:70]}</div>'
+                    f'<div style="background:{_bg};border:1px solid {_bd};border-radius:5px;padding:6px 8px">'
+                    f'<div style="font-size:0.75rem;font-weight:700;color:#FFE87C">{pk["label"]}</div>'
+                    f'<div style="font-size:1.05rem;color:{pc};font-weight:700">{pk["prob"]:.0f}%</div>'
+                    f'<div style="font-size:0.63rem;color:#6B7E6E;line-height:1.3">{pk["rationale"][:90]}</div>'
                     f'</div>'
                 )
             ph += "</div>"
