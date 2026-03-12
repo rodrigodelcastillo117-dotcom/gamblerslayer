@@ -3361,14 +3361,17 @@ if st.session_state.pop("run_populate", False):
         _stat.empty()
 
         # Mostrar resumen
-        st.success(f"✅ Memoria poblada: **{_written}** equipos guardados, {_failed} fallidos")
+        if _written > 0:
+            st.success(f"✅ Memoria poblada: **{_written}** equipos guardados, {_failed} fallidos")
+        else:
+            st.error(f"❌ 0 equipos guardados. {_failed} fallidos. Revisa el log.")
 
-        # Log expandible
-        with st.expander("📋 Ver log completo"):
+        # Log expandible — siempre visible
+        with st.expander("📋 Ver log completo", expanded=(_written == 0)):
             st.code("\n".join(_log))
 
-        st.cache_data.clear()  # Forzar recarga del cache de perfiles
-        st.rerun()
+        # Solo limpiar cache, NO hacer rerun para que el log sea visible
+        st.cache_data.clear()
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab_picks, tab_sim, tab_parlays, tab_all, tab_reto = st.tabs([
