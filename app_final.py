@@ -524,10 +524,31 @@ hr { border-color: var(--border) !important; }
     max-width: 100% !important;
   }
 
-  /* ── Hide sidebar toggle, keep content full-width ── */
+  /* ── Sidebar: slide-in overlay, never pushes content ── */
   [data-testid="stSidebar"] {
-    min-width: 80vw !important;
-    max-width: 88vw !important;
+    min-width: 75vw !important;
+    max-width: 85vw !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    height: 100dvh !important;
+    z-index: 999 !important;
+    box-shadow: 4px 0 32px rgba(0,0,0,0.7) !important;
+    overflow-y: auto !important;
+  }
+
+  /* ── Main content: always full width on mobile ── */
+  .stMainBlockContainer, section.main, [data-testid="stAppViewContainer"] > section:last-child {
+    margin-left: 0 !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* ── Sidebar toggle button: keep it visible ── */
+  [data-testid="stSidebarCollapsedControl"] {
+    z-index: 1000 !important;
   }
 
   /* ── TABS: compact, scrollable, no wrap ── */
@@ -611,6 +632,17 @@ hr { border-color: var(--border) !important; }
 
   /* ── Warn / demo banners ── */
   .warn-banner, .demo-banner { font-size: 0.784rem !important; padding: 6px 10px !important; }
+
+  /* ── Main header: smaller on mobile, no word-break ── */
+  .den-logo {
+    font-size: 2.0rem !important;
+    letter-spacing: 3px !important;
+    word-break: keep-all !important;
+    white-space: nowrap !important;
+  }
+  .den-header { padding: 1rem 0 0.5rem 0 !important; }
+  .den-subtitle { font-size: 0.65rem !important; letter-spacing: 3px !important; }
+  .den-corner { font-size: 0.9rem !important; }
 
   /* ── Sidebar logo ── */
   .sidebar-logo { font-size: 1.232rem !important; letter-spacing: 2px !important; }
