@@ -2891,12 +2891,8 @@ def get_lambda(game):
     # Shrink observed lambda toward league average proportional to sample size.
     # alpha = n_games / (n_games + k_prior) where k_prior = virtual prior games.
     # Soccer: k=8 (goals more stable), Basketball: k=6 (pts more variable)
-    _n_h_games = len(game.get("home_splits", {}).get("n_home", 0) or
-                     hf.get("n_games", 0) if isinstance(hf, dict) else 0) if False else (
-                     (game.get("home_splits") or {}).get("n_home") or
-                     (hf.get("n_games") if isinstance(hf, dict) else None) or 0)
-    _n_a_games = (game.get("away_splits") or {}).get("n_away") or (
-                     af.get("n_games") if isinstance(af, dict) else None) or 0
+    _n_h_games = (game.get("home_splits") or {}).get("n_home") or 0
+    _n_a_games = (game.get("away_splits") or {}).get("n_away") or 0
 
     def _bayesian_shrink(lam_obs, lam_prior, n_games, k_prior=8):
         """Shrink observed lambda toward prior. Returns blended lambda."""
