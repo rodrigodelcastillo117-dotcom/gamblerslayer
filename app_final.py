@@ -4340,44 +4340,76 @@ with st.sidebar:
     st.caption("Verifica qué devuelve ESPN por liga")
     if st.button("🔍 TEST ESPN AHORA", use_container_width=True):
         from datetime import timedelta as _td_dbg
-        _now_dbg    = datetime.now(timezone.utc)
-        _now_mx_dbg = _now_dbg - _td_dbg(hours=6)
-        _d_mx  = _now_mx_dbg.strftime("%Y%m%d")
-        _d_utc = _now_dbg.strftime("%Y%m%d")
-        _d_tom = (_now_dbg + _td_dbg(days=1)).strftime("%Y%m%d")
+        _now_dbg     = datetime.now(timezone.utc)
+        _now_mx_dbg  = _now_dbg - _td_dbg(hours=6)
+        _today_cdmx_dbg = _now_mx_dbg.strftime("%Y-%m-%d")
+        _d_mx   = _now_mx_dbg.strftime("%Y%m%d")
+        _d_utc  = _now_dbg.strftime("%Y%m%d")
+        _d_tom  = (_now_dbg + _td_dbg(days=1)).strftime("%Y%m%d")
+        _d_yday = (_now_dbg - _td_dbg(days=1)).strftime("%Y%m%d")
 
-        _dbg_results = {}
+        st.caption(f"Hoy CDMX: **{_today_cdmx_dbg}**  ·  UTC: {_now_dbg.strftime('%Y-%m-%d %H:%M')}")
+
         _soccer_leagues = {n: v for n, v in LEAGUES.items() if v["sport"] == "soccer"}
         _prog = st.progress(0)
         for _i, (_lname, _lcfg) in enumerate(_soccer_leagues.items()):
-            _prog.progress((_i+1)/len(_soccer_leagues))
-            _base = f"https://site.api.espn.com/apis/site/v2/sports/{_lcfg['sport']}/{_lcfg['league']}/scoreboard"
-            _best = 0
-            _best_date = ""
-            for _d, _dlabel in [(_d_mx,"MX"), (_d_utc,"UTC"), (_d_tom,"TOM")]:
+            _prog.progress((_i + 1) / len(_soccer_leagues))
+            _base = (f"https://site.api.espn.com/apis/site/v2/sports/"
+                     f"{_lcfg['sport']}/{_lcfg['league']}/scoreboard")
+
+            # Collect all unique events across all date variants
+            _all_evts = {}
+            for _d, _dlbl in [(_d_yday,"YDAY"), (_d_mx,"MX"), (_d_utc,"UTC"), (_d_tom,"TOM")]:
                 try:
                     _rr = requests.get(f"{_base}?dates={_d}&limit=100", timeout=6,
-                                       headers={"User-Agent":"Mozilla/5.0"})
+                                       headers={"User-Agent": "Mozilla/5.0"})
                     if _rr.status_code == 200:
-                        _n = len(_rr.json().get("events", []))
-                        if _n > _best:
-                            _best = _n
-                            _best_date = _dlabel
-                except: pass
-            _dbg_results[_lname] = (_best, _best_date, _lcfg["league"])
-        _prog.empty()
+                        for _ev in _rr.json().get("events", []):
+                            if _ev.get("id") and _ev["id"] not in _all_evts:
+                                _all_evts[_ev["id"]] = (_ev, _dlbl)
+                except:
+                    pass
 
-        for _lname, (_cnt, _dlabel, _lid) in _dbg_results.items():
-            _icon = "✅" if _cnt > 0 else "❌"
+            # Analyze each event: does it pass the CDMX date filter?
+            _pass, _fail, _lines = 0, 0, []
+            for _eid, (_ev, _dlbl) in _all_evts.items():
+                _raw = _ev.get("date", "")
+                _cdmx_d = "?"
+                _passes = False
+                try:
+                    _eu = datetime.strptime(_raw[:19].replace("T", " "),
+                                            "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    _cdmx_d = (_eu - _td_dbg(hours=6)).strftime("%Y-%m-%d %H:%M")
+                    _passes = _cdmx_d[:10] == _today_cdmx_dbg
+                except:
+                    _passes = True  # no date → let pass
+                _ht = _ev.get("competitions", [{}])[0].get("competitors", [{}])[0].get("team", {}).get("shortDisplayName", "?")
+                _at = _ev.get("competitions", [{}])[0].get("competitors", [{}])[1].get("team", {}).get("shortDisplayName", "?") if len(_ev.get("competitions", [{}])[0].get("competitors", [])) > 1 else "?"
+                _st = _ev.get("status", {}).get("type", {}).get("state", "?")
+                if _passes:
+                    _pass += 1
+                else:
+                    _fail += 1
+                _lines.append((_passes, _dlbl, _cdmx_d, _at, _ht, _st))
+
+            _icon = "✅" if _pass > 0 else "❌"
+            _clr  = "#4ade80" if _pass > 0 else "#ef4444"
+            _bg   = "rgba(74,222,128,0.06)" if _pass > 0 else "rgba(239,68,68,0.06)"
+            _rows = ""
+            for (_ok, _dl, _cd, _at2, _ht2, _st2) in sorted(_lines, key=lambda x: x[2]):
+                _rc = "#4ade80" if _ok else "#ef4444"
+                _ok_str = "✓" if _ok else "✗"
+                _rows += (f'<div style="font-size:0.60rem;color:{_rc};padding-left:8px">'
+                          f'{_ok_str} {_cd} CDMX · {_at2} @ {_ht2} · {_st2} · raw:{_dl}</div>')
             st.markdown(
-                f'<div style="font-size:0.72rem;padding:3px 6px;margin:2px 0;'
-                f'background:{"rgba(74,222,128,0.08)" if _cnt>0 else "rgba(239,68,68,0.08)"};'
-                f'border-radius:4px;border-left:2px solid {"#4ade80" if _cnt>0 else "#ef4444"}">'
-                f'{_icon} <b>{_lname}</b>: {_cnt} partidos'
-                f'{"  · fecha: "+_dlabel if _cnt>0 else ""}'
-                f'<br><span style="color:#6B7E6E;font-size:0.65rem">{_lid}</span></div>',
+                f'<div style="font-size:0.72rem;padding:4px 7px;margin:3px 0;'
+                f'background:{_bg};border-radius:5px;border-left:3px solid {_clr}">'
+                f'{_icon} <b>{_lname}</b>: {_pass} pasan filtro / {_pass+_fail} raw'
+                f'<br><span style="color:#6B7E6E;font-size:0.62rem">{_lcfg["league"]}</span>'
+                + _rows + '</div>',
                 unsafe_allow_html=True
             )
+        _prog.empty()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
@@ -4506,6 +4538,23 @@ if (not _already_simulated or _leagues_changed or run_sidebar) and games:
                 st.toast(f"📋 Historial al día ({len(_ph_new)} picks ya registrados)", icon="📋")
         except Exception as _ph_err:
             pass  # never block the main flow
+
+    # ── AUTO-RESOLVE: update pendiente → ganado/perdido for finished games ──
+    if not is_demo and _gsheets_available():
+        try:
+            _post_games = [g for g in games if g.get("state") == "post"]
+            if _post_games:
+                _all_ph = _ph_load()
+                _resolved = _ph_auto_resolve(_all_ph)
+                if _resolved:
+                    _n_resolved = _ph_update_results(_resolved)
+                    if _n_resolved and _n_resolved > 0:
+                        _win  = sum(1 for v in _resolved.values() if v["resultado"] == "ganado")
+                        _lose = sum(1 for v in _resolved.values() if v["resultado"] == "perdido")
+                        st.toast(f"✅ {_n_resolved} picks resueltos · {_win}W {_lose}L", icon="📊")
+        except Exception:
+            pass  # never block the main flow
+
     if run_sidebar:
         st.toast(f"✓ {len(games)*n_sims:,} sims en {_elapsed:.1f}s · {_n_pos} value bets", icon="🔮")
     st.rerun()
