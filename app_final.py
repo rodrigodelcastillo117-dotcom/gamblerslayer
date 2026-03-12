@@ -5187,10 +5187,10 @@ with tab_sim:
             f'</div>'
         )
 
-    # Build tree — pre games only, by sport → date → league
+    # Build tree — pre + live games, by sport → date → league
     _tree_p = {}
     for _g in games:
-        if _g["state"] in ("post", "in"): continue   # skip finished + live
+        if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
         if _gd < _today_mx_p or _gd > _d2_mx_p: continue
@@ -6478,137 +6478,121 @@ with tab_all:
 
         st.markdown(f'<div style="font-size:0.78rem;color:#6B7E6E;margin:4px 0 12px 0">{len(_live_filtered)} de {len(live_games)} partidos en vivo</div>', unsafe_allow_html=True)
 
-        for g in _live_filtered:
+        def _build_live_card(g):
+            """Build a single live game card HTML string."""
             sim         = run_monte_carlo(g, n=5_000)
             dq          = sim["data_quality"]
             sport_group = LEAGUES.get(g["league"], {}).get("group", "Soccer")
             minute      = parse_live_minute(g.get("status_detail", ""))
-
             try:
                 hs = int(g.get("home_score") or 0)
                 as_ = int(g.get("away_score") or 0)
             except:
                 hs, as_ = 0, 0
-            score_str   = f"{as_} – {hs}" if (g.get("home_score") or g.get("away_score")) else "–"
-            min_str     = f"min {minute}" if minute else g.get("status_detail","")
+            score_str = f"{as_} – {hs}" if (g.get("home_score") or g.get("away_score")) else "–"
 
-            # Get contextual pick
             if sport_group == "Soccer":
                 result = live_pick_soccer(g, sim, minute)
             else:
                 result = live_pick_other(g, sim)
-
             if not result:
-                continue
+                return None
 
-            picks     = result["picks"]
-            headline  = result.get("headline","")
-            # Best pick = highest probability among suggestions
-            best      = max(picks, key=lambda p: p["prob"])
+            picks    = result["picks"]
+            headline = result.get("headline","")
+            best     = max(picks, key=lambda p: p["prob"])
+            prob_color = "#4ade80" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
 
-            prob_color  = "#4ade80" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
-            border_col  = "rgba(255,60,60,0.7)"
-
-            # Build HTML — compact 3-per-row grid
-            _n_picks_lv = len(picks)
-            _cols_lv = min(_n_picks_lv, 3)
-            picks_html = f'<div style="display:grid;grid-template-columns:repeat({_cols_lv},1fr);gap:6px;margin-bottom:8px">'
+            # Picks mini-grid (up to 3 cols)
+            _cols = min(len(picks), 3)
+            ph = f'<div style="display:grid;grid-template-columns:repeat({_cols},1fr);gap:4px;margin-bottom:6px">'
             for i, pk in enumerate(picks):
                 pc = "#4ade80" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
                 _bg = "rgba(255,232,124,0.08)" if i == 0 else "rgba(255,255,255,0.02)"
                 _bd = "#FFE87C44" if i == 0 else "#2a3a2e"
-                picks_html += (
-                    f'<div style="background:{_bg};border:1px solid {_bd};border-radius:6px;padding:7px 9px">'
-                    f'<div style="font-size:0.76rem;font-weight:700;color:#FFE87C;margin-bottom:3px;'
-                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["label"]}</div>'
-                    f'<div style="font-family:Cinzel,serif;font-size:1.1rem;color:{pc};font-weight:700">{pk["prob"]:.0f}%</div>'
-                    f'<div style="font-size:0.67rem;color:#6B7E6E;margin-top:3px;line-height:1.3;'
-                    f'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'
-                    f'{pk["rationale"][:90]}</div>'
+                ph += (
+                    f'<div style="background:{_bg};border:1px solid {_bd};border-radius:5px;padding:5px 7px">'
+                    f'<div style="font-size:0.72rem;font-weight:700;color:#FFE87C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["label"]}</div>'
+                    f'<div style="font-size:1.0rem;color:{pc};font-weight:700">{pk["prob"]:.0f}%</div>'
+                    f'<div style="font-size:0.62rem;color:#6B7E6E;line-height:1.2;overflow:hidden;max-height:2.4em">{pk["rationale"][:70]}</div>'
                     f'</div>'
                 )
-            picks_html += "</div>"
+            ph += "</div>"
 
-            def _stat_pill(val, lbl, clr):
-                return (f'<span style="font-size:0.75rem;color:{clr};font-weight:700">{val}</span>'
-                        f'<span style="font-size:0.65rem;color:#6B7E6E;margin-left:2px;margin-right:10px">{lbl}</span>')
-            stats_html = (
-                f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;'
-                f'padding:6px 0 2px 0;border-top:1px solid rgba(255,255,255,0.05);margin-top:6px">'
-                + _stat_pill(f'{sim["away_pct"]:.0f}%', g["away_team"][:10], "#60a5fa")
-                + (_stat_pill(f'{sim["draw_pct"]:.0f}%', "Empate", "#a78bfa") if sim["is_soccer"] else "")
-                + _stat_pill(f'{sim["home_pct"]:.0f}%', g["home_team"][:10], "#f97316")
-                + (_stat_pill(f'{sim["p_btts"]}%', "BTTS%", "#4ade80") if sim.get("p_btts") and sport_group=="Soccer" else "")
-                + (_stat_pill(f'{sim["p_o25"]}%', "O2.5%", "#C9A84C") if sim.get("p_o25") and sport_group=="Soccer" else "")
-                + f'<span style="margin-left:auto;font-size:0.65rem;color:#3a4a3e">DQ {dq:.0f}% · 5k sims</span>'
-                + f'</div>'
-            )
-
-            # xG validation panel — only for Soccer when there's an O/U pick
+            # xG panel (soccer only, compact)
             xg_html = ""
             if sport_group == "Soccer":
                 ou_pick = next((p for p in picks if p["market"] == "O/U" and "Over" in p["label"]), None)
                 if ou_pick:
-                    total_g = hs + as_
-                    ou_line_val = total_g + 1.5
-                    xgv = xg_live_validator(g, ou_line_val, ou_pick["prob"], minute)
-                    adj   = xgv["adjusted_prob"]
-                    conf  = xgv["confidence"]
+                    xgv = xg_live_validator(g, hs + as_ + 1.5, ou_pick["prob"], minute)
+                    adj = xgv["adjusted_prob"]
+                    conf = xgv["confidence"]
                     delta = adj - ou_pick["prob"]
                     adj_c = "#4ade80" if adj >= 70 else "#C9A84C" if adj >= 55 else "#f97316"
                     conf_c = {"alta":"#4ade80","media":"#C9A84C","baja":"#f97316"}.get(conf,"#6B7E6E")
-                    delta_str = (f"▲ +{delta:.0f}pp" if delta >= 1 else (f"▼ {delta:.0f}pp" if delta <= -1 else "= sin cambio"))
-                    delta_c = "#4ade80" if delta >= 1 else ("#ef4444" if delta <= -1 else "#6B7E6E")
-                    sigs_html = "".join(
-                        f'<div style="font-size:0.818rem;color:#9ab09a;padding:2px 0">{s}</div>'
-                        for s in xgv["signals"]
-                    ) if xgv["signals"] else '<div style="font-size:0.818rem;color:#6B7E6E">Sin señales adicionales</div>'
-                    # Update pick prob display if we have real stats
-                    if xgv["has_stats"]:
-                        ou_pick["prob"] = adj  # mutate so pick card shows adjusted value
+                    ds = f"▲+{delta:.0f}pp" if delta >= 1 else (f"▼{delta:.0f}pp" if delta <= -1 else "=")
+                    dc = "#4ade80" if delta >= 1 else ("#ef4444" if delta <= -1 else "#6B7E6E")
+                    if xgv["has_stats"]: ou_pick["prob"] = adj
                     xg_html = (
-                        f'<div style="margin-top:10px;padding:10px 12px;'
-                        f'background:rgba(96,165,250,0.05);border:1px solid rgba(96,165,250,0.2);'
-                        f'border-radius:8px">'
-                        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-                        f'<span style="font-size:0.694rem;color:rgba(96,165,250,0.7);letter-spacing:2px;'
-                        f'text-transform:uppercase;font-weight:600">📡 Validación xG en Vivo</span>'
-                        f'<div style="display:flex;gap:8px;align-items:center">'
-                        f'<span style="font-family:Cinzel,serif;font-size:1.12rem;color:{adj_c};font-weight:700">{adj:.0f}%</span>'
-                        f'<span style="font-size:0.784rem;color:{delta_c};font-weight:600">{delta_str}</span>'
-                        f'<span style="font-size:0.694rem;color:{conf_c};background:rgba(0,0,0,0.3);'
-                        f'border-radius:10px;padding:1px 7px">confianza {conf}</span>'
-                        f'</div></div>'
-                        + sigs_html
-                        + f'</div>'
+                        f'<div style="margin:4px 0;padding:5px 8px;background:rgba(96,165,250,0.04);'
+                        f'border:1px solid rgba(96,165,250,0.15);border-radius:5px;'
+                        f'display:flex;justify-content:space-between;align-items:center">'
+                        f'<span style="font-size:0.62rem;color:rgba(96,165,250,0.6)">📡 xG</span>'
+                        f'<span style="font-size:0.75rem;color:{adj_c};font-weight:700">{adj:.0f}%</span>'
+                        f'<span style="font-size:0.65rem;color:{dc}">{ds}</span>'
+                        f'<span style="font-size:0.60rem;color:{conf_c}">conf.{conf}</span>'
+                        f'</div>'
                     )
 
-            live_html = (
-                '<div style="background:linear-gradient(135deg,#0A1E0F,#071A10);'
-                f'border:2px solid {border_col};border-radius:8px;padding:0;'
-                'margin:6px 0;overflow:hidden">'
-                '<div style="height:2px;background:linear-gradient(90deg,transparent,#ff3c3c,#ff6b6b,#ff3c3c,transparent)"></div>'
-                '<div style="padding:10px 14px">'
-                '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">'
-                '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-                f'<span style="font-size:1.0rem;font-weight:700;color:#fff">{g["away_team"]} @ {g["home_team"]}</span>'
-                f'<span style="color:#4ade80;font-weight:700">{score_str}</span>'
-                f'<span style="font-size:0.75rem;color:#8a9e8a">{headline}</span>'
-                '</div>'
-                '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">'
+            # Stats row
+            def _sp(val, lbl, clr):
+                return f'<span style="font-size:0.68rem;color:{clr};font-weight:700">{val}</span><span style="font-size:0.60rem;color:#6B7E6E;margin:0 6px 0 2px">{lbl}</span>'
+            sh = (
+                f'<div style="display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid rgba(255,255,255,0.04);padding-top:5px;margin-top:4px">'
+                + _sp(f'{sim["away_pct"]:.0f}%', g["away_team"][:9], "#60a5fa")
+                + (_sp(f'{sim["draw_pct"]:.0f}%', "X", "#a78bfa") if sim["is_soccer"] else "")
+                + _sp(f'{sim["home_pct"]:.0f}%', g["home_team"][:9], "#f97316")
+                + (_sp(f'{sim["p_btts"]}%', "BTTS", "#4ade80") if sim.get("p_btts") and sport_group=="Soccer" else "")
+                + (_sp(f'{sim["p_o25"]}%', "O2.5", "#C9A84C") if sim.get("p_o25") and sport_group=="Soccer" else "")
+                + f'<span style="margin-left:auto;font-size:0.58rem;color:#3a4a3e">DQ{dq:.0f}%</span>'
+                + f'</div>'
+            )
+
+            # League + badges
+            badges = (
                 '<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
-                'border-radius:20px;padding:1px 8px;font-size:0.68rem;font-weight:600">🔴 EN VIVO</span>'
-                f'<span style="background:rgba(201,168,76,0.1);color:#C9A84C;border:1px solid rgba(201,168,76,0.3);'
-                f'border-radius:20px;padding:1px 8px;font-size:0.68rem">{league_label(g["league"])}</span>'
-                + (f'<span style="background:rgba(231,76,60,0.15);color:#e74c3c;border:1px solid rgba(231,76,60,0.3);'
-                   f'border-radius:20px;padding:1px 6px;font-size:0.65rem">⚠ SIN CUOTAS</span>' if dq == 0 else '')
-                + '</div></div>'
-                + picks_html
-                + xg_html
-                + stats_html
+                'border-radius:10px;padding:1px 6px;font-size:0.60rem;font-weight:600">🔴</span> '
+                + f'<span style="font-size:0.62rem;color:#C9A84C">{league_label(g["league"])}</span>'
+                + (f' <span style="font-size:0.58rem;color:#e74c3c">⚠</span>' if dq == 0 else '')
+            )
+
+            return (
+                '<div style="background:linear-gradient(135deg,#0A1E0F,#071A10);'
+                'border:2px solid rgba(255,60,60,0.6);border-radius:8px;overflow:hidden">'
+                '<div style="height:2px;background:linear-gradient(90deg,transparent,#ff3c3c,#ff6b6b,#ff3c3c,transparent)"></div>'
+                '<div style="padding:8px 10px">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px">'
+                f'<div>'
+                f'<div style="font-size:0.85rem;font-weight:700;color:#fff;line-height:1.2">{g["away_team"]} @ {g["home_team"]}</div>'
+                f'<div style="font-size:0.75rem;color:#4ade80;font-weight:700">{score_str} <span style="color:#8a9e8a;font-weight:400;font-size:0.68rem">{headline}</span></div>'
+                f'</div>'
+                f'<div style="text-align:right;font-size:0.62rem">{badges}</div>'
+                f'</div>'
+                + ph + xg_html + sh
                 + '</div></div>'
             )
-            st.markdown(live_html, unsafe_allow_html=True)
+
+        # Render 3 per row using CSS grid (all in one markdown call per row)
+        _live_cards_all = [_build_live_card(g) for g in _live_filtered]
+        _live_cards_all = [c for c in _live_cards_all if c]
+        for _rs in range(0, len(_live_cards_all), 3):
+            _row_c = _live_cards_all[_rs:_rs+3]
+            _nc = len(_row_c)
+            st.markdown(
+                f'<div style="display:grid;grid-template-columns:repeat({_nc},1fr);gap:8px;margin-bottom:8px">'
+                + "".join(_row_c) + '</div>',
+                unsafe_allow_html=True
+            )
 
         st.markdown('<div class="den-divider" style="margin:12px 0 20px 0"></div>', unsafe_allow_html=True)
 
