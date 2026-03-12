@@ -1868,18 +1868,11 @@ def fetch_scoreboard(sport, league, tournament_id=None):
         _now_mx   = _now - timedelta(hours=6)
         today_utc = _now.strftime("%Y%m%d")
         today_mx  = _now_mx.strftime("%Y%m%d")
-        tom_utc   = (_now + timedelta(days=1)).strftime("%Y%m%d")
-        tom_mx    = (_now_mx + timedelta(days=1)).strftime("%Y%m%d")
-        d2_utc    = (_now + timedelta(days=2)).strftime("%Y%m%d")
         base_url  = ESPN_URL.format(sport=sport, league=league)
         urls = [
             base_url,                                        # default (today)
             f"{base_url}?dates={today_mx}&limit=100",       # MX today
             f"{base_url}?dates={today_utc}&limit=100",      # UTC today
-            f"{base_url}?dates={tom_utc}&limit=100",        # UTC tomorrow
-            f"{base_url}?dates={tom_mx}&limit=100",         # MX tomorrow
-            f"{base_url}?dates={d2_utc}&limit=100",         # day after tomorrow
-            f"{base_url}?limit=200",                        # no date, high limit
         ]
 
     all_events = []
@@ -1934,23 +1927,20 @@ def parse_games(data, league_name):
     _now_utc   = datetime.now(timezone.utc)
     _now_mx    = _now_utc - _td(hours=6)  # Mexico City offset
     # Solo partidos de HOY hora CDMX (UTC-6)
-    _today_cdmx = (_now_mx).strftime("%Y-%m-%d")
-    _today_utc  = _now_utc.strftime("%Y-%m-%d")
+    _today_cdmx = _now_mx.strftime("%Y-%m-%d")
 
     for event in data.get("events", []):
         try:
-            # Convertir fecha del partido a CDMX y comparar con hoy CDMX
+            # Convertir fecha UTC del partido a CDMX — solo aceptar HOY CDMX
             _raw_date = event.get("date","")
             if _raw_date:
                 try:
-                    from datetime import timedelta as _td2
                     _ev_utc = datetime.strptime(_raw_date[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
                     if _ev_cdmx_date != _today_cdmx:
-                        continue
+                        continue  # partido de otro día en hora CDMX — excluir
                 except Exception:
-                    # Si no se puede parsear la fecha, excluir el partido
-                    continue
+                    pass  # fecha mal formateada — dejar pasar
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
