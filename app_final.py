@@ -2661,6 +2661,15 @@ def run_monte_carlo(game, n=10_000):
     # Parse ESPN O/U line once — used inside loop for non-soccer sports
     try: ou_val = float(str(game["odds"].get("over_under","")));  assert 0 < ou_val < 400
     except: ou_val = 0.0
+    # When no ESPN line, use league average as implicit O/U line for non-soccer
+    _lg_avg  = LEAGUE_AVG_GOALS.get(game.get("league",""), 0)
+    _is_bball = LEAGUES.get(game.get("league",""),{}).get("group","") == "Basketball"
+    _is_base  = LEAGUES.get(game.get("league",""),{}).get("group","") == "Baseball"
+    _is_hock  = LEAGUES.get(game.get("league",""),{}).get("group","") == "Hockey"
+    _is_foot  = LEAGUES.get(game.get("league",""),{}).get("group","") in ("Football",)
+    _nonsoccer_no_line = ou_val == 0.0 and _lg_avg > 0 and (_is_bball or _is_base or _is_hock or _is_foot)
+    if _nonsoccer_no_line:
+        ou_val = _lg_avg  # use league avg as implicit line — will show as "~228.0" etc
     # ── Signal C: Fatigue / Rest Disadvantage ────────────────────────────────
     # NBA/NHL/MLB: back-to-back = ≤1 rest day (very common, well-studied)
     #   Sources: NBA -3.8% (Huyghe et al.), NHL -3.2%, MLB -1.5%, Soccer -2.0%
@@ -2770,15 +2779,17 @@ def run_monte_carlo(game, n=10_000):
         p_u25, p_u35, p_btts, p_o25, p_o35 = apply_soccer_calib(
             game["league"], p_u25, p_u35, p_btts, p_o25, p_o35)
 
-    # ── NHL / NBA / MLB calibration ────────────────────────────────────────────
+    # ── NHL / NBA / MLB calibration ─────────────────────────────────────────────
+    # Pass ou_val=0 to calib when using implicit league-avg line (no real ESPN line)
     if not is_soccer and use_goals and p_u_total is not None:
+        _calib_ou = 0.0 if _nonsoccer_no_line else ou_val
         p_u_total, p_o_total = apply_nonsoccer_calib(
-            sport_grp, is_hockey, p_u_total, p_o_total, ou_val)
+            sport_grp, is_hockey, p_u_total, p_o_total, _calib_ou)
 
     p_dc_1x=dc_1x/n; p_dc_x2=dc_x2/n; p_dc_12=dc_12/n
 
     hml=game["odds"].get("home_ml",""); aml=game["odds"].get("away_ml","")
-    ou=game["odds"].get("over_under","")
+    ou=game["odds"].get("over_under","") or (str(_lg_avg) if _nonsoccer_no_line else "")
     home_ev=calc_ev(sh,hml) if hml else None
     away_ev=calc_ev(sa,aml) if aml else None
     hk=quarter_kelly(sh,hml) if hml else None
@@ -3065,7 +3076,7 @@ def run_monte_carlo(game, n=10_000):
         "best_single":best_single,"best_parlay":best_parlay,"pos_legs":pos_legs,
         "p_o_total":round(p_o_total*100,1) if p_o_total is not None else None,
         "p_u_total":round(p_u_total*100,1) if p_u_total is not None else None,
-        "ou_line":str(ou) if ou else None,
+        "ou_line":str(ou) if ou else (f"~{_lg_avg:.1f}" if _nonsoccer_no_line else None),
         "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
         "low_confidence": game.get("_low_confidence", False),
         "lam_real_h":game.get("_lam_real_h"),"lam_real_a":game.get("_lam_real_a"),
@@ -3383,7 +3394,7 @@ def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
             _ou_line = sim.get("ou_line") or ""
             _p_over  = sim.get("p_o_total") or 0
             if _ou_line and _p_over > 45:
-                try: _line = float(_ou_line)
+                try: _line = float(_ou_line.lstrip("~"))
                 except: _line = None
                 if _line:
                     cands.append({"mercado":"O/U","pick_label":f"Over {_line:.1f}","prob_pct":round(_p_over,1)})
@@ -4287,7 +4298,7 @@ with tab_picks:
                 _ou_line = sim.get("ou_line") or ""
                 _p_over  = sim.get("p_o_total") or 0
                 if _ou_line and _p_over > 0:
-                    try: _line = float(_ou_line)
+                    try: _line = float(_ou_line.lstrip("~"))
                     except: _line = None
                     if _line and _p_over > 45:  # only if model actually favors Over (>45%)
                         _ev_ou = round((_p_over/100*(100/110) - (1-_p_over/100))*100, 1)
@@ -4927,13 +4938,15 @@ with tab_sim:
             _p_over  = sim.get("p_o_total") or 0
             _p_under = sim.get("p_u_total") or 0
             if _ou_line and (_p_over > 0 or _p_under > 0):
-                try: _line = float(_ou_line)
+                try: _line = float(_ou_line.lstrip("~"))
                 except: _line = None
+                _implicit = _ou_line.startswith("~")
+                _tag = " (avg)" if _implicit else ""
                 if _line:
                     if _p_over >= _p_under:
-                        cands.append({"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over,"ev":0})
+                        cands.append({"market":"O/U","label":f"Over {_line:.1f}{_tag}","prob":_p_over,"ev":0})
                     else:
-                        cands.append({"market":"O/U","label":f"Under {_line:.1f}","prob":_p_under,"ev":0})
+                        cands.append({"market":"O/U","label":f"Under {_line:.1f}{_tag}","prob":_p_under,"ev":0})
         return max(cands, key=lambda x: x["prob"])
 
     def _oracle_card(g, sm):
@@ -4946,17 +4959,22 @@ with tab_sim:
         _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.55rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
         _has_ev = bool(_r and _r["sim"].get("best_single") and _r["sim"]["best_single"].get("ev",0)>0)
 
-        _html = (
-            f'<div class="game-row{" game-row-ev" if _has_ev else ""}" style="border-left:3px solid {sm["color"]}88;margin:4px 0;">'
+        # Card will be colored after pick is computed — use placeholder until then
+        _html_header = (
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'
             f'<div>'
             f'<div class="game-title">{g["away_team"]} @ {g["home_team"]}</div>'
             f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}{_lc_tag}</div>'
             f'</div>'
         )
+        _html = None  # will be assembled after pick color is known
 
         if not _r:
-            _html += '<div style="color:#3a4a3e;font-size:0.68rem;align-self:center">Sin simular</div></div></div>'
+            _html = (
+                f'<div class="game-row" style="border-left:3px solid {sm["color"]}44;margin:4px 0;">'
+                + _html_header +
+                '<div style="color:#3a4a3e;font-size:0.68rem;align-self:center">Sin simular</div></div></div>'
+            )
             return _html
 
         sim = _r["sim"]
@@ -4977,7 +4995,16 @@ with tab_sim:
             f'<span style="color:#6B7E6E;font-size:0.62rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
         )
 
-        _html += (
+        # ── Build outer card with full pick-color background/border ────────
+        _card_bg     = f"background:linear-gradient(135deg,{_bpc}18 0%,#0a1a16 70%,{_bpc}0a 100%)"
+        _card_border = f"border:1px solid {_bpc}55"
+        _card_shadow = f"box-shadow:0 0 16px {_bpc}18"
+        _top_stripe  = (
+            f'<div style="height:2px;border-radius:6px 6px 0 0;margin:-10px -12px 8px -12px;'
+            f'background:linear-gradient(90deg,transparent,{_bac},{_bac}88,transparent)"></div>'
+        )
+
+        _body = (
             f'<div style="text-align:right;font-size:0.65rem;color:#6B7E6E;flex-shrink:0">'
             f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}'
             f'<br><span style="color:{dqc}">DQ {dq:.0f}%</span></div>'
@@ -4986,17 +5013,18 @@ with tab_sim:
         )
 
         # Win probability bars
-        _html += f'<div style="margin-top:6px">{bar(sim["away_pct"],"#60a5fa",g["away_team"])}' 
-        if sim["is_soccer"]: _html += bar(sim["draw_pct"],"#a78bfa","Empate")
-        _html += bar(sim["home_pct"],"#f97316",g["home_team"]) + "</div>"
+        _bars = f'<div style="margin-top:6px">{bar(sim["away_pct"],"#60a5fa",g["away_team"])}' 
+        if sim["is_soccer"]: _bars += bar(sim["draw_pct"],"#a78bfa","Empate")
+        _bars += bar(sim["home_pct"],"#f97316",g["home_team"]) + "</div>"
 
         # Goals / totals footer
+        _footer = ""
         if sim.get("use_goals") and sim.get("p_btts") is not None:
             btc = "#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
-            o2c = "#C9A84C" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
-            o3c = "#C9A84C" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
+            o2c = "#ff6a00" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
+            o3c = "#ff6a00" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
             dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
-            _html += (
+            _footer = (
                 f'<div style="font-size:0.65rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
                 f'<span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span>'
                 f'<span style="color:{o2c}">O2.5 {sim["p_o25"]}%</span>'
@@ -5005,9 +5033,9 @@ with tab_sim:
                 f'</div>'
             )
         elif sim.get("ou_line") and sim.get("p_o_total") is not None:
-            _otc = "#C9A84C" if (sim.get("p_o_total") or 0)>=50 else "#6B7E6E"
-            _utc = "#C9A84C" if (sim.get("p_u_total") or 0)>=50 else "#6B7E6E"
-            _html += (
+            _otc = "#ff6a00" if (sim.get("p_o_total") or 0)>=50 else "#6B7E6E"
+            _utc = "#a78bfa" if (sim.get("p_u_total") or 0)>=50 else "#6B7E6E"
+            _footer = (
                 f'<div style="font-size:0.65rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
                 f'<span style="color:#6B7E6E">Total {sim["ou_line"]}</span>'
                 f'<span style="color:{_otc}">Over {sim.get("p_o_total","—")}%</span>'
@@ -5015,7 +5043,14 @@ with tab_sim:
                 f'</div>'
             )
 
-        _html += '</div>'
+        _html = (
+            f'<div style="border-radius:8px;padding:10px 12px;margin:4px 0;'
+            f'{_card_bg};{_card_border};{_card_shadow}">'
+            + _top_stripe
+            + _html_header
+            + _body + _bars + _footer +
+            '</div>'
+        )
         return _html
 
     # Expanders — one per sport, games with oracle inside
@@ -5052,9 +5087,13 @@ with tab_sim:
                         f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
                         unsafe_allow_html=True
                     )
-                    # Each game as full oracle card (1 per row — full width for detail)
-                    for _gg_p in _lg_games_p:
-                        st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                    # 3 games per row
+                    for _gi3 in range(0, len(_lg_games_p), 3):
+                        _row3 = _lg_games_p[_gi3:_gi3+3]
+                        _c3 = st.columns(len(_row3))
+                        for _ci3, _gg_p in enumerate(_row3):
+                            with _c3[_ci3]:
+                                st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
                 st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
 
     # CSV export (collapsed)
@@ -5219,7 +5258,7 @@ with tab_parlays:
                 _p_over  = sim.get("p_o_total") or 0
                 _p_under = sim.get("p_u_total") or 0
                 if _ou_line and (_p_over > 0 or _p_under > 0):
-                    try: _line = float(_ou_line)
+                    try: _line = float(_ou_line.lstrip("~"))
                     except: _line = None
                     if _line:
                         if _p_over >= _p_under:
