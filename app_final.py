@@ -667,8 +667,113 @@ def _load_all_team_profiles():
 
 
 
+def update_team_profile(team_id, team_name, league, sport_group, new_games):
+    """
+    Fusiona new_games con el perfil existente (últimos 10 partidos).
+    new_games = [{scored, conceded, home, date, opp}, ...] newest-first.
+    Escribe en Sheets de forma síncrona (llamar desde background/thread).
+    """
+    if not _gsheets_available() or not team_id:
+        return False
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_TP_TAB)
+        except:
+            ws = sh.add_worksheet(title=_TP_TAB, rows=2000, cols=len(_TP_HEADERS))
+            ws.update("A1", [_TP_HEADERS])
+
+        all_rows = ws.get_all_values()
+        data_rows = all_rows[1:] if len(all_rows) > 1 else []
+
+        # Buscar fila existente del equipo
+        existing_games = []
+        target_row     = None
+        for i, row in enumerate(data_rows):
+            if row and row[0] == str(team_id):
+                target_row = i + 2  # 1-indexed, +1 header
+                try:
+                    existing_games = json.loads(row[5]) if row[5] else []
+                except:
+                    existing_games = []
+                break
+
+        # Fusionar: nuevos primero, deduplicar por (date, opp), cap 10
+        merged = list(new_games)
+        seen   = {(g.get("date",""), g.get("opp","")) for g in merged}
+        for g in existing_games:
+            k = (g.get("date",""), g.get("opp",""))
+            if k not in seen:
+                merged.append(g)
+                seen.add(k)
+        merged = merged[:_TP_MAX_GAMES]
+
+        stats = _compute_profile_stats(merged, sport_group)
+        if not stats:
+            return False
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        row_data = [
+            str(team_id), team_name, league, sport_group, now,
+            json.dumps(merged, ensure_ascii=False),
+            stats["n_games"],
+            stats["avg_scored"],     stats["avg_conceded"],
+            stats["avg_scored_home"],stats["avg_conceded_home"],
+            stats["avg_scored_away"],stats["avg_conceded_away"],
+            stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
+            stats["rate_o15_home"],stats["rate_o25_home"],stats["rate_o35_home"],stats["rate_btts_home"],
+            stats["rate_o15_away"],stats["rate_o25_away"],stats["rate_o35_away"],stats["rate_btts_away"],
+            json.dumps(stats["thresholds"], ensure_ascii=False),
+        ]
+
+        col_end = chr(ord("A") + len(_TP_HEADERS) - 1)
+        if target_row:
+            ws.update(f"A{target_row}:{col_end}{target_row}", [row_data])
+        else:
+            ws.append_row(row_data, value_input_option="RAW")
+
+        _load_all_team_profiles.clear()  # invalida cache
+        return True
+    except:
+        return False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POPULATE ALL TEAM PROFILES — función para el botón "🧠 Poblar Memoria"
+# Recorre todas las ligas activas, obtiene equipos de ESPN,
+# llama fetch_recent_form para cada uno y guarda en team_profiles Sheet.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Mapa de ligas a slugs ESPN (idéntico al de enrich_game_with_form)
+_ALL_LEAGUE_SLUGS = {
+    "NBA":                  ("basketball", "nba"),
+    "NFL":                  ("football",   "nfl"),
+    "NCAAF":                ("football",   "college-football"),
+    "MLB":                  ("baseball",   "mlb"),
+    "NHL":                  ("hockey",     "nhl"),
+    "MLS":                  ("soccer",     "usa.1"),
+    "Liga MX":              ("soccer",     "mex.1"),
+    "Premier League":       ("soccer",     "eng.1"),
+    "La Liga":              ("soccer",     "esp.1"),
+    "Bundesliga":           ("soccer",     "ger.1"),
+    "Serie A":              ("soccer",     "ita.1"),
+    "Ligue 1":              ("soccer",     "fra.1"),
+    "Champions League":     ("soccer",     "uefa.champions"),
+    "Europa League":        ("soccer",     "uefa.europa"),
+    "Conference League":    ("soccer",     "uefa.europa.conf"),
+    "CONCACAF Champions Cup":("soccer",    "concacaf.champions"),
+}
+
+def get_team_profile(team_id):
+    """Retorna perfil de equipo del cache, o None si no existe."""
+    if not team_id:
+        return None
+    return _load_all_team_profiles().get(str(team_id))
+
+
 @st.cache_data(ttl=1800)  # Cache 30min — form doesn't change mid-day
-@st.cache_data(ttl=1800)
 def fetch_recent_form(sport, league, team_id, n_games=5):
     """
     Fetch last N results for a team from ESPN team events API.
@@ -776,6 +881,83 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
     except Exception:
         return None
 
+
+
+
+def populate_all_team_profiles(progress_bar=None, status_text=None):
+    """
+    Recorre todas las ligas, obtiene todos los equipos, guarda perfiles en Sheets.
+    Devuelve (n_written, n_failed, log_lines).
+    progress_bar: st.progress object (opcional)
+    status_text:  st.empty object para mostrar equipo actual (opcional)
+    """
+    if not _gsheets_available():
+        return 0, 0, ["❌ Google Sheets no configurado"]
+
+    log     = []
+    written = 0
+    failed  = 0
+    leagues = list(_ALL_LEAGUE_SLUGS.items())
+    total_leagues = len(leagues)
+
+    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
+        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
+
+        if status_text:
+            status_text.markdown(f"🔍 Obteniendo equipos de **{league}**...")
+
+        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
+        if not teams:
+            log.append(f"⚠ {league}: sin equipos en ESPN")
+            if progress_bar:
+                progress_bar.progress((li + 1) / total_leagues)
+            continue
+
+        log.append(f"📋 {league}: {len(teams)} equipos")
+        total_teams = len(teams)
+
+        for ti, team in enumerate(teams):
+            tid   = team["id"]
+            tname = team["name"]
+
+            if status_text:
+                status_text.markdown(
+                    f"📥 **{league}** — {tname} ({ti+1}/{total_teams})"
+                )
+
+            # Obtener últimos 10 partidos
+            form = fetch_recent_form(sport_slug, league_slug, tid, n_games=10)
+            if not isinstance(form, dict) or not form.get("games_raw"):
+                failed += 1
+                continue
+
+            ok = update_team_profile(
+                team_id    = tid,
+                team_name  = tname,
+                league     = league,
+                sport_group= sport_group,
+                new_games  = form["games_raw"],
+            )
+            if ok:
+                written += 1
+                log.append(f"  ✅ {tname}: {len(form['games_raw'])} partidos guardados")
+            else:
+                failed += 1
+                log.append(f"  ❌ {tname}: error al guardar en Sheets")
+
+            # Pequeña pausa para no saturar ESPN ni Sheets
+            time.sleep(0.3)
+
+        if progress_bar:
+            progress_bar.progress((li + 1) / total_leagues)
+
+    if status_text:
+        status_text.markdown(f"✅ Completado: **{written}** equipos guardados")
+
+    return written, failed, log
+
+
+# [fetch_recent_form moved]
 
 @st.cache_data(ttl=1800)
 def get_team_ids(sport, league_slug, team_name):
@@ -3976,11 +4158,6 @@ _TP_THRESHOLDS = {
 
 
 # [_load_all_team_profiles moved to top]
-def get_team_profile(team_id):
-    """Retorna perfil de equipo del cache, o None si no existe."""
-    if not team_id:
-        return None
-    return _load_all_team_profiles().get(str(team_id))
 
 
 def _compute_profile_stats(games, sport_group):
@@ -4036,105 +4213,6 @@ def _compute_profile_stats(games, sport_group):
     return stats
 
 
-def update_team_profile(team_id, team_name, league, sport_group, new_games):
-    """
-    Fusiona new_games con el perfil existente (últimos 10 partidos).
-    new_games = [{scored, conceded, home, date, opp}, ...] newest-first.
-    Escribe en Sheets de forma síncrona (llamar desde background/thread).
-    """
-    if not _gsheets_available() or not team_id:
-        return False
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-        try:
-            ws = sh.worksheet(_TP_TAB)
-        except:
-            ws = sh.add_worksheet(title=_TP_TAB, rows=2000, cols=len(_TP_HEADERS))
-            ws.update("A1", [_TP_HEADERS])
-
-        all_rows = ws.get_all_values()
-        data_rows = all_rows[1:] if len(all_rows) > 1 else []
-
-        # Buscar fila existente del equipo
-        existing_games = []
-        target_row     = None
-        for i, row in enumerate(data_rows):
-            if row and row[0] == str(team_id):
-                target_row = i + 2  # 1-indexed, +1 header
-                try:
-                    existing_games = json.loads(row[5]) if row[5] else []
-                except:
-                    existing_games = []
-                break
-
-        # Fusionar: nuevos primero, deduplicar por (date, opp), cap 10
-        merged = list(new_games)
-        seen   = {(g.get("date",""), g.get("opp","")) for g in merged}
-        for g in existing_games:
-            k = (g.get("date",""), g.get("opp",""))
-            if k not in seen:
-                merged.append(g)
-                seen.add(k)
-        merged = merged[:_TP_MAX_GAMES]
-
-        stats = _compute_profile_stats(merged, sport_group)
-        if not stats:
-            return False
-
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        row_data = [
-            str(team_id), team_name, league, sport_group, now,
-            json.dumps(merged, ensure_ascii=False),
-            stats["n_games"],
-            stats["avg_scored"],     stats["avg_conceded"],
-            stats["avg_scored_home"],stats["avg_conceded_home"],
-            stats["avg_scored_away"],stats["avg_conceded_away"],
-            stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
-            stats["rate_o15_home"],stats["rate_o25_home"],stats["rate_o35_home"],stats["rate_btts_home"],
-            stats["rate_o15_away"],stats["rate_o25_away"],stats["rate_o35_away"],stats["rate_btts_away"],
-            json.dumps(stats["thresholds"], ensure_ascii=False),
-        ]
-
-        col_end = chr(ord("A") + len(_TP_HEADERS) - 1)
-        if target_row:
-            ws.update(f"A{target_row}:{col_end}{target_row}", [row_data])
-        else:
-            ws.append_row(row_data, value_input_option="RAW")
-
-        _load_all_team_profiles.clear()  # invalida cache
-        return True
-    except:
-        return False
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# POPULATE ALL TEAM PROFILES — función para el botón "🧠 Poblar Memoria"
-# Recorre todas las ligas activas, obtiene equipos de ESPN,
-# llama fetch_recent_form para cada uno y guarda en team_profiles Sheet.
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Mapa de ligas a slugs ESPN (idéntico al de enrich_game_with_form)
-_ALL_LEAGUE_SLUGS = {
-    "NBA":                  ("basketball", "nba"),
-    "NFL":                  ("football",   "nfl"),
-    "NCAAF":                ("football",   "college-football"),
-    "MLB":                  ("baseball",   "mlb"),
-    "NHL":                  ("hockey",     "nhl"),
-    "MLS":                  ("soccer",     "usa.1"),
-    "Liga MX":              ("soccer",     "mex.1"),
-    "Premier League":       ("soccer",     "eng.1"),
-    "La Liga":              ("soccer",     "esp.1"),
-    "Bundesliga":           ("soccer",     "ger.1"),
-    "Serie A":              ("soccer",     "ita.1"),
-    "Ligue 1":              ("soccer",     "fra.1"),
-    "Champions League":     ("soccer",     "uefa.champions"),
-    "Europa League":        ("soccer",     "uefa.europa"),
-    "Conference League":    ("soccer",     "uefa.europa.conf"),
-    "CONCACAF Champions Cup":("soccer",    "concacaf.champions"),
-}
-
 def _fetch_all_teams_in_league(sport_slug, league_slug):
     """
     Obtiene lista de {id, name} de todos los equipos de una liga via ESPN.
@@ -4160,78 +4238,6 @@ def _fetch_all_teams_in_league(sport_slug, league_slug):
     except:
         return []
 
-
-def populate_all_team_profiles(progress_bar=None, status_text=None):
-    """
-    Recorre todas las ligas, obtiene todos los equipos, guarda perfiles en Sheets.
-    Devuelve (n_written, n_failed, log_lines).
-    progress_bar: st.progress object (opcional)
-    status_text:  st.empty object para mostrar equipo actual (opcional)
-    """
-    if not _gsheets_available():
-        return 0, 0, ["❌ Google Sheets no configurado"]
-
-    log     = []
-    written = 0
-    failed  = 0
-    leagues = list(_ALL_LEAGUE_SLUGS.items())
-    total_leagues = len(leagues)
-
-    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
-        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
-
-        if status_text:
-            status_text.markdown(f"🔍 Obteniendo equipos de **{league}**...")
-
-        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
-        if not teams:
-            log.append(f"⚠ {league}: sin equipos en ESPN")
-            if progress_bar:
-                progress_bar.progress((li + 1) / total_leagues)
-            continue
-
-        log.append(f"📋 {league}: {len(teams)} equipos")
-        total_teams = len(teams)
-
-        for ti, team in enumerate(teams):
-            tid   = team["id"]
-            tname = team["name"]
-
-            if status_text:
-                status_text.markdown(
-                    f"📥 **{league}** — {tname} ({ti+1}/{total_teams})"
-                )
-
-            # Obtener últimos 10 partidos
-            form = fetch_recent_form(sport_slug, league_slug, tid, n_games=10)
-            if not isinstance(form, dict) or not form.get("games_raw"):
-                failed += 1
-                continue
-
-            ok = update_team_profile(
-                team_id    = tid,
-                team_name  = tname,
-                league     = league,
-                sport_group= sport_group,
-                new_games  = form["games_raw"],
-            )
-            if ok:
-                written += 1
-                log.append(f"  ✅ {tname}: {len(form['games_raw'])} partidos guardados")
-            else:
-                failed += 1
-                log.append(f"  ❌ {tname}: error al guardar en Sheets")
-
-            # Pequeña pausa para no saturar ESPN ni Sheets
-            time.sleep(0.3)
-
-        if progress_bar:
-            progress_bar.progress((li + 1) / total_leagues)
-
-    if status_text:
-        status_text.markdown(f"✅ Completado: **{written}** equipos guardados")
-
-    return written, failed, log
 
 def _safe_apodo(apodo):
     return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
