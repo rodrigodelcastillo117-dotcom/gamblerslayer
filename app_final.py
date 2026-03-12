@@ -5413,9 +5413,9 @@ with tab_parlays:
         _soccer_btts_o25  = []  # collect AA+O2.5 combos separately
 
         # ── TODAY only filter + deduplication ──────────────────────────────
-        from datetime import timezone as _tz_par
+        from datetime import timezone as _tz_par, timedelta as _td_par
         _now_par   = datetime.now(_tz_par.utc)
-        _today_par = (_now_par - timedelta(hours=6)).strftime("%Y-%m-%d")  # CDMX
+        _today_par = (_now_par - _td_par(hours=6)).strftime("%Y-%m-%d")  # CDMX
 
         def _game_date_par(gid):
             g_obj = next((g for g in games if g.get("id") == gid), None)
@@ -5424,7 +5424,7 @@ with tab_parlays:
             if not raw: return _today_par
             try:
                 _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_par.utc)
-                return (_u - timedelta(hours=6)).strftime("%Y-%m-%d")
+                return (_u - _td_par(hours=6)).strftime("%Y-%m-%d")
             except:
                 return _today_par
 
