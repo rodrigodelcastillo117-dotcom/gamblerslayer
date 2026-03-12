@@ -4617,12 +4617,30 @@ with tab_picks:
             else:  # Baseball, Football, NCAAF
                 return best_ml()
 
-        # ── Build 1 pick per sport group ──────────────────────────────────────
-        # For each sport: take the game with the HIGHEST probability pick
-        _sport_pools = {}  # sg -> list of (r, pick_dict)
+        # ── Build 1 pick per sport group — HOY CDMX únicamente ──────────────
+        from datetime import timezone as _tz_rp, timedelta as _td_rp
+        _now_rp      = datetime.now(_tz_rp.utc)
+        _today_rp    = (_now_rp - _td_rp(hours=6)).strftime("%Y-%m-%d")  # CDMX offset
+
+        # Build id→game map for quick lookup
+        _gmap_rp = {g.get("id", ""): g for g in games}
+
+        _sport_pools = {}
         for r in sr_cur:
-            g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
-            if g_state == "post": continue
+            _g = _gmap_rp.get(r.get("id", ""))
+            if not _g: continue
+            if _g["state"] == "post": continue
+            # Filter to today CDMX only
+            _raw_date = _g.get("date", "")
+            if _raw_date:
+                try:
+                    from datetime import datetime as _dt_rp
+                    _gdt = _dt_rp.fromisoformat(_raw_date.replace("Z", "+00:00"))
+                    _gdate_cdmx = (_gdt - _td_rp(hours=6)).strftime("%Y-%m-%d")
+                    if _gdate_cdmx != _today_rp:
+                        continue
+                except:
+                    pass  # si no parsea, incluir igual
             bp = _sport_best_pick(r)
             if bp:
                 sg = LEAGUES.get(r["league"], {}).get("group", "Soccer")
@@ -5745,19 +5763,66 @@ with tab_parlays:
                 if gp["combo_type"] == "AA + O2.5":
                     _soccer_btts_o25.append(gp)
 
-        # Best 1 per sport (highest combined prob among all combo types)
-        _day_parlays = []
+        # ── Best 1 per sport pool ──────────────────────────────────────────
+        _best_per_sport = {}
         for _sg in _SPORT_ORDER_PAR:
             pool = _sport_game_pools.get(_sg, [])
             if pool:
                 pool.sort(key=lambda x: x["comb_prob"], reverse=True)
-                _day_parlays.append(pool[0])
+                _best_per_sport[_sg] = pool[0]
+
+        # Legacy single-sport parlays (keep for fallback)
+        _day_parlays = list(_best_per_sport.values())
 
         # Best AA+O2.5 soccer combo (featured separately)
         _best_btts_o25 = (
             max(_soccer_btts_o25, key=lambda x: x["comb_prob"])
             if _soccer_btts_o25 else None
         )
+
+        # ── PARLAY COMBINADO MULTI-DEPORTE ────────────────────────────────
+        # Toma el pick INDIVIDUAL más seguro por deporte (no el combo 2-patas)
+        # Soccer: mejor ML o BTTS  |  Basketball/Hockey: ML o O/U
+        def _best_single_leg(sg):
+            """Retorna el single leg más alto de probabilidad para el parlay multi."""
+            pool = _sport_game_pools.get(sg, [])
+            if not pool: return None
+            # Flatten: extraer leg1 y leg2 de cada combo, tomar el de mayor prob
+            _legs = []
+            for gp in pool:
+                _g = gp["game"]
+                for _leg in [gp["leg1"], gp["leg2"]]:
+                    _legs.append({
+                        "sport": sg,
+                        "game": _g,
+                        "league": _g.get("league",""),
+                        "market": _leg["market"],
+                        "label": _leg["label"],
+                        "prob": _leg["prob"],
+                    })
+            if not _legs: return None
+            return max(_legs, key=lambda x: x["prob"])
+
+        _multi_legs = []
+        _used_game_ids = set()
+        for _sg_m in ["Soccer", "Basketball", "Hockey", "Baseball", "Football"]:
+            _leg = _best_single_leg(_sg_m)
+            if _leg and _leg["game"].get("id","") not in _used_game_ids:
+                _multi_legs.append(_leg)
+                _used_game_ids.add(_leg["game"].get("id",""))
+            if len(_multi_legs) >= 3:
+                break
+
+        # Calcular prob combinada del multi-parlay
+        if len(_multi_legs) >= 2:
+            _multi_prob = 1.0
+            for _l in _multi_legs:
+                _multi_prob *= (_l["prob"] / 100)
+            _multi_prob_pct = round(_multi_prob * 100, 1)
+            _multi_payout = round((1 / _multi_prob) * 100, 0) if _multi_prob > 0 else 0
+        else:
+            _multi_prob_pct = 0
+            _multi_payout = 0
 
         if _day_parlays:
             n_post  = len([g for g in games if g["state"]=="post"])
@@ -5840,6 +5905,67 @@ with tab_parlays:
                     f'</div>'
                 )
 
+            # ── PARLAY COMBINADO MULTI-DEPORTE ───────────────────────────────
+            if len(_multi_legs) >= 2:
+                _SG_ICONS = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
+                _legs_html = ""
+                for _i, _l in enumerate(_multi_legs):
+                    _lc, _la, _, _ll = _pick_clr(_l["market"], _l.get("label",""))
+                    _g_name = f'{_l["game"]["away_team"]} @ {_l["game"]["home_team"]}'
+                    _lg_lbl = league_label(_l["league"])
+                    _sp_ico = _SG_ICONS.get(_l["sport"],"🎯")
+                    if _i > 0:
+                        _legs_html += '<div style="font-size:0.694rem;color:#3a4a3e;text-align:center;letter-spacing:3px;margin:4px 0">✕ COMBO ✕</div>'
+                    _legs_html += (
+                        f'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;'
+                        f'border-radius:6px;background:rgba(255,255,255,0.03)">'
+                        f'<span style="background:{_lc}28;color:{_la};border:1px solid {_lc}66;'
+                        f'border-radius:4px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_ll}</span>'
+                        f'<div style="flex:1;min-width:0">'
+                        f'<div style="font-size:0.986rem;color:#E0F7F0;font-weight:600">{_l["label"]}</div>'
+                        f'<div style="font-size:0.65rem;color:#6B7E6E">{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name}</div>'
+                        f'</div>'
+                        f'<span style="font-size:0.694rem;color:{_la};font-weight:700;flex-shrink:0">{_l["prob"]:.0f}%</span>'
+                        f'</div>'
+                    )
+                _multi_ev = round((_multi_prob_pct/100 * (_multi_payout/100) - (1 - _multi_prob_pct/100)) * 100, 1)
+                _ev_clr = "#4ade80" if _multi_ev > 0 else "#ef4444"
+                st.markdown(
+                    '<div style="font-size:0.762rem;color:#C9A84C;letter-spacing:2px;'
+                    'text-transform:uppercase;margin:4px 0 6px 0">'
+                    '🎰 PARLAY DEL DÍA · MULTI-DEPORTE</div>',
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f'<div style="border-radius:10px;padding:14px 16px;margin:0 0 12px 0;'
+                    f'background:linear-gradient(135deg,#C9A84C14 0%,#0a1a16 60%,#C9A84C08 100%);'
+                    f'border:1px solid #C9A84C66;box-shadow:0 0 30px rgba(201,168,76,0.15)">'
+                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-14px -16px 12px -16px;'
+                    f'background:linear-gradient(90deg,transparent,#C9A84C,#4ade80,#C9A84C,transparent)"></div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px">'
+                    f'<div>'
+                    f'<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase">'
+                    f'{len(_multi_legs)} patas · hoy CDMX</div>'
+                    f'<div style="font-size:0.8rem;color:#C9A84C;margin-top:2px">'
+                    f'{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
+                    f'</div>'
+                    f'<div style="text-align:right">'
+                    f'<div style="font-size:1.4rem;font-weight:900;color:#C9A84C;font-family:Cinzel,serif">{_multi_prob_pct}%</div>'
+                    f'<div style="font-size:0.616rem;color:#6B7E6E">prob. combinada</div>'
+                    f'<div style="font-size:0.694rem;color:{_ev_clr};font-weight:700">EV {_multi_ev:+.1f}</div>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div style="display:flex;flex-direction:column;gap:4px">{_legs_html}</div>'
+                    f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
+                    f'border-top:1px solid #C9A84C22;flex-wrap:wrap">'
+                    f'<span style="font-size:0.694rem;color:#2EE8C0">Pago est. +${_multi_payout:.0f}/100</span>'
+                    f'<span style="font-size:0.672rem;color:#6B7E6E;margin-left:auto">Verifica cuotas en tu casa de apuestas</span>'
+                    f'</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                st.markdown('<div class="den-divider" style="margin:8px 0"></div>', unsafe_allow_html=True)
+
             # ── FEATURED: AA + O2.5 soccer combo ─────────────────────────────
             if _best_btts_o25:
                 st.markdown(
@@ -5850,10 +5976,6 @@ with tab_parlays:
                 )
                 st.markdown(_render_parlay_card(_best_btts_o25, featured=True), unsafe_allow_html=True)
                 st.markdown('<div class="den-divider" style="margin:10px 0"></div>', unsafe_allow_html=True)
-
-            # ── 1 per sport ───────────────────────────────────────────────────
-            for _dp in _day_parlays:
-                st.markdown(_render_parlay_card(_dp), unsafe_allow_html=True)
 
             st.markdown(
                 '<div class="warn-banner" style="margin-top:12px">'
@@ -7063,7 +7185,6 @@ with tab_reto:
                 grid: {{ color: "rgba(255,255,255,0.03)" }}
               }},
               y: {{
-                type: "logarithmic",
                 ticks: {{
                   color: "#6B7E6E",
                   font: {{ size: 10 }},
@@ -7074,8 +7195,31 @@ with tab_reto:
                   }}
                 }},
                 grid: {{ color: "rgba(255,255,255,0.05)" }},
-                min: Math.min(...values) * 0.90,
-                max: d.meta * 1.05
+                beginAtZero: true,
+                min: (function() {{
+                  const cur = Math.min(...values);
+                  if (cur < 10000)   return 0;
+                  if (cur < 100000)  return 10000;
+                  if (cur < 1000000) return 100000;
+                  return 1000000;
+                }})(),
+                max: (function() {{
+                  const cur = Math.max(...values);
+                  if (cur <= 10000)   return 10000;
+                  if (cur <= 100000)  return 100000;
+                  if (cur <= 1000000) return 1000000;
+                  return d.meta * 1.05;
+                }})(),
+                afterBuildTicks: function(axis) {{
+                  // Clean ticks to round numbers only
+                  const mn = axis.min, mx = axis.max, range = mx - mn;
+                  const step = range <= 10000   ? 1000  :
+                               range <= 100000  ? 10000 :
+                               range <= 1000000 ? 100000 : 1000000;
+                  const ticks = [];
+                  for (let t = mn; t <= mx + step*0.01; t += step) ticks.push({{value: Math.round(t)}});
+                  axis.ticks = ticks.map(t => ({{value: t.value}}));
+                }}
               }}
             }}
           }}
