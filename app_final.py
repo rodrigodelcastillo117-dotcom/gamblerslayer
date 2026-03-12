@@ -1081,6 +1081,125 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
 
 
 # populate_all_team_profiles moved below _compute_profile_stats
+
+
+def populate_all_team_profiles(progress_bar=None, status_text=None):
+    """
+    Recorre todas las ligas, recolecta todos los perfiles en memoria,
+    y los escribe al Sheet EN UNA SOLA llamada batch al final.
+    Esto evita timeouts de Streamlit Cloud en conexiones largas.
+    """
+    if not _gsheets_available():
+        return 0, 0, ["❌ Google Sheets no configurado"]
+
+    log           = []
+    failed        = 0
+    all_rows      = []   # acumula todas las filas en memoria
+    leagues       = list(_ALL_LEAGUE_SLUGS.items())
+    total_leagues = len(leagues)
+
+    # ── Fase 1: recolectar datos de ESPN (sin tocar Sheets) ───────────────────
+    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
+        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
+
+        if status_text:
+            status_text.markdown(f"🔍 **{league}** — obteniendo equipos...")
+
+        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
+        if not teams:
+            log.append(f"⚠ {league}: sin equipos en ESPN")
+            if progress_bar:
+                progress_bar.progress((li + 1) / total_leagues * 0.85)
+            continue
+
+        log.append(f"📋 {league}: {len(teams)} equipos")
+
+        for ti, team in enumerate(teams):
+            tid   = team["id"]
+            tname = team["name"]
+
+            if status_text:
+                status_text.markdown(
+                    f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
+                )
+
+            try:
+                games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
+                if not isinstance(games, list):
+                    games = []
+                games = games[:_TP_MAX_GAMES]
+            except Exception as _e:
+                games = []
+                if ti == 0:
+                    log.append(f"  ⚠ {tname} fetch error: {_e}")
+            if not games:
+                failed += 1
+                continue
+            stats  = _compute_profile_stats(games, sport_group)
+            if not stats:
+                failed += 1
+                continue
+
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            all_rows.append([
+                str(tid), tname, league, sport_group, now,
+                json.dumps(games, ensure_ascii=False),
+                stats["n_games"],
+                stats["avg_scored"],      stats["avg_conceded"],
+                stats["avg_scored_home"], stats["avg_conceded_home"],
+                stats["avg_scored_away"], stats["avg_conceded_away"],
+                stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
+                stats["rate_o15_home"], stats["rate_o25_home"],
+                stats["rate_o35_home"], stats["rate_btts_home"],
+                stats["rate_o15_away"], stats["rate_o25_away"],
+                stats["rate_o35_away"], stats["rate_btts_away"],
+                json.dumps(stats.get("thresholds", {}), ensure_ascii=False),
+            ])
+            log.append(f"  ✅ {tname}: {len(games)} partidos")
+
+        if progress_bar:
+            progress_bar.progress((li + 1) / total_leagues * 0.85)
+
+    if not all_rows:
+        return 0, failed, log + ["❌ Sin datos para escribir"]
+
+    # ── Fase 2: escribir TODO al Sheet en una sola llamada batch ──────────────
+    if status_text:
+        status_text.markdown(f"💾 Escribiendo **{len(all_rows)}** equipos al Sheet...")
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+
+        # Crear/limpiar pestaña team_profiles
+        try:
+            ws = sh.worksheet(_TP_TAB)
+            ws.clear()
+        except:
+            ws = sh.add_worksheet(title=_TP_TAB, rows=len(all_rows)+10, cols=len(_TP_HEADERS))
+
+        # Escribir header + datos en una sola llamada
+        ws.update("A1", [_TP_HEADERS] + all_rows, value_input_option="RAW")
+        written = len(all_rows)
+        log.append(f"✅ {written} filas escritas al Sheet en batch")
+
+    except Exception as e:
+        log.append(f"❌ Error escribiendo al Sheet: {e}")
+        return 0, failed, log
+
+    if progress_bar:
+        progress_bar.progress(1.0)
+    if status_text:
+        status_text.markdown(f"✅ Completado: **{written}** equipos en memoria")
+
+    _load_all_team_profiles.clear()
+    return written, failed, log
+
+
+# [fetch_recent_form moved]
+
+
+
 @st.cache_data(ttl=1800)
 def get_team_ids(sport, league_slug, team_name):
     """
@@ -4293,122 +4412,7 @@ import json, os as _os, re as _re
 
 
 # _compute_profile_stats moved to top
-def populate_all_team_profiles(progress_bar=None, status_text=None):
-    """
-    Recorre todas las ligas, recolecta todos los perfiles en memoria,
-    y los escribe al Sheet EN UNA SOLA llamada batch al final.
-    Esto evita timeouts de Streamlit Cloud en conexiones largas.
-    """
-    if not _gsheets_available():
-        return 0, 0, ["❌ Google Sheets no configurado"]
-
-    log           = []
-    failed        = 0
-    all_rows      = []   # acumula todas las filas en memoria
-    leagues       = list(_ALL_LEAGUE_SLUGS.items())
-    total_leagues = len(leagues)
-
-    # ── Fase 1: recolectar datos de ESPN (sin tocar Sheets) ───────────────────
-    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
-        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
-
-        if status_text:
-            status_text.markdown(f"🔍 **{league}** — obteniendo equipos...")
-
-        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
-        if not teams:
-            log.append(f"⚠ {league}: sin equipos en ESPN")
-            if progress_bar:
-                progress_bar.progress((li + 1) / total_leagues * 0.85)
-            continue
-
-        log.append(f"📋 {league}: {len(teams)} equipos")
-
-        for ti, team in enumerate(teams):
-            tid   = team["id"]
-            tname = team["name"]
-
-            if status_text:
-                status_text.markdown(
-                    f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
-                )
-
-            try:
-                games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
-                if not isinstance(games, list):
-                    games = []
-                games = games[:_TP_MAX_GAMES]
-            except Exception as _e:
-                games = []
-                if ti == 0:
-                    log.append(f"  ⚠ {tname} fetch error: {_e}")
-            if not games:
-                failed += 1
-                continue
-            stats  = _compute_profile_stats(games, sport_group)
-            if not stats:
-                failed += 1
-                continue
-
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            all_rows.append([
-                str(tid), tname, league, sport_group, now,
-                json.dumps(games, ensure_ascii=False),
-                stats["n_games"],
-                stats["avg_scored"],      stats["avg_conceded"],
-                stats["avg_scored_home"], stats["avg_conceded_home"],
-                stats["avg_scored_away"], stats["avg_conceded_away"],
-                stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
-                stats["rate_o15_home"], stats["rate_o25_home"],
-                stats["rate_o35_home"], stats["rate_btts_home"],
-                stats["rate_o15_away"], stats["rate_o25_away"],
-                stats["rate_o35_away"], stats["rate_btts_away"],
-                json.dumps(stats.get("thresholds", {}), ensure_ascii=False),
-            ])
-            log.append(f"  ✅ {tname}: {len(games)} partidos")
-
-        if progress_bar:
-            progress_bar.progress((li + 1) / total_leagues * 0.85)
-
-    if not all_rows:
-        return 0, failed, log + ["❌ Sin datos para escribir"]
-
-    # ── Fase 2: escribir TODO al Sheet en una sola llamada batch ──────────────
-    if status_text:
-        status_text.markdown(f"💾 Escribiendo **{len(all_rows)}** equipos al Sheet...")
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-
-        # Crear/limpiar pestaña team_profiles
-        try:
-            ws = sh.worksheet(_TP_TAB)
-            ws.clear()
-        except:
-            ws = sh.add_worksheet(title=_TP_TAB, rows=len(all_rows)+10, cols=len(_TP_HEADERS))
-
-        # Escribir header + datos en una sola llamada
-        ws.update("A1", [_TP_HEADERS] + all_rows, value_input_option="RAW")
-        written = len(all_rows)
-        log.append(f"✅ {written} filas escritas al Sheet en batch")
-
-    except Exception as e:
-        log.append(f"❌ Error escribiendo al Sheet: {e}")
-        return 0, failed, log
-
-    if progress_bar:
-        progress_bar.progress(1.0)
-    if status_text:
-        status_text.markdown(f"✅ Completado: **{written}** equipos en memoria")
-
-    _load_all_team_profiles.clear()
-    return written, failed, log
-
-
-# [fetch_recent_form moved]
-
-
+# populate_all_team_profiles defined above
 def _safe_apodo(apodo):
     return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
 
