@@ -2113,15 +2113,17 @@ def parse_games(data, league_name):
                     _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
-                    # Accept today CDMX always.
-                    # For games stored with tomorrow's UTC date: only include if
-                    # their CDMX time is still "today" (i.e. hour < 6 AM next day = late tonight)
-                    _tomorrow_cdmx = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
-                    _ev_cdmx_hour  = (_ev_utc - _td(hours=6)).hour
+                    # CDMX = UTC-5 (horario de verano desde 2nd Sunday March)
+                    # Recalculate with correct offset
+                    _ev_cdmx_dt    = _ev_utc - _td(hours=5)
+                    _ev_cdmx_date  = _ev_cdmx_dt.strftime("%Y-%m-%d")
+                    _today_cdmx    = (_now_utc - _td(hours=5)).strftime("%Y-%m-%d")
+                    _tomorrow_cdmx = (_now_utc - _td(hours=5) + _td(days=1)).strftime("%Y-%m-%d")
+                    # Accept: today CDMX always, or tomorrow CDMX if hour < 6 (late-night = still tonight)
                     if _ev_cdmx_date == _today_cdmx:
-                        pass  # always include
-                    elif _ev_cdmx_date == _tomorrow_cdmx and _ev_cdmx_hour < 5:
-                        pass  # late-night game stored as tomorrow UTC but still today CDMX
+                        pass
+                    elif _ev_cdmx_date == _tomorrow_cdmx and _ev_cdmx_dt.hour < 6:
+                        pass
                     else:
                         continue
                 except Exception:
@@ -5605,6 +5607,7 @@ with tab_sim:
     }
     _SPORTS_ORDER_P = ["Soccer","Football","Baseball","Basketball","Hockey"]
 
+    _now_mx_pt  = datetime.now(timezone.utc) - _td_pt(hours=5)  # UTC-5 CDMX verano
     _today_mx_p = _now_mx_pt.strftime("%Y-%m-%d")
     _tom_mx_p   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
     _d2_mx_p    = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
@@ -5615,7 +5618,7 @@ with tab_sim:
         try:
             from datetime import timezone as _tzp
             _u = datetime.strptime(raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp.utc)
-            return (_u - _td_pt(hours=6)).strftime("%Y-%m-%d")
+            return (_u - _td_pt(hours=5)).strftime("%Y-%m-%d")  # UTC-5 CDMX verano
         except: return raw[:10]
 
     def _mx_time_p(g):
@@ -5624,7 +5627,7 @@ with tab_sim:
         try:
             from datetime import timezone as _tzp
             _u = datetime.strptime(raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp.utc)
-            return (_u - _td_pt(hours=6)).strftime("%H:%M")
+            return (_u - _td_pt(hours=5)).strftime("%H:%M")  # UTC-5 CDMX verano
         except: return ""
 
     def _fmt_date_p(ds):
@@ -5683,11 +5686,19 @@ with tab_sim:
         if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
-        # Only include tomorrow-date games if they are really late-night today (hour < 5 CDMX)
+        # Include today CDMX always; tomorrow only if hour < 6 (late-night games)
         if _gd == _today_mx_p:
             pass
+        elif _gd == _tom_mx_p:
+            try:
+                from datetime import timezone as _tzp2
+                _u2 = datetime.strptime((g.get("date") or "")[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp2.utc)
+                if (_u2 - _td_pt(hours=5)).hour >= 6:
+                    continue  # genuinely tomorrow
+            except:
+                continue
         else:
-            continue  # genuinely tomorrow — skip
+            continue
         _bucket = _today_mx_p
         _tree_p.setdefault(_sg_p, {}).setdefault(_bucket, {}).setdefault(_g["league"], []).append(_g)
 
