@@ -1948,7 +1948,7 @@ def parse_games(data, league_name):
 
     for event in data.get("events", []):
         try:
-            _raw_date = event.get("date", "")
+            _raw_date = event.get("date", "").replace("Z", "").replace("+00:00", "")
             if _raw_date:
                 try:
                     _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
@@ -1999,7 +1999,7 @@ def parse_games(data, league_name):
             away_team_id = str(away.get("team", {}).get("id", "") or away.get("id", ""))
 
             _sd  = (status.get("type", {}).get("shortDetail", "") or "").split("\n")[0].strip()
-            _dt  = event.get("date", "")
+            _dt  = event.get("date", "").replace("Z", "").replace("+00:00", "")
             _state_str = status.get("type", {}).get("state", "pre")
             # For pre-game: ALWAYS show CDMX time from the date field (ignore ESPN text like "2:00 PM ET")
             if _state_str == "pre" and _dt:
@@ -4373,18 +4373,19 @@ with st.sidebar:
             # Analyze each event: does it pass the CDMX date filter?
             _pass, _fail, _lines = 0, 0, []
             for _eid, (_ev, _dlbl) in _all_evts.items():
-                _raw = _ev.get("date", "")
-                _cdmx_d = "?"
+                _raw = _ev.get("date", "").replace("Z", "").replace("+00:00", "")
+                _cdmx_d = "sin-fecha"
                 _passes = False
                 try:
                     _eu = datetime.strptime(_raw[:19].replace("T", " "),
                                             "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                    _cdmx_d = (_eu - _td_dbg(hours=6)).strftime("%Y-%m-%d %H:%M")
-                    _passes = _cdmx_d[:10] == _today_cdmx_dbg
+                    _cdmx_d = (_eu - _td_dbg(hours=6)).strftime("%H:%M CDMX")
+                    _passes = (_eu - _td_dbg(hours=6)).strftime("%Y-%m-%d") == _today_cdmx_dbg
                 except:
                     _passes = True  # no date → let pass
                 _ht = _ev.get("competitions", [{}])[0].get("competitors", [{}])[0].get("team", {}).get("shortDisplayName", "?")
-                _at = _ev.get("competitions", [{}])[0].get("competitors", [{}])[1].get("team", {}).get("shortDisplayName", "?") if len(_ev.get("competitions", [{}])[0].get("competitors", [])) > 1 else "?"
+                _at = (_ev.get("competitions", [{}])[0].get("competitors", [{}])[1].get("team", {}).get("shortDisplayName", "?")
+                       if len(_ev.get("competitions", [{}])[0].get("competitors", [])) > 1 else "?")
                 _st = _ev.get("status", {}).get("type", {}).get("state", "?")
                 if _passes:
                     _pass += 1
