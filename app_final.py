@@ -1032,14 +1032,16 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
 
             try:
                 games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
+                if not isinstance(games, list):
+                    games = []
+                games = games[:_TP_MAX_GAMES]
             except Exception as _e:
-                games = None
+                games = []
                 if ti == 0:
                     log.append(f"  ⚠ {tname} fetch error: {_e}")
-            if not games or not isinstance(games, list) or len(games) == 0:
+            if not games:
                 failed += 1
                 continue
-            games = games[:_TP_MAX_GAMES]
             stats  = _compute_profile_stats(games, sport_group)
             if not stats:
                 failed += 1
