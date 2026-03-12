@@ -5339,6 +5339,9 @@ with tab_sim:
             _sd = _sd_raw
         _low_c  = _r["sim"].get("low_confidence",False) if _r else False
         _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.616rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
+        _live_tag = ('<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
+                     'border-radius:3px;padding:1px 5px;font-size:0.616rem;margin-left:4px;font-weight:700">🔴 VIVO</span>'
+                     if g.get("state") == "in" else "")
         _has_ev = bool(_r and _r["sim"].get("best_single") and _r["sim"]["best_single"].get("ev",0)>0)
 
         # Card will be colored after pick is computed — use placeholder until then
@@ -5346,7 +5349,7 @@ with tab_sim:
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'
             f'<div>'
             f'<div class="game-title">{g["away_team"]} @ {g["home_team"]}</div>'
-            f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}{_lc_tag}</div>'
+            f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}{_lc_tag}{_live_tag}</div>'
             f'</div>'
         )
         _html = None  # will be assembled after pick color is known
@@ -6476,7 +6479,17 @@ with tab_all:
             if _sel_league != "Todas" and _llbl != _sel_league: continue
             _live_filtered.append(_g)
 
-        st.markdown(f'<div style="font-size:0.78rem;color:#6B7E6E;margin:4px 0 12px 0">{len(_live_filtered)} de {len(live_games)} partidos en vivo</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:0.78rem;color:#6B7E6E;margin:4px 0 8px 0">{len(_live_filtered)} de {len(live_games)} partidos en vivo</div>', unsafe_allow_html=True)
+
+        # ── Build sport → league tree ─────────────────────────────────────────
+        _lv_tree = {}  # sport → league → [games]
+        for _g in _live_filtered:
+            _sg = LEAGUES.get(_g["league"],{}).get("group","Soccer")
+            _lv_tree.setdefault(_sg, {}).setdefault(_g["league"], []).append(_g)
+
+        _LV_SPORT_ORDER = ["Soccer","Basketball","Hockey","Baseball","Football"]
+        _LV_SPORT_COLORS = {"Soccer":"#4ade80","Basketball":"#f97316","Hockey":"#60a5fa","Baseball":"#f59e0b","Football":"#a78bfa"}
+        _LV_SPORT_ICONS  = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
 
         def _build_live_card(g):
             """Build a single live game card HTML string."""
@@ -6582,17 +6595,49 @@ with tab_all:
                 + '</div></div>'
             )
 
-        # Render 3 per row using CSS grid (all in one markdown call per row)
-        _live_cards_all = [_build_live_card(g) for g in _live_filtered]
-        _live_cards_all = [c for c in _live_cards_all if c]
-        for _rs in range(0, len(_live_cards_all), 3):
-            _row_c = _live_cards_all[_rs:_rs+3]
-            _nc = len(_row_c)
+        # Render grouped: Sport header → League header → 3-per-row cards
+        for _lv_sg in _LV_SPORT_ORDER:
+            if _lv_sg not in _lv_tree: continue
+            _lv_sg_color = _LV_SPORT_COLORS.get(_lv_sg, "#C9A84C")
+            _lv_sg_icon  = _LV_SPORT_ICONS.get(_lv_sg, "🎯")
+            _lv_sg_total = sum(len(v) for v in _lv_tree[_lv_sg].values())
+
+            # Sport header
             st.markdown(
-                f'<div style="display:grid;grid-template-columns:repeat({_nc},1fr);gap:8px;margin-bottom:8px">'
-                + "".join(_row_c) + '</div>',
+                f'<div style="font-size:0.78rem;font-weight:700;color:{_lv_sg_color};'
+                f'letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0;'
+                f'border-bottom:1px solid {_lv_sg_color}33;padding-bottom:4px">'
+                f'{_lv_sg_icon} {_lv_sg} — {_lv_sg_total} en vivo</div>',
                 unsafe_allow_html=True
             )
+
+            for _lv_lg in sorted(_lv_tree[_lv_sg].keys()):
+                _lv_lg_games = _lv_tree[_lv_sg][_lv_lg]
+                _lv_lg_label = league_label(_lv_lg)
+                _lv_country  = LEAGUES.get(_lv_lg,{}).get("country","")
+
+                # League header
+                _country_str = f" · {_lv_country}" if _lv_country else ""
+                st.markdown(
+                    f'<div style="font-size:0.70rem;color:{_lv_sg_color}99;font-weight:600;'
+                    f'letter-spacing:1px;text-transform:uppercase;margin:6px 0 4px 8px">'
+                    f'{_lv_lg_label}{_country_str} · {len(_lv_lg_games)}</div>',
+                    unsafe_allow_html=True
+                )
+
+                # Build cards for this league
+                _lv_league_cards = [_build_live_card(g) for g in _lv_lg_games]
+                _lv_league_cards = [c for c in _lv_league_cards if c]
+
+                # Render 3 per row
+                for _rs in range(0, len(_lv_league_cards), 3):
+                    _row_c = _lv_league_cards[_rs:_rs+3]
+                    _nc = len(_row_c)
+                    st.markdown(
+                        f'<div style="display:grid;grid-template-columns:repeat({_nc},1fr);gap:8px;margin-bottom:8px">'
+                        + "".join(_row_c) + '</div>',
+                        unsafe_allow_html=True
+                    )
 
         st.markdown('<div class="den-divider" style="margin:12px 0 20px 0"></div>', unsafe_allow_html=True)
 
