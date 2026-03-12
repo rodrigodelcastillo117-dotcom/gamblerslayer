@@ -731,7 +731,7 @@ LEAGUES = {
     "Ligue 1":          {"sport":"soccer",    "league":"fra.1",                  "group":"Soccer"},
     "Champions League":       {"sport":"soccer", "league":"UEFA.CHAMPIONS",    "group":"Soccer"},
     "Europa League":          {"sport":"soccer", "league":"UEFA.EUROPA",         "group":"Soccer"},
-    "Conference League":      {"sport":"soccer", "league":"UEFA.CONFERENCE",     "group":"Soccer"},
+    "Conference League":      {"sport":"soccer", "league":"uefa.europa.conf",    "group":"Soccer"},
     "CONCACAF Champions Cup": {"sport":"soccer", "league":"CONCACAF.CHAMPIONS",  "group":"Soccer"},
 }
 LEAGUE_FLAG = {
@@ -1715,26 +1715,64 @@ def enrich_game_with_form(game):
         game["_form_unavailable"] = True
 
     # ── Team Profiles: guardar historial y cargar perfil acumulado ──────────────
-    # Reutiliza hf/af ya obtenidos arriba — sin doble fetch a ESPN
+    # Estrategia en 2 pasos:
+    # 1. Construir perfil en memoria desde hf/af (disponible INMEDIATAMENTE)
+    #    → impacta la simulación de este mismo análisis aunque sea primera vez
+    # 2. Guardar en Google Sheets en background thread para futuras sesiones
     import threading
 
-    if home_id and isinstance(hf, dict) and hf.get("games_raw"):
-        _h_games_raw = hf["games_raw"]
-        _h_name      = game["home_team"]
+    def _build_inmem_profile(form_dict, sport_group):
+        """Construye perfil en memoria desde games_raw del form fetch."""
+        if not isinstance(form_dict, dict): return None
+        games_raw = form_dict.get("games_raw", [])
+        if not games_raw: return None
+        stats = _compute_profile_stats(games_raw, sport_group)
+        if not stats: return None
+        return stats  # mismo formato que get_team_profile() devuelve
+
+    # ── Home team ──────────────────────────────────────────────────────────────
+    _h_games_raw = hf.get("games_raw", []) if isinstance(hf, dict) else []
+    if home_id and _h_games_raw:
+        _h_name = game["home_team"]
+        # 1. Perfil en memoria para esta simulación
+        _h_inmem = _build_inmem_profile(hf, group)
+        # 2. Merge con Sheets existente para perfil histórico más completo
+        _h_sheets = get_team_profile(home_id)
+        if _h_sheets and _h_sheets.get("n_games", 0) >= _h_inmem.get("n_games", 0) if _h_inmem else False:
+            game["home_profile"] = _h_sheets  # Sheets tiene más datos → usar Sheets
+        elif _h_inmem:
+            game["home_profile"] = _h_inmem   # primera vez → usar en-memoria
+        else:
+            game["home_profile"] = _h_sheets  # fallback
+        # Background: guardar/actualizar Sheets
         def _update_home(_tid=home_id, _name=_h_name, _lg=league, _sg=group, _gr=_h_games_raw):
             update_team_profile(team_id=_tid, team_name=_name,
                                 league=_lg, sport_group=_sg, new_games=_gr)
         threading.Thread(target=_update_home, daemon=True).start()
-    game["home_profile"] = get_team_profile(home_id) if home_id else None
+    else:
+        game["home_profile"] = get_team_profile(home_id) if home_id else None
 
-    if away_id and isinstance(af, dict) and af.get("games_raw"):
-        _a_games_raw = af["games_raw"]
-        _a_name      = game["away_team"]
+    # ── Away team ──────────────────────────────────────────────────────────────
+    _a_games_raw = af.get("games_raw", []) if isinstance(af, dict) else []
+    if away_id and _a_games_raw:
+        _a_name = game["away_team"]
+        # 1. Perfil en memoria para esta simulación
+        _a_inmem = _build_inmem_profile(af, group)
+        # 2. Merge con Sheets existente
+        _a_sheets = get_team_profile(away_id)
+        if _a_sheets and _a_sheets.get("n_games", 0) >= _a_inmem.get("n_games", 0) if _a_inmem else False:
+            game["away_profile"] = _a_sheets
+        elif _a_inmem:
+            game["away_profile"] = _a_inmem
+        else:
+            game["away_profile"] = _a_sheets
+        # Background: guardar/actualizar Sheets
         def _update_away(_tid=away_id, _name=_a_name, _lg=league, _sg=group, _gr=_a_games_raw):
             update_team_profile(team_id=_tid, team_name=_name,
                                 league=_lg, sport_group=_sg, new_games=_gr)
         threading.Thread(target=_update_away, daemon=True).start()
-    game["away_profile"] = get_team_profile(away_id) if away_id else None
+    else:
+        game["away_profile"] = get_team_profile(away_id) if away_id else None
 
     # ── Signal 6: Injury Feed ─────────────────────────────────────────────────
     # Fetch active injuries for both teams and compute impact factor.
@@ -5103,7 +5141,7 @@ with tab_sim:
 
         # Goals / totals footer
         _footer = ""
-        if sim.get("use_goals") and sim.get("p_btts") is not None:
+        if sim.get("use_goals") and sim.get("p_btts") is not None and sim.get("is_soccer", False):
             btc = "#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
             o2c = "#ff6a00" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
             o3c = "#ff6a00" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
@@ -5117,13 +5155,25 @@ with tab_sim:
                 f'</div>'
             )
         elif sim.get("ou_line") and sim.get("p_o_total") is not None:
-            _otc = "#ff6a00" if (sim.get("p_o_total") or 0)>=50 else "#6B7E6E"
-            _utc = "#a78bfa" if (sim.get("p_u_total") or 0)>=50 else "#6B7E6E"
+            _po = sim.get("p_o_total") or 0   # stored as 0-100 percentage
+            _pu = sim.get("p_u_total") or 0
+            _otc = "#ff6a00" if _po >= 50 else "#6B7E6E"
+            _utc = "#a78bfa" if _pu >= 50 else "#6B7E6E"
+            # Best side highlighted
+            _best_side_lbl = f'Over {sim["ou_line"]}' if _po >= _pu else f'Under {sim["ou_line"]}'
+            _best_side_pct = max(_po, _pu)
+            _best_side_clr = "#ff6a00" if _po >= _pu else "#a78bfa"
+            _sg_icon_ou = {"Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(
+                LEAGUES.get(g.get("league",""),{}).get("group",""), "🎯")
+            dq_src_ou = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
             _footer = (
-                f'<div style="font-size:0.728rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
-                f'<span style="color:#6B7E6E">Total {sim["ou_line"]}</span>'
-                f'<span style="color:{_otc}">Over {sim.get("p_o_total","—")}%</span>'
-                f'<span style="color:{_utc}">Under {sim.get("p_u_total","—")}%</span>'
+                f'<div style="font-size:0.728rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+                f'<span style="color:#6B7E6E">{_sg_icon_ou} Total {sim["ou_line"]}</span>'
+                f'<span style="color:{_otc}">Over {_po}%</span>'
+                f'<span style="color:#3a4a3e">|</span>'
+                f'<span style="color:{_utc}">Under {_pu}%</span>'
+                f'<span style="color:{_best_side_clr};font-weight:700;margin-left:4px">→ {_best_side_lbl} ({_best_side_pct:.0f}%)</span>'
+                f'<span style="color:#3a4a3e;margin-left:auto">{dq_src_ou}</span>'
                 f'</div>'
             )
 
@@ -5362,9 +5412,30 @@ with tab_parlays:
         _sport_game_pools = {}
         _soccer_btts_o25  = []  # collect AA+O2.5 combos separately
 
+        # ── TODAY only filter + deduplication ──────────────────────────────
+        from datetime import timezone as _tz_par
+        _now_par   = datetime.now(_tz_par.utc)
+        _today_par = (_now_par - timedelta(hours=6)).strftime("%Y-%m-%d")  # CDMX
+
+        def _game_date_par(gid):
+            g_obj = next((g for g in games if g.get("id") == gid), None)
+            if not g_obj: return _today_par
+            raw = g_obj.get("date","")
+            if not raw: return _today_par
+            try:
+                _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_par.utc)
+                return (_u - timedelta(hours=6)).strftime("%Y-%m-%d")
+            except:
+                return _today_par
+
+        _seen_par = set()
         for r in sr_current:
-            g_state = next((g["state"] for g in games if g.get("id")==r.get("id")), "pre")
+            gid     = r.get("id","")
+            g_state = next((g["state"] for g in games if g.get("id")==gid), "pre")
             if g_state == "post": continue
+            if _game_date_par(gid) != _today_par: continue  # ← TODAY only
+            if gid in _seen_par: continue                    # ← deduplicate
+            _seen_par.add(gid)
             for gp in _build_game_parlays(r):
                 _sport_game_pools.setdefault(gp["sg"], []).append(gp)
                 if gp["combo_type"] == "AA + O2.5":
@@ -6490,10 +6561,46 @@ with tab_reto:
         for i in range(1, len(series_bank)):
             colors.append("#4ade80" if series_bank[i] >= series_bank[i-1] else "#ef4444")
 
+        # Build rich tooltip data for each pick point
+        series_picks = [None]  # index 0 = "Inicio", no pick data
+        for p in picks:
+            r = p.get("resultado","pendiente")
+            stake = float(p.get("monto", 0))
+            momio = float(p.get("momio", 0))
+            partido   = p.get("partido","") or p.get("pick","")
+            pick_lbl  = p.get("pick","") or p.get("pick_label","")
+            mercado   = p.get("mercado","")
+            liga      = p.get("liga","")
+            num       = p.get("num","?")
+            if r == "ganado":
+                m_c = float(p.get("momio", 1.909))
+                if m_c >= 1.01 and m_c < 100:
+                    pnl = round(stake * (m_c - 1), 2)
+                elif m_c > 0:
+                    pnl = round(stake * m_c / 100, 2)
+                else:
+                    pnl = round(stake * 100 / abs(m_c), 2)
+            elif r == "perdido":
+                pnl = round(-stake, 2)
+            else:
+                pnl = 0
+            series_picks.append({
+                "num":     num,
+                "partido": partido[:32],
+                "pick":    pick_lbl[:24],
+                "mercado": mercado,
+                "liga":    liga,
+                "stake":   stake,
+                "momio":   momio,
+                "pnl":     pnl,
+                "res":     r,
+            })
+
         chart_data = _json.dumps({
             "labels": series_labels,
             "values": series_bank,
             "colors": colors,
+            "picks":  series_picks,
             "bank_inicial": bank_inicial,
             "meta": meta,
         })
@@ -6501,26 +6608,41 @@ with tab_reto:
         st.components.v1.html(f'''
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <div style="background:#060C08;padding:16px;border-radius:8px;
-            border:1px solid rgba(201,168,76,0.2)">
-          <canvas id="retoChart" height="280"></canvas>
+            border:1px solid rgba(201,168,76,0.2);position:relative">
+          <canvas id="retoChart" height="260"></canvas>
         </div>
         <script>
         const d = {chart_data};
         const labels = d.labels;
         const values = d.values;
         const colors = d.colors;
+        const picks  = d.picks;   // null for index 0 (Inicio), object for each pick
 
-        // Build per-segment colors for the line
-        const pointColors = ["#C9A84C", ...colors.map(c => c)];
-        const pointRadius = values.map((v,i) => i === values.length-1 ? 7 : 4);
+        // ── Point styling ──────────────────────────────────────────────────
+        // index 0 = Inicio → gold dot
+        // ganado → green, perdido → red, pendiente → amber, Inicio → gold
+        const RES_COLOR = {{ ganado:"#4ade80", perdido:"#ef4444", pendiente:"#f59e0b" }};
+        const pointColors = values.map((v, i) => {{
+          if (i === 0) return "#C9A84C";
+          const pk = picks[i];
+          if (!pk) return "#C9A84C";
+          return RES_COLOR[pk.res] || "#C9A84C";
+        }});
+        // Bigger dot for result picks, small for inicio
+        const pointRadius = values.map((v, i) => {{
+          if (i === 0) return 4;
+          const pk = picks[i];
+          if (!pk) return 4;
+          return pk.res === "pendiente" ? 5 : 6;
+        }});
+        const pointHover = values.map((v, i) => i === 0 ? 6 : 9);
 
-        // Gradient fill
+        // ── Gradient fill ──────────────────────────────────────────────────
         const ctx = document.getElementById("retoChart").getContext("2d");
-        const grad = ctx.createLinearGradient(0, 0, 0, 280);
-        grad.addColorStop(0, "rgba(201,168,76,0.25)");
+        const grad = ctx.createLinearGradient(0, 0, 0, 260);
+        grad.addColorStop(0, "rgba(201,168,76,0.18)");
         grad.addColorStop(1, "rgba(201,168,76,0.01)");
 
-        // Segment colors on the line itself
         const segmentColors = colors;
 
         new Chart(ctx, {{
@@ -6530,7 +6652,6 @@ with tab_reto:
             datasets: [{{
               label: "Bankroll",
               data: values,
-              borderColor: function(ctx) {{ return "#C9A84C"; }},
               segment: {{
                 borderColor: ctx => {{
                   const i = ctx.p0DataIndex;
@@ -6540,24 +6661,66 @@ with tab_reto:
               backgroundColor: grad,
               borderWidth: 2.5,
               pointBackgroundColor: pointColors,
+              pointBorderColor: pointColors.map(c => c + "cc"),
+              pointBorderWidth: 2,
               pointRadius: pointRadius,
-              pointHoverRadius: 8,
+              pointHoverRadius: pointHover,
+              pointHoverBackgroundColor: pointColors,
+              pointHoverBorderColor: "#ffffff",
+              pointHoverBorderWidth: 2,
               fill: true,
               tension: 0.35,
             }}]
           }},
           options: {{
             responsive: true,
+            interaction: {{ mode: "index", intersect: false }},
             plugins: {{
               legend: {{ display: false }},
               tooltip: {{
-                backgroundColor: "#0D2818",
+                backgroundColor: "#0a1a10",
                 borderColor: "#C9A84C",
                 borderWidth: 1,
                 titleColor: "#C9A84C",
                 bodyColor: "#b8c8b0",
+                padding: 12,
+                displayColors: false,
                 callbacks: {{
-                  label: ctx => " $" + ctx.parsed.y.toLocaleString("es-MX", {{minimumFractionDigits:2}})
+                  title: function(items) {{
+                    const i = items[0].dataIndex;
+                    if (i === 0) return "📍 Inicio";
+                    const pk = picks[i];
+                    if (!pk) return labels[i];
+                    const icon = pk.res==="ganado" ? "✅" : pk.res==="perdido" ? "❌" : "⏳";
+                    return icon + " #" + pk.num + " · " + pk.partido;
+                  }},
+                  label: function(item) {{
+                    const i = item.dataIndex;
+                    const bank = "$" + item.parsed.y.toLocaleString("es-MX", {{minimumFractionDigits:2}});
+                    if (i === 0) return [" Bankroll: " + bank];
+                    const pk = picks[i];
+                    if (!pk) return [" Bankroll: " + bank];
+                    const pnlSign = pk.pnl >= 0 ? "+" : "";
+                    const pnlStr = pnlSign + "$" + Math.abs(pk.pnl).toLocaleString("es-MX",{{minimumFractionDigits:2}});
+                    const lines = [
+                      " Pick: " + pk.pick,
+                      " Mercado: " + pk.mercado + (pk.liga ? "  ·  " + pk.liga : ""),
+                      " Stake: $" + pk.stake.toLocaleString("es-MX") + "  @  " + pk.momio,
+                      " P&L: " + pnlStr,
+                      " Bankroll: " + bank,
+                    ];
+                    return lines;
+                  }},
+                  labelTextColor: function(item) {{
+                    const i = item.dataIndex;
+                    if (i === 0) return "#b8c8b0";
+                    const pk = picks[i];
+                    if (!pk) return "#b8c8b0";
+                    if (item.label && item.label.startsWith(" P&L")) {{
+                      return pk.pnl >= 0 ? "#4ade80" : "#ef4444";
+                    }}
+                    return "#b8c8b0";
+                  }}
                 }}
               }}
             }},
