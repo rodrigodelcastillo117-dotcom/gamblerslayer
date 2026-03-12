@@ -5693,23 +5693,6 @@ with tab_sim:
     _sports_p = [s for s in _SPORTS_ORDER_P if s in _tree_p]
     _total_p  = sum(len(gs) for sp in _sports_p for dmap in _tree_p[sp].values() for gs in dmap.values())
 
-    # DEBUG — muestra todos los Soccer games y su estado (temporal)
-    _dbg_soccer = [g for g in games if LEAGUES.get(g["league"],{}).get("group","Soccer") == "Soccer"]
-    from datetime import timedelta as _td_dbg
-    _now_utc_dbg = datetime.now(timezone.utc)
-    _today_cdmx_dbg = (_now_utc_dbg - _td_dbg(hours=5)).strftime("%Y-%m-%d")
-    if _dbg_soccer:
-        with st.expander(f"🔍 DEBUG Soccer ({len(_dbg_soccer)} games en feed) — hoy CDMX={_today_cdmx_dbg}", expanded=False):
-            for _dg in _dbg_soccer:
-                _raw = _dg.get("date","")
-                try:
-                    _du = datetime.strptime(_raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                    _dc5 = (_du - _td_dbg(hours=5)).strftime("%m-%d %H:%M")
-                    _dc6 = (_du - _td_dbg(hours=6)).strftime("%m-%d %H:%M")
-                    _cdmx_date5 = (_du - _td_dbg(hours=5)).strftime("%Y-%m-%d")
-                    _in_tree = "✅" if _cdmx_date5 == _today_cdmx_dbg else "❌"
-                except: _dc5 = _dc6 = _raw[:16]; _in_tree = "?"
-                st.write(f"{_in_tree} `{_dg['league']}` · {_dg['away_team']} @ {_dg['home_team']} · **{_dg['state']}** · RAW={_raw[:16]} · UTC-5={_dc5} · UTC-6={_dc6}")
 
     # ── Header row: título + botón RE-SIMULAR alineados ─────────────────────
     _hdr_col1, _hdr_col2 = st.columns([3, 1])
