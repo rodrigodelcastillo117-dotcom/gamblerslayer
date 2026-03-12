@@ -920,12 +920,15 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
     if not team_id or not sport or not league:
         return None
     try:
+        # /schedule endpoint returns historical results regardless of today's games
         url = (f"https://site.api.espn.com/apis/site/v2/sports/"
-               f"{sport}/{league}/teams/{team_id}/events?limit={n_games + 3}")
+               f"{sport}/{league}/teams/{team_id}/schedule")
         r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             return None
-        events = r.json().get("events", [])
+        data = r.json()
+        # Schedule returns events nested under "events" directly
+        events = data.get("events", [])
         if not events:
             return None
 
@@ -1028,9 +1031,10 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
                     # Try to get raw error
                     try:
                         url = (f"https://site.api.espn.com/apis/site/v2/sports/"
-                               f"{sport_slug}/{league_slug}/teams/{tid}/events?limit=13")
+                               f"{sport_slug}/{league_slug}/teams/{tid}/schedule")
                         r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
-                        log.append(f"  ⚠ {tname} HTTP {r.status_code}: {str(r.text[:120])}")
+                        data_preview = str(r.json().get("events",r.json()))[:150]
+                        log.append(f"  ⚠ {tname} HTTP {r.status_code}: {data_preview}")
                     except Exception as e:
                         log.append(f"  ⚠ {tname} request error: {e}")
                 continue
