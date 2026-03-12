@@ -1842,7 +1842,7 @@ def enrich_game_with_form(game):
         game["away_injuries"]       = []
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def fetch_scoreboard(sport, league, tournament_id=None):
     """
     Fetch ESPN scoreboard.
@@ -1870,11 +1870,14 @@ def fetch_scoreboard(sport, league, tournament_id=None):
         tom_utc   = (_now + timedelta(days=1)).strftime("%Y%m%d")
         today_mx  = _now_mx.strftime("%Y%m%d")
         base_url  = ESPN_URL.format(sport=sport, league=league)
+        sched_base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
         urls = [
-            base_url,                                        # default (today)
-            f"{base_url}?dates={today_mx}&limit=100",       # MX today
-            f"{base_url}?dates={today_utc}&limit=100",      # UTC today
-            f"{base_url}?dates={tom_utc}&limit=100",        # UTC tomorrow (catches CDMX evening games)
+            f"{sched_base}?dates={today_mx}&limit=100",       # MX today — most reliable
+            f"{sched_base}?dates={today_utc}&limit=100",      # UTC today
+            f"{sched_base}?dates={tom_utc}&limit=100",        # UTC tomorrow (CDMX evening)
+            base_url,                                          # default fallback
+            f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/schedule?dates={today_mx}",  # schedule endpoint
+            f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/schedule?dates={today_utc}",
         ]
 
     all_events = []
@@ -1885,9 +1888,22 @@ def fetch_scoreboard(sport, league, tournament_id=None):
             r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code == 200:
                 data = r.json()
+                # Scoreboard: data.events
+                # Schedule: data.events OR data[date].games[].event OR nested
                 evts = data.get("events", [])
+                # Also check schedule format: {"20260312": {"games": [...]}}
+                if not evts:
+                    for _k, _v in data.items():
+                        if isinstance(_v, dict):
+                            for _g in _v.get("games", []):
+                                _ev = _g.get("event") or _g
+                                if isinstance(_ev, dict) and _ev.get("id"):
+                                    evts.append(_ev)
+                        elif isinstance(_v, list):
+                            for _item in _v:
+                                if isinstance(_item, dict) and _item.get("id") and _item.get("competitions"):
+                                    evts.append(_item)
                 if isinstance(evts, list) and evts:
-                    # Deduplicate by event id
                     existing_ids = {e.get("id") for e in all_events}
                     for e in evts:
                         if e.get("id") not in existing_ids:
