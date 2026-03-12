@@ -4522,122 +4522,60 @@ st.markdown("""
 <div class="den-divider"></div>
 """, unsafe_allow_html=True)
 
-# ── MOBILE: inject gold hamburger button + sidebar overlay logic ─────────────
-import streamlit.components.v1 as _components
-_components.html("""
-<style>
-#den-hamburger {
-  display: none;
-  position: fixed;
-  top: 14px;
-  left: 14px;
-  z-index: 99999;
-  background: #071610;
-  border: 2px solid #C9A84C;
-  border-radius: 7px;
-  padding: 7px 10px;
-  cursor: pointer;
-  box-shadow: 0 2px 20px rgba(201,168,76,0.45);
-  flex-direction: column;
-  gap: 5px;
-  align-items: center;
-  justify-content: center;
-}
-#den-hamburger span {
-  display: block;
-  width: 22px;
-  height: 2.5px;
-  background: #C9A84C;
-  border-radius: 2px;
-  transition: all 0.2s;
-}
-#den-hamburger:active { transform: scale(0.94); }
-#den-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.55);
-  z-index: 9998;
-}
-@media (max-width: 768px) {
-  #den-hamburger { display: flex !important; }
-}
-</style>
-<div id="den-hamburger" onclick="denToggleSidebar()">
-  <span></span><span></span><span></span>
+# ── MOBILE: hamburger button via st.markdown (no iframe, direct DOM) ─────────
+st.markdown("""
+<div id="den-hamburger" onclick="denToggle()" style="
+  display:none;
+  position:fixed;top:14px;left:14px;z-index:99999;
+  background:#071610;border:2px solid #C9A84C;border-radius:7px;
+  padding:8px 10px;cursor:pointer;
+  box-shadow:0 2px 20px rgba(201,168,76,0.45);
+  flex-direction:column;gap:5px;align-items:center;justify-content:center;
+">
+  <span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>
+  <span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>
+  <span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>
 </div>
-<div id="den-overlay" onclick="denCloseSidebar()"></div>
+<div id="den-ov" onclick="denClose()" style="
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9997;
+"></div>
 <script>
-(function() {
-  var doc = window.parent.document;
+(function(){
+  var MOBILE = window.innerWidth < 769;
+  var hbg = document.getElementById('den-hamburger');
+  if(MOBILE && hbg){ hbg.style.display='flex'; }
 
-  function getSidebar() {
-    return doc.querySelector('[data-testid="stSidebar"]');
+  function getSB(){ return document.querySelector('[data-testid="stSidebar"]'); }
+
+  function showSB(){
+    var sb=getSB(); if(!sb) return;
+    sb.style.cssText += ';position:fixed!important;top:0;left:0;height:100vh;z-index:9998;transform:translateX(0);transition:transform 0.25s ease;min-width:78vw;max-width:88vw;';
+    document.getElementById('den-ov').style.display='block';
+  }
+  function hideSB(){
+    var sb=getSB(); if(!sb) return;
+    sb.style.transform='translateX(-110%)';
+    document.getElementById('den-ov').style.display='none';
+  }
+  function initSB(){
+    if(!MOBILE) return;
+    var sb=getSB(); if(!sb) return;
+    sb.style.cssText += ';position:fixed!important;top:0;left:0;height:100vh;z-index:9998;transform:translateX(-110%);transition:transform 0.25s ease;min-width:78vw;max-width:88vw;';
   }
 
-  window.denToggleSidebar = function() {
-    var sidebar = getSidebar();
-    if (!sidebar) return;
-    var isOpen = sidebar.getBoundingClientRect().left > -20;
-    if (isOpen) {
-      denCloseSidebar();
-    } else {
-      sidebar.style.transform = 'translateX(0)';
-      sidebar.style.transition = 'transform 0.25s ease';
-      doc.getElementById('den-overlay') && (doc.getElementById('den-overlay').style.display = 'block');
-      // inject overlay into parent doc if not there
-      if (!doc.getElementById('den-overlay-parent')) {
-        var ov = doc.createElement('div');
-        ov.id = 'den-overlay-parent';
-        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9998;display:block';
-        ov.onclick = function() { denCloseSidebar(); ov.remove(); };
-        doc.body.appendChild(ov);
-      }
-    }
+  window.denToggle = function(){
+    var sb=getSB(); if(!sb) return;
+    var open = parseFloat(sb.style.transform.replace('translateX(','')) > -50;
+    if(open){ hideSB(); } else { showSB(); }
   };
+  window.denClose = hideSB;
 
-  window.denCloseSidebar = function() {
-    var sidebar = getSidebar();
-    if (sidebar) {
-      sidebar.style.transition = 'transform 0.25s ease';
-      sidebar.style.transform = 'translateX(-100%)';
-    }
-    var ov = doc.getElementById('den-overlay-parent');
-    if (ov) ov.remove();
-  };
-
-  function initMobile() {
-    if (window.parent.innerWidth > 768) return;
-    var sidebar = getSidebar();
-    if (sidebar) {
-      sidebar.style.transition = 'transform 0.25s ease';
-      sidebar.style.transform = 'translateX(-100%)';
-    }
-    // Show our hamburger button in parent doc
-    if (!doc.getElementById('den-hamburger-parent')) {
-      var btn = doc.createElement('div');
-      btn.id = 'den-hamburger-parent';
-      btn.style.cssText = [
-        'position:fixed','top:14px','left:14px','z-index:99999',
-        'background:#071610','border:2px solid #C9A84C','border-radius:7px',
-        'padding:7px 10px','cursor:pointer',
-        'box-shadow:0 2px 20px rgba(201,168,76,0.45)',
-        'display:flex','flex-direction:column','gap:5px',
-        'align-items:center','justify-content:center'
-      ].join(';');
-      btn.innerHTML = '<span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>' +
-                      '<span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>' +
-                      '<span style="display:block;width:22px;height:2.5px;background:#C9A84C;border-radius:2px"></span>';
-      btn.onclick = function() { denToggleSidebar(); };
-      doc.body.appendChild(btn);
-    }
-  }
-  setTimeout(initMobile, 300);
-  setTimeout(initMobile, 800);
-  setTimeout(initMobile, 1800);
+  setTimeout(initSB, 100);
+  setTimeout(initSB, 500);
+  setTimeout(initSB, 1200);
 })();
 </script>
-""", height=0, scrolling=False)
+""", unsafe_allow_html=True)
 
 if not sel_leagues:
     st.warning("Selecciona al menos una liga en el sidebar.")
