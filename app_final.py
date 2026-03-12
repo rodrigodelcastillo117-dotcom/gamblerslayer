@@ -1556,31 +1556,47 @@ def fetch_scoreboard(sport, league, tournament_id=None):
             ESPN_URL.format(sport=sport, league=league),
         ]
     else:
-        # Try without date first (ESPN default = today's games)
-        # Also try with explicit date in case ESPN needs it for some leagues
         from datetime import timedelta
-        today_utc  = datetime.now(timezone.utc).strftime("%Y%m%d")
-        today_mx   = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime("%Y%m%d")
-        base_url   = ESPN_URL.format(sport=sport, league=league)
+        _now      = datetime.now(timezone.utc)
+        _now_mx   = _now - timedelta(hours=6)
+        today_utc = _now.strftime("%Y%m%d")
+        today_mx  = _now_mx.strftime("%Y%m%d")
+        tom_utc   = (_now + timedelta(days=1)).strftime("%Y%m%d")
+        tom_mx    = (_now_mx + timedelta(days=1)).strftime("%Y%m%d")
+        d2_utc    = (_now + timedelta(days=2)).strftime("%Y%m%d")
+        base_url  = ESPN_URL.format(sport=sport, league=league)
         urls = [
-            base_url,                                       # default (most reliable)
-            f"{base_url}?dates={today_mx}&limit=100",      # MX local date
-            f"{base_url}?dates={today_utc}&limit=100",     # UTC date
-            f"{base_url}?limit=100",                       # no date, high limit
+            base_url,                                        # default (today)
+            f"{base_url}?dates={today_mx}&limit=100",       # MX today
+            f"{base_url}?dates={today_utc}&limit=100",      # UTC today
+            f"{base_url}?dates={tom_utc}&limit=100",        # UTC tomorrow
+            f"{base_url}?dates={tom_mx}&limit=100",         # MX tomorrow
+            f"{base_url}?dates={d2_utc}&limit=100",         # day after tomorrow
+            f"{base_url}?limit=200",                        # no date, high limit
         ]
 
+    all_events = []
+    returned_data = {}
     for url in urls:
         if not url: continue
         try:
             r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code == 200:
                 data = r.json()
-                if data.get("events") or data.get("leagues") or data.get("competitions"):
-                    return data
-                # Some leagues return events count > 0 even when list is empty — check length
-                if isinstance(data.get("events"), list) and len(data["events"]) > 0:
-                    return data
+                evts = data.get("events", [])
+                if isinstance(evts, list) and evts:
+                    # Deduplicate by event id
+                    existing_ids = {e.get("id") for e in all_events}
+                    for e in evts:
+                        if e.get("id") not in existing_ids:
+                            all_events.append(e)
+                            existing_ids.add(e.get("id"))
+                    if not returned_data:
+                        returned_data = data
         except: continue
+    if all_events:
+        returned_data["events"] = all_events
+        return returned_data
     return {}
 
 
@@ -2730,6 +2746,27 @@ def run_monte_carlo(game, n=10_000):
         no_btts_ev = calc_ev(1-p_btts, BTTS_ML)
         o25_ev = calc_ev(p_o25, OU_ML); u25_ev = calc_ev(p_u25, OU_ML)
         o35_ev = calc_ev(p_o35, OU_ML); u35_ev = calc_ev(p_u35, OU_ML)
+        # Reconstruir candidatos BTTS/O/U con EVs actualizados por blend
+        candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
+                      if mt not in ("BTTS","O/U")]
+        _prior2 = LEAGUE_OU_PRIORS.get(game["league"])
+        _pv2    = _prior2 if _prior2 else (0.23, 0.47, 0.68, 0.77, 0.53, 0.32, 0.57)
+        _bypass2 = bool(game["odds"].get("over_under",""))
+        def _edge2(p, prior): return _bypass2 or abs(p - prior) >= OU_MIN_EDGE
+        _btts_pr2 = _prior2[6] if _prior2 else 0.57
+        if abs(p_btts - _btts_pr2) >= OU_MIN_EDGE or _bypass2:
+            candidates += [
+                ("BTTS","Ambos Anotan — SÍ", p_btts,   btts_ev,    str(BTTS_ML), quarter_kelly(p_btts,   BTTS_ML)),
+                ("BTTS","Ambos Anotan — NO", 1-p_btts, no_btts_ev, str(BTTS_ML), quarter_kelly(1-p_btts, BTTS_ML)),
+            ]
+        if _edge2(p_o25, _pv2[4]):
+            candidates.append(("O/U","Over 2.5",  p_o25, o25_ev, str(OU_ML), quarter_kelly(p_o25, OU_ML)))
+        if _edge2(p_o35, _pv2[5]):
+            candidates.append(("O/U","Over 3.5",  p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35, OU_ML)))
+        if _edge2(p_u25, _pv2[1]):
+            candidates.append(("O/U","Under 2.5", p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25, OU_ML)))
+        if _edge2(p_u35, _pv2[2]):
+            candidates.append(("O/U","Under 3.5", p_u35, u35_ev, str(OU_ML), quarter_kelly(p_u35, OU_ML)))
 
     # ── No-signal guard: block O/U and BTTS when all signals are blind ──────────
     # Without moneyline + form + scoring trend, O/U probs are pure Poisson league avg
@@ -2846,16 +2883,22 @@ def build_parlays(results):
       Tries all pairs in top-5 legs, picks highest parlay EV.
     - Intra-partido fallback (1 game): best 2 legs of same game, ML preferred.
     """
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from datetime import timedelta as _td2
+    _now_u   = datetime.now(timezone.utc)
+    _now_mx2 = _now_u - _td2(hours=6)
+    _valid_parlay = set()
+    for _d in range(-1, 3):
+        _valid_parlay.add((_now_u  + _td2(days=_d)).strftime("%Y-%m-%d"))
+        _valid_parlay.add((_now_mx2 + _td2(days=_d)).strftime("%Y-%m-%d"))
 
     def is_today(r):
-        """Return True if game is today, live/unknown date, or a demo game."""
+        """Return True if game is in valid window or demo."""
         d = (r.get("date") or "")[:10]
         if d == "" and str(r.get("id","")).startswith("d"):
             return True
-        return d == today_str
+        return d in _valid_parlay
 
-    # Only consider today's games
+    # Only consider games in window
     results_today = [r for r in results if is_today(r)]
 
     def parlay_ev(l1, l2):
@@ -3366,12 +3409,102 @@ with st.sidebar:
     st.caption(f"⚡ {n_sims:,} iteraciones por partido")
     st.divider()
 
-    st.markdown("**LIGAS**")
-    groups=sorted(set(v["group"] for v in LEAGUES.values()))
-    sel_groups=st.multiselect("Grupos",groups,default=["Basketball","Baseball","Soccer"],
-                              label_visibility="collapsed")
-    avail=[n for n,cfg in LEAGUES.items() if cfg["group"] in sel_groups]
-    sel_leagues=st.multiselect("Ligas",avail,default=avail,label_visibility="collapsed")
+    st.markdown("**LIGAS · HOY**")
+
+    # Sport config: emoji, color, default-on
+    _SPORT_CFG = {
+        "Basketball": {"emoji":"🏀", "color":"#f97316", "default":True},
+        "Baseball":   {"emoji":"⚾", "color":"#ef4444", "default":True},
+        "Football":   {"emoji":"🏈", "color":"#8b5cf6", "default":False},
+        "Hockey":     {"emoji":"🏒", "color":"#60a5fa", "default":True},
+        "Soccer":     {"emoji":"⚽", "color":"#4ade80", "default":True},
+    }
+
+    # Date label
+    from datetime import timedelta as _td_sb
+    _today_sb = datetime.now(timezone.utc) - _td_sb(hours=6)
+    _meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+    _date_label = f"{_today_sb.day} {_meses[_today_sb.month-1]} {_today_sb.year}"
+    st.markdown(
+        f'<div style="font-size:0.68rem;color:#6B7E6E;letter-spacing:1px;'
+        f'margin-bottom:8px">📅 {_date_label}</div>',
+        unsafe_allow_html=True
+    )
+
+    # Build sport → leagues map
+    _sport_leagues = {}
+    for _ln, _cfg in LEAGUES.items():
+        _sg = _cfg["group"]
+        _sport_leagues.setdefault(_sg, []).append(_ln)
+
+    # Render 3 sports per row as toggle buttons
+    _sports_order = ["Basketball","Soccer","Hockey","Baseball","Football"]
+    _sel_groups_new = []
+
+    # Init session state for sport toggles
+    for _sp in _sports_order:
+        _key = f"_sp_tog_{_sp}"
+        if _key not in st.session_state:
+            st.session_state[_key] = _SPORT_CFG.get(_sp,{}).get("default", False)
+
+    # Render in rows of 3
+    _rows = [_sports_order[i:i+3] for i in range(0, len(_sports_order), 3)]
+    for _row in _rows:
+        _cols = st.columns(len(_row))
+        for _ci, _sp in enumerate(_row):
+            _cfg2 = _SPORT_CFG.get(_sp, {"emoji":"🎯","color":"#9ca3af"})
+            _key  = f"_sp_tog_{_sp}"
+            _active = st.session_state[_key]
+            _btn_style = (
+                f"background:{_cfg2['color']}22;border:1px solid {_cfg2['color']}88;"
+                f"color:{_cfg2['color']};border-radius:8px;padding:4px 6px;"
+                f"font-size:0.7rem;font-weight:700;width:100%;cursor:pointer;"
+                f"{'box-shadow:0 0 8px ' + _cfg2['color'] + '44;' if _active else 'opacity:0.45;'}"
+            )
+            with _cols[_ci]:
+                if st.button(
+                    f"{_cfg2['emoji']} {_sp[:5]}",
+                    key=f"btn_{_sp}",
+                    use_container_width=True,
+                    help=_sp,
+                    type="primary" if _active else "secondary",
+                ):
+                    st.session_state[_key] = not st.session_state[_key]
+                    st.rerun()
+            if st.session_state[_key]:
+                _sel_groups_new.append(_sp)
+
+    sel_groups = _sel_groups_new  # keep compat
+
+    # For each active sport, show league checkboxes in an expander
+    sel_leagues = []
+    for _sp in _sports_order:
+        if _sp not in sel_groups:
+            continue
+        _cfg2  = _SPORT_CFG.get(_sp, {"emoji":"🎯","color":"#9ca3af"})
+        _lgs   = _sport_leagues.get(_sp, [])
+        _exp_label = f"{_cfg2['emoji']} {_sp} — {len(_lgs)} ligas"
+        with st.expander(_exp_label, expanded=True):
+            # Select all / none mini buttons
+            _col_a, _col_b = st.columns(2)
+            with _col_a:
+                if st.button("✓ Todas", key=f"all_{_sp}", use_container_width=True):
+                    for _l in _lgs:
+                        st.session_state[f"_lg_{_l}"] = True
+                    st.rerun()
+            with _col_b:
+                if st.button("✗ Ninguna", key=f"none_{_sp}", use_container_width=True):
+                    for _l in _lgs:
+                        st.session_state[f"_lg_{_l}"] = False
+                    st.rerun()
+            for _l in _lgs:
+                _lkey = f"_lg_{_l}"
+                if _lkey not in st.session_state:
+                    st.session_state[_lkey] = True
+                _checked = st.checkbox(_l, value=st.session_state[_lkey], key=f"chk_{_l}")
+                st.session_state[_lkey] = _checked
+                if _checked:
+                    sel_leagues.append(_l)
 
     st.markdown("")
     run_sidebar = st.button("▶  ANALIZAR AHORA", use_container_width=True,
@@ -3766,7 +3899,7 @@ with tab_sim:
               <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px">
                 <div>
                   <div class="game-title">{r['away_team']} @ {r['home_team']}</div>
-                  <div class="game-meta">{r['league']} · {r['status_detail']} · <span style="color:{dqc}">DQ {dq:.0f}%</span></div>
+                  <div class="game-meta">{r['league']} · {(r.get('status_detail','') or '').replace('<','').replace('>','').replace('/','').split(chr(10))[0].strip()} · <span style="color:{dqc}">DQ {dq:.0f}%</span></div>
                   <div style="margin-top:4px">{badge}</div>
                 </div>
                 <div style="text-align:right;font-size:0.72rem;color:#6B7E6E">
