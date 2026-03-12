@@ -544,6 +544,25 @@ LEAGUE_AVG_GOALS = {
     "Bundesliga":3.24,"Serie A":2.72,"Ligue 1":2.61,
     "Champions League":3.14,"Europa League":2.89,"Conference League":2.71,"CONCACAF Champions Cup":2.85,
 }
+_TP_TAB       = "team_profiles"
+_TP_MAX_GAMES = 10
+_TP_HEADERS   = [
+    "team_id","team_name","league","sport_group","last_updated",
+    "games_json","n_games","avg_scored","avg_conceded",
+    "avg_scored_home","avg_conceded_home","avg_scored_away","avg_conceded_away",
+    "rate_o15","rate_o25","rate_o35","rate_btts",
+    "rate_o15_home","rate_o25_home","rate_o35_home","rate_btts_home",
+    "rate_o15_away","rate_o25_away","rate_o35_away","rate_btts_away",
+    "thresholds_json",
+]
+_TP_THRESHOLDS = {
+    "Soccer":     [("o15",1.5),("o25",2.5),("o35",3.5)],
+    "Basketball": [("o100",100),("o105",105),("o110",110),("o115",115),("o120",120),("o125",125)],
+    "Hockey":     [("o3",3.0),("o4",4.0),("o5",5.0),("o6",6.0),("o7",7.0)],
+    "Baseball":   [("o6",6.0),("o7",7.0),("o8",8.0),("o9",9.0),("o10",10.0)],
+    "Football":   [("o17",17),("o21",21),("o24",24),("o28",28),("o35",35),("o42",42)],
+}
+
 ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
 
 def get_demo_games():
@@ -913,31 +932,46 @@ def _fetch_all_teams_in_league(sport_slug, league_slug):
 
 def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
     """
-    Version sin @st.cache_data. Usa /schedule que devuelve historial completo.
-    El formato de /schedule es diferente al de /events:
-      - No tiene status.type.state — usar comp.get("competitors") directamente
-      - Juegos pasados tienen scores en competitors[].score
-      - Juegos futuros tienen score=None o "0"
+    Version sin @st.cache_data. Usa /schedule para historial completo.
+    Parsea score de múltiples ubicaciones posibles en la respuesta de ESPN.
     """
     if not team_id or not sport or not league:
         return None
     try:
         url = (f"https://site.api.espn.com/apis/site/v2/sports/"
                f"{sport}/{league}/teams/{team_id}/schedule")
-        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             return None
-        events = r.json().get("events", [])
+        data   = r.json()
+        events = data.get("events", [])
         if not events:
             return None
 
         games_raw_list = []
-        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+        now_iso = datetime.now(timezone.utc).isoformat()[:16]  # "2026-03-12T03:15"
+
+        def _get_score(competitor):
+            """Try multiple keys where ESPN might store the score."""
+            for key in ("score", "homeScore", "awayScore", "points"):
+                v = competitor.get(key)
+                if v is not None and v != "":
+                    try: return float(v)
+                    except: pass
+            # Try nested score object
+            score_obj = competitor.get("score", {})
+            if isinstance(score_obj, dict):
+                for key in ("value", "displayValue"):
+                    v = score_obj.get(key)
+                    if v is not None:
+                        try: return float(v)
+                        except: pass
+            return None
 
         for ev in events:
-            # Skip future games — compare date string
             ev_date = ev.get("date", "")
-            if ev_date > now_str:
+            # Skip clearly future games
+            if ev_date[:16] > now_iso:
                 continue
 
             competitions = ev.get("competitions", [])
@@ -945,49 +979,45 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
                 continue
             comp  = competitions[0]
             comps = comp.get("competitors", [])
-            if not comps:
+            if len(comps) < 2:
                 continue
 
-            # Find this team and opponent
+            # Match team by id
             team_comp = next((c for c in comps if str(c.get("id","")) == str(team_id)), None)
             opp_comp  = next((c for c in comps if str(c.get("id","")) != str(team_id)), None)
             if not team_comp or not opp_comp:
                 continue
 
-            # Extract scores — skip if no valid score (game not played)
-            try:
-                team_score = float(team_comp.get("score") or 0)
-                opp_score  = float(opp_comp.get("score")  or 0)
-            except:
+            team_score = _get_score(team_comp)
+            opp_score  = _get_score(opp_comp)
+
+            # Skip if no scores found
+            if team_score is None or opp_score is None:
                 continue
 
-            # Skip if both scores are 0 and boxscoreAvailable is False
-            # (likely a future/cancelled game with default 0s)
+            # Skip 0-0 with no boxscore (unplayed)
             if team_score == 0 and opp_score == 0:
                 if not comp.get("boxscoreAvailable", False):
                     continue
 
-            is_home  = team_comp.get("homeAway") == "home"
-            opp_name = opp_comp.get("team", {}).get("displayName", "")
+            is_home   = team_comp.get("homeAway") == "home"
+            opp_name  = opp_comp.get("team", {}).get("displayName", "")
             game_date = ev_date[:10]
 
-            if is_home:
-                games_raw_list.append({
-                    "scored": team_score, "conceded": opp_score,
-                    "home": True, "date": game_date, "opp": opp_name
-                })
-            else:
-                games_raw_list.append({
-                    "scored": team_score, "conceded": opp_score,
-                    "home": False, "date": game_date, "opp": opp_name
-                })
+            games_raw_list.append({
+                "scored":   team_score,
+                "conceded": opp_score,
+                "home":     is_home,
+                "date":     game_date,
+                "opp":      opp_name,
+            })
 
             if len(games_raw_list) >= n_games:
                 break
 
         return games_raw_list if games_raw_list else None
-    except Exception as _raw_e:
-        return None  # caller handles
+    except Exception:
+        return None
 
 
 def populate_all_team_profiles(progress_bar=None, status_text=None):
@@ -4310,26 +4340,7 @@ import json, os as _os, re as _re
 # para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
 # ══════════════════════════════════════════════════════════════════════════════
 
-_TP_TAB      = "team_profiles"
-_TP_MAX_GAMES = 10
-_TP_HEADERS  = [
-    "team_id","team_name","league","sport_group","last_updated",
-    "games_json","n_games","avg_scored","avg_conceded",
-    "avg_scored_home","avg_conceded_home","avg_scored_away","avg_conceded_away",
-    "rate_o15","rate_o25","rate_o35","rate_btts",
-    "rate_o15_home","rate_o25_home","rate_o35_home","rate_btts_home",
-    "rate_o15_away","rate_o25_away","rate_o35_away","rate_btts_away",
-    "thresholds_json",
-]
-
-# Thresholds a trackear por grupo de deporte
-_TP_THRESHOLDS = {
-    "Soccer":     [("o15",1.5),("o25",2.5),("o35",3.5)],
-    "Basketball": [("o100",100),("o105",105),("o110",110),("o115",115),("o120",120),("o125",125)],
-    "Hockey":     [("o3",3.0),("o4",4.0),("o5",5.0),("o6",6.0),("o7",7.0)],
-    "Baseball":   [("o6",6.0),("o7",7.0),("o8",8.0),("o9",9.0),("o10",10.0)],
-    "Football":   [("o17",17),("o21",21),("o24",24),("o28",28),("o35",35),("o42",42)],
-}
+# _TP constants moved to top
 
 
 # [_load_all_team_profiles moved to top]
