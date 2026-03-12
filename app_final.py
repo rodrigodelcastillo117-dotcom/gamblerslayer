@@ -1023,6 +1023,16 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
             games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
             if not games:
                 failed += 1
+                # Log first failure per league to diagnose
+                if ti == 0:
+                    # Try to get raw error
+                    try:
+                        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+                               f"{sport_slug}/{league_slug}/teams/{tid}/events?limit=13")
+                        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+                        log.append(f"  ⚠ {tname} HTTP {r.status_code}: {str(r.text[:120])}")
+                    except Exception as e:
+                        log.append(f"  ⚠ {tname} request error: {e}")
                 continue
             games = games[:_TP_MAX_GAMES]
             stats  = _compute_profile_stats(games, sport_group)
