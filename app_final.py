@@ -223,10 +223,12 @@ st.markdown("""
   border-radius: 3px;
   margin-right: 4px;
 }
-.chip-ml     { background: rgba(26,96,196,0.25); color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
-.chip-btts   { background: rgba(39,174,96,0.2);  color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
-.chip-ou     { background: rgba(201,168,76,0.15); color: var(--gold2); border: 1px solid rgba(201,168,76,0.3); }
-.chip-dc     { background: rgba(167,139,250,0.2); color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
+.chip-ml     { background: rgba(29,78,216,0.25);  color: #60a5fa; border: 1px solid rgba(96,165,250,0.4); }
+.chip-btts   { background: rgba(21,128,61,0.22);  color: #4ade80; border: 1px solid rgba(74,222,128,0.4); }
+.chip-ou     { background: rgba(194,65,12,0.22);  color: #ff6a00; border: 1px solid rgba(255,106,0,0.4); }   /* OVER */
+.chip-ou-u   { background: rgba(91,33,182,0.22);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.4); } /* UNDER */
+.chip-combo  { background: rgba(146,64,14,0.25);  color: #f59e0b; border: 1px solid rgba(245,158,11,0.4); }  /* COMBO gold */
+.chip-dc     { background: rgba(76,29,149,0.22);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.4); }
 .chip-parlay { background: rgba(26,188,156,0.2);  color: #1ABC9C; border: 1px solid rgba(26,188,156,0.3); }
 .chip-warn   { background: rgba(192,57,43,0.2);   color: #e74c3c; border: 1px solid rgba(231,76,60,0.3); }
 
@@ -2723,9 +2725,17 @@ def run_monte_carlo(game, n=10_000):
                         else: u_total += 1
                 else:
                     # NBA / MLB / NFL — normal distribution (Poisson breaks for large λ)
-                    std = max(1.0, (lh + la) * 0.08)
-                    sim_h = max(0, lh + rng.gauss(0, std * 0.55))
-                    sim_a = max(0, la + rng.gauss(0, std * 0.55))
+                    # NBA: typical game total std ~12-14 pts (TeamRankings historical)
+                    # MLB: typical game total std ~3.0 runs
+                    # NFL: typical game total std ~14 pts
+                    if sport_grp == "Basketball":
+                        per_team_std = max(5.0, (lh + la) * 0.065)  # ~12-13 pts std on total
+                    elif sport_grp == "Baseball":
+                        per_team_std = max(1.5, (lh + la) * 0.18)   # ~3 runs std
+                    else:  # Football / NCAAF
+                        per_team_std = max(5.0, (lh + la) * 0.12)   # ~14 pts std
+                    sim_h = max(0, lh + rng.gauss(0, per_team_std * 0.7))
+                    sim_a = max(0, la + rng.gauss(0, per_team_std * 0.7))
                     sim_total = sim_h + sim_a
                     if sim_h > sim_a: hw += 1; dc_1x += 1; dc_12 += 1
                     else: aw += 1; dc_x2 += 1; dc_12 += 1
@@ -3459,11 +3469,43 @@ def _ph_auto_resolve(picks):
 # ═══════════════════════════════════════════════════════════════════════════════
 # RENDER HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
-def chip(market):
-    label_map = {"DO": "DO"}
-    display_market = label_map.get(market, market)
-    cls={"ML":"chip-ml","BTTS":"chip-btts","O/U":"chip-ou","DO":"chip-dc","PARLAY":"chip-parlay"}.get(market,"chip-ml")
-    return f'<span class="market-chip {cls}">{display_market}</span>'
+# ══════════════════════════════════════════════════════════════════════════════
+# GLOBAL PICK COLOR SYSTEM — used in ALL tabs
+# ML=blue  BTTS/AA=green  OVER=orange-fire  UNDER=violet  COMBO=gold  DO=purple
+# ══════════════════════════════════════════════════════════════════════════════
+def _pick_clr(market, label=""):
+    """Return (primary, accent, type_key, display_label) for any pick."""
+    m = (market or "").upper()
+    l = (label  or "").lower()
+    if m == "ML":
+        return "#1d4ed8", "#60a5fa", "ML",    "ML"
+    if m == "BTTS":
+        return "#15803d", "#4ade80", "AA",    "AA"
+    if m in ("O/U","OU","OVER/UNDER"):
+        if "over" in l:
+            return "#c2410c", "#ff6a00", "OVER",  "OVER"
+        if "under" in l:
+            return "#5b21b6", "#a78bfa", "UNDER", "UNDER"
+        return "#b45309", "#fbbf24", "OU",   "O/U"   # line unknown
+    if m == "COMBO":
+        return "#92400e", "#f59e0b", "COMBO", "COMBO"  # amarillo dorado
+    if m == "DO":
+        return "#4c1d95", "#a78bfa", "DO",   "DO"
+    if m == "PARLAY":
+        return "#065f46", "#34d399", "PARLAY","PARLAY"
+    return "#374151", "#9ca3af", "OTHER", market
+
+def _pick_chip_html(market, label="", size="0.66rem"):
+    """Inline colored chip badge for any pick market."""
+    pc, ac, _, dl = _pick_clr(market, label)
+    return (f'<span style="background:{pc}28;color:{ac};border:1px solid {pc}66;'
+            f'border-radius:4px;padding:2px 9px;font-size:{size};font-weight:800;'
+            f'letter-spacing:0.5px;flex-shrink:0">{dl}</span>')
+
+
+def chip(market, label=""):
+    """Market chip using global color system."""
+    return _pick_chip_html(market, label)
 
 def conf_badge(ev, dq):
     if ev>=10 and dq>=60: return '<span class="conf-badge conf-high">◆ ALTA</span>'
@@ -4353,12 +4395,13 @@ with tab_picks:
                         _mkts.setdefault(m, {"gan":0,"per":0,"psh":0})
                         _mkts[m][{"ganado":"gan","perdido":"per","push":"psh"}[p["resultado"]]] += 1
 
-                    _mkt_color = {"ML":"#60a5fa","BTTS":"#4ade80","O/U":"#C9A84C","DO":"#a78bfa"}
+                    _mkt_color = None  # use _pick_clr()
                     st.markdown('<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Mercado</div>', unsafe_allow_html=True)
                     for _m, _mc in sorted(_mkts.items()):
                         _mt = _mc["gan"] + _mc["per"] + _mc["psh"]
                         _mwr = round(_mc["gan"]/_mt*100,1) if _mt else 0
-                        _mc_c = _mkt_color.get(_m,"#9ca3af")
+                        _stpc, _stac, _, _ = _pick_clr(_m)
+                        _mc_c = _stac
                         _bar_w = _mwr
                         st.markdown(
                             f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
@@ -4423,7 +4466,7 @@ with tab_picks:
                         "push":     ("#C9A84C", "🔄"),
                         "pendiente":("#6B7E6E", "⏳"),
                     }
-                    _MKT_C2 = {"ML":"#60a5fa","BTTS":"#4ade80","O/U":"#C9A84C","DO":"#a78bfa"}
+                    pass  # colors via _pick_clr()
                     _SGI2   = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
 
                     # Table header
@@ -4444,7 +4487,8 @@ with tab_picks:
                     for _ap in _audit_sorted[:50]:  # max 50 rows
                         _res   = _ap.get("resultado","pendiente")
                         _rc, _ri = _RES_COLOR.get(_res, ("#6B7E6E","⏳"))
-                        _mc2   = _MKT_C2.get(_ap["mercado"],"#9ca3af")
+                        _apc, _aac, _, _adl = _pick_clr(_ap["mercado"], _ap.get("pick_label",""))
+                        _mc2 = _aac  # for compat
                         _sgi2  = _SGI2.get(_ap.get("deporte",""),"🎯")
                         _fecha = _ap["fecha"][:10]
                         _score = ""
@@ -4462,9 +4506,7 @@ with tab_picks:
                             f'<div style="color:#FFE87C;font-size:0.62rem">{_ap["pick_label"]}{_score}</div>'
                             f'</div>'
                             f'<span style="text-align:center">'
-                            f'<span style="background:{_mc2}22;color:{_mc2};border:1px solid {_mc2}44;'
-                            f'border-radius:3px;padding:1px 5px;font-size:0.6rem;font-weight:800">'
-                            f'{_ap["mercado"]}</span></span>'
+                            f'<span style="background:{_apc}28;color:{_aac};border:1px solid {_apc}66;border-radius:3px;padding:1px 5px;font-size:0.6rem;font-weight:800">{_adl}</span></span>'
                             f'<span style="text-align:center;font-size:0.75rem">{_sgi2}</span>'
                             f'<span style="text-align:center;color:#C9A84C;font-size:0.7rem;font-weight:700">'
                             f'{_ap["prob_pct"]:.0f}%</span>'
@@ -4482,7 +4524,7 @@ with tab_picks:
             st.markdown('<div class="warn-banner">No se encontraron picks. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
         else:
             # ── helpers ──────────────────────────────────────────────────────
-            _MKT_COLOR = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
+            _MKT_COLOR = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#4ade80","DO":"#a78bfa","COMBO":"#f59e0b"}
             _SPORT_ICON = {"Basketball":"🏀","Soccer":"⚽","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
             _CONF_LABEL = lambda p: ("🔥 ALTA" if p>=75 else ("⚡ MEDIA" if p>=55 else "🌡 BAJA"))
             _CONF_COLOR = lambda p: ("#4ade80" if p>=75 else ("#C9A84C" if p>=55 else "#ef4444"))
@@ -4499,35 +4541,42 @@ with tab_picks:
                     f'margin-top:1px">{prob:.0f}%</div>'
                 )
 
+            # ── Pick card color palette — uses global _pick_clr() ──────────
+
             def _pick_diamante_card(r, tp, rank=0, is_fire=False):
-                mc    = _MKT_COLOR.get(tp["market"],"#9ca3af")
+                pc, ac, type_key, _ = _pick_clr(tp.get("market",""), tp.get("label",""))
                 _sg_r = LEAGUES.get(r.get("league",""),{}).get("group","Soccer")
                 _ml_i = _SPORT_ICON.get(_sg_r,"⚽")
-                _mkt_icon_map = {"ML":_ml_i,"O/U":"📊","BTTS":"🎯","DO":"🔄"}
-                icon  = _mkt_icon_map.get(tp["market"],"🎲")
+                _type_icons = {"ML":_ml_i,"BTTS":"🎯","OVER":"🔥","UNDER":"🧊","COMBO":"⚽🎯","OTHER":"📊"}
+                icon  = _type_icons.get(type_key,"📊")
                 ev_s  = f'+{tp["ev"]:.1f}' if tp["ev"]>=0 else f'{tp["ev"]:.1f}'
                 prob  = tp["prob"]
                 conf_lbl = _CONF_LABEL(prob)
                 conf_c   = _CONF_COLOR(prob)
                 is_diamond = rank == 0
 
-                # gradient border glow for diamond / fire
+                # ── Card outer style — color drives the whole card ────────────
                 if is_fire:
-                    outer = (f'background:linear-gradient(135deg,rgba(255,106,0,0.18) 0%,#0d1f1a 55%,{mc}22 100%);'
-                             f'border:1px solid rgba(255,106,0,0.6);'
-                             f'box-shadow:0 0 28px rgba(255,106,0,0.25),inset 0 1px 0 rgba(255,106,0,0.15);')
-                    title_size = "0.95rem"
-                    label_size = "1.0rem"
+                    # 🔥 FUEGO: naranja intenso siempre, override pick color
+                    card_bg   = f"background:linear-gradient(135deg,rgba(255,106,0,0.22) 0%,#0d1f1a 55%,{pc}18 100%)"
+                    card_border = "border:1.5px solid rgba(255,106,0,0.7)"
+                    card_shadow = "box-shadow:0 0 28px rgba(255,106,0,0.28),inset 0 1px 0 rgba(255,106,0,0.18)"
+                    stripe_c  = "#ff6a00"
+                    title_size = "0.95rem"; label_size = "1.0rem"
                 elif is_diamond:
-                    outer = (f'background:linear-gradient(135deg,{mc}44 0%,#0d1f1a 60%,{mc}22 100%);'
-                             f'border:1px solid {mc}88;box-shadow:0 0 24px {mc}33,inset 0 1px 0 {mc}22;')
-                    title_size = "1.05rem"
-                    label_size = "1.1rem"
+                    card_bg   = f"background:linear-gradient(135deg,{pc}44 0%,#0d1f1a 60%,{ac}18 100%)"
+                    card_border = f"border:1.5px solid {pc}99"
+                    card_shadow = f"box-shadow:0 0 26px {pc}33,inset 0 1px 0 {pc}22"
+                    stripe_c  = ac
+                    title_size = "1.05rem"; label_size = "1.1rem"
                 else:
-                    outer = (f'background:linear-gradient(135deg,{mc}18 0%,#0a1a16 100%);'
-                             f'border:1px solid {mc}44;')
-                    title_size = "0.88rem"
-                    label_size = "0.9rem"
+                    card_bg   = f"background:linear-gradient(135deg,{pc}20 0%,#0a1a16 100%)"
+                    card_border = f"border:1px solid {pc}55"
+                    card_shadow = f"box-shadow:0 0 14px {pc}18"
+                    stripe_c  = ac
+                    title_size = "0.88rem"; label_size = "0.9rem"
+
+                outer = f"{card_bg};{card_border};{card_shadow};"
 
                 _low_conf = r.get("sim",{}).get("low_confidence", False)
                 _lc_badge = (
@@ -4542,15 +4591,20 @@ with tab_picks:
                     'letter-spacing:1px;margin-right:6px">🔥 FUEGO</span>'
                 ) if is_fire else ""
                 rank_badge = (
-                    f'<span style="background:{mc}22;color:{mc};border:1px solid {mc}55;'
+                    f'<span style="background:{pc}22;color:{ac};border:1px solid {pc}55;'
                     f'border-radius:3px;padding:1px 7px;font-size:0.58rem;font-weight:700;'
                     f'letter-spacing:1px;margin-right:8px">#{rank+1}</span>' if not is_diamond and not is_fire else ""
                 ) + _fire_inline + _lc_badge
+
                 top_stripe = (
                     f'<div style="height:3px;border-radius:8px 8px 0 0;margin:-14px -14px 10px -14px;'
-                    f'background:linear-gradient(90deg,transparent,{"#ff6a00" if is_fire else mc},{"#ff6a00aa" if is_fire else mc+"aa"},transparent);'
-                    f'box-shadow:0 0 12px {"rgba(255,106,0,0.6)" if is_fire else mc+"88"}"></div>' if (is_diamond or is_fire) else ""
+                    f'background:linear-gradient(90deg,transparent,{stripe_c},{stripe_c}aa,transparent);'
+                    f'box-shadow:0 0 12px {stripe_c}88"></div>' if (is_diamond or is_fire) else ""
                 )
+
+                # ── Market type badge with full color ─────────────────────────
+                type_labels = {"ML":"ML","BTTS":"AA","OVER":"OVER","UNDER":"UNDER","COMBO":"COMBO","OTHER":"O/U"}
+                type_label  = type_labels.get(type_key, tp["market"])
 
                 return (
                     f'<div style="border-radius:10px;padding:14px;margin:8px 0;{outer}">'
@@ -4563,19 +4617,19 @@ with tab_picks:
                     f'{r["away_team"]} <span style="color:#3a4a3e;font-weight:400">vs</span> {r["home_team"]}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.15rem;font-weight:900;color:{mc};'
-                    f'text-shadow:0 0 12px {mc}88;font-family:Cinzel,serif">EV {ev_s}</div>'
+                    f'<div style="font-size:1.15rem;font-weight:900;color:{ac};'
+                    f'text-shadow:0 0 12px {ac}88;font-family:Cinzel,serif">EV {ev_s}</div>'
                     f'<div style="font-size:0.6rem;color:{conf_c};font-weight:700">{conf_lbl}</div>'
                     f'</div>'
                     f'</div>'
                     f'<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-                    f'<span style="background:{mc}25;color:{mc};border:1px solid {mc}66;'
+                    f'<span style="background:{pc}28;color:{ac};border:1px solid {pc}77;'
                     f'border-radius:5px;padding:3px 10px;font-size:0.7rem;font-weight:800;'
-                    f'letter-spacing:1px">{icon} {tp["market"]}</span>'
+                    f'letter-spacing:1.5px">{icon} {type_label}</span>'
                     f'<span style="font-size:{label_size};font-weight:700;color:#FFE87C;'
                     f'font-family:Cinzel,serif;letter-spacing:0.5px">{tp["label"]}</span>'
                     f'</div>'
-                    + _prob_bar_html(prob, mc) +
+                    + _prob_bar_html(prob, ac) +
                     f'</div>'
                 )
 
@@ -4639,7 +4693,7 @@ with tab_picks:
                 _do  = _dp["do_pick"]
                 _gl  = _dp["goals_pick"]
                 _mc_do = "#a78bfa"
-                _mc_gl = {"BTTS":"#4ade80","O/U":"#C9A84C"}.get(_gl["market"],"#9ca3af")
+                _gpc, _mc_gl, _, _ = _pick_clr(_gl["market"], _gl.get("label",""))
                 _comb_ev = _do["ev"] + _gl["ev"]
                 st.markdown(
                     f'<div style="border-radius:10px;padding:14px;margin:8px 0;'
@@ -4756,15 +4810,15 @@ with tab_sim:
         if _rp:
             _bs = _rp["sim"].get("best_single",{}) or {}
             if _bs and _bs.get("ev",0) > 0:
-                _mc2 = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}.get(_bs.get("market",""),"#9ca3af")
+                _mc2_pc, _mc2_ac, _, _mc2_dl = _pick_clr(_bs.get("market",""), _bs.get("label",""))
                 _ev2s = f'+{_bs["ev"]:.1f}' if _bs["ev"]>=0 else f'{_bs["ev"]:.1f}'
                 _ph = (
                     f'<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
-                    f'<span style="background:{_mc2}22;color:{_mc2};border:1px solid {_mc2}55;'
-                    f'border-radius:3px;padding:0 4px;font-size:0.56rem;font-weight:700">{_bs.get("market","")}</span>'
+                    f'<span style="background:{_mc2_pc}28;color:{_mc2_ac};border:1px solid {_mc2_pc}66;'
+                    f'border-radius:3px;padding:0 6px;font-size:0.56rem;font-weight:800">{_mc2_dl}</span>'
                     f'<span style="color:#E0F7F0;font-size:0.65rem;min-width:0;overflow:hidden;'
                     f'text-overflow:ellipsis;white-space:nowrap">{_bs.get("label","")}</span>'
-                    f'<span style="color:#4ade80;font-size:0.58rem;margin-left:auto;flex-shrink:0">'
+                    f'<span style="color:{_mc2_ac};font-size:0.58rem;margin-left:auto;flex-shrink:0">'
                     f'EV {_ev2s}</span>'
                     f'</div>'
                 )
@@ -4911,13 +4965,13 @@ with tab_sim:
 
         # ── Pick badge — always one pick, no EV+ required ────────────────────
         bp  = _oracle_pick(_r)
-        _bc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80"}.get(bp["market"],"#9ca3af")
+        _bpc, _bac, _, _bdl = _pick_clr(bp["market"], bp.get("label",""))
         _ev = bp.get("ev",0) or 0
         _ev_str = f"+{_ev:.1f}" if _ev >= 0 else f"{_ev:.1f}"
-        _ev_c   = "#4ade80" if _ev>=10 else ("#C9A84C" if _ev>=0 else "#ef4444")
+        _ev_c   = "#4ade80" if _ev>=10 else ("#fbbf24" if _ev>=0 else "#ef4444")
         badge = (
-            f'<span style="background:{_bc}22;color:{_bc};border:1px solid {_bc}55;'
-            f'border-radius:3px;padding:1px 6px;font-size:0.62rem;font-weight:800;margin-right:5px">{bp["market"]}</span>'
+            f'<span style="background:{_bpc}28;color:{_bac};border:1px solid {_bpc}66;'
+            f'border-radius:3px;padding:1px 8px;font-size:0.62rem;font-weight:800;margin-right:5px">{_bdl}</span>'
             f'<span style="font-weight:700;font-size:0.8rem;color:#FFE87C">{bp["label"]}</span>'
             f'<span style="color:{_ev_c};font-size:0.68rem;margin-left:6px">EV {_ev_str}</span>'
             f'<span style="color:#6B7E6E;font-size:0.62rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
@@ -5090,7 +5144,8 @@ with tab_parlays:
         parlays.sort(key=lambda x: x["sim"]["best_parlay"]["ev"], reverse=True)
 
         # ── Helpers para armar el parlay de 2 patas de un mismo partido ──────
-        _MKT_C = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
+        # _MKT_C kept for legacy references; new code uses _pick_clr()
+        _MKT_C = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#4ade80","DO":"#a78bfa","COMBO":"#f59e0b"}
         _SG_ICON = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
         _SG_COLOR = {"Soccer":"#4ade80","Basketball":"#f97316","Hockey":"#60a5fa",
                      "Baseball":"#ef4444","Football":"#a78bfa"}
@@ -5227,8 +5282,9 @@ with tab_parlays:
                 _l1   = dp["leg1"]
                 _l2   = dp["leg2"]
                 _ct   = dp.get("combo_type","")
-                _mc1  = _MKT_C.get(_l1["market"],"#60a5fa")
-                _mc2  = _MKT_C.get(_l2["market"],"#C9A84C")
+                _p1c, _p1a, _, _p1l = _pick_clr(_l1["market"], _l1.get("label",""))
+                _p2c, _p2a, _, _p2l = _pick_clr(_l2["market"], _l2.get("label",""))
+                _mc1, _mc2 = _p1a, _p2a  # keep _mc1/_mc2 for compat
                 _sgc  = "#4ade80" if featured else _SG_COLOR.get(_sg,"#4ade80")
                 _sgi  = _SG_ICON.get(_sg,"🎯")
                 _lg   = league_label(_g["league"])
@@ -5263,17 +5319,17 @@ with tab_parlays:
                     f'</div>'
                     f'<div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">'
                     f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="background:{_mc1}22;color:{_mc1};border:1px solid {_mc1}55;'
-                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_l1["market"]}</span>'
+                    f'<span style="background:{_p1c}28;color:{_p1a};border:1px solid {_p1c}66;'
+                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_p1l}</span>'
                     f'<span style="font-size:0.88rem;color:#E0F7F0;font-weight:600">{_l1["label"]}</span>'
-                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_mc1};font-weight:700">{_l1["prob"]:.0f}%</span>'
+                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_p1a};font-weight:700">{_l1["prob"]:.0f}%</span>'
                     f'</div>'
                     f'<div style="font-size:0.62rem;color:#3a4a3e;text-align:center;letter-spacing:3px">✕ COMBO ✕</div>'
                     f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="background:{_mc2}22;color:{_mc2};border:1px solid {_mc2}55;'
-                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_l2["market"]}</span>'
+                    f'<span style="background:{_p2c}28;color:{_p2a};border:1px solid {_p2c}66;'
+                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_p2l}</span>'
                     f'<span style="font-size:0.88rem;color:#E0F7F0;font-weight:600">{_l2["label"]}</span>'
-                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_mc2};font-weight:700">{_l2["prob"]:.0f}%</span>'
+                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_p2a};font-weight:700">{_l2["prob"]:.0f}%</span>'
                     f'</div>'
                     f'</div>'
                     f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
