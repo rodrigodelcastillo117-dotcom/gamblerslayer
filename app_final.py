@@ -524,31 +524,58 @@ hr { border-color: var(--border) !important; }
     max-width: 100% !important;
   }
 
-  /* ── Sidebar: slide-in overlay, never pushes content ── */
+  /* ── Sidebar on mobile: hidden by default, opens as overlay ── */
   [data-testid="stSidebar"] {
-    min-width: 75vw !important;
-    max-width: 85vw !important;
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
+    top: 0 !important; left: 0 !important;
     height: 100dvh !important;
-    z-index: 999 !important;
-    box-shadow: 4px 0 32px rgba(0,0,0,0.7) !important;
+    min-width: 78vw !important;
+    max-width: 88vw !important;
+    z-index: 9999 !important;
+    transform: translateX(-100%) !important;
+    transition: transform 0.25s ease !important;
+    box-shadow: 6px 0 40px rgba(0,0,0,0.8) !important;
     overflow-y: auto !important;
   }
-
-  /* ── Main content: always full width on mobile ── */
-  .stMainBlockContainer, section.main, [data-testid="stAppViewContainer"] > section:last-child {
-    margin-left: 0 !important;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-    width: 100% !important;
-    max-width: 100% !important;
+  [data-testid="stSidebar"][aria-expanded="true"],
+  [data-testid="stSidebar"].sidebar-open {
+    transform: translateX(0) !important;
   }
 
-  /* ── Sidebar toggle button: keep it visible ── */
-  [data-testid="stSidebarCollapsedControl"] {
-    z-index: 1000 !important;
+  /* ── Streamlit's sidebar collapsed control: style as gold hamburger ── */
+  [data-testid="stSidebarCollapsedControl"],
+  [data-testid="collapsedControl"] {
+    position: fixed !important;
+    top: 12px !important;
+    left: 12px !important;
+    z-index: 10000 !important;
+    background: var(--felt3) !important;
+    border: 1.5px solid var(--gold) !important;
+    border-radius: 6px !important;
+    padding: 4px 8px !important;
+    box-shadow: 0 2px 16px rgba(201,168,76,0.4) !important;
+  }
+  [data-testid="stSidebarCollapsedControl"] button,
+  [data-testid="collapsedControl"] button {
+    color: var(--gold) !important;
+    background: transparent !important;
+  }
+  [data-testid="stSidebarCollapsedControl"] svg,
+  [data-testid="collapsedControl"] svg {
+    fill: var(--gold) !important;
+    color: var(--gold) !important;
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  /* ── Main content: full width, small top padding for hamburger btn ── */
+  .stMainBlockContainer, section.main {
+    margin-left: 0 !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+    padding-top: 52px !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
   /* ── TABS: compact, scrollable, no wrap ── */
@@ -741,6 +768,37 @@ hr { border-color: var(--border) !important; }
   border: none !important;
   box-shadow: none !important;
 }
+
+/* ══════════════════════════════════════════════════
+   MOBILE CONTROL PANEL  — replaces sidebar on mobile
+   ══════════════════════════════════════════════════ */
+.mobile-panel-btn {
+  display: none;  /* hidden on desktop */
+}
+
+/* Override expander styling for mobile panel */
+.mobile-oraculo [data-testid="stExpander"] > details > summary {
+  background: linear-gradient(135deg, #0a1a10 0%, #122218 100%) !important;
+  border: 1px solid rgba(201,168,76,0.5) !important;
+  border-radius: 6px !important;
+  color: var(--gold) !important;
+  font-family: 'Cinzel', serif !important;
+  font-size: 0.85rem !important;
+  letter-spacing: 3px !important;
+  padding: 12px 16px !important;
+}
+.mobile-oraculo [data-testid="stExpander"] > details[open] > summary {
+  border-radius: 6px 6px 0 0 !important;
+  border-bottom-color: rgba(201,168,76,0.2) !important;
+}
+.mobile-oraculo [data-testid="stExpander"] > details > div {
+  background: #07120a !important;
+  border: 1px solid rgba(201,168,76,0.25) !important;
+  border-top: none !important;
+  border-radius: 0 0 6px 6px !important;
+  padding: 16px 12px !important;
+}
+
 
 </style>
 """, unsafe_allow_html=True)
@@ -4462,6 +4520,30 @@ st.markdown("""
   </div>
 </div>
 <div class="den-divider"></div>
+""", unsafe_allow_html=True)
+
+# ── MOBILE: JS auto-opens sidebar toggle so user can tap it ─────────────────
+st.markdown("""
+<script>
+(function() {
+  function fixMobileSidebar() {
+    if (window.innerWidth > 768) return;
+    // On mobile, make sure sidebar starts collapsed (not covering content)
+    var sidebar = document.querySelector('[data-testid="stSidebar"]');
+    var toggleBtn = document.querySelector('[data-testid="stSidebarCollapsedControl"] button, [data-testid="collapsedControl"] button');
+    if (sidebar) {
+      var rect = sidebar.getBoundingClientRect();
+      // If sidebar is open and covering content on first load, collapse it
+      if (rect.left >= 0 && rect.width > 50) {
+        var closeBtn = document.querySelector('[data-testid="stSidebar"] button[aria-label*="Close"], [data-testid="stSidebar"] button[kind="header"]');
+        if (closeBtn) closeBtn.click();
+      }
+    }
+  }
+  setTimeout(fixMobileSidebar, 300);
+  setTimeout(fixMobileSidebar, 800);
+})();
+</script>
 """, unsafe_allow_html=True)
 
 if not sel_leagues:
