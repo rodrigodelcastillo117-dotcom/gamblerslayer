@@ -582,6 +582,28 @@ def get_demo_games():
          "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
     ]
 
+def _gsheets_available():
+    """True if Google Sheets secrets are configured."""
+    try:
+        s = st.secrets.get("gsheets", {})
+        return bool(s.get("private_key") and s.get("spreadsheet_id"))
+    except:
+        return False
+
+@st.cache_resource(show_spinner=False)
+def _get_gsheet_client():
+    """Return authenticated gspread client (cached)."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    s = dict(st.secrets["gsheets"])
+    s["private_key"] = s["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(s, scopes=scopes)
+    return gspread.authorize(creds)
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_all_team_profiles():
     """Carga todos los perfiles desde Sheets → dict {team_id: profile}. TTL 1h."""
@@ -4210,28 +4232,6 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
         status_text.markdown(f"✅ Completado: **{written}** equipos guardados")
 
     return written, failed, log
-
-def _gsheets_available():
-    """True if Google Sheets secrets are configured."""
-    try:
-        s = st.secrets.get("gsheets", {})
-        return bool(s.get("private_key") and s.get("spreadsheet_id"))
-    except:
-        return False
-
-@st.cache_resource(show_spinner=False)
-def _get_gsheet_client():
-    """Return authenticated gspread client (cached)."""
-    import gspread
-    from google.oauth2.service_account import Credentials
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    s = dict(st.secrets["gsheets"])
-    s["private_key"] = s["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(s, scopes=scopes)
-    return gspread.authorize(creds)
 
 def _safe_apodo(apodo):
     return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
