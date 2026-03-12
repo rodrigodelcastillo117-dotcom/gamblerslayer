@@ -7190,19 +7190,13 @@ with tab_reto:
                   font: {{ size: 10 }},
                   callback: function(v) {{
                     if (v >= 1000000) return "$" + (v/1000000).toFixed(1) + "M";
-                    if (v >= 1000) return "$" + (v/1000).toFixed(0) + "k";
+                    if (v >= 1000)    return "$" + (v/1000).toFixed(0) + "k";
                     return "$" + v.toLocaleString("es-MX");
-                  }}
+                  }},
+                  maxTicksLimit: 8
                 }},
                 grid: {{ color: "rgba(255,255,255,0.05)" }},
-                beginAtZero: true,
-                min: (function() {{
-                  const cur = Math.min(...values);
-                  if (cur < 10000)   return 0;
-                  if (cur < 100000)  return 10000;
-                  if (cur < 1000000) return 100000;
-                  return 1000000;
-                }})(),
+                min: 0,
                 max: (function() {{
                   const cur = Math.max(...values);
                   if (cur <= 10000)   return 10000;
@@ -7210,16 +7204,7 @@ with tab_reto:
                   if (cur <= 1000000) return 1000000;
                   return d.meta * 1.05;
                 }})(),
-                afterBuildTicks: function(axis) {{
-                  // Clean ticks to round numbers only
-                  const mn = axis.min, mx = axis.max, range = mx - mn;
-                  const step = range <= 10000   ? 1000  :
-                               range <= 100000  ? 10000 :
-                               range <= 1000000 ? 100000 : 1000000;
-                  const ticks = [];
-                  for (let t = mn; t <= mx + step*0.01; t += step) ticks.push({{value: Math.round(t)}});
-                  axis.ticks = ticks.map(t => ({{value: t.value}}));
-                }}
+                suggestedMin: 0
               }}
             }}
           }}
