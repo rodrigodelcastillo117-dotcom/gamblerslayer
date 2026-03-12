@@ -5167,7 +5167,21 @@ with tab_sim:
     _sports_p = [s for s in _SPORTS_ORDER_P if s in _tree_p]
     _total_p  = sum(len(gs) for sp in _sports_p for dmap in _tree_p[sp].values() for gs in dmap.values())
 
-    st.markdown(f'<div class="section-heading">📅 PRÓXIMOS PARTIDOS</div>', unsafe_allow_html=True)
+    # ── Header row: título + botón RE-SIMULAR alineados ─────────────────────
+    _hdr_col1, _hdr_col2 = st.columns([3, 1])
+    with _hdr_col1:
+        st.markdown(f'<div class="section-heading">📅 PRÓXIMOS PARTIDOS</div>', unsafe_allow_html=True)
+    with _hdr_col2:
+        if st.button(f"🔄 {n_sims:,}×", use_container_width=True, key="btn_resim_picks",
+                     help="Re-simular todos los partidos"):
+            t0 = time.time()
+            sr2 = run_all_simulations(games, n=n_sims)
+            elapsed = time.time() - t0
+            st.session_state["sim_results"] = sr2
+            st.session_state["last_sim_demo"] = is_demo
+            n_pos = len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
+            st.toast(f"✓ {len(games)*n_sims:,} sims en {elapsed:.1f}s · {n_pos} value bets", icon="🔮")
+            st.rerun()
 
     if not _sports_p:
         st.markdown('<div class="warn-banner">No hay partidos próximos. Pulsa ▶ ANALIZAR para cargar datos.</div>', unsafe_allow_html=True)
@@ -5178,9 +5192,7 @@ with tab_sim:
             unsafe_allow_html=True
         )
         # ── Sport selector tiles — clickable ─────────────────────────────────
-        # Store selected sport in session_state; clicking a tile toggles it
         _sel_sp = st.session_state.get("_picks_sel_sport", None)
-        # If selected sport no longer has games, reset
         if _sel_sp and _sel_sp not in _sports_p:
             _sel_sp = None
             st.session_state["_picks_sel_sport"] = None
@@ -5213,18 +5225,7 @@ with tab_sim:
                 ):
                     st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
                     st.rerun()
-    # ── RE-SIMULAR button (compact, inside games section) ─────────────────
-    _col_rs, _ = st.columns([1, 3])
-    with _col_rs:
-        if st.button(f"🔄 RE-SIMULAR ({n_sims:,}×)", use_container_width=True, key="btn_resim_picks"):
-            t0 = time.time()
-            sr2 = run_all_simulations(games, n=n_sims)
-            elapsed = time.time() - t0
-            st.session_state["sim_results"] = sr2
-            st.session_state["last_sim_demo"] = is_demo
-            n_pos = len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
-            st.toast(f"✓ {len(games)*n_sims:,} sims en {elapsed:.1f}s · {n_pos} value bets", icon="🔮")
-            st.rerun()
+
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
 
@@ -7062,13 +7063,19 @@ with tab_reto:
                 grid: {{ color: "rgba(255,255,255,0.03)" }}
               }},
               y: {{
+                type: "logarithmic",
                 ticks: {{
                   color: "#6B7E6E",
                   font: {{ size: 10 }},
-                  callback: v => "$" + v.toLocaleString("es-MX")
+                  callback: function(v) {{
+                    if (v >= 1000000) return "$" + (v/1000000).toFixed(1) + "M";
+                    if (v >= 1000) return "$" + (v/1000).toFixed(0) + "k";
+                    return "$" + v.toLocaleString("es-MX");
+                  }}
                 }},
                 grid: {{ color: "rgba(255,255,255,0.05)" }},
-                beginAtZero: false
+                min: Math.min(...values) * 0.90,
+                max: d.meta * 1.05
               }}
             }}
           }}
