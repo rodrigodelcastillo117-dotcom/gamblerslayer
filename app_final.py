@@ -2789,11 +2789,21 @@ def run_monte_carlo(game, n=10_000):
     _is_foot  = LEAGUES.get(game.get("league",""),{}).get("group","") in ("Football",)
     _nonsoccer_no_line = ou_val == 0.0 and _lg_avg > 0 and (_is_bball or _is_base or _is_hock or _is_foot)
     if _nonsoccer_no_line:
-        # Use lam_h + lam_a (model's own expected total) as the implicit line.
-        # This guarantees the distribution is centered on the line → true 50/50 baseline.
-        # _lg_avg as fallback if get_lambda returned None (shouldn't happen but safe).
+        # Use league avg as implicit line (not lam_h+lam_a which creates 50/50 bias)
         _model_total = (lam_h + lam_a) if (lam_h and lam_a) else _lg_avg
-        ou_val = max(_model_total, _lg_avg * 0.75)  # sanity floor: never below 75% of league avg
+        ou_val = max(_model_total, _lg_avg * 0.75)
+
+    # ── Lambda sanity check: if lam_h+lam_a is far from ou_val, re-center ──────
+    # This happens when get_lambda uses scoring form (pts/team ~50-120) but
+    # ou_val comes from ESPN line (221.5). Re-anchor lambdas to ou_val split.
+    if use_goals and ou_val > 0 and not is_soccer and lam_h is not None and lam_a is not None:
+        _lam_total = lam_h + lam_a
+        # If model total is less than 55% of ESPN line → model is badly off-scale
+        # Re-center: keep the home/away ratio but anchor total to ou_val
+        if _lam_total > 0 and (_lam_total < ou_val * 0.55 or _lam_total > ou_val * 1.45):
+            _ratio = lam_h / _lam_total  # preserve home/away split ratio
+            lam_h  = max(0.1, ou_val * _ratio)
+            lam_a  = max(0.1, ou_val * (1.0 - _ratio))
     # ── Signal C: Fatigue / Rest Disadvantage ────────────────────────────────
     # NBA/NHL/MLB: back-to-back = ≤1 rest day (very common, well-studied)
     #   Sources: NBA -3.8% (Huyghe et al.), NHL -3.2%, MLB -1.5%, Soccer -2.0%
@@ -6621,7 +6631,7 @@ with tab_reto:
 
         st.components.v1.html(f'''
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-        <div style="background:#060C08;padding:16px;border-radius:8px;
+        <div style="background:#060C08;padding:20px 20px 16px 20px;border-radius:8px;
             border:1px solid rgba(201,168,76,0.2);position:relative">
           <canvas id="retoChart" height="260"></canvas>
         </div>
@@ -6762,6 +6772,9 @@ with tab_reto:
                   }}
                 }}
               }}
+            }},
+            layout: {{
+              padding: {{ top: 16, right: 24, bottom: 8, left: 8 }}
             }},
             scales: {{
               x: {{
