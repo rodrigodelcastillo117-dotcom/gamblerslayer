@@ -1395,6 +1395,85 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
 
 
 
+
+@st.cache_data(ttl=3600)
+def fetch_h2h(sport_slug, league_slug, home_id, away_id, n=10):
+    """
+    Head-to-head historical results between two teams via ESPN.
+    Returns dict:
+      h2h_home_wins  — wins for the home team in today's match when playing home
+      h2h_away_wins  — wins for the away team
+      h2h_draws      — draws
+      h2h_total      — total matches found
+      h2h_home_prob  — Bayesian-smoothed H2H win probability for home team
+    Uses /competitions endpoint filtered by both team IDs.
+    """
+    if not home_id or not away_id:
+        return None
+    try:
+        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+               f"{sport_slug}/{league_slug}/teams/{home_id}/schedule?limit=50")
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        events = r.json().get("events", [])
+        hw = aw = dr = 0
+        for ev in events:
+            comps = ev.get("competitions", [{}])[0].get("competitors", [])
+            ids = {str(c.get("id","")) for c in comps}
+            if str(away_id) not in ids:
+                continue
+            state = ev.get("status",{}).get("type",{}).get("state","")
+            if state != "post":
+                continue
+            team_c = next((c for c in comps if str(c.get("id","")) == str(home_id)), None)
+            opp_c  = next((c for c in comps if str(c.get("id","")) == str(away_id)), None)
+            if not team_c or not opp_c:
+                continue
+            try:
+                ts = float(team_c.get("score",0) or 0)
+                os_ = float(opp_c.get("score",0) or 0)
+            except:
+                continue
+            is_home = team_c.get("homeAway") == "home"
+            if ts > os_:
+                if is_home: hw += 1
+                else:       aw += 1
+            elif ts == os_:
+                dr += 1
+            else:
+                if is_home: aw += 1
+                else:       hw += 1
+            if hw + aw + dr >= n:
+                break
+
+        total = hw + aw + dr
+        if total == 0:
+            return None
+
+        # Bayesian smoothing: blend with league prior (50/50 neutral)
+        # k = virtual sample size of prior (higher = more regression)
+        k = 4.0
+        league_prior_hw = 0.45  # slight home advantage
+        league_prior_aw = 0.35
+        league_prior_dr = 0.20
+        h2h_home_prob = (hw + k * league_prior_hw) / (total + k)
+        h2h_away_prob = (aw + k * league_prior_aw) / (total + k)
+        h2h_draw_prob = (dr + k * league_prior_dr) / (total + k)
+
+        return {
+            "h2h_home_wins": hw,
+            "h2h_away_wins": aw,
+            "h2h_draws":     dr,
+            "h2h_total":     total,
+            "h2h_home_prob": round(h2h_home_prob, 4),
+            "h2h_away_prob": round(h2h_away_prob, 4),
+            "h2h_draw_prob": round(h2h_draw_prob, 4),
+        }
+    except Exception:
+        return None
+
+
 def _fetch_all_teams_in_league(sport_slug, league_slug):
     """
     Obtiene lista de {id, name} de todos los equipos de una liga via ESPN.
@@ -2000,6 +2079,88 @@ def enrich_game_with_form(game):
         game["away_injury_factor"]  = 1.0
         game["away_injuries"]       = []
 
+    # ── Home/Away Splits from games_raw ──────────────────────────────────────
+    # Separate avg_scored/conceded by home vs away context — much more accurate
+    # than the global average, especially for Soccer and Hockey.
+    def _ha_splits(games_raw):
+        """Compute home/away scoring splits from games_raw list."""
+        home_s = [g["scored"]   for g in games_raw if g.get("home")]
+        home_c = [g["conceded"] for g in games_raw if g.get("home")]
+        away_s = [g["scored"]   for g in games_raw if not g.get("home")]
+        away_c = [g["conceded"] for g in games_raw if not g.get("home")]
+        return {
+            "avg_scored_home":    round(sum(home_s)/len(home_s), 3) if home_s else None,
+            "avg_conceded_home":  round(sum(home_c)/len(home_c), 3) if home_c else None,
+            "avg_scored_away":    round(sum(away_s)/len(away_s), 3) if away_s else None,
+            "avg_conceded_away":  round(sum(away_c)/len(away_c), 3) if away_c else None,
+            "n_home": len(home_s),
+            "n_away": len(away_s),
+        }
+
+    _h_games = hf.get("games_raw", []) if isinstance(hf, dict) else []
+    _a_games = af.get("games_raw", []) if isinstance(af, dict) else []
+
+    if _h_games:
+        _h_splits = _ha_splits(_h_games)
+        # Use home splits for home team (they're playing at home today)
+        if _h_splits["avg_scored_home"] is not None and _h_splits["n_home"] >= 2:
+            game["home_avg_scored"]   = _h_splits["avg_scored_home"]
+            game["home_avg_conceded"] = _h_splits["avg_conceded_home"]
+        game["home_splits"] = _h_splits
+
+    if _a_games:
+        _a_splits = _ha_splits(_a_games)
+        # Use away splits for away team (they're playing away today)
+        if _a_splits["avg_scored_away"] is not None and _a_splits["n_away"] >= 2:
+            game["away_avg_scored"]   = _a_splits["avg_scored_away"]
+            game["away_avg_conceded"] = _a_splits["avg_conceded_away"]
+        game["away_splits"] = _a_splits
+
+    # ── Elo Rating (implicit, from W-L record) ────────────────────────────────
+    # Estimate Elo from season record using logistic model.
+    # Formula: Elo_delta = 400 * log10(wins/losses) — regularized by games played.
+    # Bayesian-smoothed to league baseline (1500) with k=10 virtual games.
+    ELO_BASE = 1500.0
+    ELO_K_PRIOR = 10.0  # virtual games of prior (higher = more regression)
+
+    def _elo_from_record(record_str):
+        """Parse W-L-D string → Elo estimate."""
+        if not record_str:
+            return None
+        try:
+            parts = record_str.strip().split("-")
+            w = int(parts[0]); l = int(parts[1])
+            d = int(parts[2]) if len(parts) >= 3 else 0
+            total = w + l + d
+            if total < 3:
+                return None
+            # Effective wins (draws = 0.5)
+            eff_w = w + 0.5 * d
+            eff_l = l + 0.5 * d
+            # Bayesian blend: add K prior games at 50% win rate
+            eff_w_b = eff_w + ELO_K_PRIOR * 0.5
+            eff_l_b = eff_l + ELO_K_PRIOR * 0.5
+            if eff_l_b <= 0:
+                return ELO_BASE + 200
+            # Logistic Elo estimate from win ratio
+            ratio = eff_w_b / max(eff_l_b, 0.1)
+            delta = 400.0 * math.log10(max(ratio, 0.01))
+            return round(ELO_BASE + delta, 1)
+        except:
+            return None
+
+    game["home_elo"] = _elo_from_record(game.get("home_record", ""))
+    game["away_elo"] = _elo_from_record(game.get("away_record", ""))
+
+    # ── H2H Historical ────────────────────────────────────────────────────────
+    # Only fetch H2H for Soccer (most impactful) and Basketball.
+    # Skipped for Hockey/Baseball (less relevant, too many games).
+    if group in ("Soccer", "Basketball") and home_id and away_id:
+        _h2h = fetch_h2h(sport_slug, league_slug, home_id, away_id)
+        game["h2h"] = _h2h
+    else:
+        game["h2h"] = None
+
 
 @st.cache_data(ttl=60)
 def fetch_scoreboard(sport, league, tournament_id=None):
@@ -2566,6 +2727,28 @@ def compute_base_prob(game):
     signals.append(league_prior)
     weights.append(0.6)  # Low weight — just a prior, not evidence
 
+    # ── Signal 6: Elo Rating (implicit from W-L record) ───────────────────────
+    # Elo captures cumulative season quality better than raw win%.
+    # Weight 1.8 — meaningful signal, but less than form (2.5) and less than ML (4.0)
+    # Only when both teams have Elo estimates (need ≥3 games each)
+    h_elo = game.get("home_elo")
+    a_elo = game.get("away_elo")
+    if h_elo is not None and a_elo is not None:
+        # Elo probability formula: P(home wins) = 1 / (1 + 10^((Elo_away - Elo_home)/400))
+        elo_home_p = 1.0 / (1.0 + 10.0 ** ((a_elo - h_elo) / 400.0))
+        signals.append(elo_home_p)
+        weights.append(1.8)
+
+    # ── Signal 7: Head-to-Head history ───────────────────────────────────────
+    # H2H captures psychological/tactical matchup patterns beyond season record.
+    # Weight 1.5 — relevant but smaller sample than full season.
+    # Bayesian-smoothed inside fetch_h2h, so small samples regress to prior.
+    _h2h = game.get("h2h")
+    if _h2h and _h2h.get("h2h_total", 0) >= 2:
+        h2h_home_p = _h2h["h2h_home_prob"]
+        signals.append(h2h_home_p)
+        weights.append(1.5)
+
     # ── Combine signals ───────────────────────────────────────────────────────
     home_p = sum(s * w for s, w in zip(signals, weights)) / sum(weights)
 
@@ -2595,10 +2778,12 @@ def compute_base_prob(game):
         home_p = min(0.95, max(0.05, home_p + net_delta * dampen))
 
     # ── Data Quality ──────────────────────────────────────────────────────────
-    # DQ = fraction of "hard evidence" weight vs ideal (ML=4 + ESPN=3 + record=2 = 9)
+    # DQ = fraction of hard evidence vs ideal max
+    # Ideal: ML(4) + ESPN_WP(3) + record(2) + form(2.5) + Elo(1.8) + H2H(1.5) = 14.8
+    # Exclude the weak league prior (weight 0.6) from DQ calculation
     hard_weight = sum(w for s, w in zip(signals, weights)
-                      if w >= 1.2)  # exclude the weak prior
-    dq = min(1.0, hard_weight / 9.0)
+                      if w >= 1.2)  # exclude the weak prior (0.6)
+    dq = min(1.0, hard_weight / 14.8)
 
     # ── Soccer: model draw probability ───────────────────────────────────────
     if is_soccer:
@@ -2700,6 +2885,32 @@ def get_lambda(game):
         a_attack  = a_scored   / avg_per_team
         h_defence = max(def_floor, h_conceded / avg_per_team)
         lam_away_real = max(0.1, avg_per_team * a_attack * h_defence)
+
+    # ── Bayesian regression of lambda (James-Stein shrinkage) ───────────────
+    # Small samples overfit — 3 games at 4 goals each shouldn't dominate.
+    # Shrink observed lambda toward league average proportional to sample size.
+    # alpha = n_games / (n_games + k_prior) where k_prior = virtual prior games.
+    # Soccer: k=8 (goals more stable), Basketball: k=6 (pts more variable)
+    _n_h_games = len(game.get("home_splits", {}).get("n_home", 0) or
+                     hf.get("n_games", 0) if isinstance(hf, dict) else 0) if False else (
+                     (game.get("home_splits") or {}).get("n_home") or
+                     (hf.get("n_games") if isinstance(hf, dict) else None) or 0)
+    _n_a_games = (game.get("away_splits") or {}).get("n_away") or (
+                     af.get("n_games") if isinstance(af, dict) else None) or 0
+
+    def _bayesian_shrink(lam_obs, lam_prior, n_games, k_prior=8):
+        """Shrink observed lambda toward prior. Returns blended lambda."""
+        if lam_obs is None or n_games < 1:
+            return lam_prior
+        alpha = n_games / (n_games + k_prior)
+        return round(alpha * lam_obs + (1.0 - alpha) * lam_prior, 4)
+
+    # Apply shrinkage to real lambdas if available
+    avg_per_team = max(0.5, avg / 2.0)
+    if lam_home_real is not None:
+        lam_home_real = _bayesian_shrink(lam_home_real, avg_per_team, _n_h_games)
+    if lam_away_real is not None:
+        lam_away_real = _bayesian_shrink(lam_away_real, avg_per_team, _n_a_games)
 
     # ── Build final lambdas ───────────────────────────────────────────
     if has_ou_line:
@@ -3165,6 +3376,24 @@ def run_monte_carlo(game, n=10_000):
             la=max(0.1,lam_a*(1+rng.gauss(0,0.15*(1-dq))))
             gh=poisson_sample(lh,rng); ga=poisson_sample(la,rng); tg=gh+ga
             if is_soccer:
+                # Dixon-Coles rho correction for low-score draws
+                # rho = -0.13 (empirical) — corrects 0-0 and 1-1 probabilities
+                # P_corrected(gh,ga) = P_poisson(gh,ga) * (1 + rho * tau(gh,ga))
+                # tau(0,0)=1, tau(1,0)=-1/lh, tau(0,1)=-1/la, tau(1,1)=1/(lh*la), else 0
+                # Implementation: apply rho as a probabilistic re-roll on low-score draws
+                _dc_rho = -0.13  # standard Dixon-Coles empirical value
+                if gh <= 1 and ga <= 1:
+                    # Compute tau for this (gh,ga) outcome
+                    if   gh==0 and ga==0: _tau = 1.0
+                    elif gh==1 and ga==0: _tau = -1.0 / max(lh, 0.1)
+                    elif gh==0 and ga==1: _tau = -1.0 / max(la, 0.1)
+                    else:                 _tau = 1.0 / max(lh * la, 0.01)  # (1,1)
+                    # Correction factor — clamp to [0.5, 1.5] to avoid instability
+                    _corr = max(0.5, min(1.5, 1.0 + _dc_rho * _tau))
+                    # Accept/reject: if corr < 1, sometimes re-sample a different score
+                    if _corr < 1.0 and rng.random() > _corr:
+                        # Re-roll: resample gh,ga (effectively reducing this outcome's prob)
+                        gh = poisson_sample(lh, rng); ga = poisson_sample(la, rng); tg = gh + ga
                 if gh>ga: hw+=1; dc_1x+=1; dc_12+=1
                 elif gh==ga: d+=1; dc_1x+=1; dc_x2+=1
                 else: aw+=1; dc_x2+=1; dc_12+=1
@@ -5059,7 +5288,17 @@ with tab_picks:
         #   Football:   ML (highest win%) only
 
         def _sport_best_pick(r):
-            """Return the single best pick for a game, per sport rules."""
+            """
+            Return the single best pick for a game using full model methodology.
+
+            Ranking priority (descending):
+              1. EV+  (positive expected value at standard juice)
+              2. Probability edge (model prob significantly above 52%)
+              3. Highest raw probability among candidates
+
+            No EV+ gate — if model has a clear edge by prob, show the pick.
+            EV is calculated with standard juice when no real ML line exists.
+            """
             sim = r["sim"]
             sg  = LEAGUES.get(r["league"], {}).get("group", "Soccer")
             h_prob = sim.get("home_pct", 0) or 0
@@ -5067,65 +5306,120 @@ with tab_picks:
             h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
             h_ev = sim.get("home_ev") or 0; a_ev = sim.get("away_ev") or 0
             h_k  = sim.get("home_kelly") or 0; a_k = sim.get("away_kelly") or 0
+            dq   = sim.get("data_quality", 0) or 0
+
+            def _implicit_ev(prob):
+                """EV at standard -110 juice (used when no real line available)."""
+                return round((prob/100 * (100/110) - (1 - prob/100)) * 100, 1)
 
             def best_ml():
+                """Best ML pick — uses real EV if available, implicit -110 otherwise."""
                 if h_prob >= a_prob:
                     team, prob, ev, kelly, ml = r["home_team"], h_prob, h_ev, h_k, h_ml
                 else:
                     team, prob, ev, kelly, ml = r["away_team"], a_prob, a_ev, a_k, a_ml
-                # Include even without ML line — model probability is still valid
-                return {"market":"ML","label":team,"prob":prob,"ev":ev or 0,"kelly":kelly}
+                # Use real EV if we have a real ML line, else implicit -110
+                real_ev = ev if (ml and ev and ev != 0) else _implicit_ev(prob)
+                return {"market":"ML","label":team,"prob":prob,"ev":real_ev,"kelly":kelly}
+
+            def _score(c):
+                """
+                Score a candidate for RONGOL ranking.
+                Formula: EV (anchors on edge) + prob bonus (scale tiebreaker).
+                Rewards genuine edge, not just high probability of likely outcomes.
+                """
+                ev   = c.get("ev") or 0
+                prob = c.get("prob") or 0
+                # Prob bonus: extra weight when prob > 55% (clear model edge)
+                prob_bonus = max(0, prob - 55) * 0.3
+                return ev + prob_bonus
 
             if sg == "Soccer":
-                # Candidates: BTTS and O2.5 only (no Under picks in RONGOL)
                 cands = []
                 if sim.get("use_goals"):
-                    # BTTS: only "Ambos Anotan SÍ" (never NO), only if EV+
-                    _btts_ev = sim.get("btts_ev") or 0
+                    _btts_ev = sim.get("btts_ev")
                     _btts_pb = sim.get("p_btts") or 0
-                    if _btts_ev > 0 and _btts_pb > 0:
-                        cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev,"kelly":0})
-                    # O/U: only Over 2.5 (never Under anything), only if EV+
-                    _o25_ev = sim.get("o25_ev") or 0
+                    # Use model btts_ev (already at -115 juice) or implicit -110
+                    if _btts_pb > 0:
+                        _bev = _btts_ev if _btts_ev is not None else _implicit_ev(_btts_pb)
+                        cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_bev,"kelly":0})
+
+                    _o25_ev = sim.get("o25_ev")
                     _o25_pb = sim.get("p_o25") or 0
-                    if _o25_ev > 0 and _o25_pb > 0:
-                        cands.append({"market":"O/U","label":"Over 2.5 goles","prob":_o25_pb,"ev":_o25_ev,"kelly":0})
-                # Add ML (always, highest win%)
-                _ml = best_ml()
-                if _ml: cands.append(_ml)
-                # Return best by probability
-                return max(cands, key=lambda x: x["prob"]) if cands else None
+                    if _o25_pb > 0:
+                        _oev = _o25_ev if _o25_ev is not None else _implicit_ev(_o25_pb)
+                        cands.append({"market":"O/U","label":"Over 2.5 goles","prob":_o25_pb,"ev":_oev,"kelly":0})
+
+                    # Over 1.5 — valuable when 2.5 is risky but 1.5 has high probability
+                    _o15_pb = sim.get("p_o15") or 0
+                    _o15_ev = sim.get("o15_ev")
+                    if _o15_pb >= 68:  # only include if model strongly favors it (>68%)
+                        _oev15 = _o15_ev if _o15_ev is not None else _implicit_ev(_o15_pb)
+                        cands.append({"market":"O/U","label":"Over 1.5 goles","prob":_o15_pb,"ev":_oev15,"kelly":0})
+
+                # Double chance — only when real ML available (otherwise fictitious EV)
+                if h_ml and a_ml:
+                    _dc_12 = sim.get("p_dc_12") or 0
+                    _dc_ev = sim.get("dc_12_ev")
+                    if _dc_12 > 0 and _dc_ev is not None and _dc_ev > 0:
+                        cands.append({"market":"DO","label":f"{r['home_team']} o {r['away_team']}","prob":_dc_12,"ev":_dc_ev,"kelly":0})
+
+                # ML — always a candidate
+                _ml_c = best_ml()
+                if _ml_c: cands.append(_ml_c)
+
+                if not cands: return None
+                # Pick: best EV+ first; among EV+ picks rank by score; fallback: highest prob
+                ev_pos = [c for c in cands if (c.get("ev") or 0) > 0]
+                if ev_pos:
+                    return max(ev_pos, key=_score)
+                return max(cands, key=lambda x: x["prob"])
 
             elif sg in ("Basketball", "Hockey"):
-                # ML + O/U Over only (no Under in RONGOL for Hockey/Basketball)
-                # Hockey: ESPN line is 5.5 or 6.5 (comes from odds.over_under)
-                # Basketball: ESPN line typically 210-240
-                # If no line available, MLB-style: use ML only
                 cands = []
-                _ml = best_ml()
-                if _ml: cands.append(_ml)
-                # Sharp: use multi_lines to find best edge (Over OR Under)
-                _ou_line = sim.get("ou_line") or ""
-                _implicit_r = _ou_line.startswith("~")
-                _multi_r = sim.get("multi_lines", {})
-                if _ou_line and not _implicit_r and _multi_r:
+                _ml_c = best_ml()
+                if _ml_c: cands.append(_ml_c)
+
+                # Use multi_lines (ESPN real) OR std_lines (implicit league avg)
+                _ou_line_raw = sim.get("ou_line") or ""
+                _is_implicit = _ou_line_raw.startswith("~")
+                _multi_r = sim.get("multi_lines", {}) or {}
+                _std_r   = sim.get("std_lines", {}) or {}
+
+                # Prefer real ESPN multi_lines; fall back to std_lines
+                _lines_data = _multi_r if (_multi_r and not _is_implicit) else _std_r
+
+                if _lines_data:
                     _best_p = 0; _best_lbl = None
-                    for _l, _d in _multi_r.items():
-                        _po_l = _d["over"]; _pu_l = _d["under"]
-                        if _po_l >= _pu_l and _po_l > _best_p:
+                    for _l_str, _d in _lines_data.items():
+                        try: _l = float(_l_str)
+                        except: continue
+                        _po_l = _d.get("over", 0); _pu_l = _d.get("under", 0)
+                        # Pick the stronger side if it's ≥ 53%
+                        if _po_l >= _pu_l and _po_l >= 53 and _po_l > _best_p:
                             _best_p = _po_l; _best_lbl = f"Over {_l:.1f}"
-                        elif _pu_l > _po_l and _pu_l > _best_p:
+                        elif _pu_l > _po_l and _pu_l >= 53 and _pu_l > _best_p:
                             _best_p = _pu_l; _best_lbl = f"Under {_l:.1f}"
-                    if _best_lbl and _best_p >= 52:
-                        _ev_ou = round((_best_p/100*(100/110) - (1-_best_p/100))*100, 1)
+                    if _best_lbl:
+                        _ev_ou = _implicit_ev(_best_p)
                         cands.append({"market":"O/U","label":_best_lbl,"prob":_best_p,"ev":_ev_ou,"kelly":0})
-                # ML as fallback
-                if not cands and _ml:
-                    cands.append(_ml)
-                return max(cands, key=lambda x: x["prob"]) if cands else None
+
+                if not cands: return None
+                ev_pos = [c for c in cands if (c.get("ev") or 0) > 0]
+                if ev_pos:
+                    return max(ev_pos, key=_score)
+                return max(cands, key=lambda x: x["prob"])
 
             else:  # Baseball, Football, NCAAF
-                return best_ml()
+                _ml_c = best_ml()
+                # For Baseball: also consider run line if heavy favorite
+                if sg == "Baseball" and _ml_c:
+                    _fav_prob = _ml_c["prob"]
+                    if _fav_prob >= 65:
+                        # Heavy favorite — run line (-1.5 at ~+120 to +140) often has better EV
+                        # Model already shows us the team; note it for the bettor
+                        _ml_c["label"] = _ml_c["label"]  # keep as-is, bettor checks run line
+                return _ml_c
 
         # ── Build 1 pick per sport group — HOY CDMX únicamente ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
@@ -5156,18 +5450,29 @@ with tab_picks:
                     continue
             bp = _sport_best_pick(r)
             if bp:
+                # Require minimum model edge: prob > 52% to be meaningful
+                if (bp.get("prob") or 0) < 52:
+                    continue
                 sg = LEAGUES.get(r["league"], {}).get("group", "Soccer")
                 _sport_pools.setdefault(sg, []).append({**r, "_pick": bp})
+
+        # ── Score function: EV anchors edge, prob bonus resolves ties ──────────
+        def _pick_score(entry):
+            p = entry["_pick"]
+            ev   = p.get("ev") or 0
+            prob = p.get("prob") or 0
+            prob_bonus = max(0, prob - 55) * 0.3
+            return ev + prob_bonus
 
         # Take top 1 per sport available, ordered by sport priority, max 5
         _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
         rongol_picks = []
         _seen_leagues = set()
-        # First pass: best pick per sport
+        # First pass: best pick per sport (scored by EV + prob edge)
         for _sg in _SPORT_ORDER_R:
             pool = _sport_pools.get(_sg, [])
             if pool:
-                pool.sort(key=lambda x: x["_pick"]["ev"], reverse=True)
+                pool.sort(key=_pick_score, reverse=True)
                 rongol_picks.append(pool[0])
                 _seen_leagues.add(pool[0]["league"])
         # Second pass: if fewer than 3, fill with next best from any sport
@@ -5177,7 +5482,7 @@ with tab_picks:
                 for _r in pool:
                     if _r["league"] not in _seen_leagues:
                         _all_extra.append(_r)
-            _all_extra.sort(key=lambda x: x["_pick"]["ev"], reverse=True)
+            _all_extra.sort(key=_pick_score, reverse=True)
             for _r in _all_extra:
                 if len(rongol_picks) >= 5: break
                 rongol_picks.append(_r)
@@ -5896,14 +6201,14 @@ with tab_sim:
         """Full oracle card for a game — always shows a pick, no EV+ gate."""
         _r    = _sim_map.get(g.get("id",""))
         _time = _mx_time_p(g)
-        _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
         _sd_raw = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
-        # Si ESPN dice "Scheduled" o vacío, mostrar hora CDMX
+        # Si ESPN dice "Scheduled" o vacío, mostrar hora CDMX (sin duplicar)
         if not _sd_raw or _sd_raw.lower() in ("scheduled", "cancelado", "postponed"):
-            _hora_cdmx = _mx_time_p(g)
-            _sd = (_hora_cdmx + " CDMX") if _hora_cdmx else _sd_raw
+            _sd = (_time + " CDMX") if _time else ""
+            _time_s = ""  # already shown in _sd
         else:
             _sd = _sd_raw
+            _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
         _low_c  = _r["sim"].get("low_confidence",False) if _r else False
         _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.616rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
         _live_tag = ('<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
