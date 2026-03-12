@@ -770,6 +770,50 @@ LEAGUE_AVG_GOALS = {
     "Bundesliga":3.24,"Serie A":2.72,"Ligue 1":2.61,
     "Champions League":3.14,"Europa League":2.89,"Conference League":2.71,"CONCACAF Champions Cup":2.85,
 }
+
+# ── MLB Ballpark Factors ────────────────────────────────────────────────────
+# Source: Statcast/BaseballSavant park factors (5-year avg, normalized to 1.0)
+# Values above 1.0 → hitter-friendly (more runs), below 1.0 → pitcher-friendly
+MLB_BALLPARK_FACTOR = {
+    "coors":        1.30,  # Coors Field, Colorado (altitude 5280 ft — ball flies)
+    "great american": 1.14, # Great American Ball Park, Cincinnati
+    "yankee":       1.08,  # Yankee Stadium (short porch RF)
+    "fenway":       1.06,  # Fenway Park, Boston (Green Monster)
+    "wrigley":      1.05,  # Wrigley Field, Chicago Cubs
+    "oracle":       0.92,  # Oracle Park, San Francisco (marine layer, ball dies)
+    "petco":        0.92,  # Petco Park, San Diego (sea level, cool air)
+    "dodger":       0.95,  # Dodger Stadium
+    "tropicana":    0.93,  # Tropicana Field (dome, dead air)
+    "t-mobile":     0.94,  # T-Mobile Park, Seattle (rain/cool)
+    "busch":        0.97,  # Busch Stadium, St. Louis
+}
+
+def get_mlb_ballpark_factor(venue: str) -> float:
+    """Return run-scoring multiplier for MLB venue. Default 1.0 (neutral)."""
+    if not venue:
+        return 1.0
+    v = venue.lower()
+    for key, factor in MLB_BALLPARK_FACTOR.items():
+        if key in v:
+            return factor
+    return 1.0
+
+# ── Soccer: Standard lines by league ───────────────────────────────────────
+# O/U 90-min ONLY (regulation + stoppage time). No extra time counts.
+# High-scoring leagues use higher default lines.
+SOCCER_STD_LINE = {
+    "Bundesliga":       3.0,   # avg 3.24 → line typically opens at 3.0 or 3.5
+    "Premier League":   2.5,
+    "La Liga":          2.5,
+    "Serie A":          2.5,
+    "Ligue 1":          2.5,
+    "Champions League": 2.5,
+    "Europa League":    2.5,
+    "Conference League":2.5,
+    "MLS":              2.5,
+    "Liga MX":          2.5,
+    "CONCACAF Champions Cup": 2.5,
+}
 _TP_TAB       = "team_profiles"
 _TP_MAX_GAMES = 10
 _TP_HEADERS   = [
@@ -2402,20 +2446,21 @@ def get_lambda(game):
 
     # ── Build final lambdas ───────────────────────────────────────────
     if has_ou_line:
-        # ESPN line → use it for total, split by home_share
+        # Sharp model: ESPN line contains public-bias inflation (+0.5-0.7 pts).
+        # Give scoring trend 55% weight so model can diverge from line when data supports it.
+        # The divergence between model total and ESPN line IS the edge signal.
         home_share = (hp + 0.52) / (hp + ap + 1.04)
-        lam_home   = max(0.1, total * home_share)
-        lam_away   = max(0.1, total * (1.0 - home_share))
-        # If scoring trend available, blend it in (20% weight — line dominates)
-        if lam_home_real is not None:
-            lam_home = 0.80 * lam_home + 0.20 * lam_home_real
-        if lam_away_real is not None:
-            lam_away = 0.80 * lam_away + 0.20 * lam_away_real
-        # Store for Signal D + display even when ESPN line present
+        lam_line_h = max(0.1, total * home_share)
+        lam_line_a = max(0.1, total * (1.0 - home_share))
         if lam_home_real is not None and lam_away_real is not None:
+            lam_home = 0.55 * lam_home_real + 0.45 * lam_line_h
+            lam_away = 0.55 * lam_away_real + 0.45 * lam_line_a
             game["_lam_real_h"] = round(lam_home_real, 3)
             game["_lam_real_a"] = round(lam_away_real, 3)
             game["_lam_league"] = round(avg, 2)
+        else:
+            lam_home = lam_line_h
+            lam_away = lam_line_a
 
     elif lam_home_real is not None and lam_away_real is not None:
         # No ESPN line but full scoring trend — blend 60/40 with league avg
@@ -2549,30 +2594,27 @@ def apply_soccer_calib(league, p_u25, p_u35, p_btts, p_o25, p_o35):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# NHL / NBA / MLB NO-LINE CALIBRATION
-# Root cause: when ESPN has no O/U line (ou_val=0), the model compares
-# sim_total vs λ_expected (the mean) → produces ~50/50 by construction.
-# Real O/U hit rates differ from 50% (source: 2024-25 season data):
-#   NHL Under: 52.1% (Hockey-Reference, ~1312 games) → +3.1%
-#   NBA Under: 48.8% (TeamRankings,    ~1230 games)  → -1.2%
-#   MLB Under: 51.8% (2024-25 season,  ~2430 games)  → +1.8%
-# When ESPN provides a real line, the market IS the calibration — don't touch it.
+# SHARP O/U MODEL — Vegas Public Bias Correction
+#
+# Vegas inflates O/U lines +0.5-0.7 pts to exploit public Over bias.
+# Historical Under hit rates (2000-2024): NBA 50.5-51%, MLB 50.5%, NHL 52.1%.
+# Our Sharp model corrects for this inflation in the Monte Carlo comparison.
+# PUBLIC_BIAS_PTS: applied when ESPN provides a real line (shifts effective line down).
+# When using implicit league-avg line, calibration below handles the baseline shift.
 # ═══════════════════════════════════════════════════════════════════════════════
-NHL_NO_LINE_UNDER = +0.031
-NBA_NO_LINE_UNDER = -0.012
-MLB_NO_LINE_UNDER = +0.018
+PUBLIC_BIAS_PTS = {"Basketball": 0.7, "Baseball": 0.2, "Hockey": 0.3}
 
 def apply_nonsoccer_calib(sport_grp, is_hockey, p_u_total, p_o_total, ou_val):
-    """Apply calibration only when ou_val=0 (no ESPN line). O+U enforced=1.0."""
+    """Calibration for implicit-line case only (no ESPN line). O+U enforced=1.0."""
     if p_u_total is None or p_o_total is None or ou_val != 0.0:
         return p_u_total, p_o_total
-    def clamp(x): return max(0.01, min(0.99, x))
+    def clamp(x): return max(0.02, min(0.98, x))
     if is_hockey:
-        p_u_total = clamp(p_u_total + NHL_NO_LINE_UNDER)
+        p_u_total = clamp(p_u_total + 0.031)
     elif sport_grp == "Basketball":
-        p_u_total = clamp(p_u_total + NBA_NO_LINE_UNDER)
+        p_u_total = clamp(p_u_total - 0.012)
     elif sport_grp == "Baseball":
-        p_u_total = clamp(p_u_total + MLB_NO_LINE_UNDER)
+        p_u_total = clamp(p_u_total + 0.018)
     return p_u_total, clamp(1.0 - p_u_total)
 
 
@@ -2789,19 +2831,18 @@ def run_monte_carlo(game, n=10_000):
     _is_foot  = LEAGUES.get(game.get("league",""),{}).get("group","") in ("Football",)
     _nonsoccer_no_line = ou_val == 0.0 and _lg_avg > 0 and (_is_bball or _is_base or _is_hock or _is_foot)
     if _nonsoccer_no_line:
-        # Use league avg as implicit line (not lam_h+lam_a which creates 50/50 bias)
-        _model_total = (lam_h + lam_a) if (lam_h and lam_a) else _lg_avg
-        ou_val = max(_model_total, _lg_avg * 0.75)
+        # Use LEAGUE_AVG_GOALS as the implicit line — NOT lam_h+lam_a
+        # Using lam_h+lam_a creates a tautological 50/50 (model total == line)
+        # League avg is the correct neutral prior (NBA≈228, MLB≈9, NHL≈6.2)
+        ou_val = _lg_avg
 
-    # ── Lambda sanity check: if lam_h+lam_a is far from ou_val, re-center ──────
-    # This happens when get_lambda uses scoring form (pts/team ~50-120) but
-    # ou_val comes from ESPN line (221.5). Re-anchor lambdas to ou_val split.
+    # ── Lambda sanity check: re-center lambdas to ou_val if badly misaligned ──
+    # Happens when ESPN line exists but get_lambda used form data on wrong scale
+    # e.g. NBA scoring form gives lam≈50/team but ESPN line is 221.5
     if use_goals and ou_val > 0 and not is_soccer and lam_h is not None and lam_a is not None:
         _lam_total = lam_h + lam_a
-        # If model total is less than 55% of ESPN line → model is badly off-scale
-        # Re-center: keep the home/away ratio but anchor total to ou_val
-        if _lam_total > 0 and (_lam_total < ou_val * 0.55 or _lam_total > ou_val * 1.45):
-            _ratio = lam_h / _lam_total  # preserve home/away split ratio
+        if _lam_total > 0 and (_lam_total < ou_val * 0.82 or _lam_total > ou_val * 1.18):
+            _ratio = lam_h / _lam_total
             lam_h  = max(0.1, ou_val * _ratio)
             lam_a  = max(0.1, ou_val * (1.0 - _ratio))
     # ── Signal C: Fatigue / Rest Disadvantage ────────────────────────────────
@@ -2835,6 +2876,16 @@ def run_monte_carlo(game, n=10_000):
         hp = min(0.95, hp + fatigue_delta)  # away tired → home benefits
     # Symmetric fatigue → no adjustment
 
+    # ── MLB Ballpark Factor ──────────────────────────────────────────────────
+    _mlb_park_factor = 1.0
+    if sport_grp == "Baseball":
+        _venue = game.get("venue", "") or ""
+        _mlb_park_factor = get_mlb_ballpark_factor(_venue)
+        # Also adjust lambdas in get_lambda output for MLB if not already scaled
+        if lam_h is not None and _mlb_park_factor != 1.0:
+            lam_h = max(0.1, lam_h * _mlb_park_factor)
+            lam_a = max(0.1, lam_a * _mlb_park_factor)
+
     hw=aw=d=btts=o15=o25=o35=u25=u35=dc_1x=dc_x2=dc_12=o_total=u_total=0
     rng=random.Random()
 
@@ -2856,17 +2907,35 @@ def run_monte_carlo(game, n=10_000):
                 else: u35+=1        # tg <= 3.5  (Under 3.5)
             else:
                 if is_hockey:
-                    # NHL — Poisson is correct (λ ~3 goals/team, small enough)
-                    # No draw in regulation resolution for O/U purposes (OT/SO ignored)
-                    if gh > ga: hw += 1; dc_1x += 1; dc_12 += 1
-                    elif gh < ga: aw += 1; dc_x2 += 1; dc_12 += 1
-                    else:  # tie after 60 min — 50/50 OT
-                        if rng.random() < 0.5: hw += 1; dc_1x += 1; dc_12 += 1
-                        else: aw += 1; dc_x2 += 1; dc_12 += 1
+                    # NHL Sharp Model:
+                    # - O/U INCLUDES Overtime (5-min 3v3) and Shootout goals
+                    # - ~24% of games go to OT (historical 2015-2024)
+                    # - ~50% of OT games end in SO (so ~12% of all games)
+                    # - OT: always adds exactly 1 goal (sudden death)
+                    # - Shootout: adds 1 official goal to the winning team's total
+                    # - Regulation win/loss for ML purposes
+                    ot_goals = 0
+                    if gh > ga:
+                        hw += 1; dc_1x += 1; dc_12 += 1
+                    elif gh < ga:
+                        aw += 1; dc_x2 += 1; dc_12 += 1
+                    else:
+                        # Tie after 60 min → OT (100% go to OT in NHL)
+                        ot_goals = 1  # OT always produces 1 goal (sudden death)
+                        # ~50% of tied games end in SO (rest end in 5-min OT)
+                        # Shootout: +1 official goal either way (winner gets it)
+                        # Both OT and SO add 1 goal to total — already counted above
+                        if rng.random() < 0.5:
+                            hw += 1; dc_1x += 1; dc_12 += 1
+                        else:
+                            aw += 1; dc_x2 += 1; dc_12 += 1
+                    # O/U comparison includes OT/SO goals
+                    tg_with_ot = tg + ot_goals
                     if ou_val > 0:
-                        # For implicit NHL line (no ESPN): shift by -0.5 to center Poisson discrete dist
-                        _nhl_eff_line = (ou_val - 0.5) if _nonsoccer_no_line else ou_val
-                        if tg > _nhl_eff_line: o_total += 1
+                        _bias = 0.0 if _nonsoccer_no_line else PUBLIC_BIAS_PTS.get("Hockey", 0.0)
+                        # For implicit line: shift -0.5 to center discrete Poisson distribution
+                        _nhl_eff_line = (ou_val - 0.5 - _bias) if _nonsoccer_no_line else (ou_val - _bias)
+                        if tg_with_ot > _nhl_eff_line: o_total += 1
                         else: u_total += 1
                 else:
                     # NBA / MLB / NFL — normal distribution (Poisson breaks for large λ)
@@ -2874,21 +2943,45 @@ def run_monte_carlo(game, n=10_000):
                     # MLB: typical game total std ~3.0 runs
                     # NFL: typical game total std ~14 pts
                     if sport_grp == "Basketball":
-                        per_team_std = max(8.0, (lh + la) * 0.075)  # ~14-16 pts std on total (TeamRankings historical)
+                        # NBA combined std ≈ 15-16 pts (TeamRankings historical)
+                        per_team_std = max(9.0, (lh + la) * 0.082)
                     elif sport_grp == "Baseball":
-                        # Real MLB game total std ≈ 3.0 runs (Retrosheet historical)
-                        # Normal distribution is appropriate at λ≈4.5 runs/team (CLT)
-                        # Poisson would create discrete-integer Under bias at integer lines
-                        per_team_std = max(2.5, (lh + la) * 0.34)   # combined std ≈ 3.0 runs
+                        # MLB Sharp Model:
+                        # 1. Ballpark factor: Coors +30%, Petco -8%, etc.
+                        # 2. Extra Innings: ~8.5% of games go to extras (Retrosheet 2015-24)
+                        #    Extra innings typically add 0.5-1.5 runs per half-inning
+                        #    Model: if 9-inning score is tied, ~60% chance extras add ≥1 run
+                        # Combined std ≈ 3.2 runs
+                        _bp_factor = _mlb_park_factor  # pre-computed from venue
+                        _lh_adj = lh * _bp_factor
+                        _la_adj = la * _bp_factor
+                        per_team_std = max(2.8, (_lh_adj + _la_adj) * 0.38)
+                        sim_h = max(0, _lh_adj + rng.gauss(0, per_team_std * 0.7))
+                        sim_a = max(0, _la_adj + rng.gauss(0, per_team_std * 0.7))
+                        sim_total = sim_h + sim_a
+                        # Extra innings: ~8.5% chance when game is close (within 2 runs)
+                        if abs(sim_h - sim_a) <= 2 and rng.random() < 0.085:
+                            # Extra innings add ~1.3 runs on average
+                            sim_total += max(0, rng.gauss(1.3, 0.8))
+                        if sim_h > sim_a: hw += 1; dc_1x += 1; dc_12 += 1
+                        else: aw += 1; dc_x2 += 1; dc_12 += 1
+                        if ou_val > 0:
+                            _bias = 0.0 if _nonsoccer_no_line else PUBLIC_BIAS_PTS.get(sport_grp, 0.0)
+                            if sim_total > (ou_val - _bias): o_total += 1
+                            else: u_total += 1
+                        continue  # skip the generic ou block below
                     else:  # Football / NCAAF
-                        per_team_std = max(5.0, (lh + la) * 0.12)   # ~14 pts std
+                        per_team_std = max(5.0, (lh + la) * 0.12)
                     sim_h = max(0, lh + rng.gauss(0, per_team_std * 0.7))
                     sim_a = max(0, la + rng.gauss(0, per_team_std * 0.7))
                     sim_total = sim_h + sim_a
                     if sim_h > sim_a: hw += 1; dc_1x += 1; dc_12 += 1
                     else: aw += 1; dc_x2 += 1; dc_12 += 1
                     if ou_val > 0:
-                        if sim_total > ou_val: o_total += 1
+                        # Sharp: ESPN line is inflated by public bias. Correct by shifting
+                        # effective comparison line down. When using implicit line, no bias.
+                        _bias = 0.0 if _nonsoccer_no_line else PUBLIC_BIAS_PTS.get(sport_grp, 0.0)
+                        if sim_total > (ou_val - _bias): o_total += 1
                         else: u_total += 1
         else:
             if is_soccer:
@@ -5150,10 +5243,14 @@ with tab_sim:
             f'background:linear-gradient(90deg,transparent,{_bac},{_bac}88,transparent)"></div>'
         )
 
+        # Only show ML odds if at least one side has a value
+        _has_ml = bool(sim.get("home_ml") or sim.get("away_ml"))
+        _ml_line = (f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}<br>'
+                    if _has_ml else "")
         _body = (
             f'<div style="text-align:right;font-size:0.728rem;color:#6B7E6E;flex-shrink:0">'
-            f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}'
-            f'<br><span style="color:{dqc}">DQ {dq:.0f}%</span></div>'
+            f'{_ml_line}'
+            f'<span style="color:{dqc}">DQ {dq:.0f}%</span></div>'
             f'</div>'
             f'<div style="margin-top:4px">{badge}</div>'
         )
