@@ -530,22 +530,19 @@ LEAGUES = {
     "Europa League":          {"sport":"soccer", "league":"UEFA.EUROPA",         "group":"Soccer"},
     "Conference League":      {"sport":"soccer", "league":"UEFA.CONFERENCE",     "group":"Soccer"},
     "CONCACAF Champions Cup": {"sport":"soccer", "league":"CONCACAF.CHAMPIONS",  "group":"Soccer"},
-    "Liga de Expansión":      {"sport":"soccer", "league":"mex.2",               "group":"Soccer"},
 }
 HOME_BOOST = {
     "NBA":0.035,"MLB":0.025,
     "NFL":0.035,"NCAAF":0.045,"NHL":0.03,"MLS":0.04,"Liga MX":0.045,
     "Premier League":0.038,"La Liga":0.04,"Bundesliga":0.042,"Serie A":0.04,
     "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,"Conference League":0.032,"CONCACAF Champions Cup":0.04,
-    "Liga de Expansión":0.05,
-}
+    }
 LEAGUE_AVG_GOALS = {
     "NBA":228.0,"MLB":9.0,
     "NFL":46.0,"NCAAF":56.0,"NHL":6.2,
     "MLS":2.96,"Liga MX":2.72,"Premier League":2.81,"La Liga":2.63,
     "Bundesliga":3.24,"Serie A":2.72,"Ligue 1":2.61,
-    "Champions League":3.14,"Europa League":2.89,"Conference League":2.71,"CONCACAF Champions Cup":2.85,"Liga de Expansión":2.55,
-
+    "Champions League":3.14,"Europa League":2.89,"Conference League":2.71,"CONCACAF Champions Cup":2.85,
 }
 ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
 
@@ -610,8 +607,9 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
         if not events:
             return None
 
-        results       = []   # W/L/D as 1.0/0.0/0.5
-        scored_list   = []   # goals/pts scored by this team
+        results        = []   # W/L/D as 1.0/0.0/0.5
+        scored_list    = []   # goals/pts scored by this team
+        games_raw_list = []   # structured records for team profile learning
         conceded_list = []   # goals/pts conceded by this team
         last_date     = None
 
@@ -647,15 +645,23 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
             else:               results.append(0.0)
 
             # Scored / Conceded
+            game_date = ev.get("date", "")[:10]
+            opp_comp  = next((c for c in comps if str(c.get("id","")) != str(team_id)), None)
+            opp_name  = opp_comp.get("team",{}).get("displayName","") if opp_comp else ""
+
             if hs is not None:
                 if is_home:
                     scored_list.append(hs); conceded_list.append(as_)
+                    games_raw_list.append({"scored":hs,"conceded":as_,"home":True,
+                                           "date":game_date,"opp":opp_name})
                 else:
                     scored_list.append(as_); conceded_list.append(hs)
+                    games_raw_list.append({"scored":as_,"conceded":hs,"home":False,
+                                           "date":game_date,"opp":opp_name})
 
             # Last game date (Signal C) — first post game found = most recent
             if last_date is None:
-                raw_date = ev.get("date", "")[:10]  # "YYYY-MM-DD"
+                raw_date = game_date
                 if raw_date:
                     last_date = raw_date
 
@@ -679,6 +685,7 @@ def fetch_recent_form(sport, league, team_id, n_games=5):
             "avg_conceded":   avg_conceded,
             "last_game_date": last_date,
             "n_games":        len(results),
+            "games_raw":      games_raw_list,   # for team profile learning
         }
 
     except Exception:
@@ -891,7 +898,6 @@ def enrich_game_with_form(game):
         "NHL": ("hockey", "nhl"),
         "MLS": ("soccer", "usa.1"),
         "Liga MX": ("soccer", "mex.1"),
-        "Liga de Expansión": ("soccer", "mex.2"),
         "Premier League": ("soccer", "eng.1"),
         "La Liga": ("soccer", "esp.1"),
         "Bundesliga": ("soccer", "ger.1"),
@@ -954,6 +960,28 @@ def enrich_game_with_form(game):
     af_val = game.get("away_form")
     if hf_val is None and af_val is None and (home_id or away_id):
         game["_form_unavailable"] = True
+
+    # ── Team Profiles: guardar historial y cargar perfil acumulado ──────────────
+    # Reutiliza hf/af ya obtenidos arriba — sin doble fetch a ESPN
+    import threading
+
+    if home_id and isinstance(hf, dict) and hf.get("games_raw"):
+        _h_games_raw = hf["games_raw"]
+        _h_name      = game["home_team"]
+        def _update_home(_tid=home_id, _name=_h_name, _lg=league, _sg=group, _gr=_h_games_raw):
+            update_team_profile(team_id=_tid, team_name=_name,
+                                league=_lg, sport_group=_sg, new_games=_gr)
+        threading.Thread(target=_update_home, daemon=True).start()
+    game["home_profile"] = get_team_profile(home_id) if home_id else None
+
+    if away_id and isinstance(af, dict) and af.get("games_raw"):
+        _a_games_raw = af["games_raw"]
+        _a_name      = game["away_team"]
+        def _update_away(_tid=away_id, _name=_a_name, _lg=league, _sg=group, _gr=_a_games_raw):
+            update_team_profile(team_id=_tid, team_name=_name,
+                                league=_lg, sport_group=_sg, new_games=_gr)
+        threading.Thread(target=_update_away, daemon=True).start()
+    game["away_profile"] = get_team_profile(away_id) if away_id else None
 
     # ── Signal 6: Injury Feed ─────────────────────────────────────────────────
     # Fetch active injuries for both teams and compute impact factor.
@@ -1297,9 +1325,7 @@ LEAGUE_HOME_RATE = {
     "Serie A": 0.455, "Ligue 1": 0.455,
     "Champions League": 0.475, "Europa League": 0.465,
     "Conference League": 0.460, "CONCACAF Champions Cup": 0.480,
-    "Liga de Expansión": 0.460,
-
-}
+    }
 
 def calc_ev(prob, ml):
     try:
@@ -1466,7 +1492,7 @@ def compute_base_prob(game):
 # For basketball/football they are total points.
 # avg * 2 was a bug for soccer — removed.
 SOCCER_LEAGUES = {
-    "MLS","Liga MX","Liga de Expansión","Premier League","La Liga","Bundesliga",
+    "MLS","Liga MX","Premier League","La Liga","Bundesliga",
     "Serie A","Ligue 1","Champions League","Europa League","Conference League",
     "CONCACAF Champions Cup",
 }
@@ -1576,6 +1602,24 @@ def get_lambda(game):
         lam_home   = max(0.1, avg * home_share)
         lam_away   = max(0.1, avg * (1.0 - home_share))
 
+    # ── Team Profile blend: usa historial acumulado de Google Sheets ────────────
+    # Si el equipo tiene ≥5 partidos guardados, blendear λ con el avg histórico.
+    # Blend: 60% perfil histórico + 40% cálculo actual (ESPN + form)
+    # El perfil es home/away-aware: usa avg_scored_home vs avg_scored_away
+    _h_prof = game.get("home_profile")
+    _a_prof = game.get("away_profile")
+    _is_home_game = True  # home team siempre es local en este contexto
+
+    if _h_prof and _h_prof.get("n_games", 0) >= 5:
+        _h_avg = _h_prof.get("avg_scored_home") or _h_prof.get("avg_scored") or 0
+        if _h_avg > 0:
+            lam_home = round(lam_home * 0.40 + _h_avg * 0.60, 4)
+
+    if _a_prof and _a_prof.get("n_games", 0) >= 5:
+        _a_avg = _a_prof.get("avg_scored_away") or _a_prof.get("avg_scored") or 0
+        if _a_avg > 0:
+            lam_away = round(lam_away * 0.40 + _a_avg * 0.60, 4)
+
     # ── Injury λ reduction ────────────────────────────────────────────────────
     # Injured team scores less and potentially concedes more (weakened defense)
     # injury_factor 1.0=healthy, 0.40=worst case
@@ -1597,6 +1641,32 @@ def get_lambda(game):
 
     return max(0.1, lam_home), max(0.1, lam_away)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LEAGUE O/U PRIORS — baseline Poisson probabilities using only league avg goals
+# Used to filter O/U picks: a pick is only valid if the simulation deviates
+# significantly from what we'd expect knowing nothing about the specific teams.
+# Source: computed from LEAGUE_AVG_GOALS via joint Poisson(lam/2, lam/2)
+# Format: {league: (P_U15, P_U25, P_U35, P_O15, P_O25, P_O35)}
+# ══════════════════════════════════════════════════════════════════════════════
+LEAGUE_OU_PRIORS = {
+    # Format: (P_U15, P_U25, P_U35, P_O15, P_O25, P_O35, P_BTTS)
+    # All computed via joint Poisson(avg/2, avg/2) from LEAGUE_AVG_GOALS
+    "MLS":                   (0.205, 0.432, 0.656, 0.795, 0.568, 0.344, 0.597),
+    "Liga MX":               (0.245, 0.489, 0.710, 0.755, 0.511, 0.290, 0.553),
+    "Premier League":        (0.229, 0.467, 0.690, 0.771, 0.533, 0.310, 0.569),
+    "La Liga":               (0.262, 0.511, 0.729, 0.738, 0.489, 0.271, 0.535),
+    "Bundesliga":            (0.166, 0.372, 0.594, 0.834, 0.628, 0.406, 0.643),
+    "Serie A":               (0.245, 0.489, 0.710, 0.755, 0.511, 0.290, 0.553),
+    "Ligue 1":               (0.256, 0.502, 0.723, 0.744, 0.498, 0.277, 0.531),
+    "Champions League":      (0.179, 0.393, 0.616, 0.821, 0.607, 0.384, 0.627),
+    "Europa League":         (0.220, 0.452, 0.676, 0.780, 0.548, 0.324, 0.584),
+    "Conference League":     (0.252, 0.497, 0.718, 0.748, 0.503, 0.282, 0.551),
+    "CONCACAF Champions Cup":(0.223, 0.458, 0.681, 0.777, 0.542, 0.319, 0.577),
+}
+# Minimum deviation from league prior to qualify as a valid O/U or BTTS pick.
+# 8% = meaningful signal — below this the model learns nothing new vs league avg.
+OU_MIN_EDGE = 0.08
 # ═══════════════════════════════════════════════════════════════════════════════
 # SOCCER O/U CALIBRATION — post-simulation correction per league
 # Source: FBref 2024-25 real frequencies vs Poisson model output
@@ -1612,7 +1682,6 @@ SOCCER_CALIB = {
     "Serie A":                ( -0.020,  +0.010, -0.020),
     "Ligue 1":                ( -0.015,  +0.005, -0.025),
     "Liga MX":                ( +0.010,  +0.040, -0.070),
-    "Liga de Expansión":      ( +0.015,  +0.045, -0.060),  # similar to Liga MX
     "Champions League":       ( -0.015,  +0.005, -0.015),
     "Europa League":          ( -0.020,  +0.010, -0.035),
     "Conference League":      ( -0.010,  +0.015, -0.030),
@@ -2028,15 +2097,35 @@ def run_monte_carlo(game, n=10_000):
 
     # ── Soccer: BTTS + O/U goals ──────────────────────────────────────────────
     if p_btts is not None and sport_group == "Soccer":
-        candidates+=[
-            ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
-            ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
-            # O/U: Only O2.5, O3.5, Under 2.5 — O1.5 is NEVER a pick (too trivial)
-            ("O/U","Over 2.5",p_o25,o25_ev,str(OU_ML),quarter_kelly(p_o25,OU_ML)),
-            ("O/U","Over 3.5",p_o35,o35_ev,str(OU_ML),quarter_kelly(p_o35,OU_ML)),
-            ("O/U","Under 2.5",p_u25,u25_ev,str(OU_ML),quarter_kelly(p_u25,OU_ML)),
-            ("O/U","Under 3.5",p_u35,u35_ev,str(OU_ML),quarter_kelly(p_u35,OU_ML)),
-        ]
+        # Retrieve league prior probabilities
+        _prior = LEAGUE_OU_PRIORS.get(game["league"])
+        _prior_vals = _prior if _prior else (0.23, 0.47, 0.68, 0.77, 0.53, 0.32, 0.57)
+        _pu15_pr, _pu25_pr, _pu35_pr, _po15_pr, _po25_pr, _po35_pr = _prior_vals[:6]
+        # When ESPN line is present, bypass prior filter — market IS the benchmark
+        _bypass_prior = bool(game["odds"].get("over_under",""))
+
+        def _ou_edge(sim_p, prior_p):
+            """Returns True if sim deviates enough from prior to be meaningful."""
+            return _bypass_prior or (sim_p is not None and abs(sim_p - prior_p) >= OU_MIN_EDGE)
+
+        # BTTS: use real league prior (computed from Poisson at league avg)
+        _btts_prior = _prior[6] if _prior else 0.57  # 7th element = P_BTTS
+        if abs(p_btts - _btts_prior) >= OU_MIN_EDGE or _bypass_prior:
+            candidates += [
+                ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
+                ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
+            ]
+
+        # O/U: only add when simulation deviates meaningfully from league prior
+        # This prevents U3.5 from always winning just because it's "likely" by default
+        if _ou_edge(p_o25, _po25_pr):
+            candidates.append(("O/U","Over 2.5", p_o25, o25_ev, str(OU_ML), quarter_kelly(p_o25,OU_ML)))
+        if _ou_edge(p_o35, _po35_pr):
+            candidates.append(("O/U","Over 3.5", p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35,OU_ML)))
+        if _ou_edge(p_u25, _pu25_pr):
+            candidates.append(("O/U","Under 2.5",p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25,OU_ML)))
+        if _ou_edge(p_u35, _pu35_pr):
+            candidates.append(("O/U","Under 3.5",p_u35, u35_ev, str(OU_ML), quarter_kelly(p_u35,OU_ML)))
 
     # DC only meaningful for soccer (3-way markets)
     if is_soccer:
@@ -2046,16 +2135,89 @@ def run_monte_carlo(game, n=10_000):
             ("DC", game["home_team"]+" o "+game["away_team"]+" (sin empate)", p_dc_12, dc_12_ev, str(DC_ML), quarter_kelly(p_dc_12,DC_ML)),
         ]
 
-    # Detect "partido parejo" — same condition Claude uses to suggest goal markets
-    # spread < 12 means both teams within 12% of each other → parejo
+    # ── Team Profile O/U rate blend ───────────────────────────────────────────
+    # Si los perfiles tienen ≥5 partidos, blendear las probabilidades simuladas
+    # con las tasas históricas reales del equipo.
+    # Blend: 50% sim Monte Carlo + 50% tasa histórica (cuando n≥5, 30/70 cuando n=10)
+    _h_prof = game.get("home_profile")
+    _a_prof = game.get("away_profile")
+    _sg     = sport_group  # "Soccer","Basketball", etc.
+
+    def _profile_blend(sim_prob, h_prof, a_prof, rate_key, is_soccer=True):
+        """Blendea prob simulada con tasa histórica promedio de ambos equipos."""
+        rates = []
+        for prof in [h_prof, a_prof]:
+            if prof and prof.get("n_games", 0) >= 5:
+                r = prof.get(rate_key)
+                if r is not None and r > 0:
+                    rates.append((r, prof["n_games"]))
+        if not rates:
+            return sim_prob
+        # Weighted avg of historical rates (more games = more weight)
+        total_w = sum(n for _,n in rates)
+        hist_avg = sum(r*n for r,n in rates) / total_w
+        # Blend weight: more games → trust history more
+        avg_n = total_w / len(rates)
+        hist_w = min(0.70, 0.30 + (avg_n / 10) * 0.40)  # 0.30 at n=0, 0.70 at n=10
+        blended = sim_prob * (1 - hist_w) + hist_avg * hist_w
+        return round(min(0.99, max(0.01, blended)), 4)
+
+    if _sg == "Soccer" and p_btts is not None:
+        # Blendear con tasas históricas del perfil (home usa home_rate, away usa away_rate)
+        def _soccer_blend(sim_p, h_key, a_key):
+            rates = []
+            if _h_prof and _h_prof.get("n_games",0) >= 5:
+                r = _h_prof.get(h_key)
+                if r: rates.append((r, _h_prof["n_games"]))
+            if _a_prof and _a_prof.get("n_games",0) >= 5:
+                r = _a_prof.get(a_key)
+                if r: rates.append((r, _a_prof["n_games"]))
+            if not rates: return sim_p
+            total_w = sum(n for _,n in rates)
+            hist_avg = sum(r*n for r,n in rates) / total_w
+            avg_n = total_w / len(rates)
+            hist_w = min(0.70, 0.30 + (avg_n/10)*0.40)
+            return round(min(0.99, max(0.01, sim_p*(1-hist_w) + hist_avg*hist_w)), 4)
+
+        p_btts = _soccer_blend(p_btts, "rate_btts_home",  "rate_btts_away")
+        p_o15  = _soccer_blend(p_o15,  "rate_o15_home",   "rate_o15_away")
+        p_o25  = _soccer_blend(p_o25,  "rate_o25_home",   "rate_o25_away")
+        p_o35  = _soccer_blend(p_o35,  "rate_o35_home",   "rate_o35_away")
+        p_u25  = 1 - p_o25
+        p_u35  = 1 - p_o35
+        # Recalcular EVs con probs blended
+        btts_ev    = calc_ev(p_btts, BTTS_ML)
+        no_btts_ev = calc_ev(1-p_btts, BTTS_ML)
+        o25_ev = calc_ev(p_o25, OU_ML); u25_ev = calc_ev(p_u25, OU_ML)
+        o35_ev = calc_ev(p_o35, OU_ML); u35_ev = calc_ev(p_u35, OU_ML)
+
+    # ── No-signal guard: block O/U and BTTS when all signals are blind ──────────
+    # Without moneyline + form + scoring trend, O/U probs are pure Poisson league avg
+    # → every game in the same league gets identical U3.5 ~80% pick (useless noise)
+    # Require at least ONE real signal to show O/U/BTTS picks:
+    #   - ESPN moneyline present (market knows something we don't)
+    #   - Scoring trend available (we have real recent data)
+    #   - Form data available (we know recent results)
+    _has_ml        = bool(hml and aml)
+    _has_scoring   = game.get("home_avg_scored") is not None
+    _has_form      = game.get("home_form") is not None or game.get("away_form") is not None
+    _has_real_signal = _has_ml or _has_scoring or _has_form
+
+    if is_soccer and not _has_real_signal:
+        # Strip O/U and BTTS — keep only ML and DC (which at least reflect team identity)
+        candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
+                      if mt not in ("O/U","BTTS")]
+
+    # Detect "partido parejo" — requires real ML signal to be meaningful
+    # Without ML, hp≈aw≈0.37 always → _parejo always True → always picks U3.5
     _spread = abs(sh - sa) * 100  # percentage spread between teams
-    _parejo = use_goals and is_soccer and _spread < 12
+    _parejo = use_goals and is_soccer and _spread < 12 and _has_ml
 
     MARKET_PREF = {"BTTS": 4, "O/U": 3, "ML": 2, "DC": 1}
     best_single=None; best_ev_v=-999; best_pref=-1
 
     if _parejo:
-        # Partido parejo: Claude recommends goal markets → pick by highest PROBABILITY
+        # Partido parejo with real ML: Claude recommends goal markets → pick by highest PROBABILITY
         goal_candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
                            if mt in ("BTTS","O/U") and pr is not None]
         if goal_candidates:
@@ -2672,6 +2834,17 @@ with st.sidebar:
     if st.button("↺  LIMPIAR CACHÉ"):
         st.cache_data.clear(); st.session_state.pop("sim_results",None); st.rerun()
 
+    st.divider()
+    st.markdown("**🧠 MEMORIA**")
+    _tp_count_sb = len(_load_all_team_profiles())
+    if _tp_count_sb > 0:
+        st.caption(f"✅ {_tp_count_sb} equipos en memoria")
+    else:
+        st.caption("⬜ Sin datos aún")
+    if st.button("🧠  POBLAR MEMORIA", use_container_width=True,
+                 help="Descarga últimos 10 partidos de TODOS los equipos y guarda en Google Sheets"):
+        st.session_state["run_populate"] = True
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2770,6 +2943,63 @@ st.markdown(f"""<div class="stat-grid">
 </div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
+
+# ── Team Profiles status badge ────────────────────────────────────────────────
+_tp_profiles = _load_all_team_profiles()
+_tp_count    = len(_tp_profiles)
+if _tp_count > 0:
+    _tp_leagues = len({p.get("league","") for p in _tp_profiles.values()})
+    _tp_total_g = sum(p.get("n_games",0) for p in _tp_profiles.values())
+    st.markdown(
+        f'<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
+        f'color:#4ade80;letter-spacing:1px">'
+        f'🧠 Memoria activa: <b>{_tp_count}</b> equipos · '
+        f'<b>{_tp_total_g}</b> partidos · '
+        f'<b>{_tp_leagues}</b> ligas</div>',
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        '<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
+        'color:#6B7E6E;letter-spacing:1px">'
+        '🧠 Memoria: aprendiendo... (se llena automáticamente con cada partido)</div>',
+        unsafe_allow_html=True
+    )
+
+# ── Poblar memoria (botón sidebar) ───────────────────────────────────────────
+if st.session_state.pop("run_populate", False):
+    if not _gsheets_available():
+        st.error("❌ Google Sheets no configurado. Revisa tus secrets.")
+    else:
+        st.markdown("""
+        <div style='background:rgba(201,168,76,0.08);border:1px solid #C9A84C;
+        border-radius:8px;padding:16px;margin-bottom:16px'>
+        <div style='font-family:Cinzel,serif;color:#C9A84C;font-size:1rem;
+        font-weight:700;margin-bottom:8px'>🧠 POBLANDO MEMORIA DE EQUIPOS</div>
+        <div style='font-size:0.75rem;color:#9ca3af'>
+        Descargando historial de ESPN para todas las ligas y equipos.<br>
+        Esto tarda ~3-5 minutos. No cierres la app.
+        </div></div>
+        """, unsafe_allow_html=True)
+
+        _prog  = st.progress(0)
+        _stat  = st.empty()
+        _written, _failed, _log = populate_all_team_profiles(
+            progress_bar=_prog,
+            status_text=_stat,
+        )
+        _prog.progress(1.0)
+        _stat.empty()
+
+        # Mostrar resumen
+        st.success(f"✅ Memoria poblada: **{_written}** equipos guardados, {_failed} fallidos")
+
+        # Log expandible
+        with st.expander("📋 Ver log completo"):
+            st.code("\n".join(_log))
+
+        st.cache_data.clear()  # Forzar recarga del cache de perfiles
+        st.rerun()
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab_picks, tab_sim, tab_parlays, tab_all, tab_reto = st.tabs([
@@ -3614,6 +3844,355 @@ import json, os as _os, re as _re
 # Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
 # Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
 # Row 3+ = picks
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEAM PROFILES — Sistema de aprendizaje por equipo
+# Pestaña "team_profiles" en Google Sheets
+# Aprende de los últimos 10 partidos de cada equipo y usa ese historial
+# para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_TP_TAB      = "team_profiles"
+_TP_MAX_GAMES = 10
+_TP_HEADERS  = [
+    "team_id","team_name","league","sport_group","last_updated",
+    "games_json","n_games","avg_scored","avg_conceded",
+    "avg_scored_home","avg_conceded_home","avg_scored_away","avg_conceded_away",
+    "rate_o15","rate_o25","rate_o35","rate_btts",
+    "rate_o15_home","rate_o25_home","rate_o35_home","rate_btts_home",
+    "rate_o15_away","rate_o25_away","rate_o35_away","rate_btts_away",
+    "thresholds_json",
+]
+
+# Thresholds a trackear por grupo de deporte
+_TP_THRESHOLDS = {
+    "Soccer":     [("o15",1.5),("o25",2.5),("o35",3.5)],
+    "Basketball": [("o100",100),("o105",105),("o110",110),("o115",115),("o120",120),("o125",125)],
+    "Hockey":     [("o3",3.0),("o4",4.0),("o5",5.0),("o6",6.0),("o7",7.0)],
+    "Baseball":   [("o6",6.0),("o7",7.0),("o8",8.0),("o9",9.0),("o10",10.0)],
+    "Football":   [("o17",17),("o21",21),("o24",24),("o28",28),("o35",35),("o42",42)],
+}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_all_team_profiles():
+    """Carga todos los perfiles desde Sheets → dict {team_id: profile}. TTL 1h."""
+    if not _gsheets_available():
+        return {}
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_TP_TAB)
+        except:
+            ws = sh.add_worksheet(title=_TP_TAB, rows=2000, cols=len(_TP_HEADERS))
+            ws.update("A1", [_TP_HEADERS])
+            return {}
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return {}
+        profiles = {}
+        for row in rows[1:]:
+            if not row or not row[0]:
+                continue
+            def _c(i, d=""):
+                return row[i] if i < len(row) else d
+            try:
+                games      = json.loads(_c(5)) if _c(5) else []
+                thresholds = json.loads(_c(25)) if _c(25) else {}
+                profiles[_c(0)] = {
+                    "team_id":           _c(0),
+                    "team_name":         _c(1),
+                    "league":            _c(2),
+                    "sport_group":       _c(3),
+                    "last_updated":      _c(4),
+                    "games":             games,
+                    "n_games":           int(_c(6) or 0),
+                    "avg_scored":        float(_c(7)  or 0),
+                    "avg_conceded":      float(_c(8)  or 0),
+                    "avg_scored_home":   float(_c(9)  or 0),
+                    "avg_conceded_home": float(_c(10) or 0),
+                    "avg_scored_away":   float(_c(11) or 0),
+                    "avg_conceded_away": float(_c(12) or 0),
+                    "rate_o15":          float(_c(13) or 0),
+                    "rate_o25":          float(_c(14) or 0),
+                    "rate_o35":          float(_c(15) or 0),
+                    "rate_btts":         float(_c(16) or 0),
+                    "rate_o15_home":     float(_c(17) or 0),
+                    "rate_o25_home":     float(_c(18) or 0),
+                    "rate_o35_home":     float(_c(19) or 0),
+                    "rate_btts_home":    float(_c(20) or 0),
+                    "rate_o15_away":     float(_c(21) or 0),
+                    "rate_o25_away":     float(_c(22) or 0),
+                    "rate_o35_away":     float(_c(23) or 0),
+                    "rate_btts_away":    float(_c(24) or 0),
+                    "thresholds":        thresholds,
+                }
+            except:
+                continue
+        return profiles
+    except:
+        return {}
+
+
+def get_team_profile(team_id):
+    """Retorna perfil de equipo del cache, o None si no existe."""
+    if not team_id:
+        return None
+    return _load_all_team_profiles().get(str(team_id))
+
+
+def _compute_profile_stats(games, sport_group):
+    """Calcula todas las stats y rates a partir de la lista de partidos."""
+    if not games:
+        return {}
+    all_s  = [g["scored"]   for g in games]
+    all_c  = [g["conceded"] for g in games]
+    home_g = [g for g in games if g.get("home")]
+    away_g = [g for g in games if not g.get("home")]
+
+    def safe_avg(lst): return round(sum(lst)/len(lst), 3) if lst else 0.0
+    def rate(lst, fn): return round(sum(1 for x in lst if fn(x))/len(lst), 3) if lst else 0.0
+
+    stats = {
+        "n_games":           len(games),
+        "avg_scored":        safe_avg(all_s),
+        "avg_conceded":      safe_avg(all_c),
+        "avg_scored_home":   safe_avg([g["scored"]   for g in home_g]),
+        "avg_conceded_home": safe_avg([g["conceded"] for g in home_g]),
+        "avg_scored_away":   safe_avg([g["scored"]   for g in away_g]),
+        "avg_conceded_away": safe_avg([g["conceded"] for g in away_g]),
+    }
+
+    if sport_group == "Soccer":
+        stats.update({
+            "rate_o15":       rate(games,  lambda g: g["scored"]+g["conceded"] > 1.5),
+            "rate_o25":       rate(games,  lambda g: g["scored"]+g["conceded"] > 2.5),
+            "rate_o35":       rate(games,  lambda g: g["scored"]+g["conceded"] > 3.5),
+            "rate_btts":      rate(games,  lambda g: g["scored"]>0 and g["conceded"]>0),
+            "rate_o15_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 1.5),
+            "rate_o25_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 2.5),
+            "rate_o35_home":  rate(home_g, lambda g: g["scored"]+g["conceded"] > 3.5),
+            "rate_btts_home": rate(home_g, lambda g: g["scored"]>0 and g["conceded"]>0),
+            "rate_o15_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 1.5),
+            "rate_o25_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 2.5),
+            "rate_o35_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 3.5),
+            "rate_btts_away": rate(away_g, lambda g: g["scored"]>0 and g["conceded"]>0),
+            "thresholds": {},
+        })
+    else:
+        thresholds = {}
+        for key, thresh in _TP_THRESHOLDS.get(sport_group, []):
+            thresholds[key]         = rate(games,  lambda g, t=thresh: g["scored"] > t)
+            thresholds[key+"_home"] = rate(home_g, lambda g, t=thresh: g["scored"] > t)
+            thresholds[key+"_away"] = rate(away_g, lambda g, t=thresh: g["scored"] > t)
+        stats.update({
+            "rate_o15":0.0,"rate_o25":0.0,"rate_o35":0.0,"rate_btts":0.0,
+            "rate_o15_home":0.0,"rate_o25_home":0.0,"rate_o35_home":0.0,"rate_btts_home":0.0,
+            "rate_o15_away":0.0,"rate_o25_away":0.0,"rate_o35_away":0.0,"rate_btts_away":0.0,
+            "thresholds": thresholds,
+        })
+    return stats
+
+
+def update_team_profile(team_id, team_name, league, sport_group, new_games):
+    """
+    Fusiona new_games con el perfil existente (últimos 10 partidos).
+    new_games = [{scored, conceded, home, date, opp}, ...] newest-first.
+    Escribe en Sheets de forma síncrona (llamar desde background/thread).
+    """
+    if not _gsheets_available() or not team_id:
+        return False
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_TP_TAB)
+        except:
+            ws = sh.add_worksheet(title=_TP_TAB, rows=2000, cols=len(_TP_HEADERS))
+            ws.update("A1", [_TP_HEADERS])
+
+        all_rows = ws.get_all_values()
+        data_rows = all_rows[1:] if len(all_rows) > 1 else []
+
+        # Buscar fila existente del equipo
+        existing_games = []
+        target_row     = None
+        for i, row in enumerate(data_rows):
+            if row and row[0] == str(team_id):
+                target_row = i + 2  # 1-indexed, +1 header
+                try:
+                    existing_games = json.loads(row[5]) if row[5] else []
+                except:
+                    existing_games = []
+                break
+
+        # Fusionar: nuevos primero, deduplicar por (date, opp), cap 10
+        merged = list(new_games)
+        seen   = {(g.get("date",""), g.get("opp","")) for g in merged}
+        for g in existing_games:
+            k = (g.get("date",""), g.get("opp",""))
+            if k not in seen:
+                merged.append(g)
+                seen.add(k)
+        merged = merged[:_TP_MAX_GAMES]
+
+        stats = _compute_profile_stats(merged, sport_group)
+        if not stats:
+            return False
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        row_data = [
+            str(team_id), team_name, league, sport_group, now,
+            json.dumps(merged, ensure_ascii=False),
+            stats["n_games"],
+            stats["avg_scored"],     stats["avg_conceded"],
+            stats["avg_scored_home"],stats["avg_conceded_home"],
+            stats["avg_scored_away"],stats["avg_conceded_away"],
+            stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
+            stats["rate_o15_home"],stats["rate_o25_home"],stats["rate_o35_home"],stats["rate_btts_home"],
+            stats["rate_o15_away"],stats["rate_o25_away"],stats["rate_o35_away"],stats["rate_btts_away"],
+            json.dumps(stats["thresholds"], ensure_ascii=False),
+        ]
+
+        col_end = chr(ord("A") + len(_TP_HEADERS) - 1)
+        if target_row:
+            ws.update(f"A{target_row}:{col_end}{target_row}", [row_data])
+        else:
+            ws.append_row(row_data, value_input_option="RAW")
+
+        _load_all_team_profiles.clear()  # invalida cache
+        return True
+    except:
+        return False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POPULATE ALL TEAM PROFILES — función para el botón "🧠 Poblar Memoria"
+# Recorre todas las ligas activas, obtiene equipos de ESPN,
+# llama fetch_recent_form para cada uno y guarda en team_profiles Sheet.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Mapa de ligas a slugs ESPN (idéntico al de enrich_game_with_form)
+_ALL_LEAGUE_SLUGS = {
+    "NBA":                  ("basketball", "nba"),
+    "NFL":                  ("football",   "nfl"),
+    "NCAAF":                ("football",   "college-football"),
+    "MLB":                  ("baseball",   "mlb"),
+    "NHL":                  ("hockey",     "nhl"),
+    "MLS":                  ("soccer",     "usa.1"),
+    "Liga MX":              ("soccer",     "mex.1"),
+    "Premier League":       ("soccer",     "eng.1"),
+    "La Liga":              ("soccer",     "esp.1"),
+    "Bundesliga":           ("soccer",     "ger.1"),
+    "Serie A":              ("soccer",     "ita.1"),
+    "Ligue 1":              ("soccer",     "fra.1"),
+    "Champions League":     ("soccer",     "uefa.champions"),
+    "Europa League":        ("soccer",     "uefa.europa"),
+    "Conference League":    ("soccer",     "uefa.europa.conf"),
+    "CONCACAF Champions Cup":("soccer",    "concacaf.champions"),
+}
+
+def _fetch_all_teams_in_league(sport_slug, league_slug):
+    """
+    Obtiene lista de {id, name} de todos los equipos de una liga via ESPN.
+    """
+    try:
+        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+               f"{sport_slug}/{league_slug}/teams?limit=100")
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return []
+        data  = r.json()
+        teams_raw = (data.get("sports", [{}])[0]
+                         .get("leagues", [{}])[0]
+                         .get("teams", []))
+        result = []
+        for t in teams_raw:
+            t_info = t.get("team", {})
+            tid    = str(t_info.get("id", ""))
+            name   = t_info.get("displayName", t_info.get("name", ""))
+            if tid and name:
+                result.append({"id": tid, "name": name})
+        return result
+    except:
+        return []
+
+
+def populate_all_team_profiles(progress_bar=None, status_text=None):
+    """
+    Recorre todas las ligas, obtiene todos los equipos, guarda perfiles en Sheets.
+    Devuelve (n_written, n_failed, log_lines).
+    progress_bar: st.progress object (opcional)
+    status_text:  st.empty object para mostrar equipo actual (opcional)
+    """
+    if not _gsheets_available():
+        return 0, 0, ["❌ Google Sheets no configurado"]
+
+    log     = []
+    written = 0
+    failed  = 0
+    leagues = list(_ALL_LEAGUE_SLUGS.items())
+    total_leagues = len(leagues)
+
+    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
+        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
+
+        if status_text:
+            status_text.markdown(f"🔍 Obteniendo equipos de **{league}**...")
+
+        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
+        if not teams:
+            log.append(f"⚠ {league}: sin equipos en ESPN")
+            if progress_bar:
+                progress_bar.progress((li + 1) / total_leagues)
+            continue
+
+        log.append(f"📋 {league}: {len(teams)} equipos")
+        total_teams = len(teams)
+
+        for ti, team in enumerate(teams):
+            tid   = team["id"]
+            tname = team["name"]
+
+            if status_text:
+                status_text.markdown(
+                    f"📥 **{league}** — {tname} ({ti+1}/{total_teams})"
+                )
+
+            # Obtener últimos 10 partidos
+            form = fetch_recent_form(sport_slug, league_slug, tid, n_games=10)
+            if not isinstance(form, dict) or not form.get("games_raw"):
+                failed += 1
+                continue
+
+            ok = update_team_profile(
+                team_id    = tid,
+                team_name  = tname,
+                league     = league,
+                sport_group= sport_group,
+                new_games  = form["games_raw"],
+            )
+            if ok:
+                written += 1
+                log.append(f"  ✅ {tname}: {len(form['games_raw'])} partidos guardados")
+            else:
+                failed += 1
+                log.append(f"  ❌ {tname}: error al guardar en Sheets")
+
+            # Pequeña pausa para no saturar ESPN ni Sheets
+            time.sleep(0.3)
+
+        if progress_bar:
+            progress_bar.progress((li + 1) / total_leagues)
+
+    if status_text:
+        status_text.markdown(f"✅ Completado: **{written}** equipos guardados")
+
+    return written, failed, log
 
 def _gsheets_available():
     """True if Google Sheets secrets are configured."""
