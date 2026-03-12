@@ -4620,7 +4620,7 @@ with tab_picks:
         # ── Build 1 pick per sport group — HOY CDMX únicamente ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
         _now_rp      = datetime.now(_tz_rp.utc)
-        _today_rp    = (_now_rp - _td_rp(hours=6)).strftime("%Y-%m-%d")  # CDMX offset
+        _today_rp    = (_now_rp - _td_rp(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-6
 
         # Build id→game map for quick lookup
         _gmap_rp = {g.get("id", ""): g for g in games}
@@ -5089,7 +5089,7 @@ with tab_sim:
     # PRÓXIMOS PARTIDOS — sport tiles + date/league expanders  (TOP of tab)
     # ══════════════════════════════════════════════════════════════════════════
     from datetime import timedelta as _td_pt
-    _now_mx_pt = datetime.now(timezone.utc) - _td_pt(hours=6)
+    _now_mx_pt = datetime.now(timezone.utc) - _td_pt(hours=6)  # CDMX = UTC-6
     _meses_pt  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                   "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
@@ -5737,25 +5737,27 @@ with tab_parlays:
         # ── TODAY only filter + deduplication ──────────────────────────────
         from datetime import timezone as _tz_par, timedelta as _td_par
         _now_par   = datetime.now(_tz_par.utc)
-        _today_par = (_now_par - _td_par(hours=6)).strftime("%Y-%m-%d")  # CDMX
+        _today_par = (_now_par - _td_par(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-6
 
         def _game_date_par(gid):
+            """Returns CDMX date string for a game, or None if can't determine."""
             g_obj = next((g for g in games if g.get("id") == gid), None)
-            if not g_obj: return _today_par
+            if not g_obj: return None
             raw = g_obj.get("date","")
-            if not raw: return _today_par
+            if not raw: return None
             try:
                 _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_par.utc)
-                return (_u - _td_par(hours=6)).strftime("%Y-%m-%d")
+                return (_u - _td_par(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-5 (DST)
             except:
-                return _today_par
+                return None
 
         _seen_par = set()
         for r in sr_current:
             gid     = r.get("id","")
             g_state = next((g["state"] for g in games if g.get("id")==gid), "pre")
             if g_state == "post": continue
-            if _game_date_par(gid) != _today_par: continue  # ← TODAY only
+            _gd_par = _game_date_par(gid)
+            if _gd_par is None or _gd_par != _today_par: continue  # ← TODAY only
             if gid in _seen_par: continue                    # ← deduplicate
             _seen_par.add(gid)
             for gp in _build_game_parlays(r):
@@ -5793,7 +5795,8 @@ with tab_parlays:
                 _g   = _gmap_par.get(_gid)
                 if not _g: continue
                 if _g["state"] == "post": continue
-                if _game_date_par(_gid) != _today_par: continue
+                _gd_m = _game_date_par(_gid)
+                if _gd_m is None or _gd_m != _today_par: continue
                 _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
                 if _sg != sg_target: continue
                 _sim = _r["sim"]
@@ -7153,7 +7156,7 @@ with tab_reto:
           }},
           options: {{
             responsive: true,
-            clip: false,
+            clip: {{ left: 20, right: 20, top: 20, bottom: 20 }},
             interaction: {{ mode: "index", intersect: false }},
             plugins: {{
               legend: {{ display: false }},
@@ -7209,7 +7212,7 @@ with tab_reto:
               }}
             }},
             layout: {{
-              padding: {{ top: 16, right: 24, bottom: 8, left: 8 }}
+              padding: {{ top: 20, right: 40, bottom: 20, left: 8 }}
             }},
             scales: {{
               x: {{
@@ -7244,7 +7247,7 @@ with tab_reto:
           }}
         }});
         </script>
-        ''', height=320, scrolling=False)
+        ''', height=360, scrolling=False)
 
     elif not picks:
         st.markdown('''<div class="empty-state">
