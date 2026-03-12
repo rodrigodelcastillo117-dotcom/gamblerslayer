@@ -5073,8 +5073,8 @@ with tab_picks:
                     team, prob, ev, kelly, ml = r["home_team"], h_prob, h_ev, h_k, h_ml
                 else:
                     team, prob, ev, kelly, ml = r["away_team"], a_prob, a_ev, a_k, a_ml
-                if not ml: return None
-                return {"market":"ML","label":team,"prob":prob,"ev":ev,"kelly":kelly}
+                # Include even without ML line — model probability is still valid
+                return {"market":"ML","label":team,"prob":prob,"ev":ev or 0,"kelly":kelly}
 
             if sg == "Soccer":
                 # Candidates: BTTS and O2.5 only (no Under picks in RONGOL)
