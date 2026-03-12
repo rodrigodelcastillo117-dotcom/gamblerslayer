@@ -516,8 +516,7 @@ hr { border-color: var(--border) !important; }
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
     "MLB":              {"sport":"baseball",  "league":"mlb",                    "group":"Baseball"},
-    "NCAA Baseball":    {"sport":"baseball",  "league":"college-baseball",       "group":"Baseball"},
-    "NFL":              {"sport":"football",  "league":"nfl",                    "group":"Football"},
+        "NFL":              {"sport":"football",  "league":"nfl",                    "group":"Football"},
     "NCAAF":            {"sport":"football",  "league":"college-football",       "group":"Football"},
     "NHL":              {"sport":"hockey",    "league":"nhl",                    "group":"Hockey"},
     "MLS":              {"sport":"soccer",    "league":"usa.1",                  "group":"Soccer"},
@@ -534,14 +533,14 @@ LEAGUES = {
     "Liga de Expansión":      {"sport":"soccer", "league":"mex.2",               "group":"Soccer"},
 }
 HOME_BOOST = {
-    "NBA":0.035,"MLB":0.025,"NCAA Baseball":0.02,
+    "NBA":0.035,"MLB":0.025,
     "NFL":0.035,"NCAAF":0.045,"NHL":0.03,"MLS":0.04,"Liga MX":0.045,
     "Premier League":0.038,"La Liga":0.04,"Bundesliga":0.042,"Serie A":0.04,
     "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,"Conference League":0.032,"CONCACAF Champions Cup":0.04,
     "Liga de Expansión":0.05,
 }
 LEAGUE_AVG_GOALS = {
-    "NBA":228.0,"MLB":9.0,"NCAA Baseball":10.5,
+    "NBA":228.0,"MLB":9.0,
     "NFL":46.0,"NCAAF":56.0,"NHL":6.2,
     "MLS":2.96,"Liga MX":2.72,"Premier League":2.81,"La Liga":2.63,
     "Bundesliga":3.24,"Serie A":2.72,"Ligue 1":2.61,
@@ -786,7 +785,18 @@ def fetch_scoreboard(sport, league, tournament_id=None):
             ESPN_URL.format(sport=sport, league=league),
         ]
     else:
-        urls = [ESPN_URL.format(sport=sport, league=league)]
+        # Try without date first (ESPN default = today's games)
+        # Also try with explicit date in case ESPN needs it for some leagues
+        from datetime import timedelta
+        today_utc  = datetime.now(timezone.utc).strftime("%Y%m%d")
+        today_mx   = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime("%Y%m%d")
+        base_url   = ESPN_URL.format(sport=sport, league=league)
+        urls = [
+            base_url,                                       # default (most reliable)
+            f"{base_url}?dates={today_mx}&limit=100",      # MX local date
+            f"{base_url}?dates={today_utc}&limit=100",     # UTC date
+            f"{base_url}?limit=100",                       # no date, high limit
+        ]
 
     for url in urls:
         if not url: continue
@@ -794,7 +804,10 @@ def fetch_scoreboard(sport, league, tournament_id=None):
             r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code == 200:
                 data = r.json()
-                if data.get("events") or data.get("leagues"):
+                if data.get("events") or data.get("leagues") or data.get("competitions"):
+                    return data
+                # Some leagues return events count > 0 even when list is empty — check length
+                if isinstance(data.get("events"), list) and len(data["events"]) > 0:
                     return data
         except: continue
     return {}
@@ -802,17 +815,96 @@ def fetch_scoreboard(sport, league, tournament_id=None):
 
 
 
+def _parse_live_stats(comp, home, away):
+    """Extract live match stats from ESPN competition block."""
+    try:
+        clock = comp.get("status", {}).get("displayClock", "")
+        period = comp.get("status", {}).get("period", 0)
+        situation = comp.get("situation", {})
+        return {
+            "clock": clock,
+            "period": period,
+            "home_possession": situation.get("homeTeam", {}).get("possession", ""),
+            "away_possession": situation.get("awayTeam", {}).get("possession", ""),
+            "home_shots": situation.get("homeTeam", {}).get("shots", ""),
+            "away_shots": situation.get("awayTeam", {}).get("shots", ""),
+        }
+    except:
+        return {}
+
+
+def parse_games(data, league_name):
+    """Parse ESPN scoreboard JSON into normalized game dicts."""
+    games = []
+    for event in data.get("events", []):
+        try:
+            comp  = event.get("competitions", [{}])[0]
+            comps = comp.get("competitors", [])
+            if len(comps) < 2:
+                continue
+            home = next((c for c in comps if c.get("homeAway") == "home"), comps[0])
+            away = next((c for c in comps if c.get("homeAway") == "away"), comps[1])
+            status = event.get("status", {})
+
+            odds_info = {}
+            ol = comp.get("odds", [])
+            if ol:
+                o = ol[0]
+                odds_info = {
+                    "spread":   o.get("details", ""),
+                    "over_under": o.get("overUnder", ""),
+                    "home_ml":  o.get("homeTeamOdds", {}).get("moneyLine", ""),
+                    "away_ml":  o.get("awayTeamOdds", {}).get("moneyLine", ""),
+                    "home_wp":  o.get("homeTeamOdds", {}).get("winPercentage", ""),
+                    "away_wp":  o.get("awayTeamOdds", {}).get("winPercentage", ""),
+                }
+
+            hr = home.get("records", [{}])
+            ar = away.get("records", [{}])
+            live_stats = _parse_live_stats(comp, home, away)
+
+            # Store team IDs for form lookup
+            home_team_id = str(home.get("team", {}).get("id", "") or home.get("id", ""))
+            away_team_id = str(away.get("team", {}).get("id", "") or away.get("id", ""))
+
+            games.append({
+                "id":           event.get("id", ""),
+                "league":       league_name,
+                "home_team":    home.get("team", {}).get("displayName", "Home"),
+                "away_team":    away.get("team", {}).get("displayName", "Away"),
+                "home_score":   home.get("score", ""),
+                "away_score":   away.get("score", ""),
+                "home_record":  hr[0].get("summary", "") if hr else "",
+                "away_record":  ar[0].get("summary", "") if ar else "",
+                "state":        status.get("type", {}).get("state", "pre"),
+                "status_detail": status.get("type", {}).get("shortDetail", ""),
+                "date":         event.get("date", ""),
+                "venue":        comp.get("venue", {}).get("fullName", ""),
+                "odds":         odds_info,
+                "live_stats":   live_stats,
+                "home_team_id": home_team_id,
+                "away_team_id": away_team_id,
+            })
+        except:
+            continue
+    return games
+
+
 def get_all_games(leagues):
     result=[]; errors=[]
     for name in leagues:
         cfg=LEAGUES.get(name)
         if not cfg:
+            errors.append(f"{name}: liga no configurada")
             continue
         try:
             data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=cfg.get("tournament_id"))
-            result.extend(parse_games(data, name))
+            parsed = parse_games(data, name)
+            result.extend(parsed)
+            if not parsed:
+                errors.append(f"{name}: sin partidos en ESPN hoy")
         except Exception as e:
-            errors.append(f"{name}: {e}")
+            errors.append(f"{name}: {type(e).__name__} — {e}")
     return result, errors
 
 
@@ -982,7 +1074,7 @@ def win_pct_strict(rec):
 # Source: multi-season averages. Home advantage is real but varies by sport.
 LEAGUE_HOME_RATE = {
     "NBA": 0.595,
-    "MLB": 0.540, "NCAA Baseball": 0.540,
+    "MLB": 0.540,
     "NFL": 0.570, "NCAAF": 0.610,
     "NHL": 0.550,
     "MLS": 0.470, "Liga MX": 0.470,
@@ -1852,7 +1944,20 @@ else:
             if st.button("🧪 Usar demo"): st.session_state["force_demo"]=True; st.rerun()
 
         leagues_str = ", ".join(sel_leagues[:6])
-        st.markdown(f'<div class="warn-banner">ESPN no retornó partidos para: <b>{leagues_str}</b>.<br>Puede que no haya juegos programados hoy o que la API esté temporalmente caída. Usa el modo demo o selecciona otras ligas.</div>',unsafe_allow_html=True)
+        # Show per-league breakdown if we have errors
+        if fetch_errors:
+            sin_partidos = [e for e in fetch_errors if "sin partidos" in e]
+            con_error    = [e for e in fetch_errors if "sin partidos" not in e]
+            detail_html  = ""
+            if sin_partidos:
+                detail_html += f"<br>📅 Sin partidos hoy: <b>{', '.join(e.split(':')[0] for e in sin_partidos)}</b>"
+            if con_error:
+                detail_html += f"<br>⚠ Error de API: <b>{', '.join(e.split(':')[0] for e in con_error)}</b>"
+        else:
+            detail_html = ""
+        st.markdown(
+            f'<div class="warn-banner">No se encontraron partidos para: <b>{leagues_str}</b>.{detail_html}<br>'            f'Puede que no haya juegos programados hoy. Activa <b>Modo Demo</b> para ver cómo funciona la app.</div>',
+            unsafe_allow_html=True)
         st.stop()
     else:
         sel_set=set(sel_leagues)
