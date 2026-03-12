@@ -3643,9 +3643,9 @@ if st.session_state.pop("run_populate", False):
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab_picks, tab_sim, tab_parlays, tab_all, tab_reto = st.tabs([
     "🃏  RONGOL PICKS",
-    f"🔮  ORÁCULO  ({n_sims:,}×)",
+    f"🎯  PICKS  ({n_sims:,}×)",
     "🎰  PARLAYS DEL DÍA",
-    "📋  PARTIDOS",
+    "🔴  EN VIVO",
     "💰  RETO 13M",
 ])
 
@@ -3723,15 +3723,146 @@ with tab_picks:
             unsafe_allow_html=True
         )
 
-        if not all_bets:
-            st.markdown('<div class="warn-banner">No se encontraron apuestas con EV positivo. Intenta con más ligas o espera más partidos.</div>',unsafe_allow_html=True)
+        # ── Filtrar: solo O/U, BTTS, ML — excluir DO como pick principal ──────────
+        ALLOWED_MKTS = {"O/U", "BTTS", "ML"}
+
+        def _best_allowed_pick(r):
+            """Return best bet dict restricted to allowed markets, or None."""
+            sim = r["sim"]
+            candidates = []
+            # ML
+            for side, ml_key, prob_key in [
+                (r["home_team"], "home_ml", "home_pct"),
+                (r["away_team"], "away_ml", "away_pct"),
+            ]:
+                ml = sim.get(ml_key)
+                ev = sim.get("home_ev" if "home" in ml_key else "away_ev")
+                if ml and ev and ev > 0:
+                    candidates.append({
+                        "market": "ML", "label": side,
+                        "prob": sim.get(prob_key, 0), "ev": ev,
+                        "kelly": sim.get("home_kelly" if "home" in ml_key else "away_kelly", 0),
+                    })
+            # BTTS
+            if sim.get("use_goals") and sim.get("btts_ev", 0) > 0:
+                candidates.append({
+                    "market": "BTTS", "label": "Ambos Anotan (Sí)",
+                    "prob": sim.get("p_btts", 0), "ev": sim["btts_ev"],
+                    "kelly": 0,
+                })
+            # O/U
+            if sim.get("use_goals"):
+                for line, prob_key, ev_key, lbl in [
+                    ("2.5", "p_o25", "o25_ev", "Over 2.5 goles"),
+                    ("3.5", "p_o35", "o35_ev", "Over 3.5 goles"),
+                ]:
+                    _ev = sim.get(ev_key, 0) or 0
+                    _pb = sim.get(prob_key, 0) or 0
+                    if _ev > 0 and _pb > 0:
+                        candidates.append({
+                            "market": "O/U", "label": lbl,
+                            "prob": _pb, "ev": _ev, "kelly": 0,
+                        })
+            if not candidates:
+                return None
+            # Best by probability
+            return max(candidates, key=lambda x: x["prob"])
+
+        # Build allowed bets list sorted by prob desc
+        allowed_bets = []
+        for r in sr_cur:
+            g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
+            if g_state == "post": continue   # skip finished games
+            bp = _best_allowed_pick(r)
+            if bp:
+                allowed_bets.append({**r, "_pick": bp})
+        allowed_bets.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
+
+        if not allowed_bets:
+            st.markdown('<div class="warn-banner">No se encontraron picks O/U · BTTS · ML con EV positivo. Intenta con más ligas.</div>', unsafe_allow_html=True)
         else:
+            # ── PICK DIAMANTE — el de mayor probabilidad ──────────────────────
             st.markdown('<div class="section-heading">💎 PICK DIAMANTE</div>', unsafe_allow_html=True)
-            st.markdown(render_pick_card(all_bets[0]), unsafe_allow_html=True)
-            if len(all_bets)>1:
-                st.markdown(f'<div class="section-heading">🔥 PICKS FUEGO ({len(all_bets)-1})</div>', unsafe_allow_html=True)
-                for i,r in enumerate(all_bets[1:7],2):
-                    st.markdown(render_pick_card(r,rank=i), unsafe_allow_html=True)
+            _top = allowed_bets[0]
+            _tp  = _top["_pick"]
+            _mc  = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80"}.get(_tp["market"],"#9ca3af")
+            _ev_s = f"+{_tp['ev']:.1f}" if _tp['ev']>=0 else f"{_tp['ev']:.1f}"
+            st.markdown(
+                f'<div class="game-row game-row-ev" style="border-left:3px solid {_mc}">'
+                f'<div class="game-title">{_top["away_team"]} @ {_top["home_team"]}</div>'
+                f'<div class="game-meta">{_top["league"]}</div>'
+                f'<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+                f'<span style="background:{_mc}22;color:{_mc};border:1px solid {_mc}55;'
+                f'border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700">{_tp["market"]}</span>'
+                f'<span style="color:#FFE87C;font-size:1rem;font-family:Cinzel,serif;font-weight:700">{_tp["label"]}</span>'
+                f'<span style="color:#4ade80;font-size:0.8rem;margin-left:auto">'
+                f'EV {_ev_s} · {_tp["prob"]:.0f}% prob</span>'
+                f'</div></div>',
+                unsafe_allow_html=True
+            )
+
+            # ── DO PARLAY — solo si hay pick DO con EV+ y hay pick goals para combinar ──
+            _do_parlays = []
+            for r in sr_cur:
+                g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
+                if g_state == "post": continue
+                sim = r["sim"]
+                bs  = sim.get("best_single",{}) or {}
+                if bs.get("market") == "DO" and bs.get("ev",0) > 0:
+                    # Find goals companion
+                    _companion = None
+                    if sim.get("btts_ev",0) > 0:
+                        _companion = {"market":"BTTS","label":"Ambos Anotan","prob":sim.get("p_btts",0),"ev":sim["btts_ev"]}
+                    elif sim.get("o25_ev",0) > 0:
+                        _companion = {"market":"O/U","label":"Over 2.5","prob":sim.get("p_o25",0),"ev":sim["o25_ev"]}
+                    if _companion:
+                        _do_parlays.append({"game":r,"do_pick":bs,"goals_pick":_companion})
+
+            if _do_parlays:
+                st.markdown('<div class="section-heading" style="margin-top:16px">🎯 PARLAY RECOMENDADO (DO + Goals)</div>', unsafe_allow_html=True)
+                _dp = sorted(_do_parlays, key=lambda x: x["do_pick"]["prob"]+x["goals_pick"]["prob"], reverse=True)[0]
+                _g  = _dp["game"]
+                _do = _dp["do_pick"]
+                _gl = _dp["goals_pick"]
+                _mc_do = "#a78bfa"; _mc_gl = {"BTTS":"#4ade80","O/U":"#C9A84C"}.get(_gl["market"],"#9ca3af")
+                st.markdown(
+                    f'<div class="game-row" style="border-left:3px solid #a78bfa44">'
+                    f'<div class="game-title">{_g["away_team"]} @ {_g["home_team"]}</div>'
+                    f'<div class="game-meta">{_g["league"]}</div>'
+                    f'<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+                    f'<span style="background:{_mc_do}22;color:{_mc_do};border:1px solid {_mc_do}55;'
+                    f'border-radius:4px;padding:1px 6px;font-size:0.68rem;font-weight:700">DO</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.78rem">{_do["label"]}</span>'
+                    f'<span style="color:#9ca3af;font-size:0.7rem">+</span>'
+                    f'<span style="background:{_mc_gl}22;color:{_mc_gl};border:1px solid {_mc_gl}55;'
+                    f'border-radius:4px;padding:1px 6px;font-size:0.68rem;font-weight:700">{_gl["market"]}</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.78rem">{_gl["label"]}</span>'
+                    f'<span style="color:#4ade80;font-size:0.65rem;margin-left:auto">'
+                    f'DO EV {_do["ev"]:+.1f} · {_gl["market"]} EV {_gl["ev"]:+.1f}</span>'
+                    f'</div></div>',
+                    unsafe_allow_html=True
+                )
+
+            # ── PICKS FUEGO — resto de picks (O/U, BTTS, ML) ─────────────────
+            if len(allowed_bets) > 1:
+                st.markdown(f'<div class="section-heading" style="margin-top:16px">🔥 PICKS FUEGO ({len(allowed_bets)-1})</div>', unsafe_allow_html=True)
+                for _ab in allowed_bets[1:8]:
+                    _ap = _ab["_pick"]
+                    _amc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80"}.get(_ap["market"],"#9ca3af")
+                    _aev = f"+{_ap['ev']:.1f}" if _ap['ev']>=0 else f"{_ap['ev']:.1f}"
+                    st.markdown(
+                        f'<div class="game-row">'
+                        f'<div class="game-title">{_ab["away_team"]} @ {_ab["home_team"]}</div>'
+                        f'<div class="game-meta">{_ab["league"]}</div>'
+                        f'<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+                        f'<span style="background:{_amc}22;color:{_amc};border:1px solid {_amc}55;'
+                        f'border-radius:4px;padding:1px 6px;font-size:0.65rem;font-weight:700">{_ap["market"]}</span>'
+                        f'<span style="color:#E0F7F0;font-size:0.78rem">{_ap["label"]}</span>'
+                        f'<span style="color:#4ade80;font-size:0.65rem;margin-left:auto">'
+                        f'EV {_aev} · {_ap["prob"]:.0f}%</span>'
+                        f'</div></div>',
+                        unsafe_allow_html=True
+                    )
 
         # Avoid
         avoid=[r for r in sr_cur if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
@@ -3840,6 +3971,175 @@ with tab_sim:
           <div class="empty-title">Listo para simular</div>
           <div>Presiona el botón para correr las simulaciones Monte Carlo.</div>
         </div>""",unsafe_allow_html=True)
+
+    # ── FUTURE GAMES GRID — sport tiles + date/league expanders ───────────────
+    st.markdown('<div class="den-divider" style="margin:16px 0 12px 0"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-heading">📅 PRÓXIMOS PARTIDOS</div>', unsafe_allow_html=True)
+
+    from datetime import timedelta as _td_pt
+    _now_mx_pt = datetime.now(timezone.utc) - _td_pt(hours=6)
+    _meses_pt  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+
+    _SPORT_META_P = {
+        "Basketball": {"emoji":"🏀","color":"#f97316","accent":"rgba(249,115,22,0.12)"},
+        "Soccer":     {"emoji":"⚽","color":"#4ade80","accent":"rgba(74,222,128,0.10)"},
+        "Hockey":     {"emoji":"🏒","color":"#60a5fa","accent":"rgba(96,165,250,0.12)"},
+        "Baseball":   {"emoji":"⚾","color":"#ef4444","accent":"rgba(239,68,68,0.10)"},
+        "Football":   {"emoji":"🏈","color":"#a78bfa","accent":"rgba(167,139,250,0.10)"},
+    }
+    _SPORTS_ORDER_P = ["Basketball","Soccer","Hockey","Baseball","Football"]
+
+    _today_mx_p  = _now_mx_pt.strftime("%Y-%m-%d")
+    _tom_mx_p    = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
+    _d2_mx_p     = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
+
+    def _mx_date_p(g):
+        raw = g.get("date") or ""
+        if not raw: return _today_mx_p
+        try:
+            from datetime import timezone as _tzp
+            _u = datetime.strptime(raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp.utc)
+            return (_u - _td_pt(hours=6)).strftime("%Y-%m-%d")
+        except: return raw[:10]
+
+    def _mx_time_p(g):
+        raw = g.get("date") or ""
+        if not raw: return ""
+        try:
+            from datetime import timezone as _tzp
+            _u = datetime.strptime(raw[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tzp.utc)
+            _m = _u - _td_pt(hours=6)
+            return _m.strftime("%H:%M")
+        except: return ""
+
+    def _fmt_date_p(ds):
+        try:
+            _dt = datetime.strptime(ds, "%Y-%m-%d")
+            if ds == _today_mx_p:  return f"📅 Hoy · {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
+            if ds == _tom_mx_p:    return f"📅 Mañana · {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
+            return f"📅 {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
+        except: return ds
+
+    # Build tree: only pre games (not finished, not live), exclude finished
+    _tree_p = {}
+    for _g in games:
+        if _g["state"] == "post": continue   # skip finished
+        if _g["state"] == "in":  continue    # live → EN VIVO tab
+        _sg_p = LEAGUES.get(_g["league"],{}).get("group","Soccer")
+        _gd   = _mx_date_p(_g)
+        if _gd < _today_mx_p: continue       # skip stale past games
+        if _gd > _d2_mx_p:    continue       # skip too far future
+        _tree_p.setdefault(_sg_p,{}).setdefault(_gd,{}).setdefault(_g["league"],[]).append(_g)
+
+    # Sim results dict
+    _sr_dict_p = {}
+    for _rr in st.session_state.get("sim_results",[]):
+        _sr_dict_p[_rr.get("id","")] = _rr
+
+    def _card_p(g, sm):
+        _sd   = (g.get("status_detail") or "").split("\n")[0].replace("<","").replace(">","").strip()
+        _time = _mx_time_p(g)
+        _time_html = f'<span style="color:#C9A84C;font-size:0.65rem">{_time}</span> ' if _time else ""
+        _rec  = ""
+        if g.get("away_record") or g.get("home_record"):
+            _rec = f'<span style="font-size:0.6rem;color:#3a4a3e"> {g.get("away_record","?")} vs {g.get("home_record","?")}</span>'
+        _o    = g.get("odds",{}) or {}
+        _op   = []
+        if _o.get("over_under"): _op.append(f"O/U {_o['over_under']}")
+        if _o.get("home_ml"):    _op.append(f"ML {_o['home_ml']}")
+        _oh   = f'<div style="color:#C9A84C;font-size:0.6rem;margin-top:1px">{" · ".join(_op)}</div>' if _op else ""
+        # Pick
+        _ph = ""
+        _rp = _sr_dict_p.get(g.get("id",""))
+        if _rp:
+            _bs = _rp["sim"].get("best_single",{}) or {}
+            if _bs and _bs.get("ev",0) > 0:
+                _mc2 = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}.get(_bs.get("market",""),"#9ca3af")
+                _ev2 = _bs.get("ev",0)
+                _ev2s = f"+{_ev2:.1f}" if _ev2>=0 else f"{_ev2:.1f}"
+                _ph = (
+                    f'<div style="margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">'
+                    f'<span style="background:{_mc2}22;color:{_mc2};border:1px solid {_mc2}55;'
+                    f'border-radius:3px;padding:0px 5px;font-size:0.58rem;font-weight:700">{_bs.get("market","")}</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.68rem">{_bs.get("label","")}</span>'
+                    f'<span style="color:#4ade80;font-size:0.6rem;margin-left:auto">EV {_ev2s} · {_bs.get("prob",0):.0f}%</span>'
+                    f'</div>'
+                )
+        return (
+            f'<div style="padding:8px 10px;margin:3px 0;border-radius:7px;'
+            f'background:{sm["accent"]};border-left:2px solid {sm["color"]}55;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">'
+            f'<div style="font-size:0.75rem;font-weight:600;color:#E0F7F0;line-height:1.3">'
+            f'{g["away_team"]}<br><span style="color:#6B7E6E">@ {g["home_team"]}</span></div>'
+            f'<div style="text-align:right">{_time_html}</div>'
+            f'</div>'
+            f'{_rec}{_oh}{_ph}'
+            f'</div>'
+        )
+
+    _sports_p = [s for s in _SPORTS_ORDER_P if s in _tree_p]
+    if not _sports_p:
+        st.markdown('<div style="color:#6B7E6E;font-size:0.8rem;padding:12px 0">No hay partidos próximos disponibles.</div>', unsafe_allow_html=True)
+    else:
+        _total_p = sum(
+            len(gs)
+            for sp in _sports_p
+            for dmap in _tree_p[sp].values()
+            for gs in dmap.values()
+        )
+        st.markdown(
+            f'<div style="font-size:0.68rem;color:#6B7E6E;margin-bottom:8px">'
+            f'{_total_p} partidos próximos · {len(_sports_p)} deportes · hora CDMX</div>',
+            unsafe_allow_html=True
+        )
+
+        # ── Sport tiles — ALL in one row ──────────────────────────────────────
+        _sp_cols_p = st.columns(len(_sports_p))
+        for _ci_p, _sp_p in enumerate(_sports_p):
+            _smp = _SPORT_META_P.get(_sp_p,{"emoji":"🎯","color":"#9ca3af","accent":"rgba(0,0,0,0.1)"})
+            _n_p = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
+            with _sp_cols_p[_ci_p]:
+                st.markdown(
+                    f'<div style="text-align:center;padding:8px 4px;border-radius:9px;'
+                    f'background:{_smp["accent"]};border:1px solid {_smp["color"]}44;margin-bottom:6px">'
+                    f'<div style="font-size:1.4rem">{_smp["emoji"]}</div>'
+                    f'<div style="font-size:0.6rem;font-weight:700;color:{_smp["color"]};'
+                    f'letter-spacing:1px;text-transform:uppercase;margin-top:2px">{_sp_p}</div>'
+                    f'<div style="font-size:0.58rem;color:#6B7E6E;margin-top:1px">{_n_p} partidos</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        # ── Expanders per sport ────────────────────────────────────────────────
+        for _sp_p in _sports_p:
+            _smp = _SPORT_META_P.get(_sp_p,{"emoji":"🎯","color":"#9ca3af","accent":"rgba(0,0,0,0.1)"})
+            _dks_p = sorted(_tree_p[_sp_p].keys())
+            _n_p   = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
+            with st.expander(f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos', expanded=(_today_mx_p in _tree_p[_sp_p])):
+                for _dk_p in _dks_p:
+                    st.markdown(
+                        f'<div style="font-size:0.65rem;font-weight:700;color:#C9A84C;'
+                        f'letter-spacing:2px;text-transform:uppercase;padding:5px 0 5px 0;'
+                        f'border-bottom:1px solid rgba(201,168,76,0.2);margin-bottom:6px">'
+                        f'{_fmt_date_p(_dk_p)}</div>',
+                        unsafe_allow_html=True
+                    )
+                    for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
+                        st.markdown(
+                            f'<div style="font-size:0.6rem;color:{_smp["color"]};font-weight:700;'
+                            f'letter-spacing:1.5px;text-transform:uppercase;margin:7px 0 3px 0">'
+                            f'{_smp["emoji"]} {_lg_p} · {len(_lg_games_p)}</div>',
+                            unsafe_allow_html=True
+                        )
+                        # 3 per row grid
+                        _trios = [_lg_games_p[i:i+3] for i in range(0, len(_lg_games_p), 3)]
+                        for _trio in _trios:
+                            _gcols_p = st.columns(len(_trio))
+                            for _gii, _gg_p in enumerate(_trio):
+                                with _gcols_p[_gii]:
+                                    st.markdown(_card_p(_gg_p, _smp), unsafe_allow_html=True)
+                    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_parlays:
@@ -4438,178 +4738,12 @@ with tab_all:
 
         st.markdown('<div class="den-divider" style="margin:12px 0 20px 0"></div>', unsafe_allow_html=True)
 
-    # ── ALL GAMES — organizado por deporte → fecha → liga ──────────────────────
-    from datetime import timedelta as _td_pt
-    _now_mx_pt = datetime.now(timezone.utc) - _td_pt(hours=6)
-    _meses_pt  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
-                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
-
-    # Sport metadata
-    _SPORT_META = {
-        "Basketball": {"emoji":"🏀","color":"#f97316","accent":"rgba(249,115,22,0.12)"},
-        "Soccer":     {"emoji":"⚽","color":"#4ade80","accent":"rgba(74,222,128,0.10)"},
-        "Hockey":     {"emoji":"🏒","color":"#60a5fa","accent":"rgba(96,165,250,0.12)"},
-        "Baseball":   {"emoji":"⚾","color":"#ef4444","accent":"rgba(239,68,68,0.10)"},
-        "Football":   {"emoji":"🏈","color":"#a78bfa","accent":"rgba(167,139,250,0.10)"},
-    }
-    _SPORTS_ORDER = ["Basketball","Soccer","Hockey","Baseball","Football"]
-
-    # Build sport → date → league → games structure
-    _tree = {}
-    for _g in games:
-        _sg   = LEAGUES.get(_g["league"],{}).get("group","Soccer")
-        _raw_date = (_g.get("date") or "")[:10]
-        # Classify date relative to today MX
-        _today_mx_str = _now_mx_pt.strftime("%Y-%m-%d")
-        _tom_mx_str   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
-        _d2_mx_str    = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
-        if _g["state"] == "in":
-            _date_key = _today_mx_str
-        elif _raw_date <= _today_mx_str:
-            _date_key = _today_mx_str
-        elif _raw_date == _tom_mx_str:
-            _date_key = _tom_mx_str
-        else:
-            _date_key = _d2_mx_str
-        _tree.setdefault(_sg,{}).setdefault(_date_key,{}).setdefault(_g["league"],[]).append(_g)
-
-    # Get sim results dict for quick lookup
-    _sr_dict = {}
-    for _r in st.session_state.get("sim_results",[]):
-        _sr_dict[_r.get("id","")] = _r
-
-    def _fmt_date(ds):
-        try:
-            _dt = datetime.strptime(ds, "%Y-%m-%d")
-            _today_s = _now_mx_pt.strftime("%Y-%m-%d")
-            _tom_s   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
-            if ds == _today_s:   return f"📅 Hoy · {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
-            if ds == _tom_s:     return f"📅 Mañana · {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
-            return f"📅 {_dt.day} {_meses_pt[_dt.month-1]} {_dt.year}"
-        except: return ds
-
-    def _game_card_simple(g, sm):
-        """Render a compact game row with pick info if available."""
-        _sd = (g.get("status_detail") or "").split("\n")[0].replace("<","").replace(">","").replace("/","").strip()
-        _si = {"in":"🔴 ","pre":"⏰ ","post":"✅ "}.get(g["state"],"")
-        _live_c = sm["color"] if g["state"]=="in" else "#6B7E6E"
-        _sh = ""
-        if g["state"]=="in" and g.get("home_score") and g.get("away_score"):
-            _sh = f' <b style="color:#4ade80">{g["away_score"]}–{g["home_score"]}</b>'
-        _rec = ""
-        if g.get("away_record") or g.get("home_record"):
-            _rec = f'<span style="color:#3a4a3e;font-size:0.65rem"> · {g.get("away_record","?")} vs {g.get("home_record","?")}</span>'
-        _odds_parts = []
-        _o = g.get("odds",{})
-        if _o.get("over_under"): _odds_parts.append(f"O/U {_o['over_under']}")
-        if _o.get("home_ml"):    _odds_parts.append(f"ML {_o['home_ml']}/{_o.get('away_ml','?')}")
-        _odds_html = f'<span style="color:#C9A84C;font-size:0.68rem"> · {" · ".join(_odds_parts)}</span>' if _odds_parts else ""
-
-        # Pick info from sim_results
-        _pick_html = ""
-        _r = _sr_dict.get(g.get("id",""))
-        if _r:
-            _bs = _r["sim"].get("best_single",{}) or {}
-            if _bs and _bs.get("ev",0) > 0:
-                _mkt  = _bs.get("market","")
-                _lbl  = _bs.get("label","")
-                _ev   = _bs.get("ev",0)
-                _prob = _bs.get("prob",0)
-                _mkt_colors = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
-                _mc   = _mkt_colors.get(_mkt,"#9ca3af")
-                _ev_s = f"+{_ev:.1f}" if _ev >= 0 else f"{_ev:.1f}"
-                _pick_html = (
-                    f'<div style="margin-top:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-                    f'<span style="background:{_mc}22;color:{_mc};border:1px solid {_mc}55;'
-                    f'border-radius:4px;padding:1px 6px;font-size:0.62rem;font-weight:700">{_mkt}</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.75rem;font-family:Cinzel,serif">{_lbl}</span>'
-                    f'<span style="color:#4ade80;font-size:0.68rem;margin-left:auto">EV {_ev_s} · {_prob:.0f}%</span>'
-                    f'</div>'
-                )
-
-        return (
-            f'<div style="padding:10px 14px;margin:4px 0;border-radius:8px;'
-            f'background:{sm["accent"]};border-left:3px solid {sm["color"]}44;">'
-            f'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-            f'<div style="font-size:0.85rem;font-weight:600;color:#E0F7F0">'
-            f'{g["away_team"]} @ {g["home_team"]}{_sh}</div>'
-            f'<span style="color:{_live_c};font-size:0.7rem;white-space:nowrap;margin-left:8px">{_si}{_sd}</span>'
-            f'</div>'
-            f'<div style="font-size:0.68rem;color:#6B7E6E;margin-top:2px">'
-            f'{g["league"]}{_rec}{_odds_html}</div>'
-            f'{_pick_html}'
-            f'</div>'
-        )
-
-    # ── Render: 3 sports per row ───────────────────────────────────────────────
-    _sports_in_data = [s for s in _SPORTS_ORDER if s in _tree]
-    _total_games_pt = len(games)
-    st.markdown(
-        f'<div style="font-size:0.72rem;color:#6B7E6E;margin-bottom:12px">'
-        f'{_total_games_pt} partidos · {len(_sports_in_data)} deportes</div>',
-        unsafe_allow_html=True
-    )
-
-    _rows_pt = [_sports_in_data[i:i+3] for i in range(0,len(_sports_in_data),3)]
-    for _row_pt in _rows_pt:
-        _cols_pt = st.columns(len(_row_pt))
-        for _ci_pt, _sp_pt in enumerate(_row_pt):
-            _sm = _SPORT_META.get(_sp_pt,{"emoji":"🎯","color":"#9ca3af","accent":"rgba(0,0,0,0.1)"})
-            _dates_in_sport = sorted(_tree[_sp_pt].keys())
-            _n_games_sp = sum(
-                len(gs) for dmap in _tree[_sp_pt].values()
-                for gs in dmap.values()
-            )
-            with _cols_pt[_ci_pt]:
-                # Sport header card
-                st.markdown(
-                    f'<div style="text-align:center;padding:10px 6px;border-radius:10px;'
-                    f'background:{_sm["accent"]};border:1px solid {_sm["color"]}44;margin-bottom:6px">'
-                    f'<div style="font-size:1.6rem">{_sm["emoji"]}</div>'
-                    f'<div style="font-size:0.72rem;font-weight:700;color:{_sm["color"]};'
-                    f'letter-spacing:1px;text-transform:uppercase">{_sp_pt}</div>'
-                    f'<div style="font-size:0.62rem;color:#6B7E6E;margin-top:2px">{_n_games_sp} partidos</div>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-
-        # Expanders for this row — one per sport, below the cards
-        for _sp_pt in _row_pt:
-            _sm = _SPORT_META.get(_sp_pt,{"emoji":"🎯","color":"#9ca3af","accent":"rgba(0,0,0,0.1)"})
-            _dates_in_sport = sorted(_tree[_sp_pt].keys())
-            _n_games_sp = sum(len(gs) for dmap in _tree[_sp_pt].values() for gs in dmap.values())
-            _today_s2 = _now_mx_pt.strftime("%Y-%m-%d")
-            _has_live = any(
-                g["state"]=="in"
-                for dmap in _tree[_sp_pt].values()
-                for gs in dmap.values()
-                for g in gs
-            )
-            _exp_icon = "🔴 " if _has_live else ""
-            with st.expander(
-                f'{_exp_icon}{_sm["emoji"]} {_sp_pt} — {_n_games_sp} partidos',
-                expanded=(_today_s2 in _tree[_sp_pt])
-            ):
-                for _dk in _dates_in_sport:
-                    _date_leagues = _tree[_sp_pt][_dk]
-                    st.markdown(
-                        f'<div style="font-size:0.7rem;font-weight:700;color:#C9A84C;'
-                        f'letter-spacing:2px;text-transform:uppercase;padding:6px 0 4px 0;'
-                        f'border-bottom:1px solid rgba(201,168,76,0.2);margin-bottom:6px">'
-                        f'{_fmt_date(_dk)}</div>',
-                        unsafe_allow_html=True
-                    )
-                    for _league_name, _league_games in sorted(_date_leagues.items()):
-                        st.markdown(
-                            f'<div style="font-size:0.65rem;color:{_sm["color"]};'
-                            f'letter-spacing:1.5px;text-transform:uppercase;'
-                            f'margin:8px 0 4px 0;font-weight:600">'
-                            f'{_sm["emoji"]} {_league_name} · {len(_league_games)} partidos</div>',
-                            unsafe_allow_html=True
-                        )
-                        _cards_html = "".join(_game_card_simple(g, _sm) for g in _league_games)
-                        st.markdown(_cards_html, unsafe_allow_html=True)
-                    st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
+    if not live_games:
+        st.markdown("""<div class="empty-state">
+          <div class="empty-icon">🔴</div>
+          <div class="empty-title">Sin partidos en vivo ahora</div>
+          <div>No hay partidos en curso. Ve a <b>🎯 PICKS</b> para ver próximos partidos.</div>
+        </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # RETO 13M — Bitácora permanente de bankroll
