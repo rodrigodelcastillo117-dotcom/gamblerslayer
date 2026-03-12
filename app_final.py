@@ -1994,8 +1994,15 @@ def parse_games(data, league_name):
                 "home_record":  hr[0].get("summary", "") if hr else "",
                 "away_record":  ar[0].get("summary", "") if ar else "",
                 "state":        status.get("type", {}).get("state", "pre"),
-                "status_detail": (status.get("type", {}).get("shortDetail", "") or "").split("\n")[0].strip(),
                 "date":         event.get("date", ""),
+                "status_detail": (lambda _sd, _dt: (
+                    (lambda _u: (_u - _td(hours=6)).strftime("%H:%M") + " CDMX")(
+                        datetime.strptime(_dt[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    ) if (_sd.lower() in ("scheduled","") and _dt) else _sd
+                ))(
+                    (status.get("type", {}).get("shortDetail", "") or "").split("\n")[0].strip(),
+                    event.get("date", "")
+                ),
                 "venue":        comp.get("venue", {}).get("fullName", ""),
                 "odds":         odds_info,
                 "live_stats":   live_stats,
@@ -6503,7 +6510,9 @@ with tab_all:
             border_col  = "rgba(255,60,60,0.7)"
 
             # Build HTML — compact 3-per-row grid
-            picks_html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">'
+            _n_picks_lv = len(picks)
+            _cols_lv = min(_n_picks_lv, 3)
+            picks_html = f'<div style="display:grid;grid-template-columns:repeat({_cols_lv},1fr);gap:6px;margin-bottom:8px">'
             for i, pk in enumerate(picks):
                 pc = "#4ade80" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
                 _bg = "rgba(255,232,124,0.08)" if i == 0 else "rgba(255,255,255,0.02)"
