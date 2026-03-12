@@ -808,6 +808,45 @@ hr { border-color: var(--border) !important; }
   border-radius: 0 0 6px 6px !important;
   padding: 16px 12px !important;
 }
+/* ── Liga collapsible buttons ── */
+[data-testid="stButton"]:has(> button[key^="btn_lg_"]) button,
+div.stButton > button[kind="secondary"] {
+  /* We target via class added below */
+}
+.liga-btn-wrap [data-testid="stButton"] button {
+  background: transparent !important;
+  border: none !important;
+  border-left: 3px solid rgba(201,168,76,0.35) !important;
+  border-radius: 0 5px 5px 0 !important;
+  color: #C9A84C !important;
+  font-family: 'Cinzel', serif !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.2px !important;
+  text-transform: uppercase !important;
+  text-align: left !important;
+  padding: 7px 14px !important;
+  width: 100% !important;
+  box-shadow: none !important;
+  margin: 5px 0 2px 0 !important;
+  transition: all 0.15s ease !important;
+}
+.liga-btn-wrap [data-testid="stButton"] button:hover {
+  background: rgba(201,168,76,0.07) !important;
+  border-left-color: #C9A84C !important;
+  color: #F0D080 !important;
+}
+/* Sport tiles ▶ buttons — keep minimal */
+.sport-tile-btn [data-testid="stButton"] button {
+  background: transparent !important;
+  border: 1px solid rgba(201,168,76,0.2) !important;
+  color: #C9A84C !important;
+  font-size: 0.7rem !important;
+  padding: 3px 8px !important;
+  box-shadow: none !important;
+}
+
+
 
 
 </style>
@@ -5948,31 +5987,19 @@ with tab_sim:
                 _country_p = LEAGUES.get(_lg_p,{}).get("country","")
                 _ctry_str  = f" · {_country_p}" if _country_p else ""
                 _lg_label  = f"{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)} partidos"
-                # Collapsed state per league — persists across reruns
                 _lg_key    = f"_lg_collapsed_{_lg_p}"
-                _collapsed  = st.session_state.get(_lg_key, False)
-                # League header — clickable chevron
-                _chev = "▶" if _collapsed else "▼"
-                _chev_c = f"{_smp['color']}88"
-                st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:6px;'
-                    f'font-size:0.72rem;color:{_smp["color"]}cc;font-weight:700;'
-                    f'letter-spacing:1px;text-transform:uppercase;'
-                    f'margin:8px 0 4px 0;padding:5px 8px;'
-                    f'background:{_smp["color"]}0d;border-radius:5px;'
-                    f'border-left:2px solid {_smp["color"]}55">'
-                    f'<span style="color:{_chev_c}">{_chev}</span>'
-                    f'{_lg_label}</div>',
-                    unsafe_allow_html=True
-                )
+                _collapsed = st.session_state.get(_lg_key, False)
+                _chev      = "▶" if _collapsed else "▼"
+                st.markdown('<div class="liga-btn-wrap">', unsafe_allow_html=True)
                 if st.button(
-                    f"{'▶ Mostrar' if _collapsed else '▼ Colapsar'} {league_label(_lg_p)}",
+                    f"{_chev}  {_lg_label}",
                     key=f"btn_lg_{_lg_p}",
-                    use_container_width=False,
+                    use_container_width=True,
                     help=f"{'Mostrar' if _collapsed else 'Colapsar'} {league_label(_lg_p)}"
                 ):
                     st.session_state[_lg_key] = not _collapsed
                     st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
                 if not _collapsed:
                     for _gi3 in range(0, len(_lg_games_p), 3):
                         _row3 = _lg_games_p[_gi3:_gi3+3]
