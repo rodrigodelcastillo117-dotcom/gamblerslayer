@@ -582,6 +582,69 @@ def get_demo_games():
          "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
     ]
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_all_team_profiles():
+    """Carga todos los perfiles desde Sheets → dict {team_id: profile}. TTL 1h."""
+    if not _gsheets_available():
+        return {}
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_TP_TAB)
+        except:
+            ws = sh.add_worksheet(title=_TP_TAB, rows=2000, cols=len(_TP_HEADERS))
+            ws.update("A1", [_TP_HEADERS])
+            return {}
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return {}
+        profiles = {}
+        for row in rows[1:]:
+            if not row or not row[0]:
+                continue
+            def _c(i, d=""):
+                return row[i] if i < len(row) else d
+            try:
+                games      = json.loads(_c(5)) if _c(5) else []
+                thresholds = json.loads(_c(25)) if _c(25) else {}
+                profiles[_c(0)] = {
+                    "team_id":           _c(0),
+                    "team_name":         _c(1),
+                    "league":            _c(2),
+                    "sport_group":       _c(3),
+                    "last_updated":      _c(4),
+                    "games":             games,
+                    "n_games":           int(_c(6) or 0),
+                    "avg_scored":        float(_c(7)  or 0),
+                    "avg_conceded":      float(_c(8)  or 0),
+                    "avg_scored_home":   float(_c(9)  or 0),
+                    "avg_conceded_home": float(_c(10) or 0),
+                    "avg_scored_away":   float(_c(11) or 0),
+                    "avg_conceded_away": float(_c(12) or 0),
+                    "rate_o15":          float(_c(13) or 0),
+                    "rate_o25":          float(_c(14) or 0),
+                    "rate_o35":          float(_c(15) or 0),
+                    "rate_btts":         float(_c(16) or 0),
+                    "rate_o15_home":     float(_c(17) or 0),
+                    "rate_o25_home":     float(_c(18) or 0),
+                    "rate_o35_home":     float(_c(19) or 0),
+                    "rate_btts_home":    float(_c(20) or 0),
+                    "rate_o15_away":     float(_c(21) or 0),
+                    "rate_o25_away":     float(_c(22) or 0),
+                    "rate_o35_away":     float(_c(23) or 0),
+                    "rate_btts_away":    float(_c(24) or 0),
+                    "thresholds":        thresholds,
+                }
+            except:
+                continue
+        return profiles
+    except:
+        return {}
+
+
+
 @st.cache_data(ttl=1800)  # Cache 30min — form doesn't change mid-day
 @st.cache_data(ttl=1800)
 def fetch_recent_form(sport, league, team_id, n_games=5):
@@ -2836,7 +2899,7 @@ with st.sidebar:
 
     st.divider()
     st.markdown("**🧠 MEMORIA**")
-    _tp_count_sb = len(_load_all_team_profiles())
+    _tp_count_sb = st.session_state.get("_tp_count_cached", 0)
     if _tp_count_sb > 0:
         st.caption(f"✅ {_tp_count_sb} equipos en memoria")
     else:
@@ -2944,27 +3007,42 @@ st.markdown(f"""<div class="stat-grid">
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
-# ── Team Profiles status badge ────────────────────────────────────────────────
-_tp_profiles = _load_all_team_profiles()
-_tp_count    = len(_tp_profiles)
-if _tp_count > 0:
-    _tp_leagues = len({p.get("league","") for p in _tp_profiles.values()})
-    _tp_total_g = sum(p.get("n_games",0) for p in _tp_profiles.values())
+# [team profiles badge — moved below after function definitions]
+
+# ── Team Profiles status badge — se renderiza con datos del session_state ──────
+# (el valor real se carga más abajo cuando _load_all_team_profiles ya está definida)
+_tp_count_display = st.session_state.get("_tp_count_cached", -1)
+if _tp_count_display > 0:
+    _tp_meta = st.session_state.get("_tp_meta_cached", {})
     st.markdown(
         f'<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
         f'color:#4ade80;letter-spacing:1px">'
-        f'🧠 Memoria activa: <b>{_tp_count}</b> equipos · '
-        f'<b>{_tp_total_g}</b> partidos · '
-        f'<b>{_tp_leagues}</b> ligas</div>',
+        f'🧠 Memoria activa: <b>{_tp_count_display}</b> equipos · '
+        f'<b>{_tp_meta.get("total_games",0)}</b> partidos · '
+        f'<b>{_tp_meta.get("leagues",0)}</b> ligas</div>',
         unsafe_allow_html=True
     )
-else:
+elif _tp_count_display == 0:
     st.markdown(
         '<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
         'color:#6B7E6E;letter-spacing:1px">'
         '🧠 Memoria: aprendiendo... (se llena automáticamente con cada partido)</div>',
         unsafe_allow_html=True
     )
+# Si _tp_count_display == -1 (primera carga), no mostrar nada — se carga abajo
+
+# ── Cargar team profiles (aquí _load_all_team_profiles ya está definida) ─────────
+_tp_profiles_late = _load_all_team_profiles()
+_tp_count_late    = len(_tp_profiles_late)
+if _tp_count_late != st.session_state.get("_tp_count_cached", -1):
+    # Actualizar session_state con datos frescos
+    st.session_state["_tp_count_cached"] = _tp_count_late
+    st.session_state["_tp_meta_cached"]  = {
+        "total_games": sum(p.get("n_games",0) for p in _tp_profiles_late.values()),
+        "leagues":     len({p.get("league","") for p in _tp_profiles_late.values()}),
+    }
+    if _tp_count_late > 0:
+        st.rerun()  # re-render para mostrar badge actualizado
 
 # ── Poblar memoria (botón sidebar) ───────────────────────────────────────────
 if st.session_state.pop("run_populate", False):
@@ -3875,68 +3953,7 @@ _TP_THRESHOLDS = {
 }
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def _load_all_team_profiles():
-    """Carga todos los perfiles desde Sheets → dict {team_id: profile}. TTL 1h."""
-    if not _gsheets_available():
-        return {}
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-        try:
-            ws = sh.worksheet(_TP_TAB)
-        except:
-            ws = sh.add_worksheet(title=_TP_TAB, rows=2000, cols=len(_TP_HEADERS))
-            ws.update("A1", [_TP_HEADERS])
-            return {}
-        rows = ws.get_all_values()
-        if len(rows) < 2:
-            return {}
-        profiles = {}
-        for row in rows[1:]:
-            if not row or not row[0]:
-                continue
-            def _c(i, d=""):
-                return row[i] if i < len(row) else d
-            try:
-                games      = json.loads(_c(5)) if _c(5) else []
-                thresholds = json.loads(_c(25)) if _c(25) else {}
-                profiles[_c(0)] = {
-                    "team_id":           _c(0),
-                    "team_name":         _c(1),
-                    "league":            _c(2),
-                    "sport_group":       _c(3),
-                    "last_updated":      _c(4),
-                    "games":             games,
-                    "n_games":           int(_c(6) or 0),
-                    "avg_scored":        float(_c(7)  or 0),
-                    "avg_conceded":      float(_c(8)  or 0),
-                    "avg_scored_home":   float(_c(9)  or 0),
-                    "avg_conceded_home": float(_c(10) or 0),
-                    "avg_scored_away":   float(_c(11) or 0),
-                    "avg_conceded_away": float(_c(12) or 0),
-                    "rate_o15":          float(_c(13) or 0),
-                    "rate_o25":          float(_c(14) or 0),
-                    "rate_o35":          float(_c(15) or 0),
-                    "rate_btts":         float(_c(16) or 0),
-                    "rate_o15_home":     float(_c(17) or 0),
-                    "rate_o25_home":     float(_c(18) or 0),
-                    "rate_o35_home":     float(_c(19) or 0),
-                    "rate_btts_home":    float(_c(20) or 0),
-                    "rate_o15_away":     float(_c(21) or 0),
-                    "rate_o25_away":     float(_c(22) or 0),
-                    "rate_o35_away":     float(_c(23) or 0),
-                    "rate_btts_away":    float(_c(24) or 0),
-                    "thresholds":        thresholds,
-                }
-            except:
-                continue
-        return profiles
-    except:
-        return {}
-
-
+# [_load_all_team_profiles moved to top]
 def get_team_profile(team_id):
     """Retorna perfil de equipo del cache, o None si no existe."""
     if not team_id:
