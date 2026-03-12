@@ -5597,7 +5597,7 @@ with tab_sim:
         "Baseball":   {"emoji":"⚾","color":"#ef4444","accent":"rgba(239,68,68,0.10)"},
         "Football":   {"emoji":"🏈","color":"#a78bfa","accent":"rgba(167,139,250,0.10)"},
     }
-    _SPORTS_ORDER_P = ["Basketball","Soccer","Hockey","Baseball","Football"]
+    _SPORTS_ORDER_P = ["Soccer","Football","Baseball","Basketball","Hockey"]
 
     _today_mx_p = _now_mx_pt.strftime("%Y-%m-%d")
     _tom_mx_p   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
