@@ -1933,17 +1933,24 @@ def parse_games(data, league_name):
     from datetime import timedelta as _td
     _now_utc   = datetime.now(timezone.utc)
     _now_mx    = _now_utc - _td(hours=6)  # Mexico City offset
-    _valid_dates = set()
-    for _d in range(-1, 3):  # yesterday, today, tomorrow, day after
-        _valid_dates.add((_now_utc + _td(days=_d)).strftime("%Y-%m-%d"))
-        _valid_dates.add((_now_mx  + _td(days=_d)).strftime("%Y-%m-%d"))
+    # Solo partidos de HOY hora CDMX (UTC-6)
+    _today_cdmx = (_now_mx).strftime("%Y-%m-%d")
+    _today_utc  = _now_utc.strftime("%Y-%m-%d")
 
     for event in data.get("events", []):
         try:
-            # Filter: only show games within window of today (±1 day)
-            ev_date = event.get("date","")[:10]
-            if ev_date and ev_date not in _valid_dates:
-                continue
+            # Convertir fecha del partido a CDMX y comparar con hoy CDMX
+            _raw_date = event.get("date","")
+            if _raw_date:
+                try:
+                    from datetime import timedelta as _td2
+                    _ev_utc = datetime.strptime(_raw_date[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
+                    if _ev_cdmx_date != _today_cdmx:
+                        continue
+                except Exception:
+                    # Si no se puede parsear la fecha, excluir el partido
+                    continue
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
@@ -6019,15 +6026,7 @@ with tab_parlays:
                 unsafe_allow_html=True
             )
         elif pending_games:
-            all_parlays_raw = [r for r in sr if r["sim"].get("best_parlay")]
-            if all_parlays_raw:
-                best_raw = max(all_parlays_raw, key=lambda r: r["sim"]["best_parlay"].get("ev",-999))
-                bp = best_raw["sim"]["best_parlay"]
-                ev_str = f"{bp.get('ev',0):+.1f}"
-                st.warning(f"\u26a0 No hay parlays con EV positivo hoy. El mejor disponible tiene EV {ev_str} \u2014 apuesta con precauci\u00f3n.")
-                st.markdown(render_parlay_card(best_raw), unsafe_allow_html=True)
-            else:
-                st.info("No hay suficientes partidos para armar parlays hoy. Selecciona m\u00e1s ligas o espera m\u00e1s juegos.")
+            st.info("Simulando partidos de hoy\u2026 Regresa pronto o re-simula en el Tab de Picks.")
         else:
             st.markdown('<div class="warn-banner">Todos los partidos del día han terminado. No hay partidos pendientes para nuevos parlays.</div>',unsafe_allow_html=True)
 
@@ -7070,7 +7069,7 @@ with tab_reto:
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <div style="background:#060C08;padding:20px 20px 16px 20px;border-radius:8px;
             border:1px solid rgba(201,168,76,0.2);position:relative">
-          <canvas id="retoChart" height="280"></canvas>
+          <canvas id="retoChart" height="260"></canvas>
         </div>
         <script>
         const d = {chart_data};
@@ -7231,17 +7230,8 @@ with tab_reto:
                   maxTicksLimit: 7
                 }},
                 grid: {{ color: "rgba(255,255,255,0.05)" }},
-                min: (function() {{
-                  const lo = Math.min(...values);
-                  const pad = (Math.max(...values) - lo) * 0.15 || lo * 0.05 || 50;
-                  return Math.max(0, lo - pad);
-                }})(),
-                max: (function() {{
-                  const hi = Math.max(...values);
-                  const lo = Math.min(...values);
-                  const pad = (hi - lo) * 0.15 || hi * 0.05 || 50;
-                  return hi + pad;
-                }})()
+                min: 0,
+                max: 5000
               }}
             }}
           }}
