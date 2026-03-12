@@ -729,10 +729,10 @@ LEAGUES = {
     "Bundesliga":       {"sport":"soccer",    "league":"ger.1",                  "group":"Soccer"},
     "Serie A":          {"sport":"soccer",    "league":"ita.1",                  "group":"Soccer"},
     "Ligue 1":          {"sport":"soccer",    "league":"fra.1",                  "group":"Soccer"},
-    "Champions League":       {"sport":"soccer", "league":"UEFA.CHAMPIONS",    "group":"Soccer"},
-    "Europa League":          {"sport":"soccer", "league":"UEFA.EUROPA",         "group":"Soccer"},
-    "Conference League":      {"sport":"soccer", "league":"uefa.europa.conf",    "group":"Soccer"},
-    "CONCACAF Champions Cup": {"sport":"soccer", "league":"CONCACAF.CHAMPIONS",  "group":"Soccer"},
+    "Champions League":       {"sport":"soccer", "league":"UEFA.CHAMPIONS",    "group":"Soccer", "country":"Europa"},
+    "Europa League":          {"sport":"soccer", "league":"UEFA.EUROPA",         "group":"Soccer", "country":"Europa"},
+    "Conference League":      {"sport":"soccer", "league":"uefa.europa.conf",    "group":"Soccer", "country":"Europa"},
+    "CONCACAF Champions Cup": {"sport":"soccer", "league":"concacaf.champions",  "group":"Soccer", "country":"CONCACAF"},
 }
 LEAGUE_FLAG = {
     "NBA":                    "🇺🇸",
@@ -2000,7 +2000,16 @@ def parse_games(data, league_name):
 
             _sd  = (status.get("type", {}).get("shortDetail", "") or "").split("\n")[0].strip()
             _dt  = event.get("date", "")
-            if _sd.lower() in ("scheduled", "") and _dt:
+            _state_str = status.get("type", {}).get("state", "pre")
+            # For pre-game: ALWAYS show CDMX time from the date field (ignore ESPN text like "2:00 PM ET")
+            if _state_str == "pre" and _dt:
+                try:
+                    _u = datetime.strptime(_dt[:19].replace("T", " "),
+                             "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    _sd = (_u - _td(hours=6)).strftime("%H:%M") + " CDMX"
+                except Exception:
+                    pass
+            elif _sd.lower() in ("scheduled", "") and _dt:
                 try:
                     _u = datetime.strptime(_dt[:19].replace("T", " "),
                              "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -6523,39 +6532,13 @@ with tab_all:
         st.markdown('<div class="section-heading">🔴 Picks En Vivo</div>', unsafe_allow_html=True)
         st.caption("Análisis contextual: marcador actual + minuto + probabilidades de simulación.")
 
-        # ── Filtros: deporte / país / liga ────────────────────────────────────
-        _lv_sports = sorted(set(LEAGUES.get(g["league"],{}).get("group","Soccer") for g in live_games))
-        _lv_countries = sorted(set(LEAGUES.get(g["league"],{}).get("country","") for g in live_games if LEAGUES.get(g["league"],{}).get("country","")))
-        _lv_leagues = sorted(set(g["league"] for g in live_games))
-
-        _fc1, _fc2, _fc3 = st.columns(3)
-        with _fc1:
-            _sel_sport = st.selectbox("⚡ Deporte", ["Todos"] + _lv_sports, key="lv_sport_sel")
-        with _fc2:
-            _sel_country = st.selectbox("🌎 País", ["Todos"] + _lv_countries, key="lv_country_sel")
-        with _fc3:
-            _sel_league = st.selectbox("🏆 Liga", ["Todas"] + [league_label(l) for l in _lv_leagues], key="lv_league_sel")
-
-        # Apply filters
-        _live_filtered = []
+        # ── Build sport → league tree (all live games) ────────────────────────
+        _lv_tree = {}
         for _g in live_games:
-            _sg = LEAGUES.get(_g["league"],{}).get("group","Soccer")
-            _cty = LEAGUES.get(_g["league"],{}).get("country","")
-            _llbl = league_label(_g["league"])
-            if _sel_sport != "Todos" and _sg != _sel_sport: continue
-            if _sel_country != "Todos" and _cty != _sel_country: continue
-            if _sel_league != "Todas" and _llbl != _sel_league: continue
-            _live_filtered.append(_g)
-
-        st.markdown(f'<div style="font-size:0.78rem;color:#6B7E6E;margin:4px 0 8px 0">{len(_live_filtered)} de {len(live_games)} partidos en vivo</div>', unsafe_allow_html=True)
-
-        # ── Build sport → league tree ─────────────────────────────────────────
-        _lv_tree = {}  # sport → league → [games]
-        for _g in _live_filtered:
-            _sg = LEAGUES.get(_g["league"],{}).get("group","Soccer")
+            _sg  = LEAGUES.get(_g["league"],{}).get("group","Soccer")
             _lv_tree.setdefault(_sg, {}).setdefault(_g["league"], []).append(_g)
 
-        _LV_SPORT_ORDER = ["Soccer","Basketball","Hockey","Baseball","Football"]
+        _LV_SPORT_ORDER  = ["Soccer","Basketball","Hockey","Baseball","Football"]
         _LV_SPORT_COLORS = {"Soccer":"#4ade80","Basketball":"#f97316","Hockey":"#60a5fa","Baseball":"#f59e0b","Football":"#a78bfa"}
         _LV_SPORT_ICONS  = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
 
@@ -6663,49 +6646,43 @@ with tab_all:
                 + '</div></div>'
             )
 
-        # Render grouped: Sport header → League header → 3-per-row cards
+        # ── Render: Sport expander → League sub-expander → 3-per-row cards ──
         for _lv_sg in _LV_SPORT_ORDER:
             if _lv_sg not in _lv_tree: continue
             _lv_sg_color = _LV_SPORT_COLORS.get(_lv_sg, "#C9A84C")
             _lv_sg_icon  = _LV_SPORT_ICONS.get(_lv_sg, "🎯")
             _lv_sg_total = sum(len(v) for v in _lv_tree[_lv_sg].values())
 
-            # Sport header
-            st.markdown(
-                f'<div style="font-size:0.78rem;font-weight:700;color:{_lv_sg_color};'
-                f'letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0;'
-                f'border-bottom:1px solid {_lv_sg_color}33;padding-bottom:4px">'
-                f'{_lv_sg_icon} {_lv_sg} — {_lv_sg_total} en vivo</div>',
-                unsafe_allow_html=True
-            )
+            # Sport-level expander (expanded by default)
+            with st.expander(f"{_lv_sg_icon}  {_lv_sg}  ·  {_lv_sg_total} en vivo", expanded=True):
 
-            for _lv_lg in sorted(_lv_tree[_lv_sg].keys()):
-                _lv_lg_games = _lv_tree[_lv_sg][_lv_lg]
-                _lv_lg_label = league_label(_lv_lg)
-                _lv_country  = LEAGUES.get(_lv_lg,{}).get("country","")
+                for _lv_lg in sorted(_lv_tree[_lv_sg].keys()):
+                    _lv_lg_games = _lv_tree[_lv_sg][_lv_lg]
+                    _lv_lg_label = league_label(_lv_lg)
+                    _lv_country  = LEAGUES.get(_lv_lg, {}).get("country", "")
+                    _country_tag = f"  🌎 {_lv_country}" if _lv_country else ""
+                    _exp_label   = f"{_lv_lg_label}{_country_tag}  ·  {len(_lv_lg_games)} partido{'s' if len(_lv_lg_games)!=1 else ''}"
 
-                # League header
-                _country_str = f" · {_lv_country}" if _lv_country else ""
-                st.markdown(
-                    f'<div style="font-size:0.70rem;color:{_lv_sg_color}99;font-weight:600;'
-                    f'letter-spacing:1px;text-transform:uppercase;margin:6px 0 4px 8px">'
-                    f'{_lv_lg_label}{_country_str} · {len(_lv_lg_games)}</div>',
-                    unsafe_allow_html=True
-                )
+                    # League-level sub-expander
+                    with st.expander(_exp_label, expanded=True):
 
-                # Build cards for this league
-                _lv_league_cards = [_build_live_card(g) for g in _lv_lg_games]
-                _lv_league_cards = [c for c in _lv_league_cards if c]
+                        # Build cards
+                        _lv_league_cards = [_build_live_card(g) for g in _lv_lg_games]
+                        _lv_league_cards = [c for c in _lv_league_cards if c]
 
-                # Render 3 per row
-                for _rs in range(0, len(_lv_league_cards), 3):
-                    _row_c = _lv_league_cards[_rs:_rs+3]
-                    _nc = len(_row_c)
-                    st.markdown(
-                        f'<div style="display:grid;grid-template-columns:repeat({_nc},1fr);gap:8px;margin-bottom:8px">'
-                        + "".join(_row_c) + '</div>',
-                        unsafe_allow_html=True
-                    )
+                        if not _lv_league_cards:
+                            st.caption("Sin picks disponibles para estos partidos.")
+                            continue
+
+                        # 3 per row
+                        for _rs in range(0, len(_lv_league_cards), 3):
+                            _row_c = _lv_league_cards[_rs:_rs+3]
+                            _nc    = len(_row_c)
+                            st.markdown(
+                                f'<div style="display:grid;grid-template-columns:repeat({_nc},1fr);gap:8px;margin-bottom:8px">'
+                                + "".join(_row_c) + '</div>',
+                                unsafe_allow_html=True
+                            )
 
         st.markdown('<div class="den-divider" style="margin:12px 0 20px 0"></div>', unsafe_allow_html=True)
 
