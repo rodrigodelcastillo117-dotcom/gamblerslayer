@@ -66,7 +66,7 @@ st.markdown("""
 }
 .den-logo {
   font-family: 'Cinzel', serif;
-  font-size: 3.8rem;
+  font-size: 4.256rem;
   font-weight: 900;
   color: var(--gold);
   letter-spacing: 8px;
@@ -77,7 +77,7 @@ st.markdown("""
 }
 .den-subtitle {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.806rem;
   color: var(--muted);
   letter-spacing: 6px;
   text-transform: uppercase;
@@ -94,7 +94,7 @@ st.markdown("""
   display: inline-block;
   color: var(--gold);
   opacity: 0.4;
-  font-size: 1.2rem;
+  font-size: 1.344rem;
   margin: 0 12px;
 }
 
@@ -111,14 +111,14 @@ st.markdown("""
 }
 .stat-num {
   font-family: 'Cinzel', serif;
-  font-size: 2rem;
+  font-size: 2.24rem;
   font-weight: 700;
   color: var(--gold);
   line-height: 1;
 }
 .stat-label {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.62rem;
+  font-size: 0.694rem;
   color: var(--muted);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -166,13 +166,13 @@ st.markdown("""
 }
 .pick-matchup {
   font-family: 'Playfair Display', serif;
-  font-size: 1.15rem;
+  font-size: 1.288rem;
   font-weight: 700;
   color: var(--white);
 }
 .pick-league-badge {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.68rem;
+  font-size: 0.762rem;
   color: var(--gold);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -185,7 +185,7 @@ st.markdown("""
 
 .pick-action {
   font-family: 'Cinzel', serif;
-  font-size: 1.9rem;
+  font-size: 2.128rem;
   font-weight: 900;
   color: #FFE87C;
   text-shadow:
@@ -203,7 +203,7 @@ st.markdown("""
 }
 .pick-action-arrow {
   color: #FFE87C;
-  font-size: 2rem;
+  font-size: 2.24rem;
   filter: drop-shadow(0 0 8px rgba(255,232,124,0.8));
   animation: pulse-arrow 2s ease-in-out infinite;
 }
@@ -215,7 +215,7 @@ st.markdown("""
 .market-chip {
   display: inline-block;
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.68rem;
+  font-size: 0.762rem;
   font-weight: 600;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -244,13 +244,13 @@ st.markdown("""
 .stat-item { text-align: center; min-width: 70px; }
 .stat-item-val {
   font-family: 'Cinzel', serif;
-  font-size: 1.3rem;
+  font-size: 1.456rem;
   font-weight: 700;
   line-height: 1;
 }
 .stat-item-lbl {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.6rem;
+  font-size: 0.672rem;
   color: var(--muted);
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -270,7 +270,7 @@ st.markdown("""
   align-items: center;
   gap: 5px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.7rem;
+  font-size: 0.784rem;
   font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -284,7 +284,7 @@ st.markdown("""
 /* pick rationale */
 .pick-rationale {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.918rem;
   color: var(--muted);
   line-height: 1.7;
   margin-top: 10px;
@@ -318,7 +318,7 @@ st.markdown("""
   border-bottom: 1px solid rgba(26,188,156,0.25);
   padding: 14px 20px;
   font-family: 'Cinzel', serif;
-  font-size: 1rem;
+  font-size: 1.12rem;
   color: #2EE8C0;
   letter-spacing: 3px;
   text-transform: uppercase;
@@ -332,14 +332,14 @@ st.markdown("""
   padding: 6px 0;
   border-bottom: 1px solid rgba(26,188,156,0.1);
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.918rem;
   color: var(--text);
 }
 .parlay-leg:last-child { border-bottom: none; }
 .parlay-connector {
   text-align: center;
   color: var(--gold);
-  font-size: 0.7rem;
+  font-size: 0.784rem;
   letter-spacing: 3px;
   padding: 2px 0;
   font-family: 'DM Sans', sans-serif;
@@ -361,13 +361,13 @@ st.markdown("""
 }
 .game-title {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.9rem;
+  font-size: 1.008rem;
   font-weight: 600;
   color: var(--white);
 }
 .game-meta {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.806rem;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -375,15 +375,15 @@ st.markdown("""
 /* ── PROB BARS ── */
 .bar-wrap { margin: 4px 0; }
 .bar-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
-.bar-team { font-family: 'DM Sans',sans-serif; font-size:0.72rem; color:var(--muted); }
-.bar-pct  { font-family: 'Cinzel',sans-serif; font-size:0.72rem; font-weight:700; }
+.bar-team { font-family: 'DM Sans',sans-serif; font-size: 0.806rem; color:var(--muted); }
+.bar-pct  { font-family: 'Cinzel',sans-serif; font-size: 0.806rem; font-weight:700; }
 .bar-bg   { background: rgba(255,255,255,0.05); border-radius:3px; height:6px; }
 .bar-fill { height:6px; border-radius:3px; }
 
 /* ── SECTION HEADING ── */
 .section-heading {
   font-family: 'Cinzel', serif;
-  font-size: 1rem;
+  font-size: 1.12rem;
   font-weight: 700;
   color: var(--gold);
   letter-spacing: 4px;
@@ -407,7 +407,7 @@ st.markdown("""
   border-radius: 4px;
   padding: 8px 14px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.78rem;
+  font-size: 0.874rem;
   color: #C9A84C;
   margin: 8px 0;
 }
@@ -417,7 +417,7 @@ st.markdown("""
   border-radius: 4px;
   padding: 8px 14px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.78rem;
+  font-size: 0.874rem;
   color: #e74c3c;
   margin: 8px 0;
 }
@@ -435,7 +435,7 @@ st.markdown("""
 }
 .sidebar-logo {
   font-family: 'Cinzel', serif;
-  font-size: 1.4rem;
+  font-size: 1.568rem;
   font-weight: 900;
   color: var(--gold);
   letter-spacing: 4px;
@@ -445,7 +445,7 @@ st.markdown("""
 }
 .sidebar-sub {
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.6rem;
+  font-size: 0.672rem;
   color: var(--muted);
   letter-spacing: 3px;
   text-transform: uppercase;
@@ -461,7 +461,7 @@ st.markdown("""
 }
 .stTabs [data-baseweb="tab"] {
   font-family: 'Cinzel', serif !important;
-  font-size: 0.72rem !important;
+  font-size: 0.806rem !important;
   letter-spacing: 2px !important;
   color: var(--muted) !important;
   background: transparent !important;
@@ -482,7 +482,7 @@ st.markdown("""
   background: linear-gradient(135deg, #8B6914 0%, var(--gold) 50%, #8B6914 100%) !important;
   color: var(--dark) !important;
   font-family: 'Cinzel', serif !important;
-  font-size: 0.9rem !important;
+  font-size: 1.008rem !important;
   font-weight: 700 !important;
   letter-spacing: 3px !important;
   text-transform: uppercase !important;
@@ -506,8 +506,8 @@ st.markdown("""
   color: var(--muted);
   font-family: 'DM Sans', sans-serif;
 }
-.empty-icon { font-size: 3rem; margin-bottom: 12px; }
-.empty-title { font-family: 'Cinzel', serif; font-size: 1rem; color: var(--gold); letter-spacing: 2px; margin-bottom: 8px; }
+.empty-icon { font-size: 3.36rem; margin-bottom: 12px; }
+.empty-title { font-family: 'Cinzel', serif; font-size: 1.12rem; color: var(--gold); letter-spacing: 2px; margin-bottom: 8px; }
 
 hr { border-color: var(--border) !important; }
 
@@ -539,7 +539,7 @@ hr { border-color: var(--border) !important; }
   }
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
   .stTabs [data-baseweb="tab"] {
-    font-size: 0.55rem !important;
+    font-size: 0.616rem !important;
     letter-spacing: 0.5px !important;
     padding: 8px 10px !important;
     white-space: nowrap !important;
@@ -548,47 +548,47 @@ hr { border-color: var(--border) !important; }
   /* ── Pick card: smaller text, no overflow ── */
   .pick-card { padding: 0 0 12px 0 !important; margin: 8px 0 !important; }
   .pick-header { padding: 10px 12px !important; flex-direction: column !important; gap: 6px !important; }
-  .pick-matchup { font-size: 0.9rem !important; }
+  .pick-matchup { font-size: 1.008rem !important; }
   .pick-body { padding: 10px 12px !important; }
   .pick-action {
-    font-size: 1.15rem !important;
+    font-size: 1.288rem !important;
     letter-spacing: 1px !important;
     gap: 8px !important;
     padding: 8px 0 !important;
   }
-  .pick-action-arrow { font-size: 1.3rem !important; }
+  .pick-action-arrow { font-size: 1.456rem !important; }
 
   /* ── Stats row: 2 cols on mobile ── */
   .stats-row { gap: 10px !important; }
   .stat-item { min-width: 56px !important; }
-  .stat-item-val { font-size: 1rem !important; }
+  .stat-item-val { font-size: 1.12rem !important; }
 
   /* ── Game row ── */
   .game-row { padding: 8px 10px !important; }
-  .game-title { font-size: 0.78rem !important; }
-  .game-meta  { font-size: 0.62rem !important; }
+  .game-title { font-size: 0.874rem !important; }
+  .game-meta  { font-size: 0.694rem !important; }
 
   /* ── Section heading ── */
-  .section-heading { font-size: 0.75rem !important; letter-spacing: 2px !important; }
+  .section-heading { font-size: 0.84rem !important; letter-spacing: 2px !important; }
 
   /* ── Parlay card ── */
-  .parlay-header { font-size: 0.75rem !important; padding: 10px 12px !important; letter-spacing: 1.5px !important; }
+  .parlay-header { font-size: 0.84rem !important; padding: 10px 12px !important; letter-spacing: 1.5px !important; }
   .parlay-body   { padding: 10px 12px !important; }
-  .parlay-leg    { font-size: 0.72rem !important; }
+  .parlay-leg    { font-size: 0.806rem !important; }
 
   /* ── Prob bars ── */
-  .bar-team, .bar-pct { font-size: 0.62rem !important; }
+  .bar-team, .bar-pct { font-size: 0.694rem !important; }
 
   /* ── Buttons ── */
   .stButton > button {
-    font-size: 0.7rem !important;
+    font-size: 0.784rem !important;
     padding: 10px 16px !important;
     letter-spacing: 2px !important;
   }
 
   /* ── Sidebar button ── */
   [data-testid="stSidebar"] .stButton > button {
-    font-size: 0.65rem !important;
+    font-size: 0.728rem !important;
     padding: 8px 12px !important;
   }
 
@@ -600,30 +600,30 @@ hr { border-color: var(--border) !important; }
 
   /* ── Expanders ── */
   .streamlit-expanderHeader {
-    font-size: 0.75rem !important;
+    font-size: 0.84rem !important;
     padding: 8px 10px !important;
   }
 
   /* ── Empty state ── */
   .empty-state { padding: 28px 12px !important; }
-  .empty-icon  { font-size: 2rem !important; }
-  .empty-title { font-size: 0.85rem !important; }
+  .empty-icon  { font-size: 2.24rem !important; }
+  .empty-title { font-size: 0.952rem !important; }
 
   /* ── Warn / demo banners ── */
-  .warn-banner, .demo-banner { font-size: 0.7rem !important; padding: 6px 10px !important; }
+  .warn-banner, .demo-banner { font-size: 0.784rem !important; padding: 6px 10px !important; }
 
   /* ── Sidebar logo ── */
-  .sidebar-logo { font-size: 1.1rem !important; letter-spacing: 2px !important; }
-  .sidebar-sub  { font-size: 0.5rem !important; letter-spacing: 2px !important; }
+  .sidebar-logo { font-size: 1.232rem !important; letter-spacing: 2px !important; }
+  .sidebar-sub  { font-size: 0.56rem !important; letter-spacing: 2px !important; }
 
   /* ── Reduce pick card market chip ── */
-  .market-chip { font-size: 0.58rem !important; padding: 2px 7px !important; }
+  .market-chip { font-size: 0.65rem !important; padding: 2px 7px !important; }
 
   /* ── Confidence badge ── */
-  .conf-badge { font-size: 0.6rem !important; padding: 3px 8px !important; }
+  .conf-badge { font-size: 0.672rem !important; padding: 3px 8px !important; }
 
   /* ── Pick rationale ── */
-  .pick-rationale { font-size: 0.72rem !important; }
+  .pick-rationale { font-size: 0.806rem !important; }
 
   /* ── Live section header sport tiles: shrink on mobile ── */
   div[style*="text-align:center"][style*="border-radius:10px"],
@@ -634,11 +634,11 @@ hr { border-color: var(--border) !important; }
 
 /* Extra small (≤ 480 px — most phones portrait) */
 @media (max-width: 480px) {
-  .pick-action { font-size: 0.95rem !important; }
-  .stat-item-val { font-size: 0.88rem !important; }
-  .pick-matchup { font-size: 0.82rem !important; }
+  .pick-action { font-size: 1.064rem !important; }
+  .stat-item-val { font-size: 0.986rem !important; }
+  .pick-matchup { font-size: 0.918rem !important; }
   .stTabs [data-baseweb="tab"] {
-    font-size: 0.48rem !important;
+    font-size: 0.538rem !important;
     padding: 7px 7px !important;
   }
 }
@@ -2669,7 +2669,11 @@ def run_monte_carlo(game, n=10_000):
     _is_foot  = LEAGUES.get(game.get("league",""),{}).get("group","") in ("Football",)
     _nonsoccer_no_line = ou_val == 0.0 and _lg_avg > 0 and (_is_bball or _is_base or _is_hock or _is_foot)
     if _nonsoccer_no_line:
-        ou_val = _lg_avg  # use league avg as implicit line — will show as "~228.0" etc
+        # Use lam_h + lam_a (model's own expected total) as the implicit line.
+        # This guarantees the distribution is centered on the line → true 50/50 baseline.
+        # _lg_avg as fallback if get_lambda returned None (shouldn't happen but safe).
+        _model_total = (lam_h + lam_a) if (lam_h and lam_a) else _lg_avg
+        ou_val = max(_model_total, _lg_avg * 0.75)  # sanity floor: never below 75% of league avg
     # ── Signal C: Fatigue / Rest Disadvantage ────────────────────────────────
     # NBA/NHL/MLB: back-to-back = ≤1 rest day (very common, well-studied)
     #   Sources: NBA -3.8% (Huyghe et al.), NHL -3.2%, MLB -1.5%, Soccer -2.0%
@@ -2730,7 +2734,9 @@ def run_monte_carlo(game, n=10_000):
                         if rng.random() < 0.5: hw += 1; dc_1x += 1; dc_12 += 1
                         else: aw += 1; dc_x2 += 1; dc_12 += 1
                     if ou_val > 0:
-                        if tg > ou_val: o_total += 1
+                        # For implicit NHL line (no ESPN): shift by -0.5 to center Poisson discrete dist
+                        _nhl_eff_line = (ou_val - 0.5) if _nonsoccer_no_line else ou_val
+                        if tg > _nhl_eff_line: o_total += 1
                         else: u_total += 1
                 else:
                     # NBA / MLB / NFL — normal distribution (Poisson breaks for large λ)
@@ -2738,9 +2744,12 @@ def run_monte_carlo(game, n=10_000):
                     # MLB: typical game total std ~3.0 runs
                     # NFL: typical game total std ~14 pts
                     if sport_grp == "Basketball":
-                        per_team_std = max(5.0, (lh + la) * 0.065)  # ~12-13 pts std on total
+                        per_team_std = max(8.0, (lh + la) * 0.075)  # ~14-16 pts std on total (TeamRankings historical)
                     elif sport_grp == "Baseball":
-                        per_team_std = max(1.5, (lh + la) * 0.18)   # ~3 runs std
+                        # Real MLB game total std ≈ 3.0 runs (Retrosheet historical)
+                        # Normal distribution is appropriate at λ≈4.5 runs/team (CLT)
+                        # Poisson would create discrete-integer Under bias at integer lines
+                        per_team_std = max(2.5, (lh + la) * 0.34)   # combined std ≈ 3.0 runs
                     else:  # Football / NCAAF
                         per_team_std = max(5.0, (lh + la) * 0.12)   # ~14 pts std
                     sim_h = max(0, lh + rng.gauss(0, per_team_std * 0.7))
@@ -2789,7 +2798,7 @@ def run_monte_carlo(game, n=10_000):
     p_dc_1x=dc_1x/n; p_dc_x2=dc_x2/n; p_dc_12=dc_12/n
 
     hml=game["odds"].get("home_ml",""); aml=game["odds"].get("away_ml","")
-    ou=game["odds"].get("over_under","") or (str(_lg_avg) if _nonsoccer_no_line else "")
+    ou=game["odds"].get("over_under","") or (f"~{ou_val:.1f}" if _nonsoccer_no_line else "")
     home_ev=calc_ev(sh,hml) if hml else None
     away_ev=calc_ev(sa,aml) if aml else None
     hk=quarter_kelly(sh,hml) if hml else None
@@ -3076,7 +3085,7 @@ def run_monte_carlo(game, n=10_000):
         "best_single":best_single,"best_parlay":best_parlay,"pos_legs":pos_legs,
         "p_o_total":round(p_o_total*100,1) if p_o_total is not None else None,
         "p_u_total":round(p_u_total*100,1) if p_u_total is not None else None,
-        "ou_line":str(ou) if ou else (f"~{_lg_avg:.1f}" if _nonsoccer_no_line else None),
+        "ou_line":str(ou) if ou else (f"~{ou_val:.1f}" if _nonsoccer_no_line else None),
         "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
         "low_confidence": game.get("_low_confidence", False),
         "lam_real_h":game.get("_lam_real_h"),"lam_real_a":game.get("_lam_real_a"),
@@ -3223,7 +3232,7 @@ def run_all_simulations(games, n=10_000):
     results=[]; pb=st.progress(0); st_txt=st.empty()
     for i,game in enumerate(games):
         st_txt.markdown(
-            f'<div style="font-family:\'DM Sans\',sans-serif;font-size:0.8rem;color:#6B7E6E;">'
+            f'<div style="font-family:\'DM Sans\',sans-serif;font-size:0.896rem;color:#6B7E6E;">'
             f'⚙ Simulando [{i+1}/{len(games)}] — {game["away_team"]} @ {game["home_team"]}</div>',
             unsafe_allow_html=True)
         # Enrich with recent form before simulation (cached 30min)
@@ -3579,7 +3588,7 @@ def render_pick_card(r, rank=None):
     live_html  = '<span class="market-chip chip-btts">🔴 EN VIVO</span>' if is_live else ""
     rank_html  = ""
     if rank:
-        rank_html = '<span style="font-family:Cinzel,serif;color:#6B7E6E;font-size:0.8rem">#' + str(rank) + '</span> '
+        rank_html = '<span style="font-family:Cinzel,serif;color:#6B7E6E;font-size:0.896rem">#' + str(rank) + '</span> '
 
     score_html = ""
     if is_live and r.get("home_score") and r.get("away_score"):
@@ -3610,12 +3619,12 @@ def render_pick_card(r, rank=None):
                 c = "#4ade80" if ev_v > 0 else ("#C9A84C" if lbl == "O2.5" else "#6B7E6E")
                 star = "⭐ " if is_best else ""
                 fw = "font-weight:700;" if is_best else ""
-                pills.append('<span style="color:' + c + ';font-size:0.88rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b> (EV ' + ev_s + ')</span>')
+                pills.append('<span style="color:' + c + ';font-size:0.986rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b> (EV ' + ev_s + ')</span>')
             else:
                 c = "#8ab4a0" if is_best else "#6B7E6E"
                 star = "⭐ " if is_best else ""
                 fw = "font-weight:700;" if is_best else ""
-                pills.append('<span style="color:' + c + ';font-size:0.88rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b></span>')
+                pills.append('<span style="color:' + c + ';font-size:0.986rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b></span>')
         if pills:
             goals_html = ('<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;'
                           'padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">'
@@ -3633,14 +3642,14 @@ def render_pick_card(r, rank=None):
         pct = int(f * 100)
         c = "#4ade80" if pct >= 60 else ("#C9A84C" if pct >= 40 else "#ef4444")
         arrow = "▲" if pct >= 60 else ("▬" if pct >= 40 else "▼")
-        return f'<span style="font-size:0.72rem;color:{c};margin-right:8px">{arrow} {team} {pct}% forma</span>'
+        return f'<span style="font-size:0.806rem;color:{c};margin-right:8px">{arrow} {team} {pct}% forma</span>'
     if hf is not None or af is not None:
         form_html = ('<div style="margin-top:5px;opacity:0.85">' +
                      form_badge(hf, r.get("home_team","Local")) +
                      form_badge(af, r.get("away_team","Visita")) +
-                     '<span style="font-size:0.65rem;color:#3a4a3e">· últimos 5 juegos</span></div>')
+                     '<span style="font-size:0.728rem;color:#3a4a3e">· últimos 5 juegos</span></div>')
     elif r.get("_form_unavailable"):
-        form_html = '<div style="margin-top:5px;opacity:0.5;font-size:0.65rem;color:#3a4a3e">📡 Forma reciente no disponible (ESPN sin historial para esta liga)</div>' 
+        form_html = '<div style="margin-top:5px;opacity:0.5;font-size:0.728rem;color:#3a4a3e">📡 Forma reciente no disponible (ESPN sin historial para esta liga)</div>' 
 
     # ── AI Sport Analyst (only for top picks to save API calls) ──────────────
     ai_html = ""
@@ -3659,10 +3668,10 @@ def render_pick_card(r, rank=None):
             '<div style="margin-top:10px;padding:10px 14px;'
             'background:rgba(201,168,76,0.06);border-left:3px solid rgba(201,168,76,0.5);'
             'border-radius:0 6px 6px 0">'
-            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.65rem;'
+            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.728rem;'
             'color:rgba(201,168,76,0.6);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px">'
             + sport_icon + ' Análisis ' + sport_group + ' · Claude</div>'
-            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.82rem;'
+            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.918rem;'
             'color:#b8c8b0;line-height:1.65">' + ai_text + '</div>'
             '</div>'
         )
@@ -3682,21 +3691,21 @@ def render_pick_card(r, rank=None):
             vote_parts = []
             for sig_name, v, detail in votes_list:
                 icon = "✅" if v > 0 else ("❌" if v < 0 else "◾")
-                vote_parts.append(f'<span style="font-size:0.68rem;color:#9ca3af">{icon} {sig_name}: {detail}</span>')
+                vote_parts.append(f'<span style="font-size:0.762rem;color:#9ca3af">{icon} {sig_name}: {detail}</span>')
             votes_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' + "".join(vote_parts) + '</div>'
 
         conflict_html = ""
         if conflict_note:
-            conflict_html = (f'<div style="font-size:0.7rem;color:#f97316;margin-top:3px;font-style:italic">'
+            conflict_html = (f'<div style="font-size:0.784rem;color:#f97316;margin-top:3px;font-style:italic">'
                              f'⚠ {conflict_note}</div>')
         elif fatigue_note:
-            conflict_html = (f'<div style="font-size:0.7rem;color:#60a5fa;margin-top:3px">'
+            conflict_html = (f'<div style="font-size:0.784rem;color:#60a5fa;margin-top:3px">'
                              f'{fatigue_note}</div>')
 
         consensus_html = (
             f'<div style="margin-top:8px;padding:8px 12px;background:rgba(0,0,0,0.2);'
             f'border-left:3px solid {c_color};border-radius:0 6px 6px 0">'
-            f'<span style="font-size:0.75rem;font-weight:700;color:{c_color};'
+            f'<span style="font-size:0.84rem;font-weight:700;color:{c_color};'
             f'letter-spacing:1px">{c_label}</span>'
             + votes_html + conflict_html +
             '</div>'
@@ -3733,7 +3742,7 @@ def render_pick_card(r, rank=None):
         names_str = " · ".join(f'{i["name"]} ({i["status"]})' for i in top_inj)
         sev_lbl   = _inj_label(factor)
         inj_parts.append(
-            f'<div style="font-size:0.70rem;color:{color};margin-bottom:2px">'
+            f'<div style="font-size:0.784rem;color:{color};margin-bottom:2px">'
             f'{sev_lbl} <span style="color:#9ca3af">[{team_name}]</span> {names_str}</div>'
         )
 
@@ -3741,7 +3750,7 @@ def render_pick_card(r, rank=None):
         injury_html = (
             '<div style="margin-top:7px;padding:7px 12px;background:rgba(239,68,68,0.06);'
             'border-left:3px solid rgba(239,68,68,0.4);border-radius:0 6px 6px 0">'
-            '<div style="font-size:0.65rem;color:rgba(239,68,68,0.6);letter-spacing:2px;'
+            '<div style="font-size:0.728rem;color:rgba(239,68,68,0.6);letter-spacing:2px;'
             'text-transform:uppercase;margin-bottom:4px">🏥 Injury Report</div>'
             + "".join(inj_parts) +
             '</div>'
@@ -3763,7 +3772,7 @@ def render_pick_card(r, rank=None):
         unit = "pts" if sport_grp_d in ("Basketball","Football") else ("runs" if sport_grp_d == "Baseball" else "goles")
         caveat = " ⚠ sin pitcher" if sport_grp_d == "Baseball" else ""
         scoring_trend_html = (
-            f'<div style="margin-top:5px;font-size:0.68rem;color:{color};opacity:0.85">'
+            f'<div style="margin-top:5px;font-size:0.762rem;color:{color};opacity:0.85">'
             f'📈 Scoring trend: λreal={lam_real_total:.1f} vs λliga={lam_lg:.1f} '
             f'({delta_str} {unit} vs promedio{caveat})</div>'
         )
@@ -3782,12 +3791,12 @@ def render_pick_card(r, rank=None):
           '</div>'
           '<div class="pick-body">'
             '<div style="margin-bottom:4px">' + chip_html
-              + '<span style="color:#6B7E6E;font-size:0.72rem;margin-left:6px">' + status + '</span>'
+              + '<span style="color:#6B7E6E;font-size:0.806rem;margin-left:6px">' + status + '</span>'
             '</div>'
             '<div class="pick-action">'
               '<span class="pick-action-arrow">&#9658;</span>'
               ' <span>' + bs["label"] + '</span>'
-              ' <span style="font-size:1rem;color:#6B7E6E">' + ml_display + '</span>'
+              ' <span style="font-size:1.12rem;color:#6B7E6E">' + ml_display + '</span>'
             '</div>'
             '<div class="stats-row">'
               '<div class="stat-item">'
@@ -3804,7 +3813,7 @@ def render_pick_card(r, rank=None):
                 '<div class="stat-item-lbl">Kelly 25%</div>'
               '</div>'
               '<div class="stat-item">'
-                '<div class="stat-item-val" style="font-size:0.9rem">' + conf_html + '</div>'
+                '<div class="stat-item-val" style="font-size:1.008rem">' + conf_html + '</div>'
                 '<div class="stat-item-lbl">Confianza</div>'
               '</div>'
             '</div>'
@@ -3832,13 +3841,13 @@ def render_parlay_card(r):
             matchup_part, pick_part = label.split(" · ", 1)
             leg_display = (
                 '<div style="display:flex;flex-direction:column;gap:2px;flex:1;margin-left:8px">'
-                '<span style="font-size:0.7rem;color:#6B7E6E;letter-spacing:1px">' + matchup_part + '</span>'
-                '<span style="font-family:\'Cinzel\',sans-serif;font-size:0.92rem;color:#E0F7F0">' + pick_part + '</span>'
+                '<span style="font-size:0.784rem;color:#6B7E6E;letter-spacing:1px">' + matchup_part + '</span>'
+                '<span style="font-family:\'Cinzel\',sans-serif;font-size:1.03rem;color:#E0F7F0">' + pick_part + '</span>'
                 '</div>'
             )
         else:
             leg_display = (
-                '<span style="font-family:\'Cinzel\',sans-serif;font-size:0.95rem;'
+                '<span style="font-family:\'Cinzel\',sans-serif;font-size:1.064rem;'
                 'color:#E0F7F0;margin-left:8px;flex:1">' + label + '</span>'
             )
         ev_color = "#4ade80" if ev >= 10 else "#C9A84C"
@@ -3848,15 +3857,15 @@ def render_parlay_card(r):
             + leg_display
             + '<div style="text-align:right;min-width:70px">'
               '<div style="color:#2EE8C0;font-family:\'Cinzel\',serif;font-weight:700">' + str(round(prob*100,1)) + '%</div>'
-              '<div style="font-size:0.68rem;color:' + ev_color + '">EV +' + str(round(ev,1)) + '</div>'
+              '<div style="font-size:0.762rem;color:' + ev_color + '">EV +' + str(round(ev,1)) + '</div>'
               '</div>'
             + '</div>'
         )
         if i < len(bp["legs"])-1:
-            legs_html += '<div class="parlay-connector" style="color:#1ABC9C;font-size:0.75rem;text-align:center;padding:4px 0;letter-spacing:3px">⊕ COMBINADA ⊕</div>'
+            legs_html += '<div class="parlay-connector" style="color:#1ABC9C;font-size:0.84rem;text-align:center;padding:4px 0;letter-spacing:3px">⊕ COMBINADA ⊕</div>'
 
     parlay_type_badge = (
-        '<span style="font-size:0.65rem;color:#2EE8C0;letter-spacing:2px;'
+        '<span style="font-size:0.728rem;color:#2EE8C0;letter-spacing:2px;'
         'background:rgba(26,188,156,0.1);padding:2px 8px;border-radius:3px;margin-left:8px">'
         + ("INTER-PARTIDO" if is_inter else "COMBO") + '</span>'
     )
@@ -3876,15 +3885,15 @@ def render_parlay_card(r):
             + '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px;padding-top:12px;'
               'border-top:1px solid rgba(26,188,156,0.2)">'
               '<div class="stat-item">'
-                '<div class="stat-item-val" style="color:#2EE8C0;font-size:1.4rem">' + str(round(bp["prob"]*100,1)) + '%</div>'
+                '<div class="stat-item-val" style="color:#2EE8C0;font-size:1.568rem">' + str(round(bp["prob"]*100,1)) + '%</div>'
                 '<div class="stat-item-lbl">Prob. Combo</div>'
               '</div>'
               '<div class="stat-item">'
-                '<div class="stat-item-val val-cyan" style="font-size:1.4rem">+' + str(round(bp["payout"],0))[:-2] + '</div>'
+                '<div class="stat-item-val val-cyan" style="font-size:1.568rem">+' + str(round(bp["payout"],0))[:-2] + '</div>'
                 '<div class="stat-item-lbl">Pago / $100</div>'
               '</div>'
               '<div class="stat-item">'
-                '<div class="stat-item-val val-gold" style="font-size:1.4rem">+' + str(round(bp["ev"],1)) + '</div>'
+                '<div class="stat-item-val val-gold" style="font-size:1.568rem">+' + str(round(bp["ev"],1)) + '</div>'
                 '<div class="stat-item-lbl">EV / $100</div>'
               '</div>'
               '<div class="stat-item">' + conf + '</div>'
@@ -4068,7 +4077,7 @@ if _tp_count_now > 0:
     _tp_total_games = sum(p.get("n_games",0) for p in _tp_profiles_now.values())
     _tp_leagues     = len({p.get("league","") for p in _tp_profiles_now.values()})
     st.markdown(
-        f'<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
+        f'<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
         f'color:#4ade80;letter-spacing:1px">'
         f'🧠 Memoria activa: <b>{_tp_count_now}</b> equipos · '
         f'<b>{_tp_total_games}</b> partidos · '
@@ -4077,14 +4086,14 @@ if _tp_count_now > 0:
     )
 elif _tp_err_now:
     st.markdown(
-        f'<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
+        f'<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
         f'color:#ef4444;letter-spacing:1px">'
         f'🧠 Memoria: error — {_tp_err_now[:80]}</div>',
         unsafe_allow_html=True
     )
 else:
     st.markdown(
-        '<div style="text-align:center;margin-bottom:8px;font-size:0.72rem;'
+        '<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
         'color:#6B7E6E;letter-spacing:1px">'
         '🧠 Memoria: aprendiendo... · <b>↓ Poblar Memoria</b> en el sidebar</div>',
         unsafe_allow_html=True
@@ -4124,9 +4133,9 @@ if st.session_state.pop("run_populate", False):
         st.markdown("""
         <div style='background:rgba(201,168,76,0.08);border:1px solid #C9A84C;
         border-radius:8px;padding:16px;margin-bottom:16px'>
-        <div style='font-family:Cinzel,serif;color:#C9A84C;font-size:1rem;
+        <div style='font-family:Cinzel,serif;color:#C9A84C;font-size:1.12rem;
         font-weight:700;margin-bottom:8px'>🧠 POBLANDO MEMORIA DE EQUIPOS</div>
-        <div style='font-size:0.75rem;color:#9ca3af'>
+        <div style='font-size:0.84rem;color:#9ca3af'>
         Descargando historial de ESPN para todas las ligas y equipos.<br>
         Esto tarda ~3-5 minutos. No cierres la app.
         </div></div>
@@ -4195,7 +4204,7 @@ with tab_picks:
             )
             st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #4ade80;background:rgba(74,222,128,0.08)">
                 ✅ <b>Pick(s) terminados:</b> {finished_names}<br>
-                <span style="color:#6B7E6E;font-size:0.8rem">{len(pending_games_picks)} partidos pendientes disponibles.</span>
+                <span style="color:#6B7E6E;font-size:0.896rem">{len(pending_games_picks)} partidos pendientes disponibles.</span>
             </div>''', unsafe_allow_html=True)
 
         # ── Botón manual ──────────────────────────────────────────────────────────
@@ -4231,7 +4240,7 @@ with tab_picks:
         n_live_p = len([g for g in games if g["state"]=="in"])
         n_pre_p  = len([g for g in games if g["state"]=="pre"])
         st.markdown(
-            f'<div style="font-size:0.72rem;color:#6B7E6E;margin-bottom:8px">' +
+            f'<div style="font-size:0.806rem;color:#6B7E6E;margin-bottom:8px">' +
             (f'<span style="color:#4ade80">⚡ {n_live_p} en vivo</span> · ' if n_live_p else "") +
             f'{n_pre_p} próximos · {n_post_p} terminados</div>',
             unsafe_allow_html=True
@@ -4377,23 +4386,23 @@ with tab_picks:
                         f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">'
                         f'<div style="flex:1;min-width:80px;background:rgba(74,222,128,0.10);'
                         f'border:1px solid rgba(74,222,128,0.3);border-radius:8px;padding:10px;text-align:center">'
-                        f'<div style="font-size:1.5rem;font-weight:900;color:{_wr_c};font-family:Cinzel,serif">{_wr}%</div>'
-                        f'<div style="font-size:0.6rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase">Win Rate</div>'
+                        f'<div style="font-size:1.68rem;font-weight:900;color:{_wr_c};font-family:Cinzel,serif">{_wr}%</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase">Win Rate</div>'
                         f'</div>'
                         f'<div style="flex:1;min-width:70px;background:rgba(74,222,128,0.07);'
                         f'border:1px solid rgba(74,222,128,0.2);border-radius:8px;padding:10px;text-align:center">'
-                        f'<div style="font-size:1.3rem;font-weight:800;color:#4ade80">{_n_gan}</div>'
-                        f'<div style="font-size:0.6rem;color:#6B7E6E;text-transform:uppercase">✅ Ganados</div>'
+                        f'<div style="font-size:1.456rem;font-weight:800;color:#4ade80">{_n_gan}</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7E6E;text-transform:uppercase">✅ Ganados</div>'
                         f'</div>'
                         f'<div style="flex:1;min-width:70px;background:rgba(239,68,68,0.07);'
                         f'border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:10px;text-align:center">'
-                        f'<div style="font-size:1.3rem;font-weight:800;color:#ef4444">{_n_per}</div>'
-                        f'<div style="font-size:0.6rem;color:#6B7E6E;text-transform:uppercase">❌ Perdidos</div>'
+                        f'<div style="font-size:1.456rem;font-weight:800;color:#ef4444">{_n_per}</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7E6E;text-transform:uppercase">❌ Perdidos</div>'
                         f'</div>'
                         f'<div style="flex:1;min-width:70px;background:rgba(201,168,76,0.07);'
                         f'border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;text-align:center">'
-                        f'<div style="font-size:1.3rem;font-weight:800;color:#C9A84C">{_n_psh}</div>'
-                        f'<div style="font-size:0.6rem;color:#6B7E6E;text-transform:uppercase">🔄 Push</div>'
+                        f'<div style="font-size:1.456rem;font-weight:800;color:#C9A84C">{_n_psh}</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7E6E;text-transform:uppercase">🔄 Push</div>'
                         f'</div>'
                         f'</div>',
                         unsafe_allow_html=True
@@ -4407,7 +4416,7 @@ with tab_picks:
                         _mkts[m][{"ganado":"gan","perdido":"per","push":"psh"}[p["resultado"]]] += 1
 
                     _mkt_color = None  # use _pick_clr()
-                    st.markdown('<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Mercado</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:0.728rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Mercado</div>', unsafe_allow_html=True)
                     for _m, _mc in sorted(_mkts.items()):
                         _mt = _mc["gan"] + _mc["per"] + _mc["psh"]
                         _mwr = round(_mc["gan"]/_mt*100,1) if _mt else 0
@@ -4417,11 +4426,11 @@ with tab_picks:
                         st.markdown(
                             f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
                             f'<span style="background:{_mc_c}22;color:{_mc_c};border:1px solid {_mc_c}44;'
-                            f'border-radius:3px;padding:1px 7px;font-size:0.62rem;font-weight:800;min-width:48px;text-align:center">{_m}</span>'
+                            f'border-radius:3px;padding:1px 7px;font-size:0.694rem;font-weight:800;min-width:48px;text-align:center">{_m}</span>'
                             f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:6px;overflow:hidden">'
                             f'<div style="width:{_bar_w}%;height:100%;background:{_mc_c};border-radius:4px"></div></div>'
-                            f'<span style="font-size:0.7rem;font-weight:700;color:{_mc_c};min-width:38px;text-align:right">{_mwr}%</span>'
-                            f'<span style="font-size:0.58rem;color:#6B7E6E;min-width:60px">{_mc["gan"]}G {_mc["per"]}P {_mc["psh"]}X</span>'
+                            f'<span style="font-size:0.784rem;font-weight:700;color:{_mc_c};min-width:38px;text-align:right">{_mwr}%</span>'
+                            f'<span style="font-size:0.65rem;color:#6B7E6E;min-width:60px">{_mc["gan"]}G {_mc["per"]}P {_mc["psh"]}X</span>'
                             f'</div>',
                             unsafe_allow_html=True
                         )
@@ -4434,7 +4443,7 @@ with tab_picks:
                         _sgps[sg][{"ganado":"gan","perdido":"per","push":"psh"}[p["resultado"]]] += 1
 
                     _sg_ico = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
-                    st.markdown('<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Deporte</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:0.728rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Deporte</div>', unsafe_allow_html=True)
                     for _sg, _sc in sorted(_sgps.items()):
                         _st = _sc["gan"] + _sc["per"] + _sc["psh"]
                         _swr = round(_sc["gan"]/_st*100,1) if _st else 0
@@ -4442,12 +4451,12 @@ with tab_picks:
                         _ico = _sg_ico.get(_sg,"🎯")
                         st.markdown(
                             f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
-                            f'<span style="font-size:0.75rem;min-width:20px">{_ico}</span>'
-                            f'<span style="font-size:0.72rem;color:#E0F7F0;min-width:90px">{_sg}</span>'
+                            f'<span style="font-size:0.84rem;min-width:20px">{_ico}</span>'
+                            f'<span style="font-size:0.806rem;color:#E0F7F0;min-width:90px">{_sg}</span>'
                             f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:6px;overflow:hidden">'
                             f'<div style="width:{_swr}%;height:100%;background:{_sgc};border-radius:4px"></div></div>'
-                            f'<span style="font-size:0.7rem;font-weight:700;color:{_sgc};min-width:38px;text-align:right">{_swr}%</span>'
-                            f'<span style="font-size:0.58rem;color:#6B7E6E;min-width:60px">{_sc["gan"]}G {_sc["per"]}P {_sc["psh"]}X</span>'
+                            f'<span style="font-size:0.784rem;font-weight:700;color:{_sgc};min-width:38px;text-align:right">{_swr}%</span>'
+                            f'<span style="font-size:0.65rem;color:#6B7E6E;min-width:60px">{_sc["gan"]}G {_sc["per"]}P {_sc["psh"]}X</span>'
                             f'</div>',
                             unsafe_allow_html=True
                         )
@@ -4456,7 +4465,7 @@ with tab_picks:
 
                 # ── TABLA DE AUDITORÍA — todos los picks guardados ────────────
                 st.markdown(
-                    '<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:1.5px;'
+                    '<div style="font-size:0.728rem;color:#6B7E6E;letter-spacing:1.5px;'
                     'text-transform:uppercase;margin:16px 0 8px 0;border-top:1px solid '
                     'rgba(255,255,255,0.06);padding-top:12px">📋 Historial Completo — Auditoría</div>',
                     unsafe_allow_html=True
@@ -4484,7 +4493,7 @@ with tab_picks:
                     st.markdown(
                         '<div style="display:grid;grid-template-columns:90px 1fr 60px 60px 70px 70px;'
                         'gap:4px;padding:4px 6px;background:rgba(255,255,255,0.04);border-radius:6px 6px 0 0;'
-                        'font-size:0.58rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase;'
+                        'font-size:0.65rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase;'
                         'border-bottom:1px solid rgba(255,255,255,0.08)">'
                         '<span>Fecha</span><span>Partido</span>'
                         '<span style="text-align:center">Mkt</span>'
@@ -4509,19 +4518,19 @@ with tab_picks:
                         st.markdown(
                             f'<div style="display:grid;grid-template-columns:90px 1fr 60px 60px 70px 70px;'
                             f'gap:4px;padding:5px 6px;background:{_row_bg};'
-                            f'border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.68rem;align-items:center">'
-                            f'<span style="color:#6B7E6E;font-size:0.6rem">{_fecha}</span>'
+                            f'border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.762rem;align-items:center">'
+                            f'<span style="color:#6B7E6E;font-size:0.672rem">{_fecha}</span>'
                             f'<div>'
-                            f'<div style="color:#E0F7F0;font-size:0.7rem;white-space:nowrap;overflow:hidden;'
+                            f'<div style="color:#E0F7F0;font-size:0.784rem;white-space:nowrap;overflow:hidden;'
                             f'text-overflow:ellipsis;max-width:180px">{_ap["partido"]}</div>'
-                            f'<div style="color:#FFE87C;font-size:0.62rem">{_ap["pick_label"]}{_score}</div>'
+                            f'<div style="color:#FFE87C;font-size:0.694rem">{_ap["pick_label"]}{_score}</div>'
                             f'</div>'
                             f'<span style="text-align:center">'
-                            f'<span style="background:{_apc}28;color:{_aac};border:1px solid {_apc}66;border-radius:3px;padding:1px 5px;font-size:0.6rem;font-weight:800">{_adl}</span></span>'
-                            f'<span style="text-align:center;font-size:0.75rem">{_sgi2}</span>'
-                            f'<span style="text-align:center;color:#C9A84C;font-size:0.7rem;font-weight:700">'
+                            f'<span style="background:{_apc}28;color:{_aac};border:1px solid {_apc}66;border-radius:3px;padding:1px 5px;font-size:0.672rem;font-weight:800">{_adl}</span></span>'
+                            f'<span style="text-align:center;font-size:0.84rem">{_sgi2}</span>'
+                            f'<span style="text-align:center;color:#C9A84C;font-size:0.784rem;font-weight:700">'
                             f'{_ap["prob_pct"]:.0f}%</span>'
-                            f'<span style="text-align:center;color:{_rc};font-size:0.75rem">{_ri}</span>'
+                            f'<span style="text-align:center;color:{_rc};font-size:0.84rem">{_ri}</span>'
                             f'</div>',
                             unsafe_allow_html=True
                         )
@@ -4548,7 +4557,7 @@ with tab_picks:
                     f'<div style="width:{prob:.0f}%;height:100%;border-radius:4px;'
                     f'background:linear-gradient(90deg,{color}88,{color});'
                     f'box-shadow:0 0 8px {color}66"></div></div>'
-                    f'<div style="font-size:0.58rem;color:{color};text-align:right;'
+                    f'<div style="font-size:0.65rem;color:{color};text-align:right;'
                     f'margin-top:1px">{prob:.0f}%</div>'
                 )
 
@@ -4592,18 +4601,18 @@ with tab_picks:
                 _low_conf = r.get("sim",{}).get("low_confidence", False)
                 _lc_badge = (
                     '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b55;'
-                    'border-radius:3px;padding:1px 7px;font-size:0.58rem;font-weight:700;'
+                    'border-radius:3px;padding:1px 7px;font-size:0.65rem;font-weight:700;'
                     'letter-spacing:1px;margin-right:6px">⚠ SIN CUOTAS</span>' if _low_conf else ""
                 )
                 _fire_inline = (
                     '<span style="background:rgba(255,106,0,0.2);color:#ff6a00;'
                     'border:1px solid rgba(255,106,0,0.55);border-radius:3px;'
-                    'padding:1px 7px;font-size:0.58rem;font-weight:900;'
+                    'padding:1px 7px;font-size:0.65rem;font-weight:900;'
                     'letter-spacing:1px;margin-right:6px">🔥 FUEGO</span>'
                 ) if is_fire else ""
                 rank_badge = (
                     f'<span style="background:{pc}22;color:{ac};border:1px solid {pc}55;'
-                    f'border-radius:3px;padding:1px 7px;font-size:0.58rem;font-weight:700;'
+                    f'border-radius:3px;padding:1px 7px;font-size:0.65rem;font-weight:700;'
                     f'letter-spacing:1px;margin-right:8px">#{rank+1}</span>' if not is_diamond and not is_fire else ""
                 ) + _fire_inline + _lc_badge
 
@@ -4622,20 +4631,20 @@ with tab_picks:
                     + top_stripe +
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
                     f'<div style="min-width:0;flex:1">'
-                    f'<div style="font-size:0.62rem;color:#6B7E6E;letter-spacing:1.5px;'
+                    f'<div style="font-size:0.694rem;color:#6B7E6E;letter-spacing:1.5px;'
                     f'text-transform:uppercase;margin-bottom:3px">{rank_badge}{league_label(r["league"])}</div>'
                     f'<div style="font-size:{title_size};font-weight:700;color:#E0F7F0;line-height:1.3">'
                     f'{r["away_team"]} <span style="color:#3a4a3e;font-weight:400">vs</span> {r["home_team"]}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.15rem;font-weight:900;color:{ac};'
+                    f'<div style="font-size:1.288rem;font-weight:900;color:{ac};'
                     f'text-shadow:0 0 12px {ac}88;font-family:Cinzel,serif">EV {ev_s}</div>'
-                    f'<div style="font-size:0.6rem;color:{conf_c};font-weight:700">{conf_lbl}</div>'
+                    f'<div style="font-size:0.672rem;color:{conf_c};font-weight:700">{conf_lbl}</div>'
                     f'</div>'
                     f'</div>'
                     f'<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
                     f'<span style="background:{pc}28;color:{ac};border:1px solid {pc}77;'
-                    f'border-radius:5px;padding:3px 10px;font-size:0.7rem;font-weight:800;'
+                    f'border-radius:5px;padding:3px 10px;font-size:0.784rem;font-weight:800;'
                     f'letter-spacing:1.5px">{icon} {type_label}</span>'
                     f'<span style="font-size:{label_size};font-weight:700;color:#FFE87C;'
                     f'font-family:Cinzel,serif;letter-spacing:0.5px">{tp["label"]}</span>'
@@ -4671,11 +4680,11 @@ with tab_picks:
                         _fire_badge = (
                             '<span style="display:inline-block;background:rgba(255,100,0,0.18);'
                             'color:#ff6a00;border:1px solid rgba(255,106,0,0.5);border-radius:4px;'
-                            'padding:1px 7px;font-size:0.6rem;font-weight:900;margin-left:6px;'
+                            'padding:1px 7px;font-size:0.672rem;font-weight:900;margin-left:6px;'
                             'vertical-align:middle">🔥 TOP</span>'
                         ) if _is_fire else ""
                         st.markdown(
-                            f'<div style="font-size:0.6rem;color:#6B7E6E;letter-spacing:1.5px;'
+                            f'<div style="font-size:0.672rem;color:#6B7E6E;letter-spacing:1.5px;'
                             f'text-transform:uppercase;margin-bottom:4px">{_sg_label}{_fire_badge}</div>',
                             unsafe_allow_html=True
                         )
@@ -4715,29 +4724,29 @@ with tab_picks:
                     f'background:linear-gradient(90deg,transparent,#a78bfa,#4ade80,transparent)"></div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
                     f'<div>'
-                    f'<div style="font-size:0.62rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">'
+                    f'<div style="font-size:0.694rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">'
                     f'🎯 PARLAY · {league_label(_g["league"])}</div>'
-                    f'<div style="font-size:0.95rem;font-weight:700;color:#E0F7F0">'
+                    f'<div style="font-size:1.064rem;font-weight:700;color:#E0F7F0">'
                     f'{_g["away_team"]} vs {_g["home_team"]}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.1rem;font-weight:900;color:#a78bfa;font-family:Cinzel,serif">'
+                    f'<div style="font-size:1.232rem;font-weight:900;color:#a78bfa;font-family:Cinzel,serif">'
                     f'EV +{_comb_ev:.1f}</div>'
-                    f'<div style="font-size:0.58rem;color:#6B7E6E">combinado</div>'
+                    f'<div style="font-size:0.65rem;color:#6B7E6E">combinado</div>'
                     f'</div>'
                     f'</div>'
                     f'<div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
                     f'<span style="background:{_mc_do}22;color:{_mc_do};border:1px solid {_mc_do}55;'
-                    f'border-radius:5px;padding:3px 9px;font-size:0.68rem;font-weight:800">DO</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.82rem">{_do["label"]}</span>'
-                    f'<span style="color:#3a4a3e;font-size:1rem;margin:0 2px">✕</span>'
+                    f'border-radius:5px;padding:3px 9px;font-size:0.762rem;font-weight:800">DO</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.918rem">{_do["label"]}</span>'
+                    f'<span style="color:#3a4a3e;font-size:1.12rem;margin:0 2px">✕</span>'
                     f'<span style="background:{_mc_gl}22;color:{_mc_gl};border:1px solid {_mc_gl}55;'
-                    f'border-radius:5px;padding:3px 9px;font-size:0.68rem;font-weight:800">{_gl["market"]}</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.82rem">{_gl["label"]}</span>'
+                    f'border-radius:5px;padding:3px 9px;font-size:0.762rem;font-weight:800">{_gl["market"]}</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.918rem">{_gl["label"]}</span>'
                     f'</div>'
                     f'<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">'
-                    f'<span style="font-size:0.62rem;color:{_mc_do}">DO EV +{_do["ev"]:.1f} · {_do.get("prob",0):.0f}%</span>'
-                    f'<span style="font-size:0.62rem;color:{_mc_gl}">{_gl["market"]} EV +{_gl["ev"]:.1f} · {_gl["prob"]:.0f}%</span>'
+                    f'<span style="font-size:0.694rem;color:{_mc_do}">DO EV +{_do["ev"]:.1f} · {_do.get("prob",0):.0f}%</span>'
+                    f'<span style="font-size:0.694rem;color:{_mc_gl}">{_gl["market"]} EV +{_gl["ev"]:.1f} · {_gl["prob"]:.0f}%</span>'
                     f'</div>'
                     f'</div>',
                     unsafe_allow_html=True
@@ -4758,7 +4767,7 @@ with tab_picks:
         today_str=datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
         total_sims=len(sr_cur)*sr_cur[0]["sim"]["n_simulations"] if sr_cur else 0
         _src = "DEMO" if is_demo else "ESPN Live"
-        st.markdown(f'<div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:0.72rem;color:#3a4a3e">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:0.806rem;color:#3a4a3e">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_sim:
     # ══════════════════════════════════════════════════════════════════════════
@@ -4810,12 +4819,12 @@ with tab_sim:
 
     def _card_p(g, sm):
         _time = _mx_time_p(g)
-        _time_html = f'<span style="color:#C9A84C;font-size:0.65rem;flex-shrink:0">{_time}</span>' if _time else ""
+        _time_html = f'<span style="color:#C9A84C;font-size:0.728rem;flex-shrink:0">{_time}</span>' if _time else ""
         _o = g.get("odds",{}) or {}
         _op = []
         if _o.get("over_under"): _op.append(f"O/U {_o['over_under']}")
         if _o.get("home_ml"):    _op.append(f"ML {_o['home_ml']}")
-        _oh = f'<div style="color:#C9A84C;font-size:0.6rem;margin-top:2px">{" · ".join(_op)}</div>' if _op else ""
+        _oh = f'<div style="color:#C9A84C;font-size:0.672rem;margin-top:2px">{" · ".join(_op)}</div>' if _op else ""
         _ph = ""
         _rp = {_rr.get("id",""): _rr for _rr in st.session_state.get("sim_results",[])}.get(g.get("id",""))
         if _rp:
@@ -4826,10 +4835,10 @@ with tab_sim:
                 _ph = (
                     f'<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
                     f'<span style="background:{_mc2_pc}28;color:{_mc2_ac};border:1px solid {_mc2_pc}66;'
-                    f'border-radius:3px;padding:0 6px;font-size:0.56rem;font-weight:800">{_mc2_dl}</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.65rem;min-width:0;overflow:hidden;'
+                    f'border-radius:3px;padding:0 6px;font-size:0.627rem;font-weight:800">{_mc2_dl}</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.728rem;min-width:0;overflow:hidden;'
                     f'text-overflow:ellipsis;white-space:nowrap">{_bs.get("label","")}</span>'
-                    f'<span style="color:{_mc2_ac};font-size:0.58rem;margin-left:auto;flex-shrink:0">'
+                    f'<span style="color:{_mc2_ac};font-size:0.65rem;margin-left:auto;flex-shrink:0">'
                     f'EV {_ev2s}</span>'
                     f'</div>'
                 )
@@ -4838,9 +4847,9 @@ with tab_sim:
             f'background:{sm["accent"]};border-left:2px solid {sm["color"]}66;overflow:hidden">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">'
             f'<div style="min-width:0;overflow:hidden;flex:1">'
-            f'<div style="font-size:0.72rem;font-weight:700;color:#E0F7F0;'
+            f'<div style="font-size:0.806rem;font-weight:700;color:#E0F7F0;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{g["away_team"]}</div>'
-            f'<div style="font-size:0.62rem;color:#6B7E6E;'
+            f'<div style="font-size:0.694rem;color:#6B7E6E;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@ {g["home_team"]}</div>'
             f'</div>'
             f'<div style="flex-shrink:0;padding-left:4px">{_time_html}</div>'
@@ -4867,7 +4876,7 @@ with tab_sim:
         st.markdown('<div class="warn-banner">No hay partidos próximos. Pulsa ▶ ANALIZAR para cargar datos.</div>', unsafe_allow_html=True)
     else:
         st.markdown(
-            f'<div style="font-size:0.68rem;color:#6B7E6E;margin-bottom:10px">'
+            f'<div style="font-size:0.762rem;color:#6B7E6E;margin-bottom:10px">'
             f'{_total_p} partidos · {len(_sports_p)} deportes · hora CDMX</div>',
             unsafe_allow_html=True
         )
@@ -4880,11 +4889,11 @@ with tab_sim:
                 st.markdown(
                     f'<div style="text-align:center;padding:8px 3px;border-radius:9px;'
                     f'background:{_smp["accent"]};border:1px solid {_smp["color"]}55;margin-bottom:8px">'
-                    f'<div style="font-size:1.5rem;line-height:1">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.58rem;font-weight:700;color:{_smp["color"]};'
+                    f'<div style="font-size:1.68rem;line-height:1">{_smp["emoji"]}</div>'
+                    f'<div style="font-size:0.65rem;font-weight:700;color:{_smp["color"]};'
                     f'letter-spacing:0.5px;text-transform:uppercase;margin-top:3px">'
                     f'{_sp_p}</div>'
-                    f'<div style="font-size:0.55rem;color:#6B7E6E;margin-top:1px">{_n_p} juegos</div>'
+                    f'<div style="font-size:0.616rem;color:#6B7E6E;margin-top:1px">{_n_p} juegos</div>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
@@ -4956,7 +4965,7 @@ with tab_sim:
         _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
         _sd   = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
         _low_c  = _r["sim"].get("low_confidence",False) if _r else False
-        _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.55rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
+        _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.616rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
         _has_ev = bool(_r and _r["sim"].get("best_single") and _r["sim"]["best_single"].get("ev",0)>0)
 
         # Card will be colored after pick is computed — use placeholder until then
@@ -4973,7 +4982,7 @@ with tab_sim:
             _html = (
                 f'<div class="game-row" style="border-left:3px solid {sm["color"]}44;margin:4px 0;">'
                 + _html_header +
-                '<div style="color:#3a4a3e;font-size:0.68rem;align-self:center">Sin simular</div></div></div>'
+                '<div style="color:#3a4a3e;font-size:0.762rem;align-self:center">Sin simular</div></div></div>'
             )
             return _html
 
@@ -4989,10 +4998,10 @@ with tab_sim:
         _ev_c   = "#4ade80" if _ev>=10 else ("#fbbf24" if _ev>=0 else "#ef4444")
         badge = (
             f'<span style="background:{_bpc}28;color:{_bac};border:1px solid {_bpc}66;'
-            f'border-radius:3px;padding:1px 8px;font-size:0.62rem;font-weight:800;margin-right:5px">{_bdl}</span>'
-            f'<span style="font-weight:700;font-size:0.8rem;color:#FFE87C">{bp["label"]}</span>'
-            f'<span style="color:{_ev_c};font-size:0.68rem;margin-left:6px">EV {_ev_str}</span>'
-            f'<span style="color:#6B7E6E;font-size:0.62rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
+            f'border-radius:3px;padding:1px 8px;font-size:0.694rem;font-weight:800;margin-right:5px">{_bdl}</span>'
+            f'<span style="font-weight:700;font-size:0.896rem;color:#FFE87C">{bp["label"]}</span>'
+            f'<span style="color:{_ev_c};font-size:0.762rem;margin-left:6px">EV {_ev_str}</span>'
+            f'<span style="color:#6B7E6E;font-size:0.694rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
         )
 
         # ── Build outer card with full pick-color background/border ────────
@@ -5005,7 +5014,7 @@ with tab_sim:
         )
 
         _body = (
-            f'<div style="text-align:right;font-size:0.65rem;color:#6B7E6E;flex-shrink:0">'
+            f'<div style="text-align:right;font-size:0.728rem;color:#6B7E6E;flex-shrink:0">'
             f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}'
             f'<br><span style="color:{dqc}">DQ {dq:.0f}%</span></div>'
             f'</div>'
@@ -5025,7 +5034,7 @@ with tab_sim:
             o3c = "#ff6a00" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
             dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
             _footer = (
-                f'<div style="font-size:0.65rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
+                f'<div style="font-size:0.728rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
                 f'<span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span>'
                 f'<span style="color:{o2c}">O2.5 {sim["p_o25"]}%</span>'
                 f'<span style="color:{o3c}">O3.5 {sim.get("p_o35","—")}%</span>'
@@ -5036,7 +5045,7 @@ with tab_sim:
             _otc = "#ff6a00" if (sim.get("p_o_total") or 0)>=50 else "#6B7E6E"
             _utc = "#a78bfa" if (sim.get("p_u_total") or 0)>=50 else "#6B7E6E"
             _footer = (
-                f'<div style="font-size:0.65rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
+                f'<div style="font-size:0.728rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
                 f'<span style="color:#6B7E6E">Total {sim["ou_line"]}</span>'
                 f'<span style="color:{_otc}">Over {sim.get("p_o_total","—")}%</span>'
                 f'<span style="color:{_utc}">Under {sim.get("p_u_total","—")}%</span>'
@@ -5071,30 +5080,31 @@ with tab_sim:
             expanded=(_today_mx_p in _tree_p[_sp_p])
         ):
             for _dk_p in _dks_p:
-                # Date header
-                st.markdown(
-                    f'<div style="font-size:0.62rem;font-weight:700;color:#C9A84C;'
-                    f'letter-spacing:2px;text-transform:uppercase;padding:4px 0 6px 0;'
-                    f'border-bottom:1px solid rgba(201,168,76,0.2);margin-bottom:6px">'
-                    f'{_fmt_date_p(_dk_p)}</div>',
-                    unsafe_allow_html=True
+                _n_day = sum(len(gs) for gs in _tree_p[_sp_p][_dk_p].values())
+                _ev_day = sum(
+                    1 for gs in _tree_p[_sp_p][_dk_p].values()
+                    for g in gs
+                    if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
+                       _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
                 )
-                for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
-                    # League header
-                    st.markdown(
-                        f'<div style="font-size:0.58rem;color:{_smp["color"]};font-weight:700;'
-                        f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
-                        f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
-                        unsafe_allow_html=True
-                    )
-                    # 3 games per row
-                    for _gi3 in range(0, len(_lg_games_p), 3):
-                        _row3 = _lg_games_p[_gi3:_gi3+3]
-                        _c3 = st.columns(len(_row3))
-                        for _ci3, _gg_p in enumerate(_row3):
-                            with _c3[_ci3]:
-                                st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
-                st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+                _day_label = f"{_fmt_date_p(_dk_p)} · {_n_day} partidos" + (f" 🔥{_ev_day}" if _ev_day else "")
+                _day_open  = (_dk_p == _today_mx_p)  # only today open by default
+                with st.expander(_day_label, expanded=_day_open):
+                    for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
+                        # League header
+                        st.markdown(
+                            f'<div style="font-size:0.728rem;color:{_smp["color"]};font-weight:700;'
+                            f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
+                            f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
+                            unsafe_allow_html=True
+                        )
+                        # 3 games per row
+                        for _gi3 in range(0, len(_lg_games_p), 3):
+                            _row3 = _lg_games_p[_gi3:_gi3+3]
+                            _c3 = st.columns(len(_row3))
+                            for _ci3, _gg_p in enumerate(_row3):
+                                with _c3[_ci3]:
+                                    st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
@@ -5154,7 +5164,7 @@ with tab_parlays:
             )
             st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #4ade80;background:rgba(74,222,128,0.08)">
                 ✅ <b>Partido(s) del parlay terminaron:</b> {finished_names}<br>
-                <span style="color:#6B7E6E;font-size:0.8rem">{len(pending_games)} partidos pendientes disponibles para nuevo parlay.</span>
+                <span style="color:#6B7E6E;font-size:0.896rem">{len(pending_games)} partidos pendientes disponibles para nuevo parlay.</span>
             </div>''', unsafe_allow_html=True)
 
         # ── Botón manual + auto-regen ─────────────────────────────────────────────
@@ -5305,7 +5315,7 @@ with tab_parlays:
             n_pre   = len([g for g in games if g["state"]=="pre"])
             status_color = "#4ade80" if n_live > 0 else "#60a5fa"
             st.markdown(
-                f'<div style="font-size:0.72rem;color:#6B7E6E;margin-bottom:12px">' +
+                f'<div style="font-size:0.806rem;color:#6B7E6E;margin-bottom:12px">' +
                 (f'<span style="color:{status_color}">⚡ {n_live} en vivo</span> · ' if n_live else "") +
                 f'{n_pre} próximos · {n_post} terminados</div>',
                 unsafe_allow_html=True
@@ -5335,7 +5345,7 @@ with tab_parlays:
                 _feat_label = (
                     '<span style="background:rgba(74,222,128,0.18);color:#4ade80;'
                     'border:1px solid rgba(74,222,128,0.5);border-radius:3px;'
-                    'padding:1px 7px;font-size:0.58rem;font-weight:900;margin-left:6px">'
+                    'padding:1px 7px;font-size:0.65rem;font-weight:900;margin-left:6px">'
                     '⚽ GOLES COMBO</span>'
                 ) if featured else ""
 
@@ -5346,36 +5356,36 @@ with tab_parlays:
                     f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-14px -16px 12px -16px;{_feat_stripe}"></div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
                     f'<div>'
-                    f'<div style="font-size:0.58rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">'
+                    f'<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">'
                     f'{_sgi} {_sg} · {_lg}{_feat_label}</div>'
-                    f'<div style="font-size:0.88rem;font-weight:700;color:#E0F7F0">{_matchup}</div>'
-                    f'<div style="font-size:0.65rem;color:#6B7E6E;margin-top:2px">{_ct}</div>'
+                    f'<div style="font-size:0.986rem;font-weight:700;color:#E0F7F0">{_matchup}</div>'
+                    f'<div style="font-size:0.728rem;color:#6B7E6E;margin-top:2px">{_ct}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.1rem;font-weight:900;color:{_sgc};font-family:Cinzel,serif">{dp["comb_prob_pct"]}%</div>'
-                    f'<div style="font-size:0.55rem;color:#6B7E6E">prob. combinada</div>'
+                    f'<div style="font-size:1.232rem;font-weight:900;color:{_sgc};font-family:Cinzel,serif">{dp["comb_prob_pct"]}%</div>'
+                    f'<div style="font-size:0.616rem;color:#6B7E6E">prob. combinada</div>'
                     f'</div>'
                     f'</div>'
                     f'<div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">'
                     f'<div style="display:flex;align-items:center;gap:8px">'
                     f'<span style="background:{_p1c}28;color:{_p1a};border:1px solid {_p1c}66;'
-                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_p1l}</span>'
-                    f'<span style="font-size:0.88rem;color:#E0F7F0;font-weight:600">{_l1["label"]}</span>'
-                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_p1a};font-weight:700">{_l1["prob"]:.0f}%</span>'
+                    f'border-radius:4px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p1l}</span>'
+                    f'<span style="font-size:0.986rem;color:#E0F7F0;font-weight:600">{_l1["label"]}</span>'
+                    f'<span style="margin-left:auto;font-size:0.694rem;color:{_p1a};font-weight:700">{_l1["prob"]:.0f}%</span>'
                     f'</div>'
-                    f'<div style="font-size:0.62rem;color:#3a4a3e;text-align:center;letter-spacing:3px">✕ COMBO ✕</div>'
+                    f'<div style="font-size:0.694rem;color:#3a4a3e;text-align:center;letter-spacing:3px">✕ COMBO ✕</div>'
                     f'<div style="display:flex;align-items:center;gap:8px">'
                     f'<span style="background:{_p2c}28;color:{_p2a};border:1px solid {_p2c}66;'
-                    f'border-radius:4px;padding:2px 9px;font-size:0.66rem;font-weight:800;flex-shrink:0">{_p2l}</span>'
-                    f'<span style="font-size:0.88rem;color:#E0F7F0;font-weight:600">{_l2["label"]}</span>'
-                    f'<span style="margin-left:auto;font-size:0.62rem;color:{_p2a};font-weight:700">{_l2["prob"]:.0f}%</span>'
+                    f'border-radius:4px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p2l}</span>'
+                    f'<span style="font-size:0.986rem;color:#E0F7F0;font-weight:600">{_l2["label"]}</span>'
+                    f'<span style="margin-left:auto;font-size:0.694rem;color:{_p2a};font-weight:700">{_l2["prob"]:.0f}%</span>'
                     f'</div>'
                     f'</div>'
                     f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
                     f'border-top:1px solid {_sgc}22;flex-wrap:wrap">'
-                    f'<span style="font-size:0.62rem;color:#2EE8C0">Pago est. +${dp["payout"]:.0f}/100</span>'
+                    f'<span style="font-size:0.694rem;color:#2EE8C0">Pago est. +${dp["payout"]:.0f}/100</span>'
                     f'<span style="margin-left:auto;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);'
-                    f'border-radius:4px;padding:2px 8px;font-size:0.6rem;color:#ef4444">⚠️ STAKE BAJO</span>'
+                    f'border-radius:4px;padding:2px 8px;font-size:0.672rem;color:#ef4444">⚠️ STAKE BAJO</span>'
                     f'</div>'
                     f'</div>'
                 )
@@ -5383,7 +5393,7 @@ with tab_parlays:
             # ── FEATURED: AA + O2.5 soccer combo ─────────────────────────────
             if _best_btts_o25:
                 st.markdown(
-                    '<div style="font-size:0.68rem;color:#4ade80;letter-spacing:2px;'
+                    '<div style="font-size:0.762rem;color:#4ade80;letter-spacing:2px;'
                     'text-transform:uppercase;margin:4px 0 2px 0">'
                     '⚽ COMBO GOLES DESTACADO · Ambos Anotan + Over 2.5</div>',
                     unsafe_allow_html=True
@@ -5808,36 +5818,36 @@ with tab_all:
                     f'<span style="font-family:Cinzel,serif;font-size:{1.15 if i==0 else 0.95}rem;'
                     f'font-weight:{"900" if i==0 else "600"};color:#FFE87C;letter-spacing:1.5px">'
                     f'{pk["label"]}</span>'
-                    f'<div style="font-size:0.75rem;color:#8a9e8a;margin-top:3px;line-height:1.4">'
+                    f'<div style="font-size:0.84rem;color:#8a9e8a;margin-top:3px;line-height:1.4">'
                     f'{pk["rationale"]}</div>'
                     f'</div>'
                     f'<div style="text-align:center;min-width:48px">'
-                    f'<div style="font-family:Cinzel,serif;font-size:1.1rem;color:{pc};font-weight:700">'
+                    f'<div style="font-family:Cinzel,serif;font-size:1.232rem;color:{pc};font-weight:700">'
                     f'{pk["prob"]:.0f}%</div>'
-                    f'<div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">PROB</div>'
+                    f'<div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">PROB</div>'
                     f'</div></div>'
                 )
 
             stats_html = (
                 f'<div style="display:flex;gap:16px;flex-wrap:wrap;padding:8px 0;'
                 f'border-top:1px solid rgba(255,255,255,0.06);margin-top:8px">'
-                f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#60a5fa;font-weight:700">'
-                f'{sim["away_pct"]:.0f}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">'
+                f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#60a5fa;font-weight:700">'
+                f'{sim["away_pct"]:.0f}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">'
                 f'{g["away_team"][:11]}</div></div>'
-                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#a78bfa;font-weight:700">'
-                   f'{sim["draw_pct"]:.0f}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">Empate</div></div>'
+                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#a78bfa;font-weight:700">'
+                   f'{sim["draw_pct"]:.0f}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">Empate</div></div>'
                    if sim["is_soccer"] else '')
-                + f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#f97316;font-weight:700">'
-                f'{sim["home_pct"]:.0f}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">'
+                + f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#f97316;font-weight:700">'
+                f'{sim["home_pct"]:.0f}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">'
                 f'{g["home_team"][:11]}</div></div>'
-                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#4ade80;font-weight:700">'
-                   f'{sim["p_btts"]}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">BTTS%</div></div>'
+                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#4ade80;font-weight:700">'
+                   f'{sim["p_btts"]}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">BTTS%</div></div>'
                    if sim.get("p_btts") and sport_group == "Soccer" else '')
-                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1rem;color:#C9A84C;font-weight:700">'
-                   f'{sim["p_o25"]}%</div><div style="font-size:0.55rem;color:#6B7E6E;letter-spacing:1px">O2.5%</div></div>'
+                + (f'<div style="text-align:center"><div style="font-family:Cinzel,serif;font-size:1.12rem;color:#C9A84C;font-weight:700">'
+                   f'{sim["p_o25"]}%</div><div style="font-size:0.616rem;color:#6B7E6E;letter-spacing:1px">O2.5%</div></div>'
                    if sim.get("p_o25") and sport_group == "Soccer" else '')
-                + f'<div style="margin-left:auto;text-align:right"><div style="font-size:0.65rem;color:#3a4a3e">DQ {dq:.0f}%</div>'
-                f'<div style="font-size:0.65rem;color:#3a4a3e">5,000 sims</div></div>'
+                + f'<div style="margin-left:auto;text-align:right"><div style="font-size:0.728rem;color:#3a4a3e">DQ {dq:.0f}%</div>'
+                f'<div style="font-size:0.728rem;color:#3a4a3e">5,000 sims</div></div>'
                 f'</div>'
             )
 
@@ -5857,9 +5867,9 @@ with tab_all:
                     delta_str = (f"▲ +{delta:.0f}pp" if delta >= 1 else (f"▼ {delta:.0f}pp" if delta <= -1 else "= sin cambio"))
                     delta_c = "#4ade80" if delta >= 1 else ("#ef4444" if delta <= -1 else "#6B7E6E")
                     sigs_html = "".join(
-                        f'<div style="font-size:0.73rem;color:#9ab09a;padding:2px 0">{s}</div>'
+                        f'<div style="font-size:0.818rem;color:#9ab09a;padding:2px 0">{s}</div>'
                         for s in xgv["signals"]
-                    ) if xgv["signals"] else '<div style="font-size:0.73rem;color:#6B7E6E">Sin señales adicionales</div>'
+                    ) if xgv["signals"] else '<div style="font-size:0.818rem;color:#6B7E6E">Sin señales adicionales</div>'
                     # Update pick prob display if we have real stats
                     if xgv["has_stats"]:
                         ou_pick["prob"] = adj  # mutate so pick card shows adjusted value
@@ -5868,12 +5878,12 @@ with tab_all:
                         f'background:rgba(96,165,250,0.05);border:1px solid rgba(96,165,250,0.2);'
                         f'border-radius:8px">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-                        f'<span style="font-size:0.62rem;color:rgba(96,165,250,0.7);letter-spacing:2px;'
+                        f'<span style="font-size:0.694rem;color:rgba(96,165,250,0.7);letter-spacing:2px;'
                         f'text-transform:uppercase;font-weight:600">📡 Validación xG en Vivo</span>'
                         f'<div style="display:flex;gap:8px;align-items:center">'
-                        f'<span style="font-family:Cinzel,serif;font-size:1.0rem;color:{adj_c};font-weight:700">{adj:.0f}%</span>'
-                        f'<span style="font-size:0.7rem;color:{delta_c};font-weight:600">{delta_str}</span>'
-                        f'<span style="font-size:0.62rem;color:{conf_c};background:rgba(0,0,0,0.3);'
+                        f'<span style="font-family:Cinzel,serif;font-size:1.12rem;color:{adj_c};font-weight:700">{adj:.0f}%</span>'
+                        f'<span style="font-size:0.784rem;color:{delta_c};font-weight:600">{delta_str}</span>'
+                        f'<span style="font-size:0.694rem;color:{conf_c};background:rgba(0,0,0,0.3);'
                         f'border-radius:10px;padding:1px 7px">confianza {conf}</span>'
                         f'</div></div>'
                         + sigs_html
@@ -5889,18 +5899,18 @@ with tab_all:
                 '<div style="padding:14px 18px">'
                 '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
                 '<div>'
-                f'<span style="font-family:\'Playfair Display\',serif;font-size:1.05rem;font-weight:700;color:#fff">'
+                f'<span style="font-family:\'Playfair Display\',serif;font-size:1.176rem;font-weight:700;color:#fff">'
                 f'{g["away_team"]} @ {g["home_team"]}</span>'
-                f' <span style="color:#4ade80;font-weight:700;font-size:1.1rem;margin-left:6px">{score_str}</span>'
-                f'<div style="font-size:0.72rem;color:#8a9e8a;margin-top:3px">{headline}</div>'
+                f' <span style="color:#4ade80;font-weight:700;font-size:1.232rem;margin-left:6px">{score_str}</span>'
+                f'<div style="font-size:0.806rem;color:#8a9e8a;margin-top:3px">{headline}</div>'
                 '</div>'
                 '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
                 '<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
-                'border-radius:20px;padding:2px 9px;font-size:0.65rem;letter-spacing:1.5px;font-weight:600">🔴 EN VIVO</span>'
+                'border-radius:20px;padding:2px 9px;font-size:0.728rem;letter-spacing:1.5px;font-weight:600">🔴 EN VIVO</span>'
                 f'<span style="background:rgba(201,168,76,0.1);color:#C9A84C;border:1px solid rgba(201,168,76,0.3);'
-                f'border-radius:20px;padding:2px 9px;font-size:0.65rem">{league_label(g["league"])}</span>'
+                f'border-radius:20px;padding:2px 9px;font-size:0.728rem">{league_label(g["league"])}</span>'
                 + (f'<span style="background:rgba(231,76,60,0.15);color:#e74c3c;border:1px solid rgba(231,76,60,0.3);'
-                   f'border-radius:20px;padding:2px 7px;font-size:0.62rem">⚠ SIN CUOTAS</span>' if dq == 0 else '')
+                   f'border-radius:20px;padding:2px 7px;font-size:0.694rem">⚠ SIN CUOTAS</span>' if dq == 0 else '')
                 + '</div></div>'
                 + picks_html
                 + xg_html
@@ -6208,14 +6218,14 @@ with tab_reto:
     st.markdown('''<div style="
         text-align:center;
         font-family:'Cinzel',serif;
-        font-size:1.6rem;
+        font-size:1.792rem;
         font-weight:700;
         color:#C9A84C;
         letter-spacing:4px;
         padding:16px 0 4px;
         text-shadow: 0 0 20px rgba(201,168,76,0.4)
     ">💰 RETO 13 MILLONES</div>
-    <div style="text-align:center;font-family:'DM Sans',sans-serif;font-size:0.8rem;
+    <div style="text-align:center;font-family:'DM Sans',sans-serif;font-size:0.896rem;
         color:#6B7E6E;letter-spacing:2px;margin-bottom:20px">
         DE $2,000 A $13,000,000 · UNA APUESTA A LA VEZ
     </div>''', unsafe_allow_html=True)
@@ -6281,7 +6291,7 @@ with tab_reto:
     col_usr1, col_usr2 = st.columns([4,1])
     with col_usr1:
         st.markdown(
-            f'<div style="font-family:\'Cinzel\',serif;font-size:0.9rem;color:#C9A84C;'
+            f'<div style="font-family:\'Cinzel\',serif;font-size:1.008rem;color:#C9A84C;'
             f'letter-spacing:2px;margin-bottom:12px">👤 {apodo_activo.upper()}</div>',
             unsafe_allow_html=True
         )
@@ -6356,7 +6366,7 @@ with tab_reto:
     st.markdown(f'''
     <div style="margin:8px 0 20px">
       <div style="display:flex;justify-content:space-between;
-          font-family:'DM Sans',sans-serif;font-size:0.72rem;color:#6B7E6E;margin-bottom:6px">
+          font-family:'DM Sans',sans-serif;font-size:0.806rem;color:#6B7E6E;margin-bottom:6px">
         <span>${bank_inicial:,.0f} inicio</span>
         <span style="color:#C9A84C;font-weight:700">{progreso_pct:.4f}% completado</span>
         <span>Meta: ${meta:,.0f}</span>
@@ -6368,7 +6378,7 @@ with tab_reto:
             border-radius:4px;transition:width 0.5s ease"></div>
       </div>
       <div style="text-align:center;font-family:'DM Sans',sans-serif;
-          font-size:0.72rem;color:#6B7E6E;margin-top:6px">
+          font-size:0.806rem;color:#6B7E6E;margin-top:6px">
         Faltan <b style="color:#C9A84C">${falta:,.0f}</b> para la meta
       </div>
     </div>
@@ -6666,7 +6676,7 @@ with tab_reto:
                 res_icon  = "⏳"
 
             momio_fmt = p.get("momio_fmt") or (f"+{momio_p:.0f}" if momio_p > 0 else f"{momio_p:.2f}")
-            nota_html = f'<div style="font-size:0.7rem;color:#3a4a3e;margin-top:2px">{p.get("nota","")}</div>' if p.get("nota") else ""
+            nota_html = f'<div style="font-size:0.784rem;color:#3a4a3e;margin-top:2px">{p.get("nota","")}</div>' if p.get("nota") else ""
 
             # ── Render pick row con Streamlit nativo ──────────────────────
             with st.container():
@@ -6674,15 +6684,15 @@ with tab_reto:
                 with h_left:
                     mercado_chip = {"ML":"🎯","O/U":"📊","BTTS":"⚽","DO":"🔄","Spread":"📐","Otro":"🎲"}.get(p.get("mercado","ML"),"🎯")
                     st.markdown(
-                        f'<span style="color:#C9A84C;font-family:\'Cinzel\',serif;font-size:0.78rem">#{num}</span>'
+                        f'<span style="color:#C9A84C;font-family:\'Cinzel\',serif;font-size:0.874rem">#{num}</span>'
                         f' <span style="color:#E0F7F0;font-weight:600">{p.get("partido","")}</span>'
                         f' <span style="background:rgba(201,168,76,0.15);color:#C9A84C;'
-                        f'border-radius:3px;padding:1px 6px;font-size:0.7rem;margin-left:4px">'
+                        f'border-radius:3px;padding:1px 6px;font-size:0.784rem;margin-left:4px">'
                         f'{mercado_chip} {p.get("mercado","ML")}</span>',
                         unsafe_allow_html=True
                     )
                     st.markdown(
-                        f'<div style="font-size:0.85rem;color:#b8c8b0;margin:2px 0">▶ {p.get("pick","")}</div>',
+                        f'<div style="font-size:0.952rem;color:#b8c8b0;margin:2px 0">▶ {p.get("pick","")}</div>',
                         unsafe_allow_html=True
                     )
                     if p.get("nota"):
@@ -6691,9 +6701,9 @@ with tab_reto:
                 with h_right:
                     st.markdown(
                         f'<div style="text-align:right">'
-                        f'<div style="font-size:1rem;font-weight:700;color:{res_color}">{res_icon} {res.upper()}</div>'
-                        f'<div style="font-size:0.85rem;color:{res_color};font-weight:600">{delta_str}</div>'
-                        f'<div style="font-size:0.72rem;color:#6B7E6E">${stake:,.0f} @ {momio_fmt}</div>'
+                        f'<div style="font-size:1.12rem;font-weight:700;color:{res_color}">{res_icon} {res.upper()}</div>'
+                        f'<div style="font-size:0.952rem;color:{res_color};font-weight:600">{delta_str}</div>'
+                        f'<div style="font-size:0.806rem;color:#6B7E6E">${stake:,.0f} @ {momio_fmt}</div>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
@@ -6704,7 +6714,7 @@ with tab_reto:
         # ── AUTO-RESOLVE: detecta resultados ESPN automáticamente ──────────────
         pendientes = [p for p in picks if p.get("resultado")=="pendiente"]
         if pendientes:
-            st.markdown('<div class="section-heading" style="font-size:0.9rem">⏳ Picks Pendientes</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" style="font-size:1.008rem">⏳ Picks Pendientes</div>', unsafe_allow_html=True)
 
             col_auto, col_manual = st.columns([1,1])
             with col_auto:
@@ -6763,7 +6773,7 @@ with tab_reto:
                                 st.caption(nf)
 
             # ── Manual override ───────────────────────────────────────────────
-            st.markdown('<div style="font-size:0.7rem;color:#6B7E6E;margin:8px 0 4px 0">✏️ Actualizar manualmente</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:0.784rem;color:#6B7E6E;margin:8px 0 4px 0">✏️ Actualizar manualmente</div>', unsafe_allow_html=True)
             pen_options = {f"#{p['num']} · {p['partido']} · {p['pick']}": i
                            for i, p in enumerate(picks) if p.get("resultado")=="pendiente"}
             sel_pen = st.selectbox("Pick pendiente", list(pen_options.keys()), key="sel_pendiente")
@@ -6811,4 +6821,4 @@ with tab_reto:
         )
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
-st.markdown('<div style="text-align:center;font-family:\'Cinzel\',serif;font-size:0.6rem;color:#2a3a2e;letter-spacing:3px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;font-family:\'Cinzel\',serif;font-size:0.672rem;color:#2a3a2e;letter-spacing:3px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
