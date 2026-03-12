@@ -2033,6 +2033,13 @@ def parse_games(data, league_name):
 
 
 def get_all_games(leagues):
+    from datetime import timedelta as _td_g
+    _now_g   = datetime.now(timezone.utc)
+    _now_mx_g = _now_g - _td_g(hours=6)
+    _today_mx_str = _now_mx_g.strftime("%Y%m%d")
+    _today_utc_str = _now_g.strftime("%Y%m%d")
+    _tom_utc_str   = (_now_g + _td_g(days=1)).strftime("%Y%m%d")
+
     result=[]; errors=[]
     for name in leagues:
         cfg=LEAGUES.get(name)
@@ -2040,7 +2047,23 @@ def get_all_games(leagues):
             errors.append(f"{name}: liga no configurada")
             continue
         try:
-            data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=cfg.get("tournament_id"))
+            # For soccer: force fetch with explicit dates to get ALL games (pre+live+post)
+            # ESPN soccer API only returns live/recent by default — ?dates= forces full day
+            if cfg["sport"] == "soccer":
+                base = f"https://site.api.espn.com/apis/site/v2/sports/{cfg['sport']}/{cfg['league']}/scoreboard"
+                all_evts = {}
+                for _date in [_today_mx_str, _today_utc_str, _tom_utc_str]:
+                    try:
+                        _r = requests.get(f"{base}?dates={_date}&limit=100", timeout=8,
+                                          headers={"User-Agent": "Mozilla/5.0"})
+                        if _r.status_code == 200:
+                            for _e in _r.json().get("events", []):
+                                if _e.get("id") not in all_evts:
+                                    all_evts[_e["id"]] = _e
+                    except: pass
+                data = {"events": list(all_evts.values())}
+            else:
+                data = fetch_scoreboard(cfg["sport"], cfg["league"], tournament_id=cfg.get("tournament_id"))
             parsed = parse_games(data, name)
             result.extend(parsed)
             if not parsed:
