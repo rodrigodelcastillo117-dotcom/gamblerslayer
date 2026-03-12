@@ -1954,7 +1954,10 @@ def parse_games(data, league_name):
                     _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
-                    if _ev_cdmx_date != _today_cdmx:
+                    # Accept today CDMX + tomorrow CDMX
+                    # Evening games (6-11 PM CDMX) = next UTC day, ESPN stores them as tomorrow
+                    _tomorrow_cdmx = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
+                    if _ev_cdmx_date not in (_today_cdmx, _tomorrow_cdmx):
                         continue
                 except Exception:
                     pass
@@ -7731,4 +7734,3 @@ with tab_reto:
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;font-family:\'Cinzel\',serif;font-size:0.672rem;color:#2a3a2e;letter-spacing:3px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
-
