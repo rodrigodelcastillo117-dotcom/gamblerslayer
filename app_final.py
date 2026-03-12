@@ -2604,6 +2604,13 @@ def apply_soccer_calib(league, p_u25, p_u35, p_btts, p_o25, p_o35):
 # ═══════════════════════════════════════════════════════════════════════════════
 PUBLIC_BIAS_PTS = {"Basketball": 0.7, "Baseball": 0.2, "Hockey": 0.3}
 
+# Standard market lines per sport — analyzed for EVERY game regardless of ESPN line
+# Shows model probability against each line so the user can compare vs actual book line
+SPORT_STD_LINES = {
+    "Hockey":   [5.5, 6.5],          # NHL standard lines
+    "Baseball": [7.5, 8.5, 9.5],     # MLB standard lines
+}
+
 def apply_nonsoccer_calib(sport_grp, is_hockey, p_u_total, p_o_total, ou_val):
     """Calibration for implicit-line case only (no ESPN line). O+U enforced=1.0."""
     if p_u_total is None or p_o_total is None or ou_val != 0.0:
@@ -2886,6 +2893,11 @@ def run_monte_carlo(game, n=10_000):
             lam_h = max(0.1, lam_h * _mlb_park_factor)
             lam_a = max(0.1, lam_a * _mlb_park_factor)
 
+    # ── Multi-line O/U counters (NHL: 5.5/6.5, MLB: 7.5/8.5/9.5) ──────────────
+    _std_lines = SPORT_STD_LINES.get(sport_grp, [])
+    _std_over  = {line: 0 for line in _std_lines}
+    _std_under = {line: 0 for line in _std_lines}
+
     hw=aw=d=btts=o15=o25=o35=u25=u35=dc_1x=dc_x2=dc_12=o_total=u_total=0
     rng=random.Random()
 
@@ -2937,6 +2949,10 @@ def run_monte_carlo(game, n=10_000):
                         _nhl_eff_line = (ou_val - 0.5 - _bias) if _nonsoccer_no_line else (ou_val - _bias)
                         if tg_with_ot > _nhl_eff_line: o_total += 1
                         else: u_total += 1
+                    # Multi-line analysis (5.5 and 6.5) — always computed
+                    for _sl in _std_lines:
+                        if tg_with_ot > _sl: _std_over[_sl] += 1
+                        else: _std_under[_sl] += 1
                 else:
                     # NBA / MLB / NFL — normal distribution (Poisson breaks for large λ)
                     # NBA: typical game total std ~12-14 pts (TeamRankings historical)
@@ -2969,6 +2985,10 @@ def run_monte_carlo(game, n=10_000):
                             _bias = 0.0 if _nonsoccer_no_line else PUBLIC_BIAS_PTS.get(sport_grp, 0.0)
                             if sim_total > (ou_val - _bias): o_total += 1
                             else: u_total += 1
+                        # Multi-line analysis (7.5, 8.5, 9.5) — always computed
+                        for _sl in _std_lines:
+                            if sim_total > _sl: _std_over[_sl] += 1
+                            else: _std_under[_sl] += 1
                         continue  # skip the generic ou block below
                     else:  # Football / NCAAF
                         per_team_std = max(5.0, (lh + la) * 0.12)
@@ -3044,20 +3064,59 @@ def run_monte_carlo(game, n=10_000):
 
     sport_group = LEAGUES.get(game["league"], {}).get("group", "")
 
-    # ── NBA / NHL / MLB O/U (total points/goals line from ESPN) ──────────────
+    # ── NBA / NHL / MLB O/U ─────────────────────────────────────────────────
+    # Show probabilities at ESPN line AND adjacent lines (±0.5/1.0)
+    # This lets user see: "Over 5.5: 68% | Over 6.5: 42%" for NHL
     if p_o_total is not None and ou:
         try:
-            ou_line = float(str(ou))
+            ou_line = float(str(ou).lstrip("~"))
+            # Standard line step by sport: NHL/Soccer=0.5, NBA=0.5, MLB=0.5
+            _step = 0.5
+            # Use normal approximation for adjacent lines
+            # mu = model's expected total (lam_h + lam_a after sanity check)
+            _mu_total = (lam_h or 0) + (lam_a or 0)
+            _sigma_total = max(1.0, _mu_total * 0.13)  # ~13% CV empirically
+            if sport_grp == "Basketball": _sigma_total = max(12.0, _mu_total * 0.13)
+            elif sport_grp == "Baseball": _sigma_total = max(2.5, _mu_total * 0.38 * 0.7)
+            elif is_hockey: _sigma_total = max(1.5, _mu_total * 0.20)
+
+            def _p_over_line(line):
+                """P(total > line) via normal approx with public bias correction."""
+                _bias = 0.0 if _nonsoccer_no_line else PUBLIC_BIAS_PTS.get(sport_grp, 0.0)
+                _eff = line - _bias
+                import math
+                z = (_eff - _mu_total) / _sigma_total
+                return max(0.01, min(0.99, 0.5 * (1 + math.erf(-z / math.sqrt(2)))))
+
+            # Lines to show: ESPN line - step, ESPN line, ESPN line + step
+            _lines_to_show = [ou_line - _step, ou_line, ou_line + _step]
+            # Filter to sensible range and round to nearest 0.5
+            _lines_to_show = [l for l in _lines_to_show if l > 0]
+
+            # Primary ESPN line uses MC result (most accurate)
             ou_label = f"Over {ou_line:.1f}"
             uu_label = f"Under {ou_line:.1f}"
             o_total_ev = calc_ev(p_o_total, OU_ML)
             u_total_ev = calc_ev(p_u_total, OU_ML)
             candidates += [
-                ("O/U", ou_label,  p_o_total, o_total_ev, str(OU_ML), quarter_kelly(p_o_total, OU_ML)),
-                ("O/U", uu_label,  p_u_total, u_total_ev, str(OU_ML), quarter_kelly(p_u_total, OU_ML)),
+                ("O/U", ou_label, p_o_total, o_total_ev, str(OU_ML), quarter_kelly(p_o_total, OU_ML)),
+                ("O/U", uu_label, p_u_total, u_total_ev, str(OU_ML), quarter_kelly(p_u_total, OU_ML)),
             ]
+
+            # Adjacent lines via normal approx
+            _multi_lines = {}
+            for _l in _lines_to_show:
+                _po = _p_over_line(_l)
+                _multi_lines[round(_l, 1)] = {"over": round(_po * 100, 1), "under": round((1-_po) * 100, 1)}
+            # Always include ESPN line using MC result (override approx)
+            _multi_lines[round(ou_line, 1)] = {
+                "over": round(p_o_total * 100, 1),
+                "under": round(p_u_total * 100, 1)
+            }
         except:
-            pass
+            _multi_lines = {}
+    else:
+        _multi_lines = {}
 
     # ── Soccer: BTTS + O/U goals ──────────────────────────────────────────────
     if p_btts is not None and sport_group == "Soccer":
@@ -3309,7 +3368,15 @@ def run_monte_carlo(game, n=10_000):
         "p_o_total":round(p_o_total*100,1) if p_o_total is not None else None,
         "p_u_total":round(p_u_total*100,1) if p_u_total is not None else None,
         "ou_line":str(ou) if ou else (f"~{ou_val:.1f}" if _nonsoccer_no_line else None),
+        "multi_lines": _multi_lines,
         "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
+        "std_lines": {
+            str(sl): {
+                "over": round(_std_over[sl]/n*100, 1),
+                "under": round(_std_under[sl]/n*100, 1)
+            }
+            for sl in _std_lines
+        } if _std_lines else {},
         "low_confidence": game.get("_low_confidence", False),
         "lam_real_h":game.get("_lam_real_h"),"lam_real_a":game.get("_lam_real_a"),
         "lam_league":game.get("_lam_league"),
@@ -4527,15 +4594,22 @@ with tab_picks:
                 cands = []
                 _ml = best_ml()
                 if _ml: cands.append(_ml)
+                # Sharp: use multi_lines to find best edge (Over OR Under)
                 _ou_line = sim.get("ou_line") or ""
-                _p_over  = sim.get("p_o_total") or 0
-                if _ou_line and _p_over > 0:
-                    try: _line = float(_ou_line.lstrip("~"))
-                    except: _line = None
-                    if _line and _p_over > 45:  # only if model actually favors Over (>45%)
-                        _ev_ou = round((_p_over/100*(100/110) - (1-_p_over/100))*100, 1)
-                        cands.append({"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over,"ev":_ev_ou,"kelly":0})
-                # Always include ML as fallback — ensures Basketball always has a pick
+                _implicit_r = _ou_line.startswith("~")
+                _multi_r = sim.get("multi_lines", {})
+                if _ou_line and not _implicit_r and _multi_r:
+                    _best_p = 0; _best_lbl = None
+                    for _l, _d in _multi_r.items():
+                        _po_l = _d["over"]; _pu_l = _d["under"]
+                        if _po_l >= _pu_l and _po_l > _best_p:
+                            _best_p = _po_l; _best_lbl = f"Over {_l:.1f}"
+                        elif _pu_l > _po_l and _pu_l > _best_p:
+                            _best_p = _pu_l; _best_lbl = f"Under {_l:.1f}"
+                    if _best_lbl and _best_p >= 52:
+                        _ev_ou = round((_best_p/100*(100/110) - (1-_best_p/100))*100, 1)
+                        cands.append({"market":"O/U","label":_best_lbl,"prob":_best_p,"ev":_ev_ou,"kelly":0})
+                # ML as fallback
                 if not cands and _ml:
                     cands.append(_ml)
                 return max(cands, key=lambda x: x["prob"]) if cands else None
@@ -5103,23 +5177,48 @@ with tab_sim:
             f'{_total_p} partidos · {len(_sports_p)} deportes · hora CDMX</div>',
             unsafe_allow_html=True
         )
-        # Sport tiles — ALL in one row
+        # ── Sport selector tiles — clickable ─────────────────────────────────
+        # Store selected sport in session_state; clicking a tile toggles it
+        _sel_sp = st.session_state.get("_picks_sel_sport", None)
+        # If selected sport no longer has games, reset
+        if _sel_sp and _sel_sp not in _sports_p:
+            _sel_sp = None
+            st.session_state["_picks_sel_sport"] = None
+
         _sp_cols_p = st.columns(len(_sports_p))
         for _ci_p, _sp_p in enumerate(_sports_p):
             _smp = _SPORT_META_P[_sp_p]
             _n_p = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
+            _ev_sp = sum(
+                1 for dmap in _tree_p[_sp_p].values()
+                for gs in dmap.values() for g in gs
+                if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
+                   _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+            )
+            _is_sel = (_sel_sp == _sp_p)
+            _border = f'3px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}55'
+            _bg     = _smp["color"] + "22" if _is_sel else _smp["accent"]
+            _ev_badge = f'<div style="font-size:0.594rem;color:#C9A84C;margin-top:1px">🔥{_ev_sp} EV+</div>' if _ev_sp else ""
             with _sp_cols_p[_ci_p]:
                 st.markdown(
-                    f'<div style="text-align:center;padding:8px 3px;border-radius:9px;'
-                    f'background:{_smp["accent"]};border:1px solid {_smp["color"]}55;margin-bottom:8px">'
-                    f'<div style="font-size:1.68rem;line-height:1">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.65rem;font-weight:700;color:{_smp["color"]};'
-                    f'letter-spacing:0.5px;text-transform:uppercase;margin-top:3px">'
-                    f'{_sp_p}</div>'
-                    f'<div style="font-size:0.616rem;color:#6B7E6E;margin-top:1px">{_n_p} juegos</div>'
+                    f'<div style="text-align:center;padding:10px 3px;border-radius:9px;'
+                    f'background:{_bg};border:{_border};margin-bottom:8px;cursor:pointer">'
+                    f'<div style="font-size:1.8rem;line-height:1">{_smp["emoji"]}</div>'
+                    f'<div style="font-size:0.68rem;font-weight:700;color:{_smp["color"]};'
+                    f'letter-spacing:0.5px;text-transform:uppercase;margin-top:4px">{_sp_p}</div>'
+                    f'<div style="font-size:0.62rem;color:#6B7E6E;margin-top:2px">{_n_p} juegos</div>'
+                    f'{_ev_badge}'
                     f'</div>',
                     unsafe_allow_html=True
                 )
+                if st.button(
+                    "▶" if not _is_sel else "▼",
+                    key=f"btn_sp_{_sp_p}",
+                    use_container_width=True,
+                    help=f"{'Ver' if not _is_sel else 'Cerrar'} partidos de {_sp_p}"
+                ):
+                    st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
+                    st.rerun()
     # ── RE-SIMULAR button (compact, inside games section) ─────────────────
     _col_rs, _ = st.columns([1, 3])
     with _col_rs:
@@ -5167,25 +5266,36 @@ with tab_sim:
                 cands.append({"market":"O/U","label":"Over 2.5","prob":_o25_pb,"ev":_o25_ev})
         else:
             _ou_line = sim.get("ou_line") or ""
-            _p_over  = sim.get("p_o_total") or 0   # stored as 0-100 percentage
+            _p_over  = sim.get("p_o_total") or 0
             _p_under = sim.get("p_u_total") or 0
-            if _ou_line and (_p_over > 0 or _p_under > 0):
+            _implicit = _ou_line.startswith("~")
+            _multi   = sim.get("multi_lines", {})
+
+            if _ou_line and not _implicit and (_p_over > 0 or _p_under > 0):
+                # Sharp logic: use multi_lines to find the best edge
+                # Best bet = the line+side with highest probability (furthest from 50%)
+                _best_prob = 0; _best_label = None; _best_side = None
+                for _l, _d in _multi.items():
+                    _po_l = _d["over"]; _pu_l = _d["under"]
+                    if _po_l >= _pu_l and _po_l > _best_prob:
+                        _best_prob = _po_l; _best_label = f"Over {_l:.1f}"; _best_side = "over"
+                    elif _pu_l > _po_l and _pu_l > _best_prob:
+                        _best_prob = _pu_l; _best_label = f"Under {_l:.1f}"; _best_side = "under"
+
+                # Minimum threshold: only add O/U if model has real edge (>52%)
+                if _best_label and _best_prob >= 52:
+                    cands.append({"market":"O/U","label":_best_label,"prob":_best_prob,"ev":0})
+            elif _ou_line and _implicit:
+                # Implicit line (no ESPN line): use ESPN-line MC result directly
+                # Only add Over for Basketball/Hockey (Under on implicit = weak signal)
                 try: _line = float(_ou_line.lstrip("~"))
                 except: _line = None
-                _implicit = _ou_line.startswith("~")
-                _tag = " (avg)" if _implicit else ""
-                if _line:
-                    if sg in ("Basketball", "Hockey"):
-                        # Never show Under for NBA/NHL — historically -EV, confusing
-                        # Only add Over if model genuinely favors it (>45%)
-                        if _p_over >= 45:
-                            cands.append({"market":"O/U","label":f"Over {_line:.1f}{_tag}","prob":_p_over,"ev":0})
-                        # else: ML only — already in cands
-                    else:  # Baseball / Football
-                        if _p_over >= _p_under:
-                            cands.append({"market":"O/U","label":f"Over {_line:.1f}{_tag}","prob":_p_over,"ev":0})
-                        else:
-                            cands.append({"market":"O/U","label":f"Under {_line:.1f}{_tag}","prob":_p_under,"ev":0})
+                if _line and sg not in ("Basketball", "Hockey"):
+                    if _p_over >= _p_under and _p_over >= 52:
+                        cands.append({"market":"O/U","label":f"Over {_line:.1f} (avg)","prob":_p_over,"ev":0})
+                    elif _p_under > _p_over and _p_under >= 52:
+                        cands.append({"market":"O/U","label":f"Under {_line:.1f} (avg)","prob":_p_under,"ev":0})
+
         return max(cands, key=lambda x: x["prob"])
 
     def _oracle_card(g, sm):
@@ -5276,25 +5386,64 @@ with tab_sim:
                 f'</div>'
             )
         elif sim.get("ou_line") and sim.get("p_o_total") is not None:
-            _po = sim.get("p_o_total") or 0   # stored as 0-100 percentage
+            _po = sim.get("p_o_total") or 0
             _pu = sim.get("p_u_total") or 0
-            _otc = "#ff6a00" if _po >= 50 else "#6B7E6E"
-            _utc = "#a78bfa" if _pu >= 50 else "#6B7E6E"
-            # Best side highlighted
-            _best_side_lbl = f'Over {sim["ou_line"]}' if _po >= _pu else f'Under {sim["ou_line"]}'
-            _best_side_pct = max(_po, _pu)
-            _best_side_clr = "#ff6a00" if _po >= _pu else "#a78bfa"
             _sg_icon_ou = {"Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(
                 LEAGUES.get(g.get("league",""),{}).get("group",""), "🎯")
             dq_src_ou = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
+            _multi = sim.get("multi_lines", {})
+
+            # ── Multi-line table: show each line with Over% / Under% ──────────
+            # Sort lines ascending. ESPN line shown in bold, others dimmer.
+            _ou_val_f = None
+            try: _ou_val_f = float(sim["ou_line"].lstrip("~"))
+            except: pass
+            _implicit_tag = "~" if (sim["ou_line"] or "").startswith("~") else ""
+
+            _rows_html = ""
+            if _multi and _ou_val_f:
+                _sorted_lines = sorted(_multi.keys())
+                for _l in _sorted_lines:
+                    _d = _multi[_l]
+                    _po_l = _d["over"]; _pu_l = _d["under"]
+                    _is_espn = (abs(_l - _ou_val_f) < 0.01)
+                    # Color: best side orange (Over) or purple (Under)
+                    _over_best = _po_l >= _pu_l
+                    _oc = "#ff6a00" if _po_l >= 52 else ("#C9A84C" if _po_l >= 48 else "#6B7E6E")
+                    _uc = "#a78bfa" if _pu_l >= 52 else ("#C9A84C" if _pu_l >= 48 else "#6B7E6E")
+                    _arrow_lbl = f'Over {_l:.1f}' if _over_best else f'Under {_l:.1f}'
+                    _arrow_clr = "#ff6a00" if _over_best else "#a78bfa"
+                    _arrow_pct = _po_l if _over_best else _pu_l
+                    # ESPN line row: slightly highlighted background
+                    _row_bg = "background:rgba(201,168,76,0.07);border-radius:4px;padding:2px 6px;" if _is_espn else "padding:2px 6px;"
+                    _lbl_style = "font-weight:700;color:#C9A84C;" if _is_espn else "color:#3a4a3e;"
+                    _espn_badge = ' <span style="font-size:0.6rem;color:#C9A84C;opacity:0.7">ESPN</span>' if _is_espn else ""
+                    _rows_html += (
+                        f'<div style="display:flex;align-items:center;gap:8px;{_row_bg}">'
+                        f'<span style="{_lbl_style}min-width:42px">{_implicit_tag}{_l:.1f}{_espn_badge}</span>'
+                        f'<span style="color:{_oc};min-width:52px">O {_po_l:.0f}%</span>'
+                        f'<span style="color:#3a4a3e">|</span>'
+                        f'<span style="color:{_uc};min-width:52px">U {_pu_l:.0f}%</span>'
+                        f'<span style="color:{_arrow_clr};font-weight:700">→ {_arrow_lbl} ({_arrow_pct:.0f}%)</span>'
+                        f'</div>'
+                    )
+            else:
+                # Fallback single line
+                _otc = "#ff6a00" if _po >= 50 else "#6B7E6E"
+                _utc = "#a78bfa" if _pu >= 50 else "#6B7E6E"
+                _best_lbl = f'Over {sim["ou_line"]}' if _po >= _pu else f'Under {sim["ou_line"]}'
+                _best_clr = "#ff6a00" if _po >= _pu else "#a78bfa"
+                _rows_html = (
+                    f'<span style="color:{_otc}">Over {_po}%</span>'
+                    f'<span style="color:#3a4a3e"> | </span>'
+                    f'<span style="color:{_utc}">Under {_pu}%</span>'
+                    f'<span style="color:{_best_clr};font-weight:700;margin-left:4px">→ {_best_lbl} ({max(_po,_pu):.0f}%)</span>'
+                )
+
             _footer = (
-                f'<div style="font-size:0.728rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
-                f'<span style="color:#6B7E6E">{_sg_icon_ou} Total {sim["ou_line"]}</span>'
-                f'<span style="color:{_otc}">Over {_po}%</span>'
-                f'<span style="color:#3a4a3e">|</span>'
-                f'<span style="color:{_utc}">Under {_pu}%</span>'
-                f'<span style="color:{_best_side_clr};font-weight:700;margin-left:4px">→ {_best_side_lbl} ({_best_side_pct:.0f}%)</span>'
-                f'<span style="color:#3a4a3e;margin-left:auto">{dq_src_ou}</span>'
+                f'<div style="font-size:0.72rem;margin-top:5px">'
+                f'<div style="color:#6B7E6E;margin-bottom:3px">{_sg_icon_ou} O/U · {dq_src_ou}</div>'
+                + _rows_html +
                 f'</div>'
             )
 
@@ -5308,12 +5457,21 @@ with tab_sim:
         )
         return _html
 
-    # Expanders — one per sport, games with oracle inside
-    for _sp_p in _sports_p:
+    # ── Expanders — show only selected sport (or all if none selected) ──────
+    _sel_sp_now = st.session_state.get("_picks_sel_sport", None)
+    _sports_to_show = [_sel_sp_now] if (_sel_sp_now and _sel_sp_now in _sports_p) else _sports_p
+
+    if not _sel_sp_now:
+        st.markdown(
+            '<div style="font-size:0.75rem;color:#6B7E6E;margin:4px 0 10px 0">'
+            '👆 Pulsa un deporte arriba para ver sus partidos</div>',
+            unsafe_allow_html=True
+        )
+
+    for _sp_p in _sports_to_show:
         _smp   = _SPORT_META_P[_sp_p]
         _dks_p = sorted(_tree_p[_sp_p].keys())
         _n_p   = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
-        # Count EV+ picks in this sport
         _ev_count = sum(
             1 for dmap in _tree_p[_sp_p].values()
             for gs in dmap.values() for g in gs
@@ -5321,10 +5479,14 @@ with tab_sim:
                _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
         )
         _ev_badge = f" 🔥{_ev_count}" if _ev_count else ""
-        with st.expander(
-            f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}',
-            expanded=(_today_mx_p in _tree_p[_sp_p])
-        ):
+        # When a sport is selected, show it fully expanded (no outer expander)
+        if _sel_sp_now == _sp_p:
+            st.markdown(
+                f'<div style="font-size:0.75rem;font-weight:700;color:{_smp["color"]};'
+                f'letter-spacing:1px;text-transform:uppercase;margin:6px 0 10px 0">'
+                f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}</div>',
+                unsafe_allow_html=True
+            )
             for _dk_p in _dks_p:
                 _n_day = sum(len(gs) for gs in _tree_p[_sp_p][_dk_p].values())
                 _ev_day = sum(
@@ -5334,23 +5496,49 @@ with tab_sim:
                        _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
                 )
                 _day_label = f"{_fmt_date_p(_dk_p)} · {_n_day} partidos" + (f" 🔥{_ev_day}" if _ev_day else "")
-                _day_open  = (_dk_p == _today_mx_p)  # only today open by default
-                with st.expander(_day_label, expanded=_day_open):
+                with st.expander(_day_label, expanded=(_dk_p == _today_mx_p)):
                     for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
-                        # League header
                         st.markdown(
                             f'<div style="font-size:0.728rem;color:{_smp["color"]};font-weight:700;'
                             f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
                             f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
                             unsafe_allow_html=True
                         )
-                        # 3 games per row
                         for _gi3 in range(0, len(_lg_games_p), 3):
                             _row3 = _lg_games_p[_gi3:_gi3+3]
                             _c3 = st.columns(len(_row3))
                             for _ci3, _gg_p in enumerate(_row3):
                                 with _c3[_ci3]:
                                     st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+        else:
+            # No sport selected — show collapsed expanders for all sports
+            with st.expander(
+                f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}',
+                expanded=False
+            ):
+                for _dk_p in _dks_p:
+                    _n_day = sum(len(gs) for gs in _tree_p[_sp_p][_dk_p].values())
+                    _ev_day = sum(
+                        1 for gs in _tree_p[_sp_p][_dk_p].values()
+                        for g in gs
+                        if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
+                           _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+                    )
+                    _day_label = f"{_fmt_date_p(_dk_p)} · {_n_day} partidos" + (f" 🔥{_ev_day}" if _ev_day else "")
+                    with st.expander(_day_label, expanded=(_dk_p == _today_mx_p)):
+                        for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
+                            st.markdown(
+                                f'<div style="font-size:0.728rem;color:{_smp["color"]};font-weight:700;'
+                                f'letter-spacing:1.5px;text-transform:uppercase;margin:8px 0 4px 0">'
+                                f'{league_label(_lg_p)} · {len(_lg_games_p)}</div>',
+                                unsafe_allow_html=True
+                            )
+                            for _gi3 in range(0, len(_lg_games_p), 3):
+                                _row3 = _lg_games_p[_gi3:_gi3+3]
+                                _c3 = st.columns(len(_row3))
+                                for _ci3, _gg_p in enumerate(_row3):
+                                    with _c3[_ci3]:
+                                        st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
@@ -6730,7 +6918,7 @@ with tab_reto:
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <div style="background:#060C08;padding:20px 20px 16px 20px;border-radius:8px;
             border:1px solid rgba(201,168,76,0.2);position:relative">
-          <canvas id="retoChart" height="260"></canvas>
+          <canvas id="retoChart" height="280"></canvas>
         </div>
         <script>
         const d = {chart_data};
@@ -6816,6 +7004,7 @@ with tab_reto:
           }},
           options: {{
             responsive: true,
+            clip: false,
             interaction: {{ mode: "index", intersect: false }},
             plugins: {{
               legend: {{ display: false }},
