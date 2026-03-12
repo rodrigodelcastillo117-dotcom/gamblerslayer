@@ -2838,8 +2838,10 @@ def run_monte_carlo(game, n=10_000):
         if _ou_edge(p_u35, _pu35_pr):
             candidates.append(("O/U","Under 3.5",p_u35, u35_ev, str(OU_ML), quarter_kelly(p_u35,OU_ML)))
 
-    # DC only meaningful for soccer (3-way markets)
-    if is_soccer:
+    # DC only meaningful for soccer WITH real ESPN moneyline (DC_ML is fictitious otherwise)
+    # Without real ML odds, DO EV is calculated vs a made-up -200 → always looks positive
+    # Only add DO candidates when we have actual market odds to anchor the simulation
+    if is_soccer and hml and aml:
         candidates+=[
             ("DO", game["home_team"]+" o Empate (1X)", p_dc_1x, dc_1x_ev, str(DC_ML), quarter_kelly(p_dc_1x,DC_ML)),
             ("DO", game["away_team"]+" o Empate (X2)", p_dc_x2, dc_x2_ev, str(DC_ML), quarter_kelly(p_dc_x2,DC_ML)),
@@ -2935,11 +2937,60 @@ def run_monte_carlo(game, n=10_000):
     _has_form      = game.get("home_form") is not None or game.get("away_form") is not None
     _has_real_signal = _has_ml or _has_scoring or _has_form
 
+    # ── Clasifica fuente de señal disponible ────────────────────────────────────
+    _has_profile   = (game.get("home_profile") and game.get("home_profile",{}).get("n_games",0) >= 5) or                      (game.get("away_profile") and game.get("away_profile",{}).get("n_games",0) >= 5)
+    _has_record    = (game.get("home_record","") and game.get("away_record",""))  # season W-L-D
+
     if is_soccer and not _has_real_signal:
-        # Sin señal real: quitar O/U y BTTS (Poisson puro no tiene valor)
-        # Mantener DO y ML — al menos reflejan identidad del equipo
-        candidates = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
-                      if mt not in ("O/U","BTTS")]
+        # Sin ML, sin forma reciente, sin scoring trend de ESPN.
+        # Pero podemos usar:
+        #   A) team_profiles (Google Sheets) — historial acumulado real
+        #   B) season record (win_pct) — calidad relativa equipos
+        # Si hay alguna de estas, generamos picks con edge reducido y los marcamos
+        # como "⚠ Modelo" para que el usuario sepa que no hay cuotas de respaldo.
+        _profile_signal = _has_profile or _has_record
+        if not _profile_signal:
+            # Sin ninguna señal: vaciar todo — no hay nada útil que decir
+            candidates = []
+        else:
+            # Tenemos perfil o récord: relajar el edge mínimo (priors menos estrictos)
+            # y marcar los picks con bandera de baja confianza
+            # El λ ya fue ajustado por team_profiles en get_lambda() arriba.
+            # Solo necesitamos dejar pasar candidatos BTTS/O/U con edge más bajo.
+            # Reducimos OU_MIN_EDGE a 0.05 para este partido (más permisivo)
+            _edge_low = 0.05
+            _prior = LEAGUE_OU_PRIORS.get(game["league"])
+            _pv    = _prior if _prior else (0.23,0.47,0.68,0.77,0.53,0.32,0.57)
+            # Reconstruir candidatos BTTS/O/U con edge relajado
+            # (los candidatos ya fueron construidos arriba con OU_MIN_EDGE=0.08,
+            #  pero con _bypass=False y sin ML podrían haber sido filtrados)
+            if p_btts is not None:
+                _btts_pr = _pv[6] if len(_pv)>6 else 0.57
+                if abs(p_btts - _btts_pr) >= _edge_low:
+                    # Asegurarnos de que BTTS está en candidates
+                    _btts_in = any(mt=="BTTS" for mt,*_ in candidates)
+                    if not _btts_in:
+                        _bev  = calc_ev(p_btts, BTTS_ML)
+                        _nbev = calc_ev(1-p_btts, BTTS_ML)
+                        candidates += [
+                            ("BTTS","Ambos Anotan — SÍ",p_btts,  _bev,  str(BTTS_ML),quarter_kelly(p_btts,  BTTS_ML)),
+                            ("BTTS","Ambos Anotan — NO",1-p_btts,_nbev, str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
+                        ]
+            if p_o25 is not None:
+                if abs(p_o25 - _pv[4]) >= _edge_low:
+                    _ou_in = any(mt=="O/U" and "2.5" in lb for mt,lb,*_ in candidates)
+                    if not _ou_in:
+                        candidates.append(("O/U","Over 2.5", p_o25,
+                                           calc_ev(p_o25,OU_ML), str(OU_ML),
+                                           quarter_kelly(p_o25,OU_ML)))
+                if abs(1-p_o25 - _pv[1]) >= _edge_low:
+                    _uu_in = any(mt=="O/U" and "Under 2.5" in lb for mt,lb,*_ in candidates)
+                    if not _uu_in:
+                        candidates.append(("O/U","Under 2.5", 1-p_o25,
+                                           calc_ev(1-p_o25,OU_ML), str(OU_ML),
+                                           quarter_kelly(1-p_o25,OU_ML)))
+            # Marcar el partido con baja confianza para que el display lo indique
+            game["_low_confidence"] = True
 
     # Detect "partido parejo" — requires real ML signal to be meaningful
     # Without ML, hp≈aw≈0.37 always → _parejo always True → always picks U3.5
@@ -3008,6 +3059,7 @@ def run_monte_carlo(game, n=10_000):
         "p_u_total":round(p_u_total*100,1) if p_u_total is not None else None,
         "ou_line":str(ou) if ou else None,
         "is_soccer":is_soccer,"n_simulations":n,"use_goals":use_goals,
+        "low_confidence": game.get("_low_confidence", False),
         "lam_real_h":game.get("_lam_real_h"),"lam_real_a":game.get("_lam_real_a"),
         "lam_league":game.get("_lam_league"),
         "home_back2back":game.get("home_back2back",False),"away_back2back":game.get("away_back2back",False),
@@ -3879,7 +3931,7 @@ with tab_picks:
         )
 
         # ── Filtrar: solo O/U, BTTS, ML — excluir DO como pick principal ──────────
-        ALLOWED_MKTS = {"O/U", "BTTS", "ML"}
+        ALLOWED_MKTS = {"O/U", "BTTS", "ML"}  # DO never a standalone pick
 
         def _best_allowed_pick(r):
             """Return best bet dict restricted to allowed markets, or None."""
@@ -3936,27 +3988,96 @@ with tab_picks:
         if not allowed_bets:
             st.markdown('<div class="warn-banner">No se encontraron picks O/U · BTTS · ML con EV positivo. Intenta con más ligas.</div>', unsafe_allow_html=True)
         else:
-            # ── PICK DIAMANTE — el de mayor probabilidad ──────────────────────
+            # ── helpers ──────────────────────────────────────────────────────
+            _MKT_COLOR = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80","DO":"#a78bfa"}
+            _MKT_ICON  = {"ML":"⚽","O/U":"📊","BTTS":"🎯","DO":"🔄"}
+            _CONF_LABEL = lambda p: ("🔥 ALTA" if p>=75 else ("⚡ MEDIA" if p>=55 else "🌡 BAJA"))
+            _CONF_COLOR = lambda p: ("#4ade80" if p>=75 else ("#C9A84C" if p>=55 else "#ef4444"))
+
+            def _prob_bar_html(prob, color):
+                """Thin probability bar."""
+                return (
+                    f'<div style="margin:6px 0 2px 0;background:rgba(255,255,255,0.06);'
+                    f'border-radius:4px;height:5px;overflow:hidden">'
+                    f'<div style="width:{prob:.0f}%;height:100%;border-radius:4px;'
+                    f'background:linear-gradient(90deg,{color}88,{color});'
+                    f'box-shadow:0 0 8px {color}66"></div></div>'
+                    f'<div style="font-size:0.58rem;color:{color};text-align:right;'
+                    f'margin-top:1px">{prob:.0f}%</div>'
+                )
+
+            def _pick_diamante_card(r, tp, rank=0):
+                mc    = _MKT_COLOR.get(tp["market"],"#9ca3af")
+                icon  = _MKT_ICON.get(tp["market"],"🎲")
+                ev_s  = f'+{tp["ev"]:.1f}' if tp["ev"]>=0 else f'{tp["ev"]:.1f}'
+                prob  = tp["prob"]
+                conf_lbl = _CONF_LABEL(prob)
+                conf_c   = _CONF_COLOR(prob)
+                is_diamond = rank == 0
+
+                # gradient border glow for diamond
+                if is_diamond:
+                    outer = (f'background:linear-gradient(135deg,{mc}44 0%,#0d1f1a 60%,{mc}22 100%);'
+                             f'border:1px solid {mc}88;box-shadow:0 0 24px {mc}33,inset 0 1px 0 {mc}22;')
+                    title_size = "1.05rem"
+                    label_size = "1.1rem"
+                else:
+                    outer = (f'background:linear-gradient(135deg,{mc}18 0%,#0a1a16 100%);'
+                             f'border:1px solid {mc}44;')
+                    title_size = "0.88rem"
+                    label_size = "0.9rem"
+
+                _low_conf = r.get("sim",{}).get("low_confidence", False)
+                _lc_badge = (
+                    '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b55;'
+                    'border-radius:3px;padding:1px 7px;font-size:0.58rem;font-weight:700;'
+                    'letter-spacing:1px;margin-right:6px">⚠ SIN CUOTAS</span>' if _low_conf else ""
+                )
+                rank_badge = (
+                    f'<span style="background:{mc}22;color:{mc};border:1px solid {mc}55;'
+                    f'border-radius:3px;padding:1px 7px;font-size:0.58rem;font-weight:700;'
+                    f'letter-spacing:1px;margin-right:8px">#{rank+1}</span>' if not is_diamond else ""
+                ) + _lc_badge
+                top_stripe = (
+                    f'<div style="height:3px;border-radius:8px 8px 0 0;margin:-14px -14px 10px -14px;'
+                    f'background:linear-gradient(90deg,transparent,{mc},{mc}aa,transparent);'
+                    f'box-shadow:0 0 12px {mc}88"></div>' if is_diamond else ""
+                )
+
+                return (
+                    f'<div style="border-radius:10px;padding:14px;margin:8px 0;{outer}">'
+                    + top_stripe +
+                    f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
+                    f'<div style="min-width:0;flex:1">'
+                    f'<div style="font-size:0.62rem;color:#6B7E6E;letter-spacing:1.5px;'
+                    f'text-transform:uppercase;margin-bottom:3px">{rank_badge}{league_label(r["league"])}</div>'
+                    f'<div style="font-size:{title_size};font-weight:700;color:#E0F7F0;line-height:1.3">'
+                    f'{r["away_team"]} <span style="color:#3a4a3e;font-weight:400">vs</span> {r["home_team"]}</div>'
+                    f'</div>'
+                    f'<div style="text-align:right;flex-shrink:0">'
+                    f'<div style="font-size:1.15rem;font-weight:900;color:{mc};'
+                    f'text-shadow:0 0 12px {mc}88;font-family:Cinzel,serif">EV {ev_s}</div>'
+                    f'<div style="font-size:0.6rem;color:{conf_c};font-weight:700">{conf_lbl}</div>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+                    f'<span style="background:{mc}25;color:{mc};border:1px solid {mc}66;'
+                    f'border-radius:5px;padding:3px 10px;font-size:0.7rem;font-weight:800;'
+                    f'letter-spacing:1px">{icon} {tp["market"]}</span>'
+                    f'<span style="font-size:{label_size};font-weight:700;color:#FFE87C;'
+                    f'font-family:Cinzel,serif;letter-spacing:0.5px">{tp["label"]}</span>'
+                    f'</div>'
+                    + _prob_bar_html(prob, mc) +
+                    f'</div>'
+                )
+
+            # ── PICK DIAMANTE ─────────────────────────────────────────────────
             st.markdown('<div class="section-heading">💎 PICK DIAMANTE</div>', unsafe_allow_html=True)
             _top = allowed_bets[0]
             _tp  = _top["_pick"]
-            _mc  = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80"}.get(_tp["market"],"#9ca3af")
-            _ev_s = f"+{_tp['ev']:.1f}" if _tp['ev']>=0 else f"{_tp['ev']:.1f}"
-            st.markdown(
-                f'<div class="game-row game-row-ev" style="border-left:3px solid {_mc}">'
-                f'<div class="game-title">{_top["away_team"]} @ {_top["home_team"]}</div>'
-                f'<div class="game-meta">{_top["league"]}</div>'
-                f'<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-                f'<span style="background:{_mc}22;color:{_mc};border:1px solid {_mc}55;'
-                f'border-radius:4px;padding:2px 8px;font-size:0.75rem;font-weight:700">{_tp["market"]}</span>'
-                f'<span style="color:#FFE87C;font-size:1rem;font-family:Cinzel,serif;font-weight:700">{_tp["label"]}</span>'
-                f'<span style="color:#4ade80;font-size:0.8rem;margin-left:auto">'
-                f'EV {_ev_s} · {_tp["prob"]:.0f}% prob</span>'
-                f'</div></div>',
-                unsafe_allow_html=True
-            )
+            st.markdown(_pick_diamante_card(_top, _tp, rank=0), unsafe_allow_html=True)
 
-            # ── DO PARLAY — solo si hay pick DO con EV+ y hay pick goals para combinar ──
+            # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
             for r in sr_cur:
                 g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
@@ -3964,7 +4085,6 @@ with tab_picks:
                 sim = r["sim"]
                 bs  = sim.get("best_single",{}) or {}
                 if bs.get("market") == "DO" and bs.get("ev",0) > 0:
-                    # Find goals companion
                     _companion = None
                     if sim.get("btts_ev",0) > 0:
                         _companion = {"market":"BTTS","label":"Ambos Anotan","prob":sim.get("p_btts",0),"ev":sim["btts_ev"]}
@@ -3974,50 +4094,56 @@ with tab_picks:
                         _do_parlays.append({"game":r,"do_pick":bs,"goals_pick":_companion})
 
             if _do_parlays:
-                st.markdown('<div class="section-heading" style="margin-top:16px">🎯 PARLAY RECOMENDADO (DO + Goals)</div>', unsafe_allow_html=True)
-                _dp = sorted(_do_parlays, key=lambda x: x["do_pick"]["prob"]+x["goals_pick"]["prob"], reverse=True)[0]
-                _g  = _dp["game"]
-                _do = _dp["do_pick"]
-                _gl = _dp["goals_pick"]
-                _mc_do = "#a78bfa"; _mc_gl = {"BTTS":"#4ade80","O/U":"#C9A84C"}.get(_gl["market"],"#9ca3af")
+                st.markdown('<div class="section-heading" style="margin-top:20px">🎯 PARLAY RECOMENDADO</div>', unsafe_allow_html=True)
+                _dp  = sorted(_do_parlays, key=lambda x: x["do_pick"]["prob"]+x["goals_pick"]["prob"], reverse=True)[0]
+                _g   = _dp["game"]
+                _do  = _dp["do_pick"]
+                _gl  = _dp["goals_pick"]
+                _mc_do = "#a78bfa"
+                _mc_gl = {"BTTS":"#4ade80","O/U":"#C9A84C"}.get(_gl["market"],"#9ca3af")
+                _comb_ev = _do["ev"] + _gl["ev"]
                 st.markdown(
-                    f'<div class="game-row" style="border-left:3px solid #a78bfa44">'
-                    f'<div class="game-title">{_g["away_team"]} @ {_g["home_team"]}</div>'
-                    f'<div class="game-meta">{_g["league"]}</div>'
-                    f'<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+                    f'<div style="border-radius:10px;padding:14px;margin:8px 0;'
+                    f'background:linear-gradient(135deg,rgba(167,139,250,0.12) 0%,#0a1a16 60%,rgba(74,222,128,0.08) 100%);'
+                    f'border:1px solid rgba(167,139,250,0.5);'
+                    f'box-shadow:0 0 20px rgba(167,139,250,0.15)">'
+                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-14px -14px 12px -14px;'
+                    f'background:linear-gradient(90deg,transparent,#a78bfa,#4ade80,transparent)"></div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+                    f'<div>'
+                    f'<div style="font-size:0.62rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">'
+                    f'🎯 PARLAY · {league_label(_g["league"])}</div>'
+                    f'<div style="font-size:0.95rem;font-weight:700;color:#E0F7F0">'
+                    f'{_g["away_team"]} vs {_g["home_team"]}</div>'
+                    f'</div>'
+                    f'<div style="text-align:right;flex-shrink:0">'
+                    f'<div style="font-size:1.1rem;font-weight:900;color:#a78bfa;font-family:Cinzel,serif">'
+                    f'EV +{_comb_ev:.1f}</div>'
+                    f'<div style="font-size:0.58rem;color:#6B7E6E">combinado</div>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
                     f'<span style="background:{_mc_do}22;color:{_mc_do};border:1px solid {_mc_do}55;'
-                    f'border-radius:4px;padding:1px 6px;font-size:0.68rem;font-weight:700">DO</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.78rem">{_do["label"]}</span>'
-                    f'<span style="color:#9ca3af;font-size:0.7rem">+</span>'
+                    f'border-radius:5px;padding:3px 9px;font-size:0.68rem;font-weight:800">DO</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.82rem">{_do["label"]}</span>'
+                    f'<span style="color:#3a4a3e;font-size:1rem;margin:0 2px">✕</span>'
                     f'<span style="background:{_mc_gl}22;color:{_mc_gl};border:1px solid {_mc_gl}55;'
-                    f'border-radius:4px;padding:1px 6px;font-size:0.68rem;font-weight:700">{_gl["market"]}</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.78rem">{_gl["label"]}</span>'
-                    f'<span style="color:#4ade80;font-size:0.65rem;margin-left:auto">'
-                    f'DO EV {_do["ev"]:+.1f} · {_gl["market"]} EV {_gl["ev"]:+.1f}</span>'
-                    f'</div></div>',
+                    f'border-radius:5px;padding:3px 9px;font-size:0.68rem;font-weight:800">{_gl["market"]}</span>'
+                    f'<span style="color:#E0F7F0;font-size:0.82rem">{_gl["label"]}</span>'
+                    f'</div>'
+                    f'<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">'
+                    f'<span style="font-size:0.62rem;color:{_mc_do}">DO EV +{_do["ev"]:.1f} · {_do.get("prob",0):.0f}%</span>'
+                    f'<span style="font-size:0.62rem;color:{_mc_gl}">{_gl["market"]} EV +{_gl["ev"]:.1f} · {_gl["prob"]:.0f}%</span>'
+                    f'</div>'
+                    f'</div>',
                     unsafe_allow_html=True
                 )
 
-            # ── PICKS FUEGO — resto de picks (O/U, BTTS, ML) ─────────────────
+            # ── PICKS FUEGO ───────────────────────────────────────────────────
             if len(allowed_bets) > 1:
-                st.markdown(f'<div class="section-heading" style="margin-top:16px">🔥 PICKS FUEGO ({len(allowed_bets)-1})</div>', unsafe_allow_html=True)
-                for _ab in allowed_bets[1:8]:
-                    _ap = _ab["_pick"]
-                    _amc = {"ML":"#60a5fa","O/U":"#C9A84C","BTTS":"#4ade80"}.get(_ap["market"],"#9ca3af")
-                    _aev = f"+{_ap['ev']:.1f}" if _ap['ev']>=0 else f"{_ap['ev']:.1f}"
-                    st.markdown(
-                        f'<div class="game-row">'
-                        f'<div class="game-title">{_ab["away_team"]} @ {_ab["home_team"]}</div>'
-                        f'<div class="game-meta">{_ab["league"]}</div>'
-                        f'<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-                        f'<span style="background:{_amc}22;color:{_amc};border:1px solid {_amc}55;'
-                        f'border-radius:4px;padding:1px 6px;font-size:0.65rem;font-weight:700">{_ap["market"]}</span>'
-                        f'<span style="color:#E0F7F0;font-size:0.78rem">{_ap["label"]}</span>'
-                        f'<span style="color:#4ade80;font-size:0.65rem;margin-left:auto">'
-                        f'EV {_aev} · {_ap["prob"]:.0f}%</span>'
-                        f'</div></div>',
-                        unsafe_allow_html=True
-                    )
+                st.markdown(f'<div class="section-heading" style="margin-top:20px">🔥 PICKS FUEGO ({len(allowed_bets)-1})</div>', unsafe_allow_html=True)
+                for _ri, _ab in enumerate(allowed_bets[1:9], 1):
+                    st.markdown(_pick_diamante_card(_ab, _ab["_pick"], rank=_ri), unsafe_allow_html=True)
 
         # Avoid
         avoid=[r for r in sr_cur if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
@@ -4188,13 +4314,15 @@ with tab_sim:
             _sd = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
 
             # Header
+            _low_c = _r["sim"].get("low_confidence", False) if _r else False
+            _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.55rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
             _html = (
                 f'<div class="game-row{" game-row-ev" if (_r and _r["sim"].get("best_single") and _r["sim"]["best_single"]["ev"]>0) else ""}"'
                 f' style="border-left:3px solid {sm["color"]}88;margin:4px 0;">'
                 f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'
                 f'<div>'
                 f'<div class="game-title">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}</div>'
+                f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}{_lc_tag}</div>'
                 f'</div>'
             )
 
@@ -4211,7 +4339,9 @@ with tab_sim:
             dqc = "#4ade80" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
 
             # Badge
-            if bs and bs["ev"] > 0:
+            # Only show pick badge for ML, O/U, BTTS — not DO standalone
+            _show_bs = bs and bs["ev"] > 0 and bs.get("market","") in ("ML","O/U","BTTS")
+            if _show_bs:
                 ev_c  = "#4ade80" if bs["ev"] >= 10 else "#C9A84C"
                 badge = (
                     f'<span style="color:#FFE87C;margin-right:3px">▶</span>'
