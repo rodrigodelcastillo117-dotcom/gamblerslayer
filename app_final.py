@@ -4335,6 +4335,50 @@ with st.sidebar:
                  help="Descarga últimos 10 partidos de TODOS los equipos y guarda en Google Sheets"):
         st.session_state["run_populate"] = True
 
+    st.divider()
+    st.markdown("**🔍 DEBUG ESPN**")
+    st.caption("Verifica qué devuelve ESPN por liga")
+    if st.button("🔍 TEST ESPN AHORA", use_container_width=True):
+        from datetime import timedelta as _td_dbg
+        _now_dbg    = datetime.now(timezone.utc)
+        _now_mx_dbg = _now_dbg - _td_dbg(hours=6)
+        _d_mx  = _now_mx_dbg.strftime("%Y%m%d")
+        _d_utc = _now_dbg.strftime("%Y%m%d")
+        _d_tom = (_now_dbg + _td_dbg(days=1)).strftime("%Y%m%d")
+
+        _dbg_results = {}
+        _soccer_leagues = {n: v for n, v in LEAGUES.items() if v["sport"] == "soccer"}
+        _prog = st.progress(0)
+        for _i, (_lname, _lcfg) in enumerate(_soccer_leagues.items()):
+            _prog.progress((_i+1)/len(_soccer_leagues))
+            _base = f"https://site.api.espn.com/apis/site/v2/sports/{_lcfg['sport']}/{_lcfg['league']}/scoreboard"
+            _best = 0
+            _best_date = ""
+            for _d, _dlabel in [(_d_mx,"MX"), (_d_utc,"UTC"), (_d_tom,"TOM")]:
+                try:
+                    _rr = requests.get(f"{_base}?dates={_d}&limit=100", timeout=6,
+                                       headers={"User-Agent":"Mozilla/5.0"})
+                    if _rr.status_code == 200:
+                        _n = len(_rr.json().get("events", []))
+                        if _n > _best:
+                            _best = _n
+                            _best_date = _dlabel
+                except: pass
+            _dbg_results[_lname] = (_best, _best_date, _lcfg["league"])
+        _prog.empty()
+
+        for _lname, (_cnt, _dlabel, _lid) in _dbg_results.items():
+            _icon = "✅" if _cnt > 0 else "❌"
+            st.markdown(
+                f'<div style="font-size:0.72rem;padding:3px 6px;margin:2px 0;'
+                f'background:{"rgba(74,222,128,0.08)" if _cnt>0 else "rgba(239,68,68,0.08)"};'
+                f'border-radius:4px;border-left:2px solid {"#4ade80" if _cnt>0 else "#ef4444"}">'
+                f'{_icon} <b>{_lname}</b>: {_cnt} partidos'
+                f'{"  · fecha: "+_dlabel if _cnt>0 else ""}'
+                f'<br><span style="color:#6B7E6E;font-size:0.65rem">{_lid}</span></div>',
+                unsafe_allow_html=True
+            )
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
