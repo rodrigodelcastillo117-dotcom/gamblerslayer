@@ -5679,7 +5679,7 @@ with tab_sim:
         _gd   = _mx_date_p(_g)
         # _mx_date_p now returns raw date from ESPN (already local time)
         # Accept today; accept tomorrow only if hour < 6 (late-night = still tonight)
-        _raw_g_date = (g.get("date") or "")
+        _raw_g_date = (_g.get("date") or "")
         _raw_g_hour = int(_raw_g_date[11:13]) if len(_raw_g_date) >= 13 else 12
         if _gd == _today_mx_p:
             pass
