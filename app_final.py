@@ -17,7 +17,7 @@ st.set_page_config(
     page_title="The Gamblers Den",
     page_icon="🎰",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
@@ -491,6 +491,13 @@ st.markdown("""
 
 hr { border-color: var(--border) !important; }
 
+/* ── Hide sidebar collapse arrow button always ── */
+[data-testid="collapsedControl"],
+button[kind="headerNoPadding"],
+[data-testid="stSidebarCollapsedControl"] {
+  display: none !important;
+}
+
 /* ══════════════════════════════════════════════════
    MOBILE RESPONSIVE  (≤ 768 px)
    ══════════════════════════════════════════════════ */
@@ -500,15 +507,35 @@ hr { border-color: var(--border) !important; }
   .block-container {
     padding-left: 8px !important;
     padding-right: 8px !important;
-    padding-top: 8px !important;
+    padding-top: 4px !important;
     max-width: 100% !important;
   }
 
-  /* ── Hide sidebar toggle, keep content full-width ── */
-  [data-testid="stSidebar"] {
-    min-width: 80vw !important;
-    max-width: 88vw !important;
+  /* ── Hide sidebar toggle arrow on mobile ── */
+  [data-testid="collapsedControl"],
+  section[data-testid="stSidebarCollapsedControl"],
+  [data-testid="stSidebarCollapsedControl"] {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
   }
+
+  /* ── Sidebar full width when open ── */
+  [data-testid="stSidebar"] {
+    min-width: 82vw !important;
+    max-width: 90vw !important;
+  }
+
+  /* ── Main content always full width ── */
+  .main .block-container {
+    margin-left: 0 !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+
+  /* ── Header logo: shrink on mobile ── */
+  .den-logo { font-size: 1.8rem !important; letter-spacing: 1px !important; }
+  .den-subtitle { font-size: 0.62rem !important; letter-spacing: 2px !important; }
 
   /* ── TABS: compact, scrollable, no wrap ── */
   .stTabs [data-baseweb="tab-list"] {
