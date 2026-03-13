@@ -17,7 +17,7 @@ st.set_page_config(
     page_title="The Gamblers Den",
     page_icon="🎰",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
@@ -499,6 +499,41 @@ st.markdown("""
   box-shadow: 0 8px 30px rgba(201,168,76,0.5) !important;
 }
 
+/* ── Golden hamburger sidebar toggle ── */
+[data-testid="stSidebarCollapseButton"] {
+  background: linear-gradient(135deg, #8B6914, #C9A84C, #8B6914) !important;
+  border-radius: 6px !important;
+  border: 1px solid #C9A84C !important;
+  box-shadow: 0 2px 12px rgba(201,168,76,0.4) !important;
+  width: 36px !important;
+  height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+[data-testid="stSidebarCollapseButton"]:hover {
+  box-shadow: 0 4px 20px rgba(201,168,76,0.7) !important;
+  transform: scale(1.05) !important;
+}
+[data-testid="stSidebarCollapseButton"] svg {
+  stroke: #060C08 !important;
+  fill: #060C08 !important;
+  width: 18px !important;
+  height: 18px !important;
+}
+/* Also style the collapse button when sidebar is open */
+[data-testid="collapsedControl"] button,
+button[kind="header"] {
+  background: linear-gradient(135deg, #8B6914, #C9A84C) !important;
+  border: 1px solid #C9A84C88 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 10px rgba(201,168,76,0.35) !important;
+}
+[data-testid="collapsedControl"] button svg,
+button[kind="header"] svg {
+  stroke: #060C08 !important;
+}
+
 /* ── NO RESULTS ── */
 .empty-state {
   text-align: center;
@@ -512,135 +547,273 @@ st.markdown("""
 hr { border-color: var(--border) !important; }
 
 /* ══════════════════════════════════════════════════
-   MOBILE RESPONSIVE  (≤ 768 px)
+   MOBILE RESPONSIVE — full rewrite for phones
+   Tested at 390px (iPhone 14), 360px (Android)
    ══════════════════════════════════════════════════ */
+
+/* ── Base mobile (≤ 768px tablets + phones) ── */
 @media (max-width: 768px) {
 
-  /* ── Global padding ── */
+  /* Global container */
   .block-container {
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-    padding-top: 8px !important;
-    max-width: 100% !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+    padding-top: 4px !important;
+    padding-bottom: 60px !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
   }
 
-  /* ── Hide sidebar toggle, keep content full-width ── */
+  /* Sidebar: full-width overlay on mobile */
   [data-testid="stSidebar"] {
-    min-width: 80vw !important;
-    max-width: 88vw !important;
+    min-width: 85vw !important;
+    max-width: 92vw !important;
+    z-index: 9999 !important;
   }
-
-  /* ── TABS: compact, scrollable, no wrap ── */
-  .stTabs [data-baseweb="tab-list"] {
-    overflow-x: auto !important;
-    flex-wrap: nowrap !important;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-  .stTabs [data-baseweb="tab"] {
-    font-size: 0.616rem !important;
-    letter-spacing: 0.5px !important;
-    padding: 8px 10px !important;
-    white-space: nowrap !important;
-  }
-
-  /* ── Pick card: smaller text, no overflow ── */
-  .pick-card { padding: 0 0 12px 0 !important; margin: 8px 0 !important; }
-  .pick-header { padding: 10px 12px !important; flex-direction: column !important; gap: 6px !important; }
-  .pick-matchup { font-size: 1.008rem !important; }
-  .pick-body { padding: 10px 12px !important; }
-  .pick-action {
-    font-size: 1.288rem !important;
-    letter-spacing: 1px !important;
-    gap: 8px !important;
-    padding: 8px 0 !important;
-  }
-  .pick-action-arrow { font-size: 1.456rem !important; }
-
-  /* ── Stats row: 2 cols on mobile ── */
-  .stats-row { gap: 10px !important; }
-  .stat-item { min-width: 56px !important; }
-  .stat-item-val { font-size: 1.12rem !important; }
-
-  /* ── Game row ── */
-  .game-row { padding: 8px 10px !important; }
-  .game-title { font-size: 0.874rem !important; }
-  .game-meta  { font-size: 0.694rem !important; }
-
-  /* ── Section heading ── */
-  .section-heading { font-size: 0.84rem !important; letter-spacing: 2px !important; }
-
-  /* ── Parlay card ── */
-  .parlay-header { font-size: 0.84rem !important; padding: 10px 12px !important; letter-spacing: 1.5px !important; }
-  .parlay-body   { padding: 10px 12px !important; }
-  .parlay-leg    { font-size: 0.806rem !important; }
-
-  /* ── Prob bars ── */
-  .bar-team, .bar-pct { font-size: 0.694rem !important; }
-
-  /* ── Buttons ── */
-  .stButton > button {
-    font-size: 0.784rem !important;
-    padding: 10px 16px !important;
-    letter-spacing: 2px !important;
-  }
-
-  /* ── Sidebar button ── */
-  [data-testid="stSidebar"] .stButton > button {
-    font-size: 0.728rem !important;
+  [data-testid="stSidebar"] > div {
     padding: 8px 12px !important;
   }
 
-  /* ── Columns used for sport tiles: force equal width, no overflow ── */
+  /* Hamburger: bigger tap target */
+  [data-testid="stSidebarCollapseButton"] {
+    width: 44px !important;
+    height: 44px !important;
+    top: 8px !important;
+    left: 8px !important;
+    position: fixed !important;
+    z-index: 10000 !important;
+  }
+
+  /* Main header */
+  .den-header { padding: 12px 8px 8px !important; }
+  .den-logo { font-size: 1.4rem !important; letter-spacing: 3px !important; }
+  .den-subtitle { font-size: 0.55rem !important; letter-spacing: 1.5px !important; }
+  .den-corner { font-size: 1rem !important; margin: 0 4px !important; }
+
+  /* TABS — scrollable horizontal strip */
+  .stTabs [data-baseweb="tab-list"] {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    padding-bottom: 2px !important;
+    gap: 0 !important;
+    border-bottom: 1px solid #1E3825 !important;
+  }
+  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none !important; }
+  .stTabs [data-baseweb="tab"] {
+    font-size: 0.58rem !important;
+    letter-spacing: 0.3px !important;
+    padding: 9px 8px !important;
+    white-space: nowrap !important;
+    min-width: max-content !important;
+  }
+  .stTabs [data-baseweb="tab-panel"] {
+    padding-top: 10px !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Section headings */
+  .section-heading {
+    font-size: 0.78rem !important;
+    letter-spacing: 2px !important;
+    padding: 6px 0 !important;
+  }
+
+  /* ── PICKS tab ── */
+  /* Sport tiles: 3 per row max, tiny */
   [data-testid="column"] {
     min-width: 0 !important;
     overflow: hidden !important;
+    padding: 0 2px !important;
   }
 
-  /* ── Expanders ── */
-  .streamlit-expanderHeader {
-    font-size: 0.84rem !important;
+  /* Game cards */
+  .game-row {
+    padding: 7px 8px !important;
+    margin: 3px 0 !important;
+    border-radius: 6px !important;
+  }
+  .game-title {
+    font-size: 0.80rem !important;
+    line-height: 1.2 !important;
+  }
+  .game-meta { font-size: 0.65rem !important; }
+
+  /* Oracle card inner elements */
+  div[style*="border-radius:8px"][style*="padding:10px 12px"] {
+    padding: 8px 8px !important;
+    margin: 3px 0 !important;
+    border-radius: 6px !important;
+  }
+
+  /* Win prob bars */
+  .bar-team { font-size: 0.63rem !important; }
+  .bar-pct  { font-size: 0.63rem !important; }
+
+  /* Pick badge text */
+  .market-chip  { font-size: 0.60rem !important; padding: 1px 5px !important; }
+  .conf-badge   { font-size: 0.62rem !important; padding: 2px 6px !important; }
+  .pick-rationale { font-size: 0.74rem !important; }
+
+  /* Value gap / H2H / weather panels: compact */
+  div[style*="rgba(201,168,76,0.06)"],
+  div[style*="rgba(96,165,250,0.05)"],
+  div[style*="rgba(147,197,253,0.05)"],
+  div[style*="rgba(251,191,36,0.05)"] {
+    padding: 3px 5px !important;
+    font-size: 0.60rem !important;
+  }
+
+  /* Prob bars */
+  .stats-row  { gap: 6px !important; }
+  .stat-item  { min-width: 48px !important; }
+  .stat-item-val { font-size: 1rem !important; }
+
+  /* ── PARLAYS tab ── */
+  .parlay-header {
+    font-size: 0.76rem !important;
     padding: 8px 10px !important;
+    letter-spacing: 1px !important;
+  }
+  .parlay-body  { padding: 8px 10px !important; }
+  .parlay-leg   { font-size: 0.74rem !important; padding: 5px 8px !important; }
+
+  /* Parlay stat tiles */
+  .stat-tile { min-width: 60px !important; padding: 8px 6px !important; }
+  .stat-num  { font-size: 1.2rem !important; }
+
+  /* ── EN VIVO tab ── */
+  /* Live cards: 1 per row on mobile (override 3-col grid) */
+  div[style*="display:grid"][style*="grid-template-columns:repeat(3"] {
+    grid-template-columns: 1fr !important;
+  }
+  div[style*="display:grid"][style*="grid-template-columns:repeat(2"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Expanders */
+  [data-testid="stExpander"] > details > summary,
+  .streamlit-expanderHeader,
+  [data-testid="stExpander"] summary {
+    font-size: 0.78rem !important;
+    padding: 8px 10px !important;
+    letter-spacing: 0.3px !important;
+  }
+
+  /* ── RETO tab — SVG equity curve ── */
+  svg { max-width: 100% !important; height: auto !important; }
+
+  /* ── Buttons ── */
+  .stButton > button {
+    font-size: 0.72rem !important;
+    padding: 9px 12px !important;
+    letter-spacing: 1.5px !important;
+  }
+  [data-testid="stSidebar"] .stButton > button {
+    font-size: 0.68rem !important;
+    padding: 8px 10px !important;
+    letter-spacing: 1px !important;
+  }
+
+  /* ── Sidebar internals ── */
+  .sidebar-logo {
+    font-size: 1.1rem !important;
+    letter-spacing: 2px !important;
+    padding: 6px 0 2px !important;
+  }
+  .sidebar-sub {
+    font-size: 0.52rem !important;
+    letter-spacing: 1.5px !important;
+    margin-bottom: 4px !important;
+  }
+
+  /* Selectboxes + sliders in sidebar */
+  [data-testid="stSidebar"] .stSelectSlider,
+  [data-testid="stSidebar"] .stMultiSelect,
+  [data-testid="stSidebar"] .stSelectbox {
+    font-size: 0.72rem !important;
+  }
+
+  /* Debug panel results: tiny text */
+  [data-testid="stSidebar"] div[style*="font-size:0.72rem"] {
+    font-size: 0.62rem !important;
+  }
+
+  /* ── Banners ── */
+  .warn-banner, .demo-banner {
+    font-size: 0.72rem !important;
+    padding: 5px 8px !important;
+    border-radius: 4px !important;
   }
 
   /* ── Empty state ── */
-  .empty-state { padding: 28px 12px !important; }
-  .empty-icon  { font-size: 2.24rem !important; }
-  .empty-title { font-size: 0.952rem !important; }
+  .empty-state  { padding: 24px 8px !important; }
+  .empty-icon   { font-size: 2rem !important; }
+  .empty-title  { font-size: 0.88rem !important; }
 
-  /* ── Warn / demo banners ── */
-  .warn-banner, .demo-banner { font-size: 0.784rem !important; padding: 6px 10px !important; }
-
-  /* ── Sidebar logo ── */
-  .sidebar-logo { font-size: 1.232rem !important; letter-spacing: 2px !important; }
-  .sidebar-sub  { font-size: 0.56rem !important; letter-spacing: 2px !important; }
-
-  /* ── Reduce pick card market chip ── */
-  .market-chip { font-size: 0.65rem !important; padding: 2px 7px !important; }
-
-  /* ── Confidence badge ── */
-  .conf-badge { font-size: 0.672rem !important; padding: 3px 8px !important; }
-
-  /* ── Pick rationale ── */
-  .pick-rationale { font-size: 0.806rem !important; }
-
-  /* ── Live section header sport tiles: shrink on mobile ── */
-  div[style*="text-align:center"][style*="border-radius:10px"],
+  /* ── Sport tile emoji + label ── */
   div[style*="text-align:center"][style*="border-radius:9px"] {
-    padding: 6px 2px !important;
+    padding: 5px 2px !important;
+  }
+  div[style*="text-align:center"][style*="border-radius:9px"] > div:first-child {
+    font-size: 1.3rem !important;
+    line-height: 1 !important;
+  }
+
+  /* Prevent any horizontal scroll from inline styles */
+  .stMarkdown, .element-container {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+  div[style] { max-width: 100% !important; box-sizing: border-box !important; }
+}
+
+/* ── Phone portrait ≤ 480px (iPhone SE, small Androids) ── */
+@media (max-width: 480px) {
+  .block-container {
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
+  .stTabs [data-baseweb="tab"] {
+    font-size: 0.52rem !important;
+    padding: 8px 6px !important;
+  }
+
+  .den-logo     { font-size: 1.1rem !important; letter-spacing: 2px !important; }
+  .den-subtitle { font-size: 0.48rem !important; }
+
+  .game-title   { font-size: 0.74rem !important; }
+  .game-meta    { font-size: 0.60rem !important; }
+
+  .parlay-header { font-size: 0.68rem !important; }
+  .parlay-leg    { font-size: 0.68rem !important; }
+
+  .stat-item-val { font-size: 0.9rem !important; }
+  .stat-num      { font-size: 1.05rem !important; }
+
+  /* Sport tile: 2 per row feel by shrinking */
+  [data-testid="stSidebarCollapseButton"] {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  /* Ensure all inline grids collapse to 1 col */
+  div[style*="display:grid"] {
+    grid-template-columns: 1fr !important;
   }
 }
 
-/* Extra small (≤ 480 px — most phones portrait) */
-@media (max-width: 480px) {
-  .pick-action { font-size: 1.064rem !important; }
-  .stat-item-val { font-size: 0.986rem !important; }
-  .pick-matchup { font-size: 0.918rem !important; }
+/* ── Very small ≤ 360px (older Androids) ── */
+@media (max-width: 360px) {
   .stTabs [data-baseweb="tab"] {
-    font-size: 0.538rem !important;
-    padding: 7px 7px !important;
+    font-size: 0.48rem !important;
+    padding: 7px 5px !important;
   }
+  .den-logo { font-size: 0.95rem !important; }
+  .game-title { font-size: 0.68rem !important; }
 }
 
 /* ══════════════════════════════════════════════════
@@ -5751,9 +5924,14 @@ with tab_sim:
         )
 
     # Build tree — pre + live games, by sport → date → league
+    # Soccer: ESPN sometimes marks games as "post" before we process them OR
+    # returns yesterday's finished games. Filter post only when score is final.
     _tree_p = {}
     for _g in games:
-        if _g["state"] == "post": continue   # skip finished only
+        _gstate = _g.get("state", "pre")
+        # Skip only truly finished games (post) — keep pre and in (live)
+        if _gstate == "post":
+            continue
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
         if _gd != _today_mx_p: continue
