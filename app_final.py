@@ -5,6 +5,7 @@ BTTS · O/U · Parlays · Doble Oportunidad
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import random
 import math
@@ -491,56 +492,11 @@ st.markdown("""
 
 hr { border-color: var(--border) !important; }
 
+
 /* ══════════════════════════════════════════════════
-   HAMBURGER — estiliza el botón NATIVO de Streamlit
+   HAMBURGER — via components.html (ver abajo en MAIN)
    ══════════════════════════════════════════════════ */
 
-/* El botón nativo que abre/cierra el sidebar */
-[data-testid="collapsedControl"] {
-  position: fixed !important;
-  top: 12px !important;
-  left: 12px !important;
-  z-index: 99999 !important;
-  width: 46px !important;
-  height: 46px !important;
-  min-width: 46px !important;
-  background: rgba(232,184,75,0.12) !important;
-  border: 1.5px solid rgba(232,184,75,0.55) !important;
-  border-radius: 13px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
-  transition: all 0.2s !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
-  overflow: visible !important;
-  padding: 0 !important;
-}
-[data-testid="collapsedControl"]:hover,
-[data-testid="collapsedControl"]:active {
-  background: rgba(232,184,75,0.28) !important;
-  border-color: #E8B84B !important;
-  transform: scale(0.95) !important;
-}
-/* Ocultar el icono SVG original de Streamlit */
-[data-testid="collapsedControl"] svg {
-  display: none !important;
-}
-/* Inyectar ☰ con CSS puro — sin JS */
-[data-testid="collapsedControl"]::before {
-  content: '☰' !important;
-  color: #E8B84B !important;
-  font-size: 1.4rem !important;
-  line-height: 1 !important;
-  font-family: 'Inter', sans-serif !important;
-  display: block !important;
-}
-/* Ocultar cualquier texto/label que Streamlit ponga */
-[data-testid="collapsedControl"] span {
-  display: none !important;
-}
 
 /* ══════════════════════════════════════════════════
    MOBILE — iPhone optimizado  (≤ 768 px)
@@ -2297,41 +2253,55 @@ def get_all_games(leagues):
     _tom_utc      = (_now_g + _td_g(days=1)).strftime("%Y%m%d")
     _yday_utc     = (_now_g - _td_g(days=1)).strftime("%Y%m%d")
 
+    # Slugs alternativos por liga (ESPN cambia de slug según la temporada)
+    _EXTRA_SLUGS = {
+        "mex.1":  ["mex.clausura", "mex.apertura", "mex.1"],
+        "sau.1":  ["sau.1", "sau.pro"],
+        "ned.1":  ["ned.1", "ned.eredivisie"],
+        "bel.1":  ["bel.1", "bel.pro"],
+    }
+
     def _fetch_soccer(sport, league):
         """Hit every known ESPN endpoint for soccer to collect all day's events."""
-        base  = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
-        core  = f"https://sports.core.api.espn.com/v2/sports/{sport}/leagues/{league}/events"
         all_evts = {}
+        # Build list of slugs to try (main + alternatives)
+        slugs_to_try = _EXTRA_SLUGS.get(league, [league])
+        if league not in slugs_to_try:
+            slugs_to_try = [league] + slugs_to_try
 
-        urls = []
-        # Scoreboard with every date variant + ALL season types (1=regular, 2=preseason, 3=postseason, 4=offseason)
-        for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
-            for _st in ["1", "2", "3", "4"]:
-                urls.append(f"{base}?dates={_d}&limit=100&seasontype={_st}")
-            urls.append(f"{base}?dates={_d}&limit=100")
-        # Core API
-        for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
-            urls.append(f"{core}?dates={_d}&limit=100")
-        # Plain scoreboard (no date, no seasontype — ESPN default)
-        urls.append(base)
-        urls.append(f"{base}?limit=100")
+        for _slug in slugs_to_try:
+            base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{_slug}/scoreboard"
+            core = f"https://sports.core.api.espn.com/v2/sports/{sport}/leagues/{_slug}/events"
 
-        for _url in urls:
-            try:
-                _r = requests.get(_url, timeout=7,
-                                  headers={"User-Agent": "Mozilla/5.0",
-                                           "Accept": "application/json"})
-                if _r.status_code != 200:
+            urls = []
+            # All dates × all season types
+            for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
+                for _st in ["1", "2", "3", "4"]:
+                    urls.append(f"{base}?dates={_d}&limit=100&seasontype={_st}")
+                urls.append(f"{base}?dates={_d}&limit=100")
+            # Core API
+            for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
+                urls.append(f"{core}?dates={_d}&limit=100")
+            # Plain (no date — ESPN default = current week)
+            urls.append(base)
+            urls.append(f"{base}?limit=100")
+
+            for _url in urls:
+                try:
+                    _r = requests.get(_url, timeout=7,
+                                      headers={"User-Agent": "Mozilla/5.0",
+                                               "Accept": "application/json"})
+                    if _r.status_code != 200:
+                        continue
+                    _data = _r.json()
+                    for _e in _data.get("events", []):
+                        if isinstance(_e, dict) and _e.get("id"):
+                            all_evts[_e["id"]] = _e
+                    for _e in _data.get("items", []):
+                        if isinstance(_e, dict) and _e.get("id") and _e.get("competitions"):
+                            all_evts[_e["id"]] = _e
+                except Exception:
                     continue
-                _data = _r.json()
-                for _e in _data.get("events", []):
-                    if isinstance(_e, dict) and _e.get("id"):
-                        all_evts[_e["id"]] = _e
-                for _e in _data.get("items", []):
-                    if isinstance(_e, dict) and _e.get("id") and _e.get("competitions"):
-                        all_evts[_e["id"]] = _e
-            except Exception:
-                continue
 
         print(f"[ESPN] soccer/{league}: {len(all_evts)} raw events fetched")
         return {"events": list(all_evts.values())}
@@ -4974,6 +4944,79 @@ with st.sidebar:
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
+# ── Hamburguesa dorada — inyección directa al DOM padre ──────────────────
+components.html("""
+<script>
+(function() {
+  var css = `
+    [data-testid="collapsedControl"] {
+      position: fixed !important;
+      top: 12px !important;
+      left: 12px !important;
+      z-index: 999999 !important;
+      width: 46px !important;
+      height: 46px !important;
+      min-width: 46px !important;
+      background: rgba(232,184,75,0.13) !important;
+      border: 1.5px solid rgba(232,184,75,0.6) !important;
+      border-radius: 13px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      cursor: pointer !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      pointer-events: auto !important;
+      overflow: visible !important;
+      padding: 0 !important;
+      transition: background 0.2s, border-color 0.2s, transform 0.15s !important;
+    }
+    [data-testid="collapsedControl"]:hover {
+      background: rgba(232,184,75,0.28) !important;
+      border-color: #E8B84B !important;
+      transform: scale(0.96) !important;
+    }
+    [data-testid="collapsedControl"] svg { display: none !important; }
+    [data-testid="collapsedControl"] span { display: none !important; }
+    [data-testid="collapsedControl"]::before {
+      content: '☰' !important;
+      color: #E8B84B !important;
+      font-size: 1.5rem !important;
+      line-height: 1 !important;
+      font-family: 'Inter', Arial, sans-serif !important;
+      display: block !important;
+    }
+  `;
+
+  function inject(doc) {
+    if (!doc) return;
+    var el = doc.createElement('style');
+    el.id = 'den-hamburger-style';
+    if (doc.getElementById('den-hamburger-style')) return;
+    el.textContent = css;
+    (doc.head || doc.documentElement).appendChild(el);
+  }
+
+  // Inject in parent window (where the sidebar button lives)
+  function tryInject() {
+    try {
+      inject(window.parent.document);
+    } catch(e) {}
+    try {
+      inject(window.top.document);
+    } catch(e) {}
+  }
+
+  tryInject();
+  // Retry after Streamlit finishes rendering
+  setTimeout(tryInject, 500);
+  setTimeout(tryInject, 1500);
+  setTimeout(tryInject, 3000);
+})();
+</script>
+""", height=0, scrolling=False)
+
 st.markdown("""
 <div class="den-header">
   <div class="den-logo">The Gamblers Den</div>
@@ -5023,12 +5066,15 @@ else:
         if LEAGUES.get(_g.get("league",""),{}).get("group","") == "Soccer" and _g.get("state") == "pre":
             _cached_pre[_gid] = _g
 
-    # Purge old days
+    # Purge old days — mantener ventana ±1 día para no perder partidos europeos
+    _yesterday_cdmx_cache = (_now_cache - _td_cache(hours=6) - _td_cache(days=1)).strftime("%Y-%m-%d")
+    _tomorrow_cdmx_cache  = (_now_cache - _td_cache(hours=6) + _td_cache(days=1)).strftime("%Y-%m-%d")
+    _valid_cache_dates = {_yesterday_cdmx_cache, _today_cdmx_cache, _tomorrow_cdmx_cache}
     for _gid in [k for k, v in list(_cached_pre.items())]:
         try:
             _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","")[:19]).replace("T"," "),
                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) - _td_cache(hours=6)).strftime("%Y-%m-%d")
-            if _ev_cdmx != _today_cdmx_cache:
+            if _ev_cdmx not in _valid_cache_dates:
                 _cached_pre.pop(_gid, None)
         except: pass
 
