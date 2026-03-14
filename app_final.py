@@ -4902,7 +4902,7 @@ def render_parlay_card(r):
 if "menu_open" not in st.session_state:
     st.session_state["menu_open"] = False
 
-# CSS del botón hamburguesa y panel
+# CSS del botón hamburguesa fijo + ocultar sidebar nativo
 st.markdown("""
 <style>
 /* Ocultar sidebar nativo completamente */
@@ -4914,41 +4914,67 @@ header[data-testid="stHeader"] {
 }
 .stApp > header { display: none !important; }
 
-/* Botón hamburguesa fijo */
-#den-ham-btn {
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 99999;
+/* Sacar el botón hamburguesa del flujo del layout — fijarlo en pantalla */
+div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"][title="Menú"]) {
+  position: fixed !important;
+  top: 10px !important;
+  left: 10px !important;
+  z-index: 99999 !important;
+  width: 48px !important;
+  height: 48px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+/* El botón en sí */
+button[title="Menú"],
+button[aria-label="Menú"] {
+  position: fixed !important;
+  top: 10px !important;
+  left: 10px !important;
+  z-index: 99999 !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  background: rgba(232,184,75,0.13) !important;
+  border: 1.5px solid rgba(232,184,75,0.65) !important;
+  border-radius: 13px !important;
+  color: #E8B84B !important;
+  font-size: 1.4rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+}
+button[title="Menú"]:hover,
+button[aria-label="Menú"]:hover {
+  background: rgba(232,184,75,0.28) !important;
+  border-color: #E8B84B !important;
+}
+/* Compensar el espacio que ocupa el botón fijo */
+.block-container {
+  padding-top: 62px !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# Botón hamburguesa — nativo de Streamlit, siempre funciona
-_ham_col, _ = st.columns([1, 20])
-with _ham_col:
-    if st.button("☰", key="btn_hamburger", help="Menú"):
-        st.session_state["menu_open"] = not st.session_state["menu_open"]
+# Botón hamburguesa — nativo de Streamlit, fijado con CSS
+if st.button("☰", key="btn_hamburger", help="Menú"):
+    st.session_state["menu_open"] = not st.session_state["menu_open"]
 
 # Panel lateral custom
 if st.session_state.get("menu_open", False):
     st.markdown("""
     <style>
-    .den-panel-overlay {
-      position: fixed; top:0; left:0; right:0; bottom:0;
-      background: rgba(0,0,0,0.5); z-index: 9998;
-    }
     .den-panel {
       position: fixed; top:0; left:0; bottom:0;
-      width: min(85vw, 320px);
+      width: min(85vw, 300px);
       background: #111111;
       border-right: 1px solid #2A2A2A;
       z-index: 9999;
       overflow-y: auto;
       padding: 16px 14px 32px 14px;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.6);
     }
     </style>
-    <div class="den-panel-overlay"></div>
     """, unsafe_allow_html=True)
 
     with st.container():
@@ -5030,32 +5056,6 @@ else:
     use_demo   = st.session_state.get("use_demo_val", False)
 
 run_sidebar = st.session_state.pop("trigger_analyze", False)
-
-# Estilizar el botón hamburguesa
-st.markdown("""
-<style>
-/* Botón hamburguesa dorado */
-div[data-testid="stHorizontalBlock"]:first-of-type button[kind="secondary"],
-button[data-testid="baseButton-secondary"][aria-label="Menú"] {
-  background: rgba(232,184,75,0.12) !important;
-  border: 1.5px solid rgba(232,184,75,0.6) !important;
-  border-radius: 12px !important;
-  color: #E8B84B !important;
-  font-size: 1.3rem !important;
-  width: 44px !important;
-  height: 44px !important;
-  padding: 0 !important;
-  position: fixed !important;
-  top: 10px !important;
-  left: 10px !important;
-  z-index: 99999 !important;
-}
-/* Padding top del contenido para que no quede tapado */
-.block-container {
-  padding-top: 60px !important;
-}
-</style>
-""", unsafe_allow_html=True)
 
 
 
