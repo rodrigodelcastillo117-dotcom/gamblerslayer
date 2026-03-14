@@ -5835,6 +5835,7 @@ with tab_picks:
 
                 # Toggle individual por liga — en filas de 2
                 _ligas_rows = [_ligas_disponibles[i:i+2] for i in range(0, len(_ligas_disponibles), 2)]
+                _liga_btn_idx = 0
                 for _row in _ligas_rows:
                     _cols_l = st.columns(len(_row))
                     for _ci_l, _liga in enumerate(_row):
@@ -5860,7 +5861,8 @@ with tab_picks:
                                 f'</div>',
                                 unsafe_allow_html=True
                             )
-                            _btn_key = f"liga_tog_{_liga.replace(' ','_').replace('/','_')}"
+                            _btn_key = f"liga_tog_{_liga_btn_idx}"
+                            _liga_btn_idx += 1
                             _btn_txt = "Quitar" if _activa else "Agregar"
                             if st.button(_btn_txt, key=_btn_key, use_container_width=True):
                                 _excl = st.session_state.get("picks_ligas_excluidas", set())
@@ -6510,6 +6512,7 @@ with tab_sim:
     # ── Show all sports expanded directly — no click needed ─────────────────
     _sel_sp_now = st.session_state.get("_picks_sel_sport", None)
     _sports_to_show = [_sel_sp_now] if (_sel_sp_now and _sel_sp_now in _sports_p) else _sports_p
+    _lg_btn_counter = 0  # global counter to guarantee unique keys
 
     for _sp_p in _sports_to_show:
         _smp   = _SPORT_META_P[_sp_p]
@@ -6567,7 +6570,8 @@ with tab_sim:
                     f'</div>',
                     unsafe_allow_html=True
                 )
-                _btn_k = f"btn_lg_{_lg_p.replace(' ','_').replace('/','_').replace('.','')}"
+                _btn_k = f"btn_lg_{_lg_btn_counter}"
+                _lg_btn_counter += 1
                 if st.button(
                     "▼ Cerrar" if _is_open else "▶ Ver partidos",
                     key=_btn_k,
