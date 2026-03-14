@@ -459,33 +459,53 @@ st.markdown("""
   padding-top: 14px !important;
 }
 
-/* ── BUTTON — oscuro por defecto ── */
-.stButton > button {
+/* ── BUTTON — oscuro por defecto, todos los selectores de Streamlit ── */
+.stButton > button,
+button[data-testid="baseButton-secondary"],
+button[data-testid="baseButton-secondaryFormSubmit"],
+button[kind="secondary"],
+[data-testid="stBaseButton-secondary"],
+div[data-testid="stButton"] > button {
   background: #1C1C1C !important;
   color: #E8E8E8 !important;
   font-family: 'Inter', sans-serif !important;
   font-size: 0.82rem !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px !important;
-  border: 1px solid #2A2A2A !important;
+  border: 1px solid #333333 !important;
   padding: 9px 16px !important;
   border-radius: 12px !important;
   width: 100% !important;
   cursor: pointer !important;
   transition: all 0.15s !important;
+  box-shadow: none !important;
 }
-.stButton > button:hover {
+.stButton > button:hover,
+button[data-testid="baseButton-secondary"]:hover,
+div[data-testid="stButton"] > button:hover {
   background: #242424 !important;
-  border-color: rgba(232,184,75,0.35) !important;
+  border-color: rgba(232,184,75,0.4) !important;
   color: #E8B84B !important;
 }
-/* Botones primarios (type="primary") — dorados */
+/* Botones primarios — dorados */
 .stButton > button[kind="primary"],
-button[data-testid="baseButton-primary"] {
-  background: var(--gold2) !important;
+button[data-testid="baseButton-primary"],
+div[data-testid="stButton"] > button[kind="primary"] {
+  background: #E8B84B !important;
   color: #000000 !important;
   border: none !important;
   font-weight: 700 !important;
+}
+/* Download button */
+.stDownloadButton > button {
+  background: #1C1C1C !important;
+  color: #E8B84B !important;
+  border: 1px solid rgba(232,184,75,0.3) !important;
+  border-radius: 12px !important;
+}
+.stDownloadButton > button:hover {
+  background: rgba(232,184,75,0.1) !important;
+  border-color: rgba(232,184,75,0.6) !important;
 }
 
 /* ── NO RESULTS ── */
@@ -932,6 +952,28 @@ div[data-testid="stMetric"] { background: #161616; border-radius: 16px; padding:
 div[data-testid="stMetricValue"] { color: #E8E8E8 !important; font-family: 'Inter', sans-serif !important; font-weight: 700 !important; }
 div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-family: 'Inter', sans-serif !important; }
 div[data-testid="stMetricDelta"] { font-family: 'Inter', sans-serif !important; }
+
+/* ── FORZAR BOTONES OSCUROS — máxima especificidad ── */
+.stApp button:not([data-testid="baseButton-primary"]):not([title="Menú"]):not([aria-label="Menú"]) {
+  background-color: #1C1C1C !important;
+  background: #1C1C1C !important;
+  color: #E8E8E8 !important;
+  border: 1px solid #333333 !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+.stApp button:not([data-testid="baseButton-primary"]):not([title="Menú"]):hover {
+  background-color: #252525 !important;
+  background: #252525 !important;
+  color: #E8B84B !important;
+  border-color: rgba(232,184,75,0.4) !important;
+}
+.stApp button[data-testid="baseButton-primary"] {
+  background-color: #E8B84B !important;
+  background: #E8B84B !important;
+  color: #000000 !important;
+  border: none !important;
+}
 
 </style>
 """, unsafe_allow_html=True)
