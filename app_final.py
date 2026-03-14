@@ -5114,11 +5114,18 @@ if st.session_state.get("menu_open", False):
         )
         st.session_state["sel_groups_val"] = sel_groups
         _avail = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups]
+        # Agregar ligas nuevas que no estuvieran en la selección guardada
+        _saved = st.session_state.get("sel_leagues_val", _avail)
+        _new_lgs = [l for l in _avail if l not in _saved]
+        if _new_lgs:
+            _saved = _saved + _new_lgs
+            st.session_state["sel_leagues_val"] = _saved
+        _default_leagues = [l for l in _saved if l in _avail]
 
         st.markdown('<div style="font-size:0.65rem;color:#6B7280;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin:6px 0 3px">LIGAS</div>', unsafe_allow_html=True)
         sel_leagues = st.multiselect(
             "Ligas", _avail,
-            default=st.session_state.get("sel_leagues_val", _avail),
+            default=_default_leagues,
             key="sel_leagues_v3", label_visibility="collapsed"
         )
         st.session_state["sel_leagues_val"] = sel_leagues
@@ -5165,7 +5172,18 @@ else:
     n_sims     = st.session_state.get("n_sims_val", 10_000)
     sel_groups = st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"])
     _avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups]
-    sel_leagues= st.session_state.get("sel_leagues_val", _avail)
+    # Si sel_leagues_val no existe o tiene ligas que ya no existen, usar _avail completo
+    _saved_leagues = st.session_state.get("sel_leagues_val", None)
+    if _saved_leagues is None:
+        sel_leagues = _avail
+        st.session_state["sel_leagues_val"] = _avail
+    else:
+        # Agregar cualquier liga nueva que no estuviera guardada
+        _new_leagues = [l for l in _avail if l not in _saved_leagues]
+        if _new_leagues:
+            _saved_leagues = _saved_leagues + _new_leagues
+            st.session_state["sel_leagues_val"] = _saved_leagues
+        sel_leagues = [l for l in _saved_leagues if l in _avail]
     use_demo   = st.session_state.get("use_demo_val", False)
 
 run_sidebar = st.session_state.pop("trigger_analyze", False)
@@ -5655,8 +5673,14 @@ with tab_picks:
 
         # Sort each pool by prob desc, take top 1
         _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
+        # ── Filtro de deporte activo (tile seleccionado) ──────────────────────
+        _sel_sport_filter = st.session_state.get("_picks_sel_sport", None)
+
         rongol_picks = []
         for _sg in _SPORT_ORDER_R:
+            # Si hay filtro activo, solo mostrar ese deporte
+            if _sel_sport_filter and _sg != _sel_sport_filter:
+                continue
             pool = _sport_pools.get(_sg, [])
             if pool:
                 pool.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
@@ -6085,9 +6109,15 @@ with tab_picks:
 
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            # Aplicar filtro a rongol_picks y sr_cur
+            # Aplicar filtro de liga Y filtro de deporte
             rongol_picks = [r for r in rongol_picks if r["league"] in _ligas_sel]
             sr_cur_filtrado = [r for r in sr_cur if r["league"] in _ligas_sel]
+            # Filtro adicional por deporte si hay tile seleccionado
+            if _sel_sport_filter:
+                rongol_picks = [r for r in rongol_picks
+                                if LEAGUES.get(r["league"],{}).get("group") == _sel_sport_filter]
+                sr_cur_filtrado = [r for r in sr_cur_filtrado
+                                   if LEAGUES.get(r["league"],{}).get("group") == _sel_sport_filter]
 
             # ── RONGOL PICKS — 2×2 grid (max 5 cards) ────────────────────────
             _n_picks = len(rongol_picks)
@@ -6343,26 +6373,26 @@ with tab_sim:
             _smp = _SPORT_META_P[_sp_p]
             _n_p = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
             _is_sel = (_sel_sp == _sp_p)
-            _border = f'3px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}55'
-            _bg     = _smp["color"] + "22" if _is_sel else _smp["accent"]
-            _ev_badge = ""  # computed after _sim_map is built
+            _border = f'2.5px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}44'
+            _bg     = _smp["color"] + "28" if _is_sel else _smp["accent"]
+            _opacity = "1" if (_sel_sp is None or _is_sel) else "0.4"
             with _sp_cols_p[_ci_p]:
                 st.markdown(
-                    f'<div style="text-align:center;padding:10px 3px;border-radius:9px;'
-                    f'background:{_bg};border:{_border};margin-bottom:8px;cursor:pointer">'
-                    f'<div style="font-size:1.8rem;line-height:1">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.68rem;font-weight:700;color:{_smp["color"]};'
-                    f'letter-spacing:0.5px;text-transform:uppercase;margin-top:4px">{_sp_p}</div>'
-                    f'<div style="font-size:0.62rem;color:#6B7280;margin-top:2px">{_n_p} juegos</div>'
-                    f'{_ev_badge}'
+                    f'<div style="text-align:center;padding:10px 3px;border-radius:12px;'
+                    f'background:{_bg};border:{_border};margin-bottom:6px;opacity:{_opacity};'
+                    f'transition:all 0.2s">'
+                    f'<div style="font-size:1.6rem;line-height:1">{_smp["emoji"]}</div>'
+                    f'<div style="font-size:0.65rem;font-weight:700;color:{_smp["color"]};'
+                    f'letter-spacing:0.5px;text-transform:uppercase;margin-top:3px">{_sp_p}</div>'
+                    f'<div style="font-size:0.6rem;color:#6B7280;margin-top:1px">{_n_p} juegos</div>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
                 if st.button(
-                    "▶" if not _is_sel else "▼",
+                    "✕" if _is_sel else "▶",
                     key=f"btn_sp_{_sp_p}",
                     use_container_width=True,
-                    help=f"{'Ver' if not _is_sel else 'Cerrar'} partidos de {_sp_p}"
+                    help=f"{'Quitar filtro' if _is_sel else 'Solo ' + _sp_p}"
                 ):
                     st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
                     st.rerun()
