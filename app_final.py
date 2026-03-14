@@ -4895,126 +4895,169 @@ def render_parlay_card(r):
         '</div>'
     )
 # ═══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR
+# HAMBURGER PANEL — controles en el contenido principal, sin sidebar nativo
 # ═══════════════════════════════════════════════════════════════════════════════
-with st.sidebar:
-    st.markdown('<div class="sidebar-logo">THE DEN</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-sub">Gamblers · Analytics · Edge</div>', unsafe_allow_html=True)
-    st.divider()
 
-    st.markdown("**🔮 ORÁCULO**")
-    n_sims=st.select_slider("Iteraciones",options=[1_000,2_500,5_000,10_000,25_000],value=10_000,
-                            label_visibility="collapsed")
-    st.caption(f"⚡ {n_sims:,} iteraciones por partido")
-    st.divider()
+# Inicializar estado del panel
+if "menu_open" not in st.session_state:
+    st.session_state["menu_open"] = False
 
-    st.markdown("**LIGAS**")
-    groups=sorted(set(v["group"] for v in LEAGUES.values()))
-    sel_groups=st.multiselect("Grupos",groups,default=["Basketball","Baseball","Soccer","Hockey"],
-                              label_visibility="collapsed", key="sel_groups_v2")
-    avail=[n for n,cfg in LEAGUES.items() if cfg["group"] in sel_groups]
-    sel_leagues=st.multiselect("Ligas",avail,default=avail,label_visibility="collapsed", key="sel_leagues_v2")
+# CSS del botón hamburguesa y panel
+st.markdown("""
+<style>
+/* Ocultar sidebar nativo completamente */
+[data-testid="stSidebar"],
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"],
+header[data-testid="stHeader"] {
+  display: none !important;
+}
+.stApp > header { display: none !important; }
 
-    st.markdown("")
-    run_sidebar = st.button("▶  ANALIZAR AHORA", use_container_width=True,
-                            help="Corre el Oráculo para todos los partidos seleccionados")
-    st.divider()
+/* Botón hamburguesa fijo */
+#den-ham-btn {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 99999;
+}
+</style>
+""", unsafe_allow_html=True)
 
-    use_demo=st.toggle("🧪 Modo demo",value=False)
-    st.divider()
-    st.caption("ESPN API · Monte Carlo · Poisson")
-    st.caption("BTTS · O/U · DC · Parlays")
-    st.caption("100% Gratis · Sin API externa")
-    if st.button("↺  LIMPIAR CACHÉ"):
-        st.cache_data.clear(); st.session_state.pop("sim_results",None); st.rerun()
+# Botón hamburguesa — nativo de Streamlit, siempre funciona
+_ham_col, _ = st.columns([1, 20])
+with _ham_col:
+    if st.button("☰", key="btn_hamburger", help="Menú"):
+        st.session_state["menu_open"] = not st.session_state["menu_open"]
 
-    st.divider()
-    st.markdown("**🧠 MEMORIA**")
-    _tp_count_sb = st.session_state.get("_tp_count_cached", 0)
-    if _tp_count_sb > 0:
-        st.caption(f"✅ {_tp_count_sb} equipos en memoria")
-    else:
-        st.caption("⬜ Sin datos aún")
-    if st.button("🧠  POBLAR MEMORIA", use_container_width=True,
-                 help="Descarga últimos 10 partidos de TODOS los equipos y guarda en Google Sheets"):
-        st.session_state["run_populate"] = True
+# Panel lateral custom
+if st.session_state.get("menu_open", False):
+    st.markdown("""
+    <style>
+    .den-panel-overlay {
+      position: fixed; top:0; left:0; right:0; bottom:0;
+      background: rgba(0,0,0,0.5); z-index: 9998;
+    }
+    .den-panel {
+      position: fixed; top:0; left:0; bottom:0;
+      width: min(85vw, 320px);
+      background: #111111;
+      border-right: 1px solid #2A2A2A;
+      z-index: 9999;
+      overflow-y: auto;
+      padding: 16px 14px 32px 14px;
+    }
+    </style>
+    <div class="den-panel-overlay"></div>
+    """, unsafe_allow_html=True)
 
-    st.divider()
-    st.markdown("**🔍 DEBUG ESPN**")
-    st.caption("Verifica qué devuelve ESPN por liga")
-    if st.button("🔍 TEST ESPN AHORA", use_container_width=True):
-        from datetime import timedelta as _td_dbg
-        _now_dbg     = datetime.now(timezone.utc)
-        _now_mx_dbg  = _now_dbg - _td_dbg(hours=6)
-        _today_cdmx_dbg = _now_mx_dbg.strftime("%Y-%m-%d")
-        _d_mx   = _now_mx_dbg.strftime("%Y%m%d")
-        _d_utc  = _now_dbg.strftime("%Y%m%d")
-        _d_tom  = (_now_dbg + _td_dbg(days=1)).strftime("%Y%m%d")
-        _d_yday = (_now_dbg - _td_dbg(days=1)).strftime("%Y%m%d")
+    with st.container():
+        st.markdown('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-size:1.1rem;font-weight:800;color:#E8B84B;letter-spacing:1px">THE DEN</span></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:1px;background:#2A2A2A;margin-bottom:14px"></div>', unsafe_allow_html=True)
 
-        st.caption(f"Hoy CDMX: **{_today_cdmx_dbg}**  ·  UTC: {_now_dbg.strftime('%Y-%m-%d %H:%M')}")
+        if st.button("✕  Cerrar menú", key="btn_close_menu", use_container_width=True):
+            st.session_state["menu_open"] = False
+            st.rerun()
 
-        _soccer_leagues = {n: v for n, v in LEAGUES.items() if v["sport"] == "soccer"}
-        _prog = st.progress(0)
-        for _i, (_lname, _lcfg) in enumerate(_soccer_leagues.items()):
-            _prog.progress((_i + 1) / len(_soccer_leagues))
-            _base = (f"https://site.api.espn.com/apis/site/v2/sports/"
-                     f"{_lcfg['sport']}/{_lcfg['league']}/scoreboard")
+        st.markdown('<div style="font-size:0.72rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:14px 0 6px">🔮 ORÁCULO</div>', unsafe_allow_html=True)
+        n_sims = st.select_slider(
+            "Iteraciones",
+            options=[1_000, 2_500, 5_000, 10_000, 25_000],
+            value=st.session_state.get("n_sims_val", 10_000),
+            key="n_sims_slider",
+            label_visibility="collapsed"
+        )
+        st.session_state["n_sims_val"] = n_sims
+        st.caption(f"⚡ {n_sims:,} simulaciones por partido")
 
-            # Collect all unique events across all date variants
-            _all_evts = {}
-            for _d, _dlbl in [(_d_yday,"YDAY"), (_d_mx,"MX"), (_d_utc,"UTC"), (_d_tom,"TOM")]:
-                try:
-                    _rr = requests.get(f"{_base}?dates={_d}&limit=100", timeout=6,
-                                       headers={"User-Agent": "Mozilla/5.0"})
-                    if _rr.status_code == 200:
-                        for _ev in _rr.json().get("events", []):
-                            if _ev.get("id") and _ev["id"] not in _all_evts:
-                                _all_evts[_ev["id"]] = (_ev, _dlbl)
-                except:
-                    pass
+        st.markdown('<div style="height:1px;background:#2A2A2A;margin:12px 0"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.72rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">🌍 LIGAS</div>', unsafe_allow_html=True)
 
-            # Analyze each event: does it pass the CDMX date filter?
-            _pass, _fail, _lines = 0, 0, []
-            for _eid, (_ev, _dlbl) in _all_evts.items():
-                _raw = _ev.get("date", "").replace("Z", "").replace("+00:00", "")
-                _cdmx_d = "sin-fecha"
-                _passes = False
-                try:
-                    _eu = datetime.strptime(_raw[:19].replace("T", " "),
-                                            "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                    _cdmx_d = (_eu - _td_dbg(hours=6)).strftime("%H:%M CDMX")
-                    _passes = (_eu - _td_dbg(hours=6)).strftime("%Y-%m-%d") == _today_cdmx_dbg
-                except:
-                    _passes = True  # no date → let pass
-                _ht = _ev.get("competitions", [{}])[0].get("competitors", [{}])[0].get("team", {}).get("shortDisplayName", "?")
-                _at = (_ev.get("competitions", [{}])[0].get("competitors", [{}])[1].get("team", {}).get("shortDisplayName", "?")
-                       if len(_ev.get("competitions", [{}])[0].get("competitors", [])) > 1 else "?")
-                _st = _ev.get("status", {}).get("type", {}).get("state", "?")
-                if _passes:
-                    _pass += 1
-                else:
-                    _fail += 1
-                _lines.append((_passes, _dlbl, _cdmx_d, _at, _ht, _st))
+        _groups_all = sorted(set(v["group"] for v in LEAGUES.values()))
+        sel_groups = st.multiselect(
+            "Deportes", _groups_all,
+            default=st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"]),
+            key="sel_groups_v3", label_visibility="collapsed"
+        )
+        st.session_state["sel_groups_val"] = sel_groups
+        _avail = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups]
+        sel_leagues = st.multiselect(
+            "Ligas", _avail,
+            default=st.session_state.get("sel_leagues_val", _avail),
+            key="sel_leagues_v3", label_visibility="collapsed"
+        )
+        st.session_state["sel_leagues_val"] = sel_leagues
 
-            _icon = "✅" if _pass > 0 else "❌"
-            _clr  = "#00C896" if _pass > 0 else "#ef4444"
-            _bg   = "rgba(74,222,128,0.06)" if _pass > 0 else "rgba(239,68,68,0.06)"
-            _rows = ""
-            for (_ok, _dl, _cd, _at2, _ht2, _st2) in sorted(_lines, key=lambda x: x[2]):
-                _rc = "#00C896" if _ok else "#ef4444"
-                _ok_str = "✓" if _ok else "✗"
-                _rows += (f'<div style="font-size:0.60rem;color:{_rc};padding-left:8px">'
-                          f'{_ok_str} {_cd} CDMX · {_at2} @ {_ht2} · {_st2} · raw:{_dl}</div>')
-            st.markdown(
-                f'<div style="font-size:0.72rem;padding:4px 7px;margin:3px 0;'
-                f'background:{_bg};border-radius:5px;border-left:3px solid {_clr}">'
-                f'{_icon} <b>{_lname}</b>: {_pass} pasan filtro / {_pass+_fail} raw'
-                f'<br><span style="color:#6B7280;font-size:0.62rem">{_lcfg["league"]}</span>'
-                + _rows + '</div>',
-                unsafe_allow_html=True
-            )
-        _prog.empty()
+        st.markdown('<div style="height:1px;background:#2A2A2A;margin:12px 0"></div>', unsafe_allow_html=True)
+
+        use_demo = st.toggle("🧪 Modo demo", value=st.session_state.get("use_demo_val", False), key="use_demo_v2")
+        st.session_state["use_demo_val"] = use_demo
+
+        if st.button("▶  ANALIZAR AHORA", key="run_btn_menu", use_container_width=True):
+            st.session_state["menu_open"] = False
+            st.session_state["trigger_analyze"] = True
+            st.rerun()
+
+        st.markdown('<div style="height:1px;background:#2A2A2A;margin:12px 0"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.72rem;color:#6B7280;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">⚙️ HERRAMIENTAS</div>', unsafe_allow_html=True)
+
+        if st.button("↺  Limpiar caché", key="clear_cache_menu", use_container_width=True):
+            st.cache_data.clear()
+            st.session_state.pop("sim_results", None)
+            st.session_state.pop("_games_fetched", None)
+            st.session_state["menu_open"] = False
+            st.rerun()
+
+        _tp_count_sb = st.session_state.get("_tp_count_cached", 0)
+        st.caption(f"🧠 Memoria: {'✅ ' + str(_tp_count_sb) + ' equipos' if _tp_count_sb > 0 else '⬜ Sin datos'}")
+        if st.button("🧠  Poblar memoria", key="populate_menu", use_container_width=True,
+                     help="Descarga últimos 10 partidos de TODOS los equipos"):
+            st.session_state["run_populate"] = True
+            st.session_state["menu_open"] = False
+            st.rerun()
+
+        if st.button("🔍  Test ESPN", key="test_espn_menu", use_container_width=True):
+            st.session_state["run_espn_test"] = True
+            st.session_state["menu_open"] = False
+            st.rerun()
+
+else:
+    # Valores por defecto cuando el menú está cerrado
+    n_sims     = st.session_state.get("n_sims_val", 10_000)
+    sel_groups = st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"])
+    _avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups]
+    sel_leagues= st.session_state.get("sel_leagues_val", _avail)
+    use_demo   = st.session_state.get("use_demo_val", False)
+
+run_sidebar = st.session_state.pop("trigger_analyze", False)
+
+# Estilizar el botón hamburguesa
+st.markdown("""
+<style>
+/* Botón hamburguesa dorado */
+div[data-testid="stHorizontalBlock"]:first-of-type button[kind="secondary"],
+button[data-testid="baseButton-secondary"][aria-label="Menú"] {
+  background: rgba(232,184,75,0.12) !important;
+  border: 1.5px solid rgba(232,184,75,0.6) !important;
+  border-radius: 12px !important;
+  color: #E8B84B !important;
+  font-size: 1.3rem !important;
+  width: 44px !important;
+  height: 44px !important;
+  padding: 0 !important;
+  position: fixed !important;
+  top: 10px !important;
+  left: 10px !important;
+  z-index: 99999 !important;
+}
+/* Padding top del contenido para que no quede tapado */
+.block-container {
+  padding-top: 60px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
