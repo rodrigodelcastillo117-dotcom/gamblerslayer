@@ -459,25 +459,33 @@ st.markdown("""
   padding-top: 14px !important;
 }
 
-/* ── BUTTON ── */
+/* ── BUTTON — oscuro por defecto ── */
 .stButton > button {
-  background: var(--gold2) !important;
-  color: #000000 !important;
+  background: #1C1C1C !important;
+  color: #E8E8E8 !important;
   font-family: 'Inter', sans-serif !important;
-  font-size: 0.875rem !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.5px !important;
-  text-transform: uppercase !important;
-  border: none !important;
-  padding: 12px 28px !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+  border: 1px solid #2A2A2A !important;
+  padding: 9px 16px !important;
   border-radius: 12px !important;
   width: 100% !important;
   cursor: pointer !important;
   transition: all 0.15s !important;
 }
 .stButton > button:hover {
-  transform: translateY(-1px) !important;
-  opacity: 0.9 !important;
+  background: #242424 !important;
+  border-color: rgba(232,184,75,0.35) !important;
+  color: #E8B84B !important;
+}
+/* Botones primarios (type="primary") — dorados */
+.stButton > button[kind="primary"],
+button[data-testid="baseButton-primary"] {
+  background: var(--gold2) !important;
+  color: #000000 !important;
+  border: none !important;
+  font-weight: 700 !important;
 }
 
 /* ── NO RESULTS ── */
@@ -1493,48 +1501,41 @@ def _fetch_all_teams_in_league(sport_slug, league_slug):
 
 def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
     """
-    Version sin @st.cache_data. Usa /schedule para historial completo.
-    Parsea score de múltiples ubicaciones posibles en la respuesta de ESPN.
+    Versión sin @st.cache_data. Intenta múltiples endpoints de ESPN para
+    obtener historial de partidos terminados de un equipo.
     """
     if not team_id or not sport or not league:
         return None
-    try:
-        url = (f"https://site.api.espn.com/apis/site/v2/sports/"
-               f"{sport}/{league}/teams/{team_id}/schedule")
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
-            return None
-        data   = r.json()
-        events = data.get("events", [])
-        if not events:
-            return None
 
-        games_raw_list = []
-        now_iso = datetime.now(timezone.utc).isoformat()[:16]  # "2026-03-12T03:15"
-
-        def _get_score(competitor):
-            """Try multiple keys where ESPN might store the score."""
-            for key in ("score", "homeScore", "awayScore", "points"):
-                v = competitor.get(key)
-                if v is not None and v != "":
+    def _get_score(competitor):
+        """Extrae score de múltiples ubicaciones posibles."""
+        for key in ("score", "homeScore", "awayScore", "points"):
+            v = competitor.get(key)
+            if v is not None and v != "":
+                try: return float(v)
+                except: pass
+        score_obj = competitor.get("score", {})
+        if isinstance(score_obj, dict):
+            for key in ("value", "displayValue"):
+                v = score_obj.get(key)
+                if v is not None:
                     try: return float(v)
                     except: pass
-            # Try nested score object
-            score_obj = competitor.get("score", {})
-            if isinstance(score_obj, dict):
-                for key in ("value", "displayValue"):
-                    v = score_obj.get(key)
-                    if v is not None:
-                        try: return float(v)
-                        except: pass
-            return None
+        return None
 
+    def _parse_events(events, team_id, max_games):
+        """Parsea lista de eventos y retorna juegos terminados con score."""
+        games_raw_list = []
+        now_iso = datetime.now(timezone.utc).isoformat()[:16]
         for ev in events:
             ev_date = ev.get("date", "")
-            # Skip clearly future games
+            # Skip future games
             if ev_date[:16] > now_iso:
                 continue
-
+            # Only completed games
+            state = ev.get("status", {}).get("type", {}).get("state", "")
+            if state not in ("post", ""):
+                continue
             competitions = ev.get("competitions", [])
             if not competitions:
                 continue
@@ -1542,41 +1543,62 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
             comps = comp.get("competitors", [])
             if len(comps) < 2:
                 continue
-
-            # Match team by id
             team_comp = next((c for c in comps if str(c.get("id","")) == str(team_id)), None)
             opp_comp  = next((c for c in comps if str(c.get("id","")) != str(team_id)), None)
             if not team_comp or not opp_comp:
                 continue
-
             team_score = _get_score(team_comp)
             opp_score  = _get_score(opp_comp)
-
-            # Skip if no scores found
             if team_score is None or opp_score is None:
                 continue
-
-            # Skip 0-0 with no boxscore (unplayed)
-            if team_score == 0 and opp_score == 0:
-                if not comp.get("boxscoreAvailable", False):
-                    continue
-
-            is_home   = team_comp.get("homeAway") == "home"
-            opp_name  = opp_comp.get("team", {}).get("displayName", "")
-            game_date = ev_date[:10]
-
+            # Skip 0-0 only if clearly not played (no boxscore AND state unknown)
+            if team_score == 0 and opp_score == 0 and state == "" and not comp.get("boxscoreAvailable", False):
+                continue
+            is_home  = team_comp.get("homeAway") == "home"
+            opp_name = opp_comp.get("team", {}).get("displayName", "")
             games_raw_list.append({
                 "scored":   team_score,
                 "conceded": opp_score,
                 "home":     is_home,
-                "date":     game_date,
+                "date":     ev_date[:10],
                 "opp":      opp_name,
             })
-
-            if len(games_raw_list) >= n_games:
+            if len(games_raw_list) >= max_games:
                 break
+        return games_raw_list
 
-        return games_raw_list if games_raw_list else None
+    try:
+        headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+        base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}"
+
+        # Intento 1: /teams/{id}/schedule (más completo)
+        r = requests.get(f"{base}/teams/{team_id}/schedule", timeout=10, headers=headers)
+        if r.status_code == 200:
+            events = r.json().get("events", [])
+            games = _parse_events(events, team_id, n_games)
+            if games:
+                return games
+
+        # Intento 2: /teams/{id}/schedule?season=2025 (temporada pasada)
+        from datetime import datetime as _dt
+        _yr = _dt.now().year
+        for _season in [_yr, _yr - 1]:
+            r2 = requests.get(f"{base}/teams/{team_id}/schedule?season={_season}", timeout=8, headers=headers)
+            if r2.status_code == 200:
+                events2 = r2.json().get("events", [])
+                games2 = _parse_events(events2, team_id, n_games)
+                if games2:
+                    return games2
+
+        # Intento 3: scoreboard buscando partidos de este equipo
+        r3 = requests.get(f"{base}/teams/{team_id}/events", timeout=8, headers=headers)
+        if r3.status_code == 200:
+            events3 = r3.json().get("events", [])
+            games3 = _parse_events(events3, team_id, n_games)
+            if games3:
+                return games3
+
+        return None
     except Exception:
         return None
 
@@ -4964,28 +4986,62 @@ if st.button("☰", key="btn_hamburger", help="Menú"):
 if st.session_state.get("menu_open", False):
     st.markdown("""
     <style>
-    .den-panel {
-      position: fixed; top:0; left:0; bottom:0;
-      width: min(85vw, 300px);
-      background: #111111;
-      border-right: 1px solid #2A2A2A;
-      z-index: 9999;
-      overflow-y: auto;
-      padding: 16px 14px 32px 14px;
-      box-shadow: 4px 0 24px rgba(0,0,0,0.6);
+    /* Panel compacto */
+    .den-panel-wrap { margin: 0; padding: 0; }
+
+    /* Todos los botones dentro del panel — oscuros */
+    .den-panel-wrap .stButton > button {
+      background: #1C1C1C !important;
+      border: 1px solid #2A2A2A !important;
+      color: #E8E8E8 !important;
+      border-radius: 10px !important;
+      font-size: 0.78rem !important;
+      font-weight: 600 !important;
+      padding: 7px 12px !important;
+      height: auto !important;
+      min-height: 34px !important;
+      letter-spacing: 0.3px !important;
+    }
+    .den-panel-wrap .stButton > button:hover {
+      background: #242424 !important;
+      border-color: rgba(232,184,75,0.4) !important;
+      color: #E8B84B !important;
+    }
+    /* Botón analizar — dorado */
+    .den-panel-wrap .stButton > button[data-testid*="run_btn"] {
+      background: rgba(232,184,75,0.15) !important;
+      border: 1px solid rgba(232,184,75,0.5) !important;
+      color: #E8B84B !important;
+    }
+    /* Slider compacto */
+    .den-panel-wrap .stSlider { margin: 0 !important; }
+    .den-panel-wrap .stCaption { font-size: 0.68rem !important; color: #6B7280 !important; margin: 0 !important; }
+    /* Multiselect compacto */
+    .den-panel-wrap .stMultiSelect { margin-bottom: 4px !important; }
+    .den-panel-wrap [data-baseweb="tag"] {
+      font-size: 0.65rem !important;
+      padding: 1px 5px !important;
+      border-radius: 6px !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
     with st.container():
-        st.markdown('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-size:1.1rem;font-weight:800;color:#E8B84B;letter-spacing:1px">THE DEN</span></div>', unsafe_allow_html=True)
-        st.markdown('<div style="height:1px;background:#2A2A2A;margin-bottom:14px"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="den-panel-wrap">', unsafe_allow_html=True)
 
-        if st.button("✕  Cerrar menú", key="btn_close_menu", use_container_width=True):
-            st.session_state["menu_open"] = False
-            st.rerun()
+        # Header
+        _hcol1, _hcol2 = st.columns([3, 1])
+        with _hcol1:
+            st.markdown('<div style="font-size:0.95rem;font-weight:800;color:#E8B84B;letter-spacing:1px;padding-top:4px">⚙️ THE DEN</div>', unsafe_allow_html=True)
+        with _hcol2:
+            if st.button("✕", key="btn_close_menu", help="Cerrar"):
+                st.session_state["menu_open"] = False
+                st.rerun()
 
-        st.markdown('<div style="font-size:0.72rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:14px 0 6px">🔮 ORÁCULO</div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:1px;background:#2A2A2A;margin:8px 0 10px"></div>', unsafe_allow_html=True)
+
+        # Simulaciones
+        st.markdown('<div style="font-size:0.65rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔮 SIMULACIONES</div>', unsafe_allow_html=True)
         n_sims = st.select_slider(
             "Iteraciones",
             options=[1_000, 2_500, 5_000, 10_000, 25_000],
@@ -4994,11 +5050,12 @@ if st.session_state.get("menu_open", False):
             label_visibility="collapsed"
         )
         st.session_state["n_sims_val"] = n_sims
-        st.caption(f"⚡ {n_sims:,} simulaciones por partido")
+        st.caption(f"⚡ {n_sims:,} por partido")
 
-        st.markdown('<div style="height:1px;background:#2A2A2A;margin:12px 0"></div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.72rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">🌍 LIGAS</div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:1px;background:#1E1E1E;margin:8px 0"></div>', unsafe_allow_html=True)
 
+        # Ligas
+        st.markdown('<div style="font-size:0.65rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🌍 DEPORTES</div>', unsafe_allow_html=True)
         _groups_all = sorted(set(v["group"] for v in LEAGUES.values()))
         sel_groups = st.multiselect(
             "Deportes", _groups_all,
@@ -5007,6 +5064,8 @@ if st.session_state.get("menu_open", False):
         )
         st.session_state["sel_groups_val"] = sel_groups
         _avail = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups]
+
+        st.markdown('<div style="font-size:0.65rem;color:#6B7280;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin:6px 0 3px">LIGAS</div>', unsafe_allow_html=True)
         sel_leagues = st.multiselect(
             "Ligas", _avail,
             default=st.session_state.get("sel_leagues_val", _avail),
@@ -5014,38 +5073,42 @@ if st.session_state.get("menu_open", False):
         )
         st.session_state["sel_leagues_val"] = sel_leagues
 
-        st.markdown('<div style="height:1px;background:#2A2A2A;margin:12px 0"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:1px;background:#1E1E1E;margin:8px 0"></div>', unsafe_allow_html=True)
 
-        use_demo = st.toggle("🧪 Modo demo", value=st.session_state.get("use_demo_val", False), key="use_demo_v2")
+        use_demo = st.toggle("🧪 Demo", value=st.session_state.get("use_demo_val", False), key="use_demo_v2")
         st.session_state["use_demo_val"] = use_demo
 
-        if st.button("▶  ANALIZAR AHORA", key="run_btn_menu", use_container_width=True):
+        if st.button("▶  Analizar ahora", key="run_btn_menu", use_container_width=True):
             st.session_state["menu_open"] = False
             st.session_state["trigger_analyze"] = True
             st.rerun()
 
-        st.markdown('<div style="height:1px;background:#2A2A2A;margin:12px 0"></div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.72rem;color:#6B7280;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">⚙️ HERRAMIENTAS</div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:1px;background:#1E1E1E;margin:8px 0"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:0.65rem;color:#6B7280;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🛠 HERRAMIENTAS</div>', unsafe_allow_html=True)
 
-        if st.button("↺  Limpiar caché", key="clear_cache_menu", use_container_width=True):
-            st.cache_data.clear()
-            st.session_state.pop("sim_results", None)
-            st.session_state.pop("_games_fetched", None)
-            st.session_state["menu_open"] = False
-            st.rerun()
+        _tc1, _tc2 = st.columns(2)
+        with _tc1:
+            if st.button("↺ Caché", key="clear_cache_menu", use_container_width=True):
+                st.cache_data.clear()
+                st.session_state.pop("sim_results", None)
+                st.session_state.pop("_games_fetched", None)
+                st.session_state["menu_open"] = False
+                st.rerun()
+        with _tc2:
+            if st.button("🔍 Test ESPN", key="test_espn_menu", use_container_width=True):
+                st.session_state["run_espn_test"] = True
+                st.session_state["menu_open"] = False
+                st.rerun()
 
         _tp_count_sb = st.session_state.get("_tp_count_cached", 0)
-        st.caption(f"🧠 Memoria: {'✅ ' + str(_tp_count_sb) + ' equipos' if _tp_count_sb > 0 else '⬜ Sin datos'}")
-        if st.button("🧠  Poblar memoria", key="populate_menu", use_container_width=True,
-                     help="Descarga últimos 10 partidos de TODOS los equipos"):
+        _mem_label = f"✅ {_tp_count_sb} equipos" if _tp_count_sb > 0 else "⬜ Sin memoria"
+        st.caption(_mem_label)
+        if st.button("🧠 Poblar memoria", key="populate_menu", use_container_width=True):
             st.session_state["run_populate"] = True
             st.session_state["menu_open"] = False
             st.rerun()
 
-        if st.button("🔍  Test ESPN", key="test_espn_menu", use_container_width=True):
-            st.session_state["run_espn_test"] = True
-            st.session_state["menu_open"] = False
-            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     # Valores por defecto cuando el menú está cerrado
