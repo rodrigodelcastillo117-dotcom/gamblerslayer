@@ -3647,6 +3647,7 @@ def run_monte_carlo(game, n=10_000):
 
     hw=aw=d=btts=o15=o25=o35=u25=u35=dc_1x=dc_x2=dc_12=o_total=u_total=0
     rng=random.Random()
+    _score_freq = {}  # {(home_goals, away_goals): count}
 
     for _ in range(n):
         ph=max(0.01,min(0.99,hp+rng.gauss(0,sigma)))
@@ -3664,6 +3665,9 @@ def run_monte_carlo(game, n=10_000):
                     gh = poisson_sample(lh, rng)
                     ga = poisson_sample(la, rng)
                     tg = gh + ga
+                # Contar marcador (cap a 10 para no explotar memoria)
+                _sk = (min(gh, 10), min(ga, 10))
+                _score_freq[_sk] = _score_freq.get(_sk, 0) + 1
                 if gh>ga: hw+=1; dc_1x+=1; dc_12+=1
                 elif gh==ga: d+=1; dc_1x+=1; dc_x2+=1
                 else: aw+=1; dc_x2+=1; dc_12+=1
@@ -3689,14 +3693,14 @@ def run_monte_carlo(game, n=10_000):
                         aw += 1; dc_x2 += 1; dc_12 += 1
                     else:
                         # Tie after 60 min → OT (100% go to OT in NHL)
-                        ot_goals = 1  # OT always produces 1 goal (sudden death)
-                        # ~50% of tied games end in SO (rest end in 5-min OT)
-                        # Shootout: +1 official goal either way (winner gets it)
-                        # Both OT and SO add 1 goal to total — already counted above
+                        ot_goals = 1
                         if rng.random() < 0.5:
                             hw += 1; dc_1x += 1; dc_12 += 1
                         else:
                             aw += 1; dc_x2 += 1; dc_12 += 1
+                    # Contar marcador hockey
+                    _sk = (min(gh, 15), min(ga, 15))
+                    _score_freq[_sk] = _score_freq.get(_sk, 0) + 1
                     # O/U comparison includes OT/SO goals
                     tg_with_ot = tg + ot_goals
                     if ou_val > 0:
@@ -3753,6 +3757,9 @@ def run_monte_carlo(game, n=10_000):
                     sim_total = sim_h + sim_a
                     if sim_h > sim_a: hw += 1; dc_1x += 1; dc_12 += 1
                     else: aw += 1; dc_x2 += 1; dc_12 += 1
+                    # Contar marcador redondeado
+                    _sk = (round(sim_h), round(sim_a))
+                    _score_freq[_sk] = _score_freq.get(_sk, 0) + 1
                     if ou_val > 0:
                         # Sharp: ESPN line is inflated by public bias. Correct by shifting
                         # effective comparison line down. When using implicit line, no bias.
@@ -4142,6 +4149,7 @@ def run_monte_carlo(game, n=10_000):
         "away_injury_factor":game.get("away_injury_factor",1.0),
         "home_injuries":game.get("home_injuries",[]),
         "away_injuries":game.get("away_injuries",[]),
+        "score_freq": sorted(_score_freq.items(), key=lambda x: x[1], reverse=True)[:10] if _score_freq else [],
     }
     sim["best_pick"] = best_single or {}
     compute_consensus(game, sim)
@@ -6636,6 +6644,34 @@ with tab_sim:
                 f'<span style="color:#444444;margin-left:auto">{dq_src}</span>'
                 f'</div>'
             )
+            # Marcadores más frecuentes
+            _sf = sim.get("score_freq", [])
+            if _sf:
+                _sf_html = '<div style="margin-top:5px;padding:5px 7px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid #222">'
+                _sf_html += '<div style="font-size:0.6rem;color:#6B7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">📊 Marcadores más frecuentes</div>'
+                _sf_html += '<div style="display:flex;flex-wrap:wrap;gap:4px">'
+                _away = sim.get("away_team", g.get("away_team","V"))
+                _home = sim.get("home_team", g.get("home_team","L"))
+                for _i, ((h_g, a_g), _cnt) in enumerate(_sf[:6]):
+                    _pct = round(_cnt / (sim.get("n_simulations", 10000)) * 100, 1)
+                    _is_top = _i == 0
+                    if h_g > a_g:
+                        _sc = "#f97316"  # local gana — naranja
+                    elif h_g < a_g:
+                        _sc = "#60a5fa"  # visitante gana — azul
+                    else:
+                        _sc = "#a78bfa"  # empate — morado
+                    _sf_html += (
+                        f'<div style="background:{"rgba(255,255,255,0.07)" if _is_top else "rgba(255,255,255,0.03)"};'
+                        f'border:1px solid {"rgba(255,255,255,0.15)" if _is_top else "#222"};'
+                        f'border-radius:8px;padding:3px 8px;text-align:center;min-width:52px">'
+                        f'<div style="font-size:{"0.82rem" if _is_top else "0.75rem"};font-weight:{"800" if _is_top else "600"};color:{_sc}">'
+                        f'{h_g}–{a_g}</div>'
+                        f'<div style="font-size:0.6rem;color:#6B7280">{_pct}%</div>'
+                        f'</div>'
+                    )
+                _sf_html += '</div></div>'
+                _footer += _sf_html
         elif sim.get("ou_line") and sim.get("p_o_total") is not None:
             _po = sim.get("p_o_total") or 0
             _pu = sim.get("p_u_total") or 0
@@ -6697,6 +6733,27 @@ with tab_sim:
                 + _rows_html +
                 f'</div>'
             )
+            # Marcadores más frecuentes (no-soccer)
+            _sf2 = sim.get("score_freq", [])
+            if _sf2:
+                _sf2_html = '<div style="margin-top:5px;padding:5px 7px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid #222">'
+                _sf2_html += '<div style="font-size:0.6rem;color:#6B7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">📊 Marcadores más frecuentes</div>'
+                _sf2_html += '<div style="display:flex;flex-wrap:wrap;gap:4px">'
+                for _i, ((h_g, a_g), _cnt) in enumerate(_sf2[:5]):
+                    _pct2 = round(_cnt / (sim.get("n_simulations", 10000)) * 100, 1)
+                    _is_top2 = _i == 0
+                    _sc2 = "#f97316" if h_g > a_g else ("#60a5fa" if h_g < a_g else "#a78bfa")
+                    _sf2_html += (
+                        f'<div style="background:{"rgba(255,255,255,0.07)" if _is_top2 else "rgba(255,255,255,0.03)"};'
+                        f'border:1px solid {"rgba(255,255,255,0.15)" if _is_top2 else "#222"};'
+                        f'border-radius:8px;padding:3px 8px;text-align:center;min-width:52px">'
+                        f'<div style="font-size:{"0.82rem" if _is_top2 else "0.75rem"};font-weight:{"800" if _is_top2 else "600"};color:{_sc2}">'
+                        f'{h_g}–{a_g}</div>'
+                        f'<div style="font-size:0.6rem;color:#6B7280">{_pct2}%</div>'
+                        f'</div>'
+                    )
+                _sf2_html += '</div></div>'
+                _footer += _sf2_html
 
         _html = (
             f'<div style="border-radius:12px;padding:10px 12px;margin:4px 0;'
