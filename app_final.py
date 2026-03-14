@@ -915,6 +915,9 @@ LEAGUES = {
     "Champions League":       {"sport":"soccer", "league":"UEFA.CHAMPIONS",    "group":"Soccer", "country":"Europa"},
     "Europa League":          {"sport":"soccer", "league":"UEFA.EUROPA",         "group":"Soccer", "country":"Europa"},
     "Conference League":      {"sport":"soccer", "league":"uefa.europa.conf",    "group":"Soccer", "country":"Europa"},
+    "Saudi Pro League":       {"sport":"soccer",    "league":"sau.1",                  "group":"Soccer"},
+    "Belgian Pro League":     {"sport":"soccer",    "league":"bel.1",                  "group":"Soccer"},
+    "Eredivisie":             {"sport":"soccer",    "league":"ned.1",                  "group":"Soccer"},
     "CONCACAF Champions Cup": {"sport":"soccer", "league":"concacaf.champions",  "group":"Soccer", "country":"CONCACAF"},
 }
 LEAGUE_FLAG = {
@@ -933,6 +936,9 @@ LEAGUE_FLAG = {
     "Champions League":       "🇪🇺",
     "Europa League":          "🇪🇺",
     "Conference League":      "🇪🇺",
+    "Saudi Pro League":       "🇸🇦",
+    "Belgian Pro League":     "🇧🇪",
+    "Eredivisie":             "🇳🇱",
     "CONCACAF Champions Cup": "🌎",
 }
 
@@ -945,6 +951,7 @@ HOME_BOOST = {
     "NFL":0.035,"NCAAF":0.045,"NHL":0.03,"MLS":0.04,"Liga MX":0.045,
     "Premier League":0.038,"La Liga":0.04,"Bundesliga":0.042,"Serie A":0.04,
     "Ligue 1":0.04,"Champions League":0.035,"Europa League":0.035,"Conference League":0.032,"CONCACAF Champions Cup":0.04,
+    "Saudi Pro League":0.042,"Belgian Pro League":0.040,"Eredivisie":0.042,
     }
 LEAGUE_AVG_GOALS = {
     "NBA":228.0,"MLB":9.0,
@@ -952,6 +959,7 @@ LEAGUE_AVG_GOALS = {
     "MLS":2.96,"Liga MX":2.72,"Premier League":2.81,"La Liga":2.63,
     "Bundesliga":3.24,"Serie A":2.72,"Ligue 1":2.61,
     "Champions League":3.14,"Europa League":2.89,"Conference League":2.71,"CONCACAF Champions Cup":2.85,
+    "Saudi Pro League":2.80,"Belgian Pro League":3.10,"Eredivisie":3.20,
 }
 
 # ── MLB Ballpark Factors ────────────────────────────────────────────────────
@@ -996,6 +1004,9 @@ SOCCER_STD_LINE = {
     "MLS":              2.5,
     "Liga MX":          2.5,
     "CONCACAF Champions Cup": 2.5,
+    "Saudi Pro League":  2.5,
+    "Belgian Pro League":3.0,
+    "Eredivisie":        3.0,
 }
 _TP_TAB       = "team_profiles"
 _TP_MAX_GAMES = 10
@@ -1298,6 +1309,9 @@ _ALL_LEAGUE_SLUGS = {
     "Europa League":        ("soccer",     "uefa.europa"),
     "Conference League":    ("soccer",     "uefa.europa.conf"),
     "CONCACAF Champions Cup":("soccer",    "concacaf.champions"),
+    "Saudi Pro League":      ("soccer",    "sau.1"),
+    "Belgian Pro League":    ("soccer",    "bel.1"),
+    "Eredivisie":            ("soccer",    "ned.1"),
 }
 
 def get_team_profile(team_id):
@@ -1887,6 +1901,9 @@ def enrich_game_with_form(game):
         "Europa League": ("soccer", "uefa.europa"),
         "Conference League": ("soccer", "uefa.europa.conf"),
         "CONCACAF Champions Cup": ("soccer", "concacaf.champions"),
+        "Saudi Pro League":       ("soccer", "sau.1"),
+        "Belgian Pro League":     ("soccer", "bel.1"),
+        "Eredivisie":             ("soccer", "ned.1"),
     }
 
     if league not in LEAGUE_SLUGS:
@@ -2287,19 +2304,17 @@ def get_all_games(leagues):
         all_evts = {}
 
         urls = []
-        # Scoreboard with every date variant
+        # Scoreboard with every date variant + ALL season types (1=regular, 2=preseason, 3=postseason, 4=offseason)
         for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
-            urls += [
-                f"{base}?dates={_d}&limit=100",
-                f"{base}?dates={_d}&limit=100&seasontype=2",
-                f"{base}?dates={_d}&limit=100&seasontype=3",
-                f"{base}?dates={_d}&limit=100&seasontype=4",
-            ]
+            for _st in ["1", "2", "3", "4"]:
+                urls.append(f"{base}?dates={_d}&limit=100&seasontype={_st}")
+            urls.append(f"{base}?dates={_d}&limit=100")
         # Core API
-        for _d in [_today_mx, _today_utc, _tom_utc]:
+        for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
             urls.append(f"{core}?dates={_d}&limit=100")
-        # Plain scoreboard (no date)
+        # Plain scoreboard (no date, no seasontype — ESPN default)
         urls.append(base)
+        urls.append(f"{base}?limit=100")
 
         for _url in urls:
             try:
@@ -2309,11 +2324,9 @@ def get_all_games(leagues):
                 if _r.status_code != 200:
                     continue
                 _data = _r.json()
-                # scoreboard format: {"events": [...]}
                 for _e in _data.get("events", []):
                     if isinstance(_e, dict) and _e.get("id"):
                         all_evts[_e["id"]] = _e
-                # core API format: {"items": [{"$ref": "url"}]}  -- skip refs, no full data
                 for _e in _data.get("items", []):
                     if isinstance(_e, dict) and _e.get("id") and _e.get("competitions"):
                         all_evts[_e["id"]] = _e
@@ -2358,7 +2371,7 @@ back-to-back fatigue, point differential trends, ATS (against the spread) patter
 Key edge areas: teams playing 2nd game of back-to-back, large home favorites covering less than 60%, pace mismatches.
 Respond in 2-3 sharp sentences. Lead with the single most important insight. Be direct, no fluff.""",
 
-    "Soccer": """You are a sharp soccer betting analyst covering global leagues (Liga MX, Premier League, UCL, La Liga, etc.).
+    "Soccer": """You are a sharp soccer betting analyst covering global leagues (Liga MX, Premier League, UCL, La Liga, Bundesliga, Serie A, Ligue 1, Eredivisie, Belgian Pro League, Saudi Pro League, etc.).
 You specialize in: xG (expected goals) patterns, home/away form splits, European competition fatigue, 
 managerial tactics, set-piece efficiency, clean sheet rates, and value in BTTS and Asian handicap markets.
 Key edge areas: mid-table teams in dead rubbers, massive underdogs in cup ties, draw value in evenly matched derbies.
@@ -2798,6 +2811,7 @@ LEAGUE_HOME_RATE = {
     "Serie A": 0.455, "Ligue 1": 0.455,
     "Champions League": 0.475, "Europa League": 0.465,
     "Conference League": 0.460, "CONCACAF Champions Cup": 0.480,
+    "Saudi Pro League": 0.465, "Belgian Pro League": 0.455, "Eredivisie": 0.450,
     }
 
 def calc_ev(prob, ml):
@@ -2967,7 +2981,7 @@ def compute_base_prob(game):
 SOCCER_LEAGUES = {
     "MLS","Liga MX","Premier League","La Liga","Bundesliga",
     "Serie A","Ligue 1","Champions League","Europa League","Conference League",
-    "CONCACAF Champions Cup",
+    "CONCACAF Champions Cup","Saudi Pro League","Belgian Pro League","Eredivisie",
 }
 
 def get_lambda(game):
@@ -3158,6 +3172,9 @@ LEAGUE_OU_PRIORS = {
     "Europa League":         (0.220, 0.452, 0.676, 0.780, 0.548, 0.324, 0.584),
     "Conference League":     (0.252, 0.497, 0.718, 0.748, 0.503, 0.282, 0.551),
     "CONCACAF Champions Cup":(0.223, 0.458, 0.681, 0.777, 0.542, 0.319, 0.577),
+    "Saudi Pro League":      (0.230, 0.468, 0.692, 0.770, 0.532, 0.308, 0.570),
+    "Belgian Pro League":    (0.190, 0.408, 0.632, 0.810, 0.592, 0.368, 0.618),
+    "Eredivisie":            (0.183, 0.395, 0.618, 0.817, 0.605, 0.382, 0.628),
 }
 # Minimum deviation from league prior to qualify as a valid O/U or BTTS pick.
 # 8% = meaningful signal — below this the model learns nothing new vs league avg.
@@ -3181,6 +3198,9 @@ SOCCER_CALIB = {
     "Europa League":          ( -0.020,  +0.010, -0.035),
     "Conference League":      ( -0.010,  +0.015, -0.030),
     "CONCACAF Champions Cup": ( +0.060,  +0.080, -0.100),
+    "Saudi Pro League":       ( +0.020,  +0.030, -0.040),
+    "Belgian Pro League":     ( +0.010,  +0.025, -0.020),
+    "Eredivisie":             ( +0.015,  +0.030, -0.025),
     "MLS":                    ( +0.030,  +0.055, -0.065),
 }
 
