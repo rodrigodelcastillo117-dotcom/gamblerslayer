@@ -5877,6 +5877,118 @@ with tab_picks:
                     f'</div>'
                 )
 
+            # ── FILTRO DE LIGAS — botón que despliega/recoge ─────────────────
+            # Obtener ligas disponibles en los resultados actuales
+            _ligas_disponibles = sorted({
+                r["league"] for r in sr_cur
+                if r["league"] in LEAGUES
+            })
+            # Inicializar selección en session_state (todas activas por default)
+            if "picks_ligas_sel" not in st.session_state:
+                st.session_state["picks_ligas_sel"] = set(_ligas_disponibles)
+            # Si hay ligas nuevas que no estaban antes, añadirlas
+            for _l in _ligas_disponibles:
+                if _l not in st.session_state["picks_ligas_sel"] and \
+                   _l not in st.session_state.get("picks_ligas_excluidas", set()):
+                    st.session_state["picks_ligas_sel"].add(_l)
+
+            _ligas_sel = st.session_state["picks_ligas_sel"]
+            _n_activas = len([l for l in _ligas_disponibles if l in _ligas_sel])
+            _n_total   = len(_ligas_disponibles)
+
+            # Botón toggle
+            _filtro_open = st.session_state.get("picks_filtro_open", False)
+            _btn_label = (
+                f"🏆 Ligas · {_n_activas}/{_n_total} activas  {'▲' if _filtro_open else '▼'}"
+            )
+            if st.button(_btn_label, key="btn_filtro_ligas", use_container_width=True):
+                st.session_state["picks_filtro_open"] = not _filtro_open
+                st.rerun()
+
+            if st.session_state.get("picks_filtro_open", False):
+                st.markdown(
+                    '<div style="background:#161616;border:1px solid #2A2A2A;border-radius:16px;'
+                    'padding:14px 16px;margin:4px 0 12px 0">',
+                    unsafe_allow_html=True
+                )
+                # Botones rápidos
+                _qc1, _qc2, _qc3 = st.columns(3)
+                with _qc1:
+                    if st.button("✅ Todas", key="btn_ligas_all", use_container_width=True):
+                        st.session_state["picks_ligas_sel"] = set(_ligas_disponibles)
+                        st.session_state["picks_ligas_excluidas"] = set()
+                        st.rerun()
+                with _qc2:
+                    if st.button("⚽ Solo Soccer", key="btn_ligas_soccer", use_container_width=True):
+                        st.session_state["picks_ligas_sel"] = {
+                            l for l in _ligas_disponibles
+                            if LEAGUES.get(l, {}).get("group") == "Soccer"
+                        }
+                        st.session_state["picks_ligas_excluidas"] = {
+                            l for l in _ligas_disponibles
+                            if LEAGUES.get(l, {}).get("group") != "Soccer"
+                        }
+                        st.rerun()
+                with _qc3:
+                    if st.button("🏀 Solo US Sports", key="btn_ligas_us", use_container_width=True):
+                        st.session_state["picks_ligas_sel"] = {
+                            l for l in _ligas_disponibles
+                            if LEAGUES.get(l, {}).get("group") in ("Basketball","Baseball","Football","Hockey")
+                        }
+                        st.session_state["picks_ligas_excluidas"] = {
+                            l for l in _ligas_disponibles
+                            if LEAGUES.get(l, {}).get("group") == "Soccer"
+                        }
+                        st.rerun()
+
+                st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+
+                # Toggle individual por liga — en filas de 2
+                _ligas_rows = [_ligas_disponibles[i:i+2] for i in range(0, len(_ligas_disponibles), 2)]
+                for _row in _ligas_rows:
+                    _cols_l = st.columns(len(_row))
+                    for _ci_l, _liga in enumerate(_row):
+                        with _cols_l[_ci_l]:
+                            _activa = _liga in _ligas_sel
+                            _flag   = LEAGUE_FLAG.get(_liga, "🌐")
+                            _grp    = LEAGUES.get(_liga, {}).get("group", "")
+                            _grp_colors = {
+                                "Soccer": "#00C896", "Basketball": "#f97316",
+                                "Hockey": "#60a5fa", "Baseball": "#ef4444", "Football": "#a78bfa"
+                            }
+                            _c = _grp_colors.get(_grp, "#E8B84B")
+                            _bg = f"rgba({','.join(str(int(_c[i:i+2],16)) for i in (1,3,5))},0.15)" if _activa else "rgba(255,255,255,0.04)"
+                            _border = _c if _activa else "#2A2A2A"
+                            _text_c = "#E8E8E8" if _activa else "#6B7280"
+                            st.markdown(
+                                f'<div style="background:{_bg};border:1.5px solid {_border};'
+                                f'border-radius:12px;padding:8px 10px;margin:2px 0;'
+                                f'cursor:pointer;transition:all 0.15s">'
+                                f'<span style="font-size:0.9rem">{_flag}</span> '
+                                f'<span style="font-size:0.78rem;font-weight:600;color:{_text_c}">{_liga}</span>'
+                                f'{"<span style=\'float:right;color:" + _c + ";font-size:0.7rem\'>✓</span>" if _activa else ""}'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
+                            _btn_key = f"liga_tog_{_liga.replace(' ','_').replace('/','_')}"
+                            _btn_txt = "Quitar" if _activa else "Agregar"
+                            if st.button(_btn_txt, key=_btn_key, use_container_width=True):
+                                _excl = st.session_state.get("picks_ligas_excluidas", set())
+                                if _activa:
+                                    st.session_state["picks_ligas_sel"].discard(_liga)
+                                    _excl.add(_liga)
+                                else:
+                                    st.session_state["picks_ligas_sel"].add(_liga)
+                                    _excl.discard(_liga)
+                                st.session_state["picks_ligas_excluidas"] = _excl
+                                st.rerun()
+
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # Aplicar filtro a rongol_picks y sr_cur
+            rongol_picks = [r for r in rongol_picks if r["league"] in _ligas_sel]
+            sr_cur_filtrado = [r for r in sr_cur if r["league"] in _ligas_sel]
+
             # ── RONGOL PICKS — 2×2 grid (max 5 cards) ────────────────────────
             _n_picks = len(rongol_picks)
             _sport_labels = {"Soccer":"⚽ Fútbol","Basketball":"🏀 Basketball",
@@ -5916,7 +6028,7 @@ with tab_picks:
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
-            for r in sr_cur:
+            for r in sr_cur_filtrado:
                 g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
                 if g_state == "post": continue
                 sim = r["sim"]
@@ -5979,7 +6091,7 @@ with tab_picks:
             # (PICKS FUEGO removed — 1 per sport shown in grid above)
 
         # Avoid
-        avoid=[r for r in sr_cur if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
+        avoid=[r for r in sr_cur_filtrado if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
         avoid.sort(key=lambda x:x["sim"]["best_single"]["ev"])
         if avoid:
             st.markdown('<div class="section-heading">♦ Evitar</div>', unsafe_allow_html=True)
