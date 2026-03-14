@@ -22,24 +22,24 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Cinzel:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=SF+Pro+Display:wght@700;800&display=swap');
 
 :root {
   --gold:    #C9A84C;
-  --gold2:   #F0D080;
-  --felt:    #0D2818;
-  --felt2:   #0A1F12;
-  --felt3:   #071610;
-  --dark:    #060C08;
-  --card:    #0F1F14;
-  --card2:   #122318;
-  --border:  #1E3825;
-  --red:     #C0392B;
-  --green:   #27AE60;
-  --cyan:    #1ABC9C;
-  --text:    #D4C5A0;
-  --muted:   #6B7E6E;
-  --white:   #F5EDD8;
+  --gold2:   #E8B84B;
+  --felt:    #111111;
+  --felt2:   #0D0D0D;
+  --felt3:   #0A0A0A;
+  --dark:    #080808;
+  --card:    #161616;
+  --card2:   #1C1C1C;
+  --border:  #2A2A2A;
+  --red:     #EF4444;
+  --green:   #00C896;
+  --cyan:    #00C896;
+  --text:    #E8E8E8;
+  --muted:   #6B7280;
+  --white:   #FFFFFF;
 }
 
 * { box-sizing: border-box; }
@@ -61,102 +61,89 @@ st.markdown("""
 /* ── HEADER ── */
 .den-header {
   text-align: center;
-  padding: 2rem 0 1rem 0;
+  padding: 1.5rem 0 0.75rem 0;
   position: relative;
 }
 .den-logo {
-  font-family: 'Cinzel', serif;
-  font-size: 4.256rem;
-  font-weight: 900;
-  color: var(--gold);
-  letter-spacing: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: var(--gold2);
+  letter-spacing: 2px;
   text-transform: uppercase;
-  text-shadow: 0 0 40px rgba(201,168,76,0.5), 0 0 80px rgba(201,168,76,0.2);
   line-height: 1;
   margin: 0;
 }
 .den-subtitle {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.806rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
   color: var(--muted);
-  letter-spacing: 6px;
+  letter-spacing: 3px;
   text-transform: uppercase;
   margin-top: 6px;
 }
 .den-divider {
   width: 100%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  background: var(--border);
   margin: 1rem 0;
-  opacity: 0.5;
+  opacity: 0.8;
 }
 .den-corner {
   display: inline-block;
   color: var(--gold);
   opacity: 0.4;
-  font-size: 1.344rem;
-  margin: 0 12px;
+  font-size: 1.2rem;
+  margin: 0 10px;
 }
 
 /* ── METRIC TILES ── */
-.stat-grid { display: flex; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+.stat-grid { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
 .stat-tile {
   flex: 1; min-width: 100px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-top: 2px solid var(--gold);
-  border-radius: 4px;
-  padding: 14px 10px;
+  border-radius: 16px;
+  padding: 16px 12px;
   text-align: center;
 }
 .stat-num {
-  font-family: 'Cinzel', serif;
-  font-size: 2.24rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 2rem;
   font-weight: 700;
-  color: var(--gold);
+  color: var(--white);
   line-height: 1;
 }
 .stat-label {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.694rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.68rem;
   color: var(--muted);
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   text-transform: uppercase;
   margin-top: 4px;
 }
 
 /* ── PICK CARD (THE MAIN ATTRACTION) ── */
 .pick-card {
-  background: linear-gradient(145deg, #0F2A14 0%, #0A1E10 50%, #112615 100%);
-  border: 2px solid var(--gold);
-  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
   padding: 0;
-  margin: 14px 0;
+  margin: 12px 0;
   overflow: hidden;
-  box-shadow:
-    0 0 0 1px rgba(201,168,76,0.15),
-    0 0 40px rgba(201,168,76,0.18),
-    0 0 80px rgba(201,168,76,0.08),
-    inset 0 1px 0 rgba(201,168,76,0.25);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
   position: relative;
 }
 .pick-card::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent 0%, var(--gold) 20%, #FFE87C 50%, var(--gold) 80%, transparent 100%);
-  box-shadow: 0 0 12px rgba(240,208,128,0.8);
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold), var(--gold2), var(--gold));
 }
-.pick-card::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(201,168,76,0.4), transparent);
-}
+.pick-card::after { display: none; }
 .pick-header {
-  padding: 16px 20px 10px;
+  padding: 16px 18px 12px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
@@ -165,100 +152,96 @@ st.markdown("""
   gap: 8px;
 }
 .pick-matchup {
-  font-family: 'Playfair Display', serif;
-  font-size: 1.288rem;
-  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
   color: var(--white);
 }
 .pick-league-badge {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.762rem;
-  color: var(--gold);
-  letter-spacing: 2px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  color: var(--gold2);
+  letter-spacing: 1px;
   text-transform: uppercase;
-  background: rgba(201,168,76,0.1);
-  border: 1px solid rgba(201,168,76,0.3);
+  background: rgba(201,168,76,0.12);
+  border: 1px solid rgba(201,168,76,0.25);
   padding: 3px 10px;
   border-radius: 20px;
+  font-weight: 600;
 }
-.pick-body { padding: 16px 20px; }
+.pick-body { padding: 14px 18px; }
 
 .pick-action {
-  font-family: 'Cinzel', serif;
-  font-size: 2.128rem;
-  font-weight: 900;
-  color: #FFE87C;
-  text-shadow:
-    0 0 20px rgba(255,232,124,0.7),
-    0 0 40px rgba(201,168,76,0.4),
-    0 2px 4px rgba(0,0,0,0.8);
-  letter-spacing: 3px;
-  margin: 10px 0 6px 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--gold2);
+  letter-spacing: 0px;
+  margin: 8px 0 6px 0;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(201,168,76,0.2);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
 }
 .pick-action-arrow {
-  color: #FFE87C;
-  font-size: 2.24rem;
-  filter: drop-shadow(0 0 8px rgba(255,232,124,0.8));
+  color: var(--green);
+  font-size: 1.8rem;
   animation: pulse-arrow 2s ease-in-out infinite;
 }
 @keyframes pulse-arrow {
   0%, 100% { opacity: 1; transform: translateX(0); }
-  50% { opacity: 0.7; transform: translateX(4px); }
+  50% { opacity: 0.6; transform: translateX(3px); }
 }
 
 .market-chip {
   display: inline-block;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.762rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
   font-weight: 600;
-  letter-spacing: 1.5px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   padding: 3px 10px;
-  border-radius: 3px;
+  border-radius: 8px;
   margin-right: 4px;
 }
-.chip-ml     { background: rgba(29,78,216,0.25);  color: #60a5fa; border: 1px solid rgba(96,165,250,0.4); }
-.chip-btts   { background: rgba(21,128,61,0.22);  color: #4ade80; border: 1px solid rgba(74,222,128,0.4); }
-.chip-ou     { background: rgba(194,65,12,0.22);  color: #ff6a00; border: 1px solid rgba(255,106,0,0.4); }   /* OVER */
-.chip-ou-u   { background: rgba(91,33,182,0.22);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.4); } /* UNDER */
-.chip-combo  { background: rgba(146,64,14,0.25);  color: #f59e0b; border: 1px solid rgba(245,158,11,0.4); }  /* COMBO gold */
-.chip-dc     { background: rgba(76,29,149,0.22);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.4); }
-.chip-parlay { background: rgba(26,188,156,0.2);  color: #1ABC9C; border: 1px solid rgba(26,188,156,0.3); }
-.chip-warn   { background: rgba(192,57,43,0.2);   color: #e74c3c; border: 1px solid rgba(231,76,60,0.3); }
+.chip-ml     { background: rgba(96,165,250,0.15);   color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+.chip-btts   { background: rgba(0,200,150,0.15);    color: #00C896; border: 1px solid rgba(0,200,150,0.3); }
+.chip-ou     { background: rgba(251,146,60,0.15);   color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
+.chip-ou-u   { background: rgba(167,139,250,0.15);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
+.chip-combo  { background: rgba(201,168,76,0.15);   color: var(--gold2); border: 1px solid rgba(201,168,76,0.3); }
+.chip-dc     { background: rgba(167,139,250,0.15);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
+.chip-parlay { background: rgba(0,200,150,0.15);    color: #00C896; border: 1px solid rgba(0,200,150,0.3); }
+.chip-warn   { background: rgba(239,68,68,0.15);    color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
 
 .stats-row {
   display: flex;
-  gap: 20px;
+  gap: 16px;
   flex-wrap: wrap;
-  margin: 12px 0;
+  margin: 10px 0;
   padding: 12px 0;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 .stat-item { text-align: center; min-width: 70px; }
 .stat-item-val {
-  font-family: 'Cinzel', serif;
-  font-size: 1.456rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.3rem;
   font-weight: 700;
   line-height: 1;
 }
 .stat-item-lbl {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.672rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.64rem;
   color: var(--muted);
-  letter-spacing: 1.5px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   margin-top: 3px;
 }
 .val-gold   { color: var(--gold2); }
-.val-green  { color: #4ade80; }
-.val-cyan   { color: #1ABC9C; }
+.val-green  { color: #00C896; }
+.val-cyan   { color: #00C896; }
 .val-blue   { color: #60a5fa; }
 .val-purple { color: #a78bfa; }
 .val-red    { color: #ef4444; }
@@ -269,22 +252,22 @@ st.markdown("""
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.784rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   padding: 4px 12px;
   border-radius: 20px;
 }
-.conf-high   { background: rgba(39,174,96,0.15);  color: #4ade80; border: 1px solid rgba(74,222,128,0.4); }
-.conf-medium { background: rgba(201,168,76,0.15); color: var(--gold2); border: 1px solid rgba(201,168,76,0.4); }
-.conf-low    { background: rgba(192,57,43,0.15);  color: #ef4444; border: 1px solid rgba(231,76,60,0.4); }
+.conf-high   { background: rgba(0,200,150,0.15);  color: #00C896; border: 1px solid rgba(0,200,150,0.3); }
+.conf-medium { background: rgba(201,168,76,0.15); color: var(--gold2); border: 1px solid rgba(201,168,76,0.3); }
+.conf-low    { background: rgba(239,68,68,0.15);  color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
 
 /* pick rationale */
 .pick-rationale {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.918rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
   color: var(--muted);
   line-height: 1.7;
   margin-top: 10px;
@@ -293,16 +276,16 @@ st.markdown("""
 
 /* ── PARLAY CARD ── */
 .parlay-card {
-  background: linear-gradient(145deg, #061A14 0%, #091F1A 50%, #071815 100%);
-  border: 2px solid rgba(26,188,156,0.8);
-  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid rgba(0,200,150,0.35);
+  border-radius: 20px;
   padding: 0;
-  margin: 14px 0;
+  margin: 12px 0;
   overflow: hidden;
   box-shadow:
-    0 0 0 1px rgba(26,188,156,0.12),
-    0 0 40px rgba(26,188,156,0.20),
-    0 0 80px rgba(26,188,156,0.08);
+    0 0 0 1px rgba(0,200,150,0.12),
+    0 0 40px rgba(0,200,150,0.20),
+    0 0 80px rgba(0,200,150,0.08);
   position: relative;
 }
 .parlay-card::before {
@@ -310,64 +293,62 @@ st.markdown("""
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
-  background: linear-gradient(90deg, transparent, #1ABC9C, #7FFFD4, #1ABC9C, transparent);
-  box-shadow: 0 0 12px rgba(26,188,156,0.9);
+  background: linear-gradient(90deg, transparent, #00C896, transparent);
 }
 .parlay-header {
-  background: linear-gradient(90deg, rgba(26,188,156,0.15), rgba(26,188,156,0.05));
-  border-bottom: 1px solid rgba(26,188,156,0.25);
-  padding: 14px 20px;
-  font-family: 'Cinzel', serif;
-  font-size: 1.12rem;
-  color: #2EE8C0;
-  letter-spacing: 3px;
+  background: rgba(0,200,150,0.08);
+  border-bottom: 1px solid rgba(0,200,150,0.2);
+  padding: 14px 18px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #00C896;
+  letter-spacing: 1px;
   text-transform: uppercase;
-  text-shadow: 0 0 16px rgba(26,188,156,0.6);
 }
-.parlay-body { padding: 14px 16px; }
+.parlay-body { padding: 12px 16px; }
 .parlay-leg {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 0;
-  border-bottom: 1px solid rgba(26,188,156,0.1);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.918rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
   color: var(--text);
 }
 .parlay-leg:last-child { border-bottom: none; }
 .parlay-connector {
   text-align: center;
   color: var(--gold);
-  font-size: 0.784rem;
-  letter-spacing: 3px;
+  font-size: 0.72rem;
+  letter-spacing: 2px;
   padding: 2px 0;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 
 /* ── GAME LIST CARD ── */
 .game-row {
   background: var(--card);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--gold);
-  border-radius: 4px;
+  border-radius: 14px;
   padding: 12px 16px;
   margin: 6px 0;
   transition: border-color 0.2s;
 }
-.game-row:hover { border-left-color: var(--gold2); }
+.game-row:hover { border-color: rgba(201,168,76,0.4); }
 .game-row-ev {
-  border-left-color: #4ade80;
+  border-color: rgba(0,200,150,0.35);
 }
 .game-title {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 1.008rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--white);
 }
 .game-meta {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.806rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
   color: var(--muted);
   margin-top: 2px;
 }
@@ -375,18 +356,18 @@ st.markdown("""
 /* ── PROB BARS ── */
 .bar-wrap { margin: 4px 0; }
 .bar-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
-.bar-team { font-family: 'DM Sans',sans-serif; font-size: 0.806rem; color:var(--muted); }
-.bar-pct  { font-family: 'Cinzel',sans-serif; font-size: 0.806rem; font-weight:700; }
-.bar-bg   { background: rgba(255,255,255,0.05); border-radius:3px; height:6px; }
-.bar-fill { height:6px; border-radius:3px; }
+.bar-team { font-family: 'Inter',sans-serif; font-size: 0.78rem; color:var(--muted); }
+.bar-pct  { font-family: 'Inter',sans-serif; font-size: 0.78rem; font-weight:700; }
+.bar-bg   { background: rgba(255,255,255,0.06); border-radius:12px; height:5px; }
+.bar-fill { height:5px; border-radius:12px; }
 
 /* ── SECTION HEADING ── */
 .section-heading {
-  font-family: 'Cinzel', serif;
-  font-size: 1.12rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.85rem;
   font-weight: 700;
-  color: var(--gold);
-  letter-spacing: 4px;
+  color: var(--muted);
+  letter-spacing: 2px;
   text-transform: uppercase;
   margin: 20px 0 10px 0;
   display: flex;
@@ -397,57 +378,56 @@ st.markdown("""
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, var(--border), transparent);
+  background: var(--border);
 }
 
 /* ── WARNING BANNER ── */
 .warn-banner {
-  background: rgba(201,168,76,0.06);
-  border: 1px solid rgba(201,168,76,0.25);
-  border-radius: 4px;
-  padding: 8px 14px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.874rem;
-  color: #C9A84C;
+  background: rgba(201,168,76,0.08);
+  border: 1px solid rgba(201,168,76,0.2);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.84rem;
+  color: var(--gold2);
   margin: 8px 0;
 }
 .demo-banner {
-  background: rgba(192,57,43,0.08);
-  border: 1px solid rgba(192,57,43,0.3);
-  border-radius: 4px;
-  padding: 8px 14px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.874rem;
-  color: #e74c3c;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.84rem;
+  color: #ef4444;
   margin: 8px 0;
 }
 
 /* ── SIDEBAR ── */
 [data-testid="stSidebar"] {
-  background: var(--felt3) !important;
+  background: #0D0D0D !important;
   border-right: 1px solid var(--border) !important;
 }
 [data-testid="stSidebar"] .stMarkdown p,
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] .stSelectSlider span {
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: 'Inter', sans-serif !important;
   color: var(--text) !important;
 }
 .sidebar-logo {
-  font-family: 'Cinzel', serif;
-  font-size: 1.568rem;
-  font-weight: 900;
-  color: var(--gold);
-  letter-spacing: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--gold2);
+  letter-spacing: 1px;
   text-align: center;
   padding: 12px 0 4px;
-  text-shadow: 0 0 20px rgba(201,168,76,0.4);
 }
 .sidebar-sub {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.672rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.65rem;
   color: var(--muted);
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   text-transform: uppercase;
   text-align: center;
   margin-bottom: 8px;
@@ -455,83 +435,48 @@ st.markdown("""
 
 /* ── TABS ── */
 .stTabs [data-baseweb="tab-list"] {
-  background: var(--felt3) !important;
+  background: var(--dark) !important;
   border-bottom: 1px solid var(--border) !important;
   gap: 0 !important;
 }
 .stTabs [data-baseweb="tab"] {
-  font-family: 'Cinzel', serif !important;
-  font-size: 0.806rem !important;
-  letter-spacing: 2px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.78rem !important;
+  letter-spacing: 0.5px !important;
+  font-weight: 600 !important;
   color: var(--muted) !important;
   background: transparent !important;
   border: none !important;
-  padding: 10px 20px !important;
+  padding: 10px 18px !important;
 }
 .stTabs [aria-selected="true"] {
-  color: var(--gold) !important;
-  border-bottom: 2px solid var(--gold) !important;
+  color: var(--gold2) !important;
+  border-bottom: 2px solid var(--gold2) !important;
 }
 .stTabs [data-baseweb="tab-panel"] {
   background: var(--dark) !important;
-  padding-top: 16px !important;
+  padding-top: 14px !important;
 }
 
 /* ── BUTTON ── */
 .stButton > button {
-  background: linear-gradient(135deg, #8B6914 0%, var(--gold) 50%, #8B6914 100%) !important;
-  color: var(--dark) !important;
-  font-family: 'Cinzel', serif !important;
-  font-size: 1.008rem !important;
+  background: var(--gold2) !important;
+  color: #000000 !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.875rem !important;
   font-weight: 700 !important;
-  letter-spacing: 3px !important;
+  letter-spacing: 0.5px !important;
   text-transform: uppercase !important;
   border: none !important;
-  padding: 14px 32px !important;
-  border-radius: 3px !important;
+  padding: 12px 28px !important;
+  border-radius: 12px !important;
   width: 100% !important;
   cursor: pointer !important;
-  transition: all 0.2s !important;
-  box-shadow: 0 4px 20px rgba(201,168,76,0.3) !important;
+  transition: all 0.15s !important;
 }
 .stButton > button:hover {
   transform: translateY(-1px) !important;
-  box-shadow: 0 8px 30px rgba(201,168,76,0.5) !important;
-}
-
-/* ── Golden hamburger sidebar toggle ── */
-[data-testid="stSidebarCollapseButton"] {
-  background: linear-gradient(135deg, #8B6914, #C9A84C, #8B6914) !important;
-  border-radius: 6px !important;
-  border: 1px solid #C9A84C !important;
-  box-shadow: 0 2px 12px rgba(201,168,76,0.4) !important;
-  width: 36px !important;
-  height: 36px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-[data-testid="stSidebarCollapseButton"]:hover {
-  box-shadow: 0 4px 20px rgba(201,168,76,0.7) !important;
-  transform: scale(1.05) !important;
-}
-[data-testid="stSidebarCollapseButton"] svg {
-  stroke: #060C08 !important;
-  fill: #060C08 !important;
-  width: 18px !important;
-  height: 18px !important;
-}
-/* Also style the collapse button when sidebar is open */
-[data-testid="collapsedControl"] button,
-button[kind="header"] {
-  background: linear-gradient(135deg, #8B6914, #C9A84C) !important;
-  border: 1px solid #C9A84C88 !important;
-  border-radius: 6px !important;
-  box-shadow: 0 2px 10px rgba(201,168,76,0.35) !important;
-}
-[data-testid="collapsedControl"] button svg,
-button[kind="header"] svg {
-  stroke: #060C08 !important;
+  opacity: 0.9 !important;
 }
 
 /* ── NO RESULTS ── */
@@ -539,281 +484,256 @@ button[kind="header"] svg {
   text-align: center;
   padding: 48px 24px;
   color: var(--muted);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Inter', sans-serif;
 }
-.empty-icon { font-size: 3.36rem; margin-bottom: 12px; }
-.empty-title { font-family: 'Cinzel', serif; font-size: 1.12rem; color: var(--gold); letter-spacing: 2px; margin-bottom: 8px; }
+.empty-icon { font-size: 3rem; margin-bottom: 12px; }
+.empty-title { font-family: 'Inter', sans-serif; font-size: 1rem; font-weight: 700; color: var(--white); letter-spacing: 0.5px; margin-bottom: 8px; }
 
 hr { border-color: var(--border) !important; }
 
 /* ══════════════════════════════════════════════════
-   MOBILE RESPONSIVE — full rewrite for phones
-   Tested at 390px (iPhone 14), 360px (Android)
+   HAMBURGER BUTTON — reemplaza el toggle del sidebar
    ══════════════════════════════════════════════════ */
 
-/* ── Base mobile (≤ 768px tablets + phones) ── */
+/* El botón nativo de Streamlit para abrir sidebar */
+[data-testid="collapsedControl"] {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  height: 44px !important;
+  background: rgba(232,184,75,0.12) !important;
+  border: 1.5px solid rgba(232,184,75,0.5) !important;
+  border-radius: 12px !important;
+  cursor: pointer !important;
+  position: fixed !important;
+  top: 12px !important;
+  left: 12px !important;
+  z-index: 9999 !important;
+  transition: background 0.2s, border-color 0.2s !important;
+}
+[data-testid="collapsedControl"]:hover {
+  background: rgba(232,184,75,0.22) !important;
+  border-color: #E8B84B !important;
+}
+/* Ocultar el svg original, mostrar hamburger unicode */
+[data-testid="collapsedControl"] svg {
+  display: none !important;
+}
+[data-testid="collapsedControl"]::after {
+  content: '☰';
+  color: #E8B84B !important;
+  font-size: 1.3rem !important;
+  line-height: 1 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+/* Cuando el sidebar está abierto, ocultar el botón de cerrar interno */
+[data-testid="stSidebarCollapsedControl"] {
+  display: none !important;
+}
+
+/* ══════════════════════════════════════════════════
+   MOBILE — iPhone optimizado  (≤ 768 px)
+   ══════════════════════════════════════════════════ */
 @media (max-width: 768px) {
 
-  /* Global container */
+  /* ── Safe area / notch awareness ── */
+  .stApp {
+    padding-top: env(safe-area-inset-top) !important;
+    padding-bottom: env(safe-area-inset-bottom) !important;
+  }
+
+  /* ── Global container ── */
   .block-container {
-    padding-left: 6px !important;
-    padding-right: 6px !important;
-    padding-top: 4px !important;
-    padding-bottom: 60px !important;
-    max-width: 100vw !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    padding-top: 56px !important; /* espacio para hamburguesa */
+    max-width: 100% !important;
     overflow-x: hidden !important;
   }
 
-  /* Sidebar: full-width overlay on mobile */
+  /* ── Sidebar: ocupa casi toda la pantalla cuando abre ── */
   [data-testid="stSidebar"] {
     min-width: 85vw !important;
     max-width: 92vw !important;
-    z-index: 9999 !important;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.8) !important;
   }
-  [data-testid="stSidebar"] > div {
-    padding: 8px 12px !important;
-  }
-
-  /* Hamburger: bigger tap target */
-  [data-testid="stSidebarCollapseButton"] {
-    width: 44px !important;
-    height: 44px !important;
-    top: 8px !important;
-    left: 8px !important;
-    position: fixed !important;
-    z-index: 10000 !important;
+  /* Close button dentro del sidebar */
+  [data-testid="stSidebar"] button[data-testid="baseButton-headerNoPadding"] {
+    color: #E8B84B !important;
   }
 
-  /* Main header */
-  .den-header { padding: 12px 8px 8px !important; }
-  .den-logo { font-size: 1.4rem !important; letter-spacing: 3px !important; }
-  .den-subtitle { font-size: 0.55rem !important; letter-spacing: 1.5px !important; }
-  .den-corner { font-size: 1rem !important; margin: 0 4px !important; }
+  /* ── Main content siempre full width ── */
+  .main .block-container {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
 
-  /* TABS — scrollable horizontal strip */
+  /* ── Header ── */
+  .den-logo {
+    font-size: 1.6rem !important;
+    letter-spacing: 0px !important;
+  }
+  .den-subtitle {
+    font-size: 0.58rem !important;
+    letter-spacing: 1.5px !important;
+  }
+
+  /* ── TABS: scroll horizontal sin cortar palabras ── */
   .stTabs [data-baseweb="tab-list"] {
     overflow-x: auto !important;
     flex-wrap: nowrap !important;
     -webkit-overflow-scrolling: touch !important;
     scrollbar-width: none !important;
     padding-bottom: 2px !important;
-    gap: 0 !important;
-    border-bottom: 1px solid #1E3825 !important;
   }
   .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none !important; }
   .stTabs [data-baseweb="tab"] {
-    font-size: 0.58rem !important;
-    letter-spacing: 0.3px !important;
-    padding: 9px 8px !important;
+    font-size: 0.72rem !important;
+    padding: 9px 12px !important;
     white-space: nowrap !important;
+    letter-spacing: 0px !important;
     min-width: max-content !important;
   }
-  .stTabs [data-baseweb="tab-panel"] {
-    padding-top: 10px !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
+
+  /* ── Pick card ── */
+  .pick-card { margin: 8px 0 !important; }
+  .pick-header {
+    padding: 10px 12px !important;
+    flex-direction: column !important;
+    gap: 5px !important;
   }
-
-  /* Section headings */
-  .section-heading {
-    font-size: 0.78rem !important;
-    letter-spacing: 2px !important;
-    padding: 6px 0 !important;
+  .pick-matchup { font-size: 0.95rem !important; }
+  .pick-body { padding: 10px 12px !important; }
+  .pick-action {
+    font-size: 1.15rem !important;
+    letter-spacing: 0px !important;
+    gap: 8px !important;
+    padding: 8px 0 !important;
   }
+  .pick-action-arrow { font-size: 1.2rem !important; }
 
-  /* ── PICKS tab ── */
-  /* Sport tiles: 3 per row max, tiny */
-  [data-testid="column"] {
-    min-width: 0 !important;
-    overflow: hidden !important;
-    padding: 0 2px !important;
-  }
-
-  /* Game cards */
-  .game-row {
-    padding: 7px 8px !important;
-    margin: 3px 0 !important;
-    border-radius: 6px !important;
-  }
-  .game-title {
-    font-size: 0.80rem !important;
-    line-height: 1.2 !important;
-  }
-  .game-meta { font-size: 0.65rem !important; }
-
-  /* Oracle card inner elements */
-  div[style*="border-radius:8px"][style*="padding:10px 12px"] {
-    padding: 8px 8px !important;
-    margin: 3px 0 !important;
-    border-radius: 6px !important;
-  }
-
-  /* Win prob bars */
-  .bar-team { font-size: 0.63rem !important; }
-  .bar-pct  { font-size: 0.63rem !important; }
-
-  /* Pick badge text */
-  .market-chip  { font-size: 0.60rem !important; padding: 1px 5px !important; }
-  .conf-badge   { font-size: 0.62rem !important; padding: 2px 6px !important; }
-  .pick-rationale { font-size: 0.74rem !important; }
-
-  /* Value gap / H2H / weather panels: compact */
-  div[style*="rgba(201,168,76,0.06)"],
-  div[style*="rgba(96,165,250,0.05)"],
-  div[style*="rgba(147,197,253,0.05)"],
-  div[style*="rgba(251,191,36,0.05)"] {
-    padding: 3px 5px !important;
-    font-size: 0.60rem !important;
-  }
-
-  /* Prob bars */
-  .stats-row  { gap: 6px !important; }
-  .stat-item  { min-width: 48px !important; }
+  /* ── Stats ── */
+  .stats-row { gap: 8px !important; }
+  .stat-item { min-width: 52px !important; }
   .stat-item-val { font-size: 1rem !important; }
+  .stat-item-lbl { font-size: 0.58rem !important; }
 
-  /* ── PARLAYS tab ── */
-  .parlay-header {
-    font-size: 0.76rem !important;
-    padding: 8px 10px !important;
+  /* ── Stat tiles (bankroll) ── */
+  .stat-grid { gap: 6px !important; }
+  .stat-tile { padding: 10px 6px !important; border-radius: 12px !important; }
+  .stat-num { font-size: 1.3rem !important; }
+  .stat-label { font-size: 0.58rem !important; }
+
+  /* ── Game row ── */
+  .game-row { padding: 8px 10px !important; border-radius: 12px !important; }
+  .game-title { font-size: 0.82rem !important; }
+  .game-meta  { font-size: 0.68rem !important; }
+
+  /* ── Section heading ── */
+  .section-heading {
+    font-size: 0.72rem !important;
     letter-spacing: 1px !important;
-  }
-  .parlay-body  { padding: 8px 10px !important; }
-  .parlay-leg   { font-size: 0.74rem !important; padding: 5px 8px !important; }
-
-  /* Parlay stat tiles */
-  .stat-tile { min-width: 60px !important; padding: 8px 6px !important; }
-  .stat-num  { font-size: 1.2rem !important; }
-
-  /* ── EN VIVO tab ── */
-  /* Live cards: 1 per row on mobile (override 3-col grid) */
-  div[style*="display:grid"][style*="grid-template-columns:repeat(3"] {
-    grid-template-columns: 1fr !important;
-  }
-  div[style*="display:grid"][style*="grid-template-columns:repeat(2"] {
-    grid-template-columns: 1fr !important;
+    margin: 14px 0 8px !important;
   }
 
-  /* Expanders */
-  [data-testid="stExpander"] > details > summary,
-  .streamlit-expanderHeader,
-  [data-testid="stExpander"] summary {
+  /* ── Parlay card ── */
+  .parlay-card { margin: 8px 0 !important; }
+  .parlay-header {
     font-size: 0.78rem !important;
-    padding: 8px 10px !important;
-    letter-spacing: 0.3px !important;
+    padding: 10px 12px !important;
+    letter-spacing: 0.5px !important;
   }
+  .parlay-body { padding: 10px 12px !important; }
+  .parlay-leg  { font-size: 0.76rem !important; gap: 6px !important; }
 
-  /* ── RETO tab — SVG equity curve ── */
-  svg { max-width: 100% !important; height: auto !important; }
+  /* ── Probability bars ── */
+  .bar-team, .bar-pct { font-size: 0.68rem !important; }
+  .bar-bg, .bar-fill { height: 4px !important; }
 
   /* ── Buttons ── */
   .stButton > button {
-    font-size: 0.72rem !important;
-    padding: 9px 12px !important;
-    letter-spacing: 1.5px !important;
+    font-size: 0.78rem !important;
+    padding: 11px 16px !important;
+    letter-spacing: 0.3px !important;
+    border-radius: 12px !important;
   }
   [data-testid="stSidebar"] .stButton > button {
-    font-size: 0.68rem !important;
-    padding: 8px 10px !important;
-    letter-spacing: 1px !important;
+    font-size: 0.75rem !important;
+    padding: 9px 12px !important;
   }
 
-  /* ── Sidebar internals ── */
-  .sidebar-logo {
-    font-size: 1.1rem !important;
-    letter-spacing: 2px !important;
-    padding: 6px 0 2px !important;
+  /* ── Chips / badges ── */
+  .market-chip {
+    font-size: 0.6rem !important;
+    padding: 2px 6px !important;
+    border-radius: 6px !important;
   }
-  .sidebar-sub {
-    font-size: 0.52rem !important;
-    letter-spacing: 1.5px !important;
-    margin-bottom: 4px !important;
-  }
+  .conf-badge { font-size: 0.62rem !important; padding: 3px 8px !important; }
+  .pick-league-badge { font-size: 0.62rem !important; padding: 2px 8px !important; }
 
-  /* Selectboxes + sliders in sidebar */
-  [data-testid="stSidebar"] .stSelectSlider,
-  [data-testid="stSidebar"] .stMultiSelect,
-  [data-testid="stSidebar"] .stSelectbox {
-    font-size: 0.72rem !important;
-  }
+  /* ── Pick rationale ── */
+  .pick-rationale { font-size: 0.78rem !important; line-height: 1.6 !important; }
 
-  /* Debug panel results: tiny text */
-  [data-testid="stSidebar"] div[style*="font-size:0.72rem"] {
-    font-size: 0.62rem !important;
+  /* ── Expanders ── */
+  [data-testid="stExpander"] > details > summary {
+    font-size: 0.8rem !important;
+    padding: 9px 12px !important;
   }
 
   /* ── Banners ── */
   .warn-banner, .demo-banner {
-    font-size: 0.72rem !important;
-    padding: 5px 8px !important;
-    border-radius: 4px !important;
+    font-size: 0.75rem !important;
+    padding: 7px 10px !important;
+    border-radius: 10px !important;
   }
+
+  /* ── Sidebar logo ── */
+  .sidebar-logo { font-size: 1.1rem !important; }
+  .sidebar-sub  { font-size: 0.55rem !important; letter-spacing: 1.5px !important; }
 
   /* ── Empty state ── */
-  .empty-state  { padding: 24px 8px !important; }
-  .empty-icon   { font-size: 2rem !important; }
-  .empty-title  { font-size: 0.88rem !important; }
+  .empty-state { padding: 28px 10px !important; }
+  .empty-icon  { font-size: 2rem !important; }
+  .empty-title { font-size: 0.9rem !important; }
 
-  /* ── Sport tile emoji + label ── */
-  div[style*="text-align:center"][style*="border-radius:9px"] {
-    padding: 5px 2px !important;
-  }
-  div[style*="text-align:center"][style*="border-radius:9px"] > div:first-child {
-    font-size: 1.3rem !important;
-    line-height: 1 !important;
+  /* ── Columns: sin overflow ── */
+  [data-testid="column"] {
+    min-width: 0 !important;
+    overflow: hidden !important;
   }
 
-  /* Prevent any horizontal scroll from inline styles */
-  .stMarkdown, .element-container {
-    max-width: 100% !important;
-    overflow-x: hidden !important;
+  /* ── Texto general: nunca recortar con ellipsis ── */
+  * {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
   }
-  div[style] { max-width: 100% !important; box-sizing: border-box !important; }
+
+  /* ── Inputs nativos ── */
+  div[data-testid="stTextInput"] input,
+  div[data-testid="stNumberInput"] input {
+    font-size: 0.9rem !important;
+    padding: 9px 12px !important;
+    border-radius: 10px !important;
+  }
+
+  /* ── Live tiles ── */
+  div[style*="border-radius:16px"] {
+    border-radius: 12px !important;
+  }
 }
 
-/* ── Phone portrait ≤ 480px (iPhone SE, small Androids) ── */
-@media (max-width: 480px) {
-  .block-container {
-    padding-left: 4px !important;
-    padding-right: 4px !important;
-  }
-
+/* ── iPhone SE / teléfonos muy chicos (≤ 390 px) ── */
+@media (max-width: 390px) {
+  .den-logo { font-size: 1.35rem !important; }
   .stTabs [data-baseweb="tab"] {
-    font-size: 0.52rem !important;
-    padding: 8px 6px !important;
+    font-size: 0.64rem !important;
+    padding: 8px 9px !important;
   }
-
-  .den-logo     { font-size: 1.1rem !important; letter-spacing: 2px !important; }
-  .den-subtitle { font-size: 0.48rem !important; }
-
-  .game-title   { font-size: 0.74rem !important; }
-  .game-meta    { font-size: 0.60rem !important; }
-
-  .parlay-header { font-size: 0.68rem !important; }
-  .parlay-leg    { font-size: 0.68rem !important; }
-
+  .pick-action { font-size: 1rem !important; }
   .stat-item-val { font-size: 0.9rem !important; }
-  .stat-num      { font-size: 1.05rem !important; }
-
-  /* Sport tile: 2 per row feel by shrinking */
-  [data-testid="stSidebarCollapseButton"] {
-    width: 40px !important;
-    height: 40px !important;
-  }
-
-  /* Ensure all inline grids collapse to 1 col */
-  div[style*="display:grid"] {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-/* ── Very small ≤ 360px (older Androids) ── */
-@media (max-width: 360px) {
-  .stTabs [data-baseweb="tab"] {
-    font-size: 0.48rem !important;
-    padding: 7px 5px !important;
-  }
-  .den-logo { font-size: 0.95rem !important; }
-  .game-title { font-size: 0.68rem !important; }
+  .pick-matchup { font-size: 0.85rem !important; }
+  .stat-num { font-size: 1.1rem !important; }
 }
 
 /* ══════════════════════════════════════════════════
@@ -824,57 +744,57 @@ hr { border-color: var(--border) !important; }
 [data-testid="stExpander"] > details > summary,
 .streamlit-expanderHeader,
 [data-testid="stExpander"] summary {
-  background: #0d1f14 !important;
-  color: #C9A84C !important;
-  border: 1px solid rgba(201,168,76,0.25) !important;
-  border-radius: 6px !important;
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
   padding: 10px 16px !important;
-  font-family: 'DM Sans', sans-serif !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.5px !important;
-  transition: background 0.2s, border-color 0.2s !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2px !important;
+  transition: background 0.15s, border-color 0.15s !important;
 }
 [data-testid="stExpander"] > details[open] > summary,
 [data-testid="stExpander"] summary[aria-expanded="true"] {
-  border-radius: 6px 6px 0 0 !important;
-  border-bottom-color: rgba(201,168,76,0.15) !important;
-  background: #122218 !important;
+  border-radius: 12px 12px 0 0 !important;
+  border-bottom-color: var(--border) !important;
+  background: var(--card2) !important;
 }
 [data-testid="stExpander"] summary:hover {
-  background: #162b1c !important;
-  border-color: rgba(201,168,76,0.5) !important;
+  background: var(--card2) !important;
+  border-color: rgba(201,168,76,0.3) !important;
 }
 /* Expand arrow icon */
 [data-testid="stExpander"] summary svg {
-  fill: #C9A84C !important;
-  color: #C9A84C !important;
+  fill: var(--muted) !important;
+  color: var(--muted) !important;
 }
 /* Content area */
 [data-testid="stExpander"] > details > div,
 [data-testid="stExpander"] .streamlit-expanderContent {
-  background: #0a1a10 !important;
-  border: 1px solid rgba(201,168,76,0.15) !important;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
   border-top: none !important;
-  border-radius: 0 0 6px 6px !important;
+  border-radius: 0 0 12px 12px !important;
   padding: 12px 10px !important;
 }
-/* Nested expanders (date inside sport) */
+/* Nested expanders */
 [data-testid="stExpander"] [data-testid="stExpander"] > details > summary {
-  background: #0f2218 !important;
-  color: #E0F7F0 !important;
-  border-color: rgba(224,247,240,0.15) !important;
-  font-weight: 600 !important;
+  background: var(--card2) !important;
+  color: var(--text) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+  font-weight: 500 !important;
 }
 [data-testid="stExpander"] [data-testid="stExpander"] > details[open] > summary {
-  background: #132a1e !important;
+  background: #202020 !important;
 }
 [data-testid="stExpander"] [data-testid="stExpander"] summary:hover {
-  background: #1a3326 !important;
-  border-color: rgba(201,168,76,0.4) !important;
+  background: #242424 !important;
+  border-color: rgba(201,168,76,0.3) !important;
 }
 [data-testid="stExpander"] [data-testid="stExpander"] > details > div {
-  background: #0b1d13 !important;
-  border-color: rgba(224,247,240,0.08) !important;
+  background: #141414 !important;
+  border-color: rgba(255,255,255,0.05) !important;
 }
 /* Remove Streamlit's default white bg on expander wrapper */
 [data-testid="stExpander"] {
@@ -882,6 +802,86 @@ hr { border-color: var(--border) !important; }
   border: none !important;
   box-shadow: none !important;
 }
+
+/* ── STREAMLIT NATIVE WIDGET DARK THEME ── */
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input,
+div[data-testid="stTextArea"] textarea {
+  background: #1C1C1C !important;
+  border: 1px solid #2A2A2A !important;
+  border-radius: 12px !important;
+  color: #E8E8E8 !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.875rem !important;
+}
+div[data-testid="stTextInput"] input:focus,
+div[data-testid="stNumberInput"] input:focus,
+div[data-testid="stTextArea"] textarea:focus {
+  border-color: rgba(232,184,75,0.5) !important;
+  box-shadow: 0 0 0 2px rgba(232,184,75,0.1) !important;
+}
+div[data-testid="stSelectbox"] > div > div {
+  background: #1C1C1C !important;
+  border: 1px solid #2A2A2A !important;
+  border-radius: 12px !important;
+  color: #E8E8E8 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+div[data-testid="stSelectbox"] label,
+div[data-testid="stTextInput"] label,
+div[data-testid="stNumberInput"] label,
+div[data-testid="stTextArea"] label,
+div[data-testid="stSlider"] label,
+div[data-testid="stRadio"] label {
+  color: #E8B84B !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+}
+/* Slider */
+div[data-testid="stSlider"] [data-testid="stSlider"] {
+  color: #E8B84B !important;
+}
+/* Sidebar widget labels */
+[data-testid="stSidebar"] div[data-testid="stSelectbox"] label,
+[data-testid="stSidebar"] div[data-testid="stTextInput"] label,
+[data-testid="stSidebar"] div[data-testid="stNumberInput"] label,
+[data-testid="stSidebar"] div[data-testid="stSlider"] label,
+[data-testid="stSidebar"] div[data-testid="stRadio"] label {
+  color: #E8B84B !important;
+  font-family: 'Inter', sans-serif !important;
+}
+/* Multiselect */
+div[data-testid="stMultiSelect"] > div > div {
+  background: #1C1C1C !important;
+  border: 1px solid #2A2A2A !important;
+  border-radius: 12px !important;
+}
+/* Download button */
+.stDownloadButton > button {
+  background: #1C1C1C !important;
+  color: #E8B84B !important;
+  border: 1px solid rgba(232,184,75,0.3) !important;
+  border-radius: 12px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+}
+.stDownloadButton > button:hover {
+  background: rgba(232,184,75,0.1) !important;
+  border-color: rgba(232,184,75,0.6) !important;
+}
+/* Spinner */
+.stSpinner > div { border-top-color: #E8B84B !important; }
+/* Toast */
+.stToast { background: #1C1C1C !important; border: 1px solid #2A2A2A !important; border-radius: 12px !important; }
+/* Caption text */
+.stCaption, div[data-testid="stCaptionContainer"] p { color: #6B7280 !important; font-family: 'Inter', sans-serif !important; }
+/* Metric */
+div[data-testid="stMetric"] { background: #161616; border-radius: 16px; padding: 12px; border: 1px solid #2A2A2A; }
+div[data-testid="stMetricValue"] { color: #E8E8E8 !important; font-family: 'Inter', sans-serif !important; font-weight: 700 !important; }
+div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-family: 'Inter', sans-serif !important; }
+div[data-testid="stMetricDelta"] { font-family: 'Inter', sans-serif !important; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -2162,6 +2162,9 @@ def parse_games(data, league_name):
     _now_utc    = datetime.now(timezone.utc)
     _now_mx     = _now_utc - _td(hours=6)
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
+    _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
+    _tomorrow_cdmx  = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
+    _valid_dates = {_today_cdmx, _yesterday_cdmx, _tomorrow_cdmx}
 
     for event in data.get("events", []):
         try:
@@ -2171,7 +2174,7 @@ def parse_games(data, league_name):
                     _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
-                    if _ev_cdmx_date != _today_cdmx:
+                    if _ev_cdmx_date not in _valid_dates:
                         continue
                 except Exception:
                     pass
@@ -2721,7 +2724,7 @@ def get_value_gap(model_prob: float, ml_str: str) -> dict:
         gap_pct = round(gap_pp / (implied * 100) * 100, 1) # relative %
         if gap_pp >= 10:
             rating = "🔥 Fuerte"
-            color  = "#4ade80"
+            color  = "#00C896"
         elif gap_pp >= 5:
             rating = "✅ Bueno"
             color  = "#86efac"
@@ -3391,7 +3394,7 @@ def compute_consensus(game, sim):
     # Label
     if consensus_score >= 0.50:
         c_label = f"★ CONSENSO {n_for}/{total_active if total_active else 4}"
-        c_color = "#4ade80"
+        c_color = "#00C896"
     elif consensus_score >= 0.20:
         c_label = f"⚡ APOYO {n_for}/{total_active if total_active else 4}"
         c_color = "#60a5fa"
@@ -4134,7 +4137,7 @@ def run_all_simulations(games, n=10_000):
     results=[]; pb=st.progress(0); st_txt=st.empty()
     for i,game in enumerate(games):
         st_txt.markdown(
-            f'<div style="font-family:\'DM Sans\',sans-serif;font-size:0.896rem;color:#6B7E6E;">'
+            f'<div style="font-family:\'Inter\',sans-serif;font-size:0.896rem;color:#6B7280;">'
             f'⚙ Simulando [{i+1}/{len(games)}] — {game["away_team"]} @ {game["home_team"]}</div>',
             unsafe_allow_html=True)
         # Enrich with recent form before simulation (cached 30min)
@@ -4402,7 +4405,7 @@ def _pick_clr(market, label=""):
     if m == "ML":
         return "#1d4ed8", "#60a5fa", "ML",    "ML"
     if m == "BTTS":
-        return "#15803d", "#4ade80", "AA",    "AA"
+        return "#15803d", "#00C896", "AA",    "AA"
     if m in ("O/U","OU","OVER/UNDER"):
         if "over" in l:
             return "#c2410c", "#ff6a00", "OVER",  "OVER"
@@ -4421,7 +4424,7 @@ def _pick_chip_html(market, label="", size="0.66rem"):
     """Inline colored chip badge for any pick market."""
     pc, ac, _, dl = _pick_clr(market, label)
     return (f'<span style="background:{pc}28;color:{ac};border:1px solid {pc}66;'
-            f'border-radius:4px;padding:2px 9px;font-size:{size};font-weight:800;'
+            f'border-radius:12px;padding:2px 9px;font-size:{size};font-weight:800;'
             f'letter-spacing:0.5px;flex-shrink:0">{dl}</span>')
 
 
@@ -4490,11 +4493,11 @@ def render_pick_card(r, rank=None):
     live_html  = '<span class="market-chip chip-btts">🔴 EN VIVO</span>' if is_live else ""
     rank_html  = ""
     if rank:
-        rank_html = '<span style="font-family:Cinzel,serif;color:#6B7E6E;font-size:0.896rem">#' + str(rank) + '</span> '
+        rank_html = '<span style="font-family:Inter,sans-serif;color:#6B7280;font-size:0.896rem">#' + str(rank) + '</span> '
 
     score_html = ""
     if is_live and r.get("home_score") and r.get("away_score"):
-        score_html = (' <span style="color:#4ade80;font-weight:700">'
+        score_html = (' <span style="color:#00C896;font-weight:700">'
                       + str(r["away_score"]) + " - " + str(r["home_score"]) + "</span>")
 
     # Goals pills — bigger font, highlight best % with star
@@ -4518,7 +4521,7 @@ def render_pick_card(r, rank=None):
             is_best = lbl == best_pct_label
             if ev_v is not None:
                 ev_s = ("+" if ev_v >= 0 else "") + str(round(ev_v, 1))
-                c = "#4ade80" if ev_v > 0 else ("#C9A84C" if lbl == "O2.5" else "#6B7E6E")
+                c = "#00C896" if ev_v > 0 else ("#C9A84C" if lbl == "O2.5" else "#6B7E6E")
                 star = "⭐ " if is_best else ""
                 fw = "font-weight:700;" if is_best else ""
                 pills.append('<span style="color:' + c + ';font-size:0.986rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b> (EV ' + ev_s + ')</span>')
@@ -4552,16 +4555,16 @@ def render_pick_card(r, rank=None):
     def form_badge(f, team):
         if f is None: return ""
         pct = int(f * 100)
-        c = "#4ade80" if pct >= 60 else ("#C9A84C" if pct >= 40 else "#ef4444")
+        c = "#00C896" if pct >= 60 else ("#C9A84C" if pct >= 40 else "#ef4444")
         arrow = "▲" if pct >= 60 else ("▬" if pct >= 40 else "▼")
         return f'<span style="font-size:0.806rem;color:{c};margin-right:8px">{arrow} {team} {pct}% forma</span>'
     if hf is not None or af is not None:
         form_html = ('<div style="margin-top:5px;opacity:0.85">' +
                      form_badge(hf, r.get("home_team","Local")) +
                      form_badge(af, r.get("away_team","Visita")) +
-                     '<span style="font-size:0.728rem;color:#3a4a3e">· últimos 5 juegos</span></div>')
+                     '<span style="font-size:0.728rem;color:#444444">· últimos 5 juegos</span></div>')
     elif r.get("_form_unavailable"):
-        form_html = '<div style="margin-top:5px;opacity:0.5;font-size:0.728rem;color:#3a4a3e">📡 Forma reciente no disponible (ESPN sin historial para esta liga)</div>' 
+        form_html = '<div style="margin-top:5px;opacity:0.5;font-size:0.728rem;color:#444444">📡 Forma reciente no disponible (ESPN sin historial para esta liga)</div>' 
 
     # ── AI Sport Analyst (only for top picks to save API calls) ──────────────
     ai_html = ""
@@ -4580,11 +4583,11 @@ def render_pick_card(r, rank=None):
             '<div style="margin-top:10px;padding:10px 14px;'
             'background:rgba(201,168,76,0.06);border-left:3px solid rgba(201,168,76,0.5);'
             'border-radius:0 6px 6px 0">'
-            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.728rem;'
+            '<div style="font-family:\'Inter\',sans-serif;font-size:0.728rem;'
             'color:rgba(201,168,76,0.6);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px">'
             + sport_icon + ' Análisis ' + sport_group + ' · Claude</div>'
-            '<div style="font-family:\'DM Sans\',sans-serif;font-size:0.918rem;'
-            'color:#b8c8b0;line-height:1.65">' + ai_text + '</div>'
+            '<div style="font-family:\'Inter\',sans-serif;font-size:0.918rem;'
+            'color:#A0A0A0;line-height:1.65">' + ai_text + '</div>'
             '</div>'
         )
 
@@ -4678,7 +4681,7 @@ def render_pick_card(r, rank=None):
         # Color thresholds relative to league avg (not absolute) so NBA/NHL/MLB
         # and soccer all show green/amber/orange at meaningful deviation levels
         _rel = abs(delta) / max(0.1, lam_lg)
-        color = "#4ade80" if _rel < 0.05 else ("#f97316" if _rel > 0.15 else "#C9A84C")
+        color = "#00C896" if _rel < 0.05 else ("#f97316" if _rel > 0.15 else "#C9A84C")
         # Sport-specific unit and caveat
         sport_grp_d = LEAGUES.get(r.get("league",""), {}).get("group", "Soccer")
         unit = "pts" if sport_grp_d in ("Basketball","Football") else ("runs" if sport_grp_d == "Baseball" else "goles")
@@ -4703,12 +4706,12 @@ def render_pick_card(r, rank=None):
           '</div>'
           '<div class="pick-body">'
             '<div style="margin-bottom:4px">' + chip_html
-              + '<span style="color:#6B7E6E;font-size:0.806rem;margin-left:6px">' + status + '</span>'
+              + '<span style="color:#6B7280;font-size:0.806rem;margin-left:6px">' + status + '</span>'
             '</div>'
             '<div class="pick-action">'
               '<span class="pick-action-arrow">&#9658;</span>'
               ' <span>' + bs["label"] + '</span>'
-              ' <span style="font-size:1.12rem;color:#6B7E6E">' + ml_display + '</span>'
+              ' <span style="font-size:1.12rem;color:#6B7280">' + ml_display + '</span>'
             '</div>'
             '<div class="stats-row">'
               '<div class="stat-item">'
@@ -4753,32 +4756,32 @@ def render_parlay_card(r):
             matchup_part, pick_part = label.split(" · ", 1)
             leg_display = (
                 '<div style="display:flex;flex-direction:column;gap:2px;flex:1;margin-left:8px">'
-                '<span style="font-size:0.784rem;color:#6B7E6E;letter-spacing:1px">' + matchup_part + '</span>'
-                '<span style="font-family:\'Cinzel\',sans-serif;font-size:1.03rem;color:#E0F7F0">' + pick_part + '</span>'
+                '<span style="font-size:0.784rem;color:#6B7280;letter-spacing:1px">' + matchup_part + '</span>'
+                '<span style="font-family:\'Inter\',sans-serif;font-size:1.03rem;color:#E8E8E8">' + pick_part + '</span>'
                 '</div>'
             )
         else:
             leg_display = (
-                '<span style="font-family:\'Cinzel\',sans-serif;font-size:1.064rem;'
-                'color:#E0F7F0;margin-left:8px;flex:1">' + label + '</span>'
+                '<span style="font-family:\'Inter\',sans-serif;font-size:1.064rem;'
+                'color:#E8E8E8;margin-left:8px;flex:1">' + label + '</span>'
             )
-        ev_color = "#4ade80" if ev >= 10 else "#C9A84C"
+        ev_color = "#00C896" if ev >= 10 else "#C9A84C"
         legs_html += (
             '<div class="parlay-leg" style="align-items:flex-start">'
             + chip(mtype)
             + leg_display
             + '<div style="text-align:right;min-width:70px">'
-              '<div style="color:#2EE8C0;font-family:\'Cinzel\',serif;font-weight:700">' + str(round(prob*100,1)) + '%</div>'
+              '<div style="color:#00C896;font-family:\'Inter\',sans-serif;font-weight:700">' + str(round(prob*100,1)) + '%</div>'
               '<div style="font-size:0.762rem;color:' + ev_color + '">EV +' + str(round(ev,1)) + '</div>'
               '</div>'
             + '</div>'
         )
         if i < len(bp["legs"])-1:
-            legs_html += '<div class="parlay-connector" style="color:#1ABC9C;font-size:0.84rem;text-align:center;padding:4px 0;letter-spacing:3px">⊕ COMBINADA ⊕</div>'
+            legs_html += '<div class="parlay-connector" style="color:#00C896;font-size:0.84rem;text-align:center;padding:4px 0;letter-spacing:3px">⊕ COMBINADA ⊕</div>'
 
     parlay_type_badge = (
-        '<span style="font-size:0.728rem;color:#2EE8C0;letter-spacing:2px;'
-        'background:rgba(26,188,156,0.1);padding:2px 8px;border-radius:3px;margin-left:8px">'
+        '<span style="font-size:0.728rem;color:#00C896;letter-spacing:2px;'
+        'background:rgba(0,200,150,0.1);padding:2px 8px;border-radius:12px;margin-left:8px">'
         + ("INTER-PARTIDO" if is_inter else "COMBO") + '</span>'
     )
     dq_warn_html = ('<div class="warn-banner" style="margin-top:8px">'
@@ -4795,9 +4798,9 @@ def render_parlay_card(r):
           '<div class="parlay-body">'
             + legs_html
             + '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px;padding-top:12px;'
-              'border-top:1px solid rgba(26,188,156,0.2)">'
+              'border-top:1px solid rgba(0,200,150,0.2)">'
               '<div class="stat-item">'
-                '<div class="stat-item-val" style="color:#2EE8C0;font-size:1.568rem">' + str(round(bp["prob"]*100,1)) + '%</div>'
+                '<div class="stat-item-val" style="color:#00C896;font-size:1.568rem">' + str(round(bp["prob"]*100,1)) + '%</div>'
                 '<div class="stat-item-lbl">Prob. Combo</div>'
               '</div>'
               '<div class="stat-item">'
@@ -4918,11 +4921,11 @@ with st.sidebar:
                 _lines.append((_passes, _dlbl, _cdmx_d, _at, _ht, _st))
 
             _icon = "✅" if _pass > 0 else "❌"
-            _clr  = "#4ade80" if _pass > 0 else "#ef4444"
+            _clr  = "#00C896" if _pass > 0 else "#ef4444"
             _bg   = "rgba(74,222,128,0.06)" if _pass > 0 else "rgba(239,68,68,0.06)"
             _rows = ""
             for (_ok, _dl, _cd, _at2, _ht2, _st2) in sorted(_lines, key=lambda x: x[2]):
-                _rc = "#4ade80" if _ok else "#ef4444"
+                _rc = "#00C896" if _ok else "#ef4444"
                 _ok_str = "✓" if _ok else "✗"
                 _rows += (f'<div style="font-size:0.60rem;color:{_rc};padding-left:8px">'
                           f'{_ok_str} {_cd} CDMX · {_at2} @ {_ht2} · {_st2} · raw:{_dl}</div>')
@@ -4930,7 +4933,7 @@ with st.sidebar:
                 f'<div style="font-size:0.72rem;padding:4px 7px;margin:3px 0;'
                 f'background:{_bg};border-radius:5px;border-left:3px solid {_clr}">'
                 f'{_icon} <b>{_lname}</b>: {_pass} pasan filtro / {_pass+_fail} raw'
-                f'<br><span style="color:#6B7E6E;font-size:0.62rem">{_lcfg["league"]}</span>'
+                f'<br><span style="color:#6B7280;font-size:0.62rem">{_lcfg["league"]}</span>'
                 + _rows + '</div>',
                 unsafe_allow_html=True
             )
@@ -4983,7 +4986,7 @@ else:
     # Purge old days
     for _gid in [k for k, v in list(_cached_pre.items())]:
         try:
-            _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","").replace("Z","").replace("+00:00","")[:19]).replace("T"," "),
+            _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","")[:19]).replace("T"," "),
                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) - _td_cache(hours=6)).strftime("%Y-%m-%d")
             if _ev_cdmx != _today_cdmx_cache:
                 _cached_pre.pop(_gid, None)
@@ -5093,11 +5096,11 @@ pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_sing
 
 st.markdown(f"""<div class="stat-grid">
   <div class="stat-tile"><div class="stat-num">{len(games)}</div><div class="stat-label">Partidos</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#4ade80">{len(live_g)}</div><div class="stat-label">En Vivo</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len(live_g)}</div><div class="stat-label">En Vivo</div></div>
   <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
   <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#4ade80">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#1ABC9C">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
 </div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
@@ -5118,7 +5121,7 @@ if _tp_count_now > 0:
     _tp_leagues     = len({p.get("league","") for p in _tp_profiles_now.values()})
     st.markdown(
         f'<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
-        f'color:#4ade80;letter-spacing:1px">'
+        f'color:#00C896;letter-spacing:1px">'
         f'🧠 Memoria activa: <b>{_tp_count_now}</b> equipos · '
         f'<b>{_tp_total_games}</b> partidos · '
         f'<b>{_tp_leagues}</b> ligas</div>',
@@ -5134,7 +5137,7 @@ elif _tp_err_now:
 else:
     st.markdown(
         '<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
-        'color:#6B7E6E;letter-spacing:1px">'
+        'color:#6B7280;letter-spacing:1px">'
         '🧠 Memoria: aprendiendo... · <b>↓ Poblar Memoria</b> en el sidebar</div>',
         unsafe_allow_html=True
     )
@@ -5172,8 +5175,8 @@ if st.session_state.pop("run_populate", False):
     else:
         st.markdown("""
         <div style='background:rgba(201,168,76,0.08);border:1px solid #C9A84C;
-        border-radius:8px;padding:16px;margin-bottom:16px'>
-        <div style='font-family:Cinzel,serif;color:#C9A84C;font-size:1.12rem;
+        border-radius:12px;padding:16px;margin-bottom:16px'>
+        <div style='font-family:Inter,sans-serif;color:#C9A84C;font-size:1.12rem;
         font-weight:700;margin-bottom:8px'>🧠 POBLANDO MEMORIA DE EQUIPOS</div>
         <div style='font-size:0.84rem;color:#9ca3af'>
         Descargando historial de ESPN para todas las ligas y equipos.<br>
@@ -5242,9 +5245,9 @@ with tab_picks:
             finished_names = " · ".join(
                 f"{g['away_team']} @ {g['home_team']}" for g in finished_pick_games[:3]
             )
-            st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #4ade80;background:rgba(74,222,128,0.08)">
+            st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #00C896;background:rgba(74,222,128,0.08)">
                 ✅ <b>Pick(s) terminados:</b> {finished_names}<br>
-                <span style="color:#6B7E6E;font-size:0.896rem">{len(pending_games_picks)} partidos pendientes disponibles.</span>
+                <span style="color:#6B7280;font-size:0.896rem">{len(pending_games_picks)} partidos pendientes disponibles.</span>
             </div>''', unsafe_allow_html=True)
 
         # ── Botón manual ──────────────────────────────────────────────────────────
@@ -5280,8 +5283,8 @@ with tab_picks:
         n_live_p = len([g for g in games if g["state"]=="in"])
         n_pre_p  = len([g for g in games if g["state"]=="pre"])
         st.markdown(
-            f'<div style="font-size:0.806rem;color:#6B7E6E;margin-bottom:8px">' +
-            (f'<span style="color:#4ade80">⚡ {n_live_p} en vivo</span> · ' if n_live_p else "") +
+            f'<div style="font-size:0.806rem;color:#6B7280;margin-bottom:8px">' +
+            (f'<span style="color:#00C896">⚡ {n_live_p} en vivo</span> · ' if n_live_p else "") +
             f'{n_pre_p} próximos · {n_post_p} terminados</div>',
             unsafe_allow_html=True
         )
@@ -5444,30 +5447,30 @@ with tab_picks:
                     _n_psh = sum(1 for p in _ph_resolved if p["resultado"]=="push")
                     _n_tot = len(_ph_resolved)
                     _wr    = round(_n_gan/_n_tot*100, 1) if _n_tot else 0
-                    _wr_c  = "#4ade80" if _wr>=55 else ("#C9A84C" if _wr>=45 else "#ef4444")
+                    _wr_c  = "#00C896" if _wr>=55 else ("#C9A84C" if _wr>=45 else "#ef4444")
 
                     # ── Global stats tiles ────────────────────────────────────
                     st.markdown(
                         f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">'
                         f'<div style="flex:1;min-width:80px;background:rgba(74,222,128,0.10);'
-                        f'border:1px solid rgba(74,222,128,0.3);border-radius:8px;padding:10px;text-align:center">'
-                        f'<div style="font-size:1.68rem;font-weight:900;color:{_wr_c};font-family:Cinzel,serif">{_wr}%</div>'
-                        f'<div style="font-size:0.672rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase">Win Rate</div>'
+                        f'border:1px solid rgba(74,222,128,0.3);border-radius:12px;padding:10px;text-align:center">'
+                        f'<div style="font-size:1.68rem;font-weight:900;color:{_wr_c};font-family:Inter,sans-serif">{_wr}%</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7280;letter-spacing:1px;text-transform:uppercase">Win Rate</div>'
                         f'</div>'
                         f'<div style="flex:1;min-width:70px;background:rgba(74,222,128,0.07);'
-                        f'border:1px solid rgba(74,222,128,0.2);border-radius:8px;padding:10px;text-align:center">'
-                        f'<div style="font-size:1.456rem;font-weight:800;color:#4ade80">{_n_gan}</div>'
-                        f'<div style="font-size:0.672rem;color:#6B7E6E;text-transform:uppercase">✅ Ganados</div>'
+                        f'border:1px solid rgba(74,222,128,0.2);border-radius:12px;padding:10px;text-align:center">'
+                        f'<div style="font-size:1.456rem;font-weight:800;color:#00C896">{_n_gan}</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7280;text-transform:uppercase">✅ Ganados</div>'
                         f'</div>'
                         f'<div style="flex:1;min-width:70px;background:rgba(239,68,68,0.07);'
-                        f'border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:10px;text-align:center">'
+                        f'border:1px solid rgba(239,68,68,0.2);border-radius:12px;padding:10px;text-align:center">'
                         f'<div style="font-size:1.456rem;font-weight:800;color:#ef4444">{_n_per}</div>'
-                        f'<div style="font-size:0.672rem;color:#6B7E6E;text-transform:uppercase">❌ Perdidos</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7280;text-transform:uppercase">❌ Perdidos</div>'
                         f'</div>'
                         f'<div style="flex:1;min-width:70px;background:rgba(201,168,76,0.07);'
-                        f'border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;text-align:center">'
+                        f'border:1px solid rgba(201,168,76,0.2);border-radius:12px;padding:10px;text-align:center">'
                         f'<div style="font-size:1.456rem;font-weight:800;color:#C9A84C">{_n_psh}</div>'
-                        f'<div style="font-size:0.672rem;color:#6B7E6E;text-transform:uppercase">🔄 Push</div>'
+                        f'<div style="font-size:0.672rem;color:#6B7280;text-transform:uppercase">🔄 Push</div>'
                         f'</div>'
                         f'</div>',
                         unsafe_allow_html=True
@@ -5481,7 +5484,7 @@ with tab_picks:
                         _mkts[m][{"ganado":"gan","perdido":"per","push":"psh"}[p["resultado"]]] += 1
 
                     _mkt_color = None  # use _pick_clr()
-                    st.markdown('<div style="font-size:0.728rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Mercado</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:0.728rem;color:#6B7280;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Mercado</div>', unsafe_allow_html=True)
                     for _m, _mc in sorted(_mkts.items()):
                         _mt = _mc["gan"] + _mc["per"] + _mc["psh"]
                         _mwr = round(_mc["gan"]/_mt*100,1) if _mt else 0
@@ -5491,11 +5494,11 @@ with tab_picks:
                         st.markdown(
                             f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
                             f'<span style="background:{_mc_c}22;color:{_mc_c};border:1px solid {_mc_c}44;'
-                            f'border-radius:3px;padding:1px 7px;font-size:0.694rem;font-weight:800;min-width:48px;text-align:center">{_m}</span>'
-                            f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:6px;overflow:hidden">'
-                            f'<div style="width:{_bar_w}%;height:100%;background:{_mc_c};border-radius:4px"></div></div>'
+                            f'border-radius:12px;padding:1px 7px;font-size:0.694rem;font-weight:800;min-width:48px;text-align:center">{_m}</span>'
+                            f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:12px;height:6px;overflow:hidden">'
+                            f'<div style="width:{_bar_w}%;height:100%;background:{_mc_c};border-radius:12px"></div></div>'
                             f'<span style="font-size:0.784rem;font-weight:700;color:{_mc_c};min-width:38px;text-align:right">{_mwr}%</span>'
-                            f'<span style="font-size:0.65rem;color:#6B7E6E;min-width:60px">{_mc["gan"]}G {_mc["per"]}P {_mc["psh"]}X</span>'
+                            f'<span style="font-size:0.65rem;color:#6B7280;min-width:60px">{_mc["gan"]}G {_mc["per"]}P {_mc["psh"]}X</span>'
                             f'</div>',
                             unsafe_allow_html=True
                         )
@@ -5508,20 +5511,20 @@ with tab_picks:
                         _sgps[sg][{"ganado":"gan","perdido":"per","push":"psh"}[p["resultado"]]] += 1
 
                     _sg_ico = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
-                    st.markdown('<div style="font-size:0.728rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Deporte</div>', unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:0.728rem;color:#6B7280;letter-spacing:1.5px;text-transform:uppercase;margin:12px 0 6px 0">Por Deporte</div>', unsafe_allow_html=True)
                     for _sg, _sc in sorted(_sgps.items()):
                         _st = _sc["gan"] + _sc["per"] + _sc["psh"]
                         _swr = round(_sc["gan"]/_st*100,1) if _st else 0
-                        _sgc = "#4ade80" if _swr>=60 else ("#C9A84C" if _swr>=45 else "#ef4444")
+                        _sgc = "#00C896" if _swr>=60 else ("#C9A84C" if _swr>=45 else "#ef4444")
                         _ico = _sg_ico.get(_sg,"🎯")
                         st.markdown(
                             f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'
                             f'<span style="font-size:0.84rem;min-width:20px">{_ico}</span>'
-                            f'<span style="font-size:0.806rem;color:#E0F7F0;min-width:90px">{_sg}</span>'
-                            f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:6px;overflow:hidden">'
-                            f'<div style="width:{_swr}%;height:100%;background:{_sgc};border-radius:4px"></div></div>'
+                            f'<span style="font-size:0.806rem;color:#E8E8E8;min-width:90px">{_sg}</span>'
+                            f'<div style="flex:1;background:rgba(255,255,255,0.05);border-radius:12px;height:6px;overflow:hidden">'
+                            f'<div style="width:{_swr}%;height:100%;background:{_sgc};border-radius:12px"></div></div>'
                             f'<span style="font-size:0.784rem;font-weight:700;color:{_sgc};min-width:38px;text-align:right">{_swr}%</span>'
-                            f'<span style="font-size:0.65rem;color:#6B7E6E;min-width:60px">{_sc["gan"]}G {_sc["per"]}P {_sc["psh"]}X</span>'
+                            f'<span style="font-size:0.65rem;color:#6B7280;min-width:60px">{_sc["gan"]}G {_sc["per"]}P {_sc["psh"]}X</span>'
                             f'</div>',
                             unsafe_allow_html=True
                         )
@@ -5530,7 +5533,7 @@ with tab_picks:
 
                 # ── TABLA DE AUDITORÍA — todos los picks guardados ────────────
                 st.markdown(
-                    '<div style="font-size:0.728rem;color:#6B7E6E;letter-spacing:1.5px;'
+                    '<div style="font-size:0.728rem;color:#6B7280;letter-spacing:1.5px;'
                     'text-transform:uppercase;margin:16px 0 8px 0;border-top:1px solid '
                     'rgba(255,255,255,0.06);padding-top:12px">📋 Historial Completo — Auditoría</div>',
                     unsafe_allow_html=True
@@ -5546,7 +5549,7 @@ with tab_picks:
                     _audit_sorted = sorted(_ph_all, key=lambda x: x["fecha"], reverse=True)
 
                     _RES_COLOR = {
-                        "ganado":   ("#4ade80", "✅"),
+                        "ganado":   ("#00C896", "✅"),
                         "perdido":  ("#ef4444", "❌"),
                         "push":     ("#C9A84C", "🔄"),
                         "pendiente":("#6B7E6E", "⏳"),
@@ -5557,8 +5560,8 @@ with tab_picks:
                     # Table header
                     st.markdown(
                         '<div style="display:grid;grid-template-columns:90px 1fr 60px 60px 70px 70px;'
-                        'gap:4px;padding:4px 6px;background:rgba(255,255,255,0.04);border-radius:6px 6px 0 0;'
-                        'font-size:0.65rem;color:#6B7E6E;letter-spacing:1px;text-transform:uppercase;'
+                        'gap:4px;padding:4px 6px;background:rgba(255,255,255,0.04);border-radius:12px 6px 0 0;'
+                        'font-size:0.65rem;color:#6B7280;letter-spacing:1px;text-transform:uppercase;'
                         'border-bottom:1px solid rgba(255,255,255,0.08)">'
                         '<span>Fecha</span><span>Partido</span>'
                         '<span style="text-align:center">Mkt</span>'
@@ -5578,20 +5581,20 @@ with tab_picks:
                         _fecha = _ap["fecha"][:10]
                         _score = ""
                         if _ap.get("home_score") and _ap.get("away_score"):
-                            _score = f' <span style="color:#3a4a3e">({_ap["away_score"]}-{_ap["home_score"]})</span>'
+                            _score = f' <span style="color:#444444">({_ap["away_score"]}-{_ap["home_score"]})</span>'
                         _row_bg = "rgba(74,222,128,0.04)" if _res=="ganado" else                                   "rgba(239,68,68,0.04)"  if _res=="perdido" else                                   "rgba(255,255,255,0.02)"
                         st.markdown(
                             f'<div style="display:grid;grid-template-columns:90px 1fr 60px 60px 70px 70px;'
                             f'gap:4px;padding:5px 6px;background:{_row_bg};'
                             f'border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.762rem;align-items:center">'
-                            f'<span style="color:#6B7E6E;font-size:0.672rem">{_fecha}</span>'
+                            f'<span style="color:#6B7280;font-size:0.672rem">{_fecha}</span>'
                             f'<div>'
-                            f'<div style="color:#E0F7F0;font-size:0.784rem;white-space:nowrap;overflow:hidden;'
+                            f'<div style="color:#E8E8E8;font-size:0.784rem;white-space:nowrap;overflow:hidden;'
                             f'text-overflow:ellipsis;max-width:180px">{_ap["partido"]}</div>'
                             f'<div style="color:#FFE87C;font-size:0.694rem">{_ap["pick_label"]}{_score}</div>'
                             f'</div>'
                             f'<span style="text-align:center">'
-                            f'<span style="background:{_apc}28;color:{_aac};border:1px solid {_apc}66;border-radius:3px;padding:1px 5px;font-size:0.672rem;font-weight:800">{_adl}</span></span>'
+                            f'<span style="background:{_apc}28;color:{_aac};border:1px solid {_apc}66;border-radius:12px;padding:1px 5px;font-size:0.672rem;font-weight:800">{_adl}</span></span>'
                             f'<span style="text-align:center;font-size:0.84rem">{_sgi2}</span>'
                             f'<span style="text-align:center;color:#C9A84C;font-size:0.784rem;font-weight:700">'
                             f'{_ap["prob_pct"]:.0f}%</span>'
@@ -5609,17 +5612,17 @@ with tab_picks:
             st.markdown('<div class="warn-banner">No se encontraron picks. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
         else:
             # ── helpers ──────────────────────────────────────────────────────
-            _MKT_COLOR = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#4ade80","DO":"#a78bfa","COMBO":"#f59e0b"}
+            _MKT_COLOR = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#00C896","DO":"#a78bfa","COMBO":"#f59e0b"}
             _SPORT_ICON = {"Basketball":"🏀","Soccer":"⚽","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
             _CONF_LABEL = lambda p: ("🔥 ALTA" if p>=75 else ("⚡ MEDIA" if p>=55 else "🌡 BAJA"))
-            _CONF_COLOR = lambda p: ("#4ade80" if p>=75 else ("#C9A84C" if p>=55 else "#ef4444"))
+            _CONF_COLOR = lambda p: ("#00C896" if p>=75 else ("#C9A84C" if p>=55 else "#ef4444"))
 
             def _prob_bar_html(prob, color):
                 """Thin probability bar."""
                 return (
                     f'<div style="margin:6px 0 2px 0;background:rgba(255,255,255,0.06);'
-                    f'border-radius:4px;height:5px;overflow:hidden">'
-                    f'<div style="width:{prob:.0f}%;height:100%;border-radius:4px;'
+                    f'border-radius:12px;height:5px;overflow:hidden">'
+                    f'<div style="width:{prob:.0f}%;height:100%;border-radius:12px;'
                     f'background:linear-gradient(90deg,{color}88,{color});'
                     f'box-shadow:0 0 8px {color}66"></div></div>'
                     f'<div style="font-size:0.65rem;color:{color};text-align:right;'
@@ -5643,19 +5646,19 @@ with tab_picks:
                 # ── Card outer style — color drives the whole card ────────────
                 if is_fire:
                     # 🔥 FUEGO: naranja intenso siempre, override pick color
-                    card_bg   = f"background:linear-gradient(135deg,rgba(255,106,0,0.22) 0%,#0d1f1a 55%,{pc}18 100%)"
+                    card_bg   = f"background:linear-gradient(135deg,rgba(255,106,0,0.22) 0%,#141414 55%,{pc}18 100%)"
                     card_border = "border:1.5px solid rgba(255,106,0,0.7)"
                     card_shadow = "box-shadow:0 0 28px rgba(255,106,0,0.28),inset 0 1px 0 rgba(255,106,0,0.18)"
                     stripe_c  = "#ff6a00"
                     title_size = "0.95rem"; label_size = "1.0rem"
                 elif is_diamond:
-                    card_bg   = f"background:linear-gradient(135deg,{pc}44 0%,#0d1f1a 60%,{ac}18 100%)"
+                    card_bg   = f"background:linear-gradient(135deg,{pc}44 0%,#141414 60%,{ac}18 100%)"
                     card_border = f"border:1.5px solid {pc}99"
                     card_shadow = f"box-shadow:0 0 26px {pc}33,inset 0 1px 0 {pc}22"
                     stripe_c  = ac
                     title_size = "1.05rem"; label_size = "1.1rem"
                 else:
-                    card_bg   = f"background:linear-gradient(135deg,{pc}20 0%,#0a1a16 100%)"
+                    card_bg   = f"background:linear-gradient(135deg,{pc}20 0%,#141414 100%)"
                     card_border = f"border:1px solid {pc}55"
                     card_shadow = f"box-shadow:0 0 14px {pc}18"
                     stripe_c  = ac
@@ -5666,23 +5669,23 @@ with tab_picks:
                 _low_conf = r.get("sim",{}).get("low_confidence", False)
                 _lc_badge = (
                     '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b55;'
-                    'border-radius:3px;padding:1px 7px;font-size:0.65rem;font-weight:700;'
+                    'border-radius:12px;padding:1px 7px;font-size:0.65rem;font-weight:700;'
                     'letter-spacing:1px;margin-right:6px">⚠ SIN CUOTAS</span>' if _low_conf else ""
                 )
                 _fire_inline = (
                     '<span style="background:rgba(255,106,0,0.2);color:#ff6a00;'
-                    'border:1px solid rgba(255,106,0,0.55);border-radius:3px;'
+                    'border:1px solid rgba(255,106,0,0.55);border-radius:12px;'
                     'padding:1px 7px;font-size:0.65rem;font-weight:900;'
                     'letter-spacing:1px;margin-right:6px">🔥 FUEGO</span>'
                 ) if is_fire else ""
                 rank_badge = (
                     f'<span style="background:{pc}22;color:{ac};border:1px solid {pc}55;'
-                    f'border-radius:3px;padding:1px 7px;font-size:0.65rem;font-weight:700;'
+                    f'border-radius:12px;padding:1px 7px;font-size:0.65rem;font-weight:700;'
                     f'letter-spacing:1px;margin-right:8px">#{rank+1}</span>' if not is_diamond and not is_fire else ""
                 ) + _fire_inline + _lc_badge
 
                 top_stripe = (
-                    f'<div style="height:3px;border-radius:8px 8px 0 0;margin:-14px -14px 10px -14px;'
+                    f'<div style="height:3px;border-radius:12px 8px 0 0;margin:-14px -14px 10px -14px;'
                     f'background:linear-gradient(90deg,transparent,{stripe_c},{stripe_c}aa,transparent);'
                     f'box-shadow:0 0 12px {stripe_c}88"></div>' if (is_diamond or is_fire) else ""
                 )
@@ -5692,18 +5695,18 @@ with tab_picks:
                 type_label  = type_labels.get(type_key, tp["market"])
 
                 return (
-                    f'<div style="border-radius:10px;padding:14px;margin:8px 0;{outer}">'
+                    f'<div style="border-radius:16px;padding:14px;margin:8px 0;{outer}">'
                     + top_stripe +
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
                     f'<div style="min-width:0;flex:1">'
-                    f'<div style="font-size:0.694rem;color:#6B7E6E;letter-spacing:1.5px;'
+                    f'<div style="font-size:0.694rem;color:#6B7280;letter-spacing:1.5px;'
                     f'text-transform:uppercase;margin-bottom:3px">{rank_badge}{league_label(r["league"])}</div>'
-                    f'<div style="font-size:{title_size};font-weight:700;color:#E0F7F0;line-height:1.3">'
-                    f'{r["away_team"]} <span style="color:#3a4a3e;font-weight:400">vs</span> {r["home_team"]}</div>'
+                    f'<div style="font-size:{title_size};font-weight:700;color:#E8E8E8;line-height:1.3">'
+                    f'{r["away_team"]} <span style="color:#444444;font-weight:400">vs</span> {r["home_team"]}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
                     f'<div style="font-size:1.288rem;font-weight:900;color:{ac};'
-                    f'text-shadow:0 0 12px {ac}88;font-family:Cinzel,serif">EV {ev_s}</div>'
+                    f'text-shadow:0 0 12px {ac}88;font-family:Inter,sans-serif">EV {ev_s}</div>'
                     f'<div style="font-size:0.672rem;color:{conf_c};font-weight:700">{conf_lbl}</div>'
                     f'</div>'
                     f'</div>'
@@ -5712,7 +5715,7 @@ with tab_picks:
                     f'border-radius:5px;padding:3px 10px;font-size:0.784rem;font-weight:800;'
                     f'letter-spacing:1.5px">{icon} {type_label}</span>'
                     f'<span style="font-size:{label_size};font-weight:700;color:#FFE87C;'
-                    f'font-family:Cinzel,serif;letter-spacing:0.5px">{tp["label"]}</span>'
+                    f'font-family:Inter,sans-serif;letter-spacing:0.5px">{tp["label"]}</span>'
                     f'</div>'
                     + _prob_bar_html(prob, ac) +
                     f'</div>'
@@ -5744,12 +5747,12 @@ with tab_picks:
                         _sg_label = _sport_labels.get(LEAGUES.get(_rp["league"],{}).get("group","Soccer"), "")
                         _fire_badge = (
                             '<span style="display:inline-block;background:rgba(255,100,0,0.18);'
-                            'color:#ff6a00;border:1px solid rgba(255,106,0,0.5);border-radius:4px;'
+                            'color:#ff6a00;border:1px solid rgba(255,106,0,0.5);border-radius:12px;'
                             'padding:1px 7px;font-size:0.672rem;font-weight:900;margin-left:6px;'
                             'vertical-align:middle">🔥 TOP</span>'
                         ) if _is_fire else ""
                         st.markdown(
-                            f'<div style="font-size:0.672rem;color:#6B7E6E;letter-spacing:1.5px;'
+                            f'<div style="font-size:0.672rem;color:#6B7280;letter-spacing:1.5px;'
                             f'text-transform:uppercase;margin-bottom:4px">{_sg_label}{_fire_badge}</div>',
                             unsafe_allow_html=True
                         )
@@ -5781,33 +5784,33 @@ with tab_picks:
                 _gpc, _mc_gl, _, _ = _pick_clr(_gl["market"], _gl.get("label",""))
                 _comb_ev = _do["ev"] + _gl["ev"]
                 st.markdown(
-                    f'<div style="border-radius:10px;padding:14px;margin:8px 0;'
-                    f'background:linear-gradient(135deg,rgba(167,139,250,0.12) 0%,#0a1a16 60%,rgba(74,222,128,0.08) 100%);'
+                    f'<div style="border-radius:16px;padding:14px;margin:8px 0;'
+                    f'background:linear-gradient(135deg,rgba(167,139,250,0.12) 0%,#141414 60%,rgba(74,222,128,0.08) 100%);'
                     f'border:1px solid rgba(167,139,250,0.5);'
                     f'box-shadow:0 0 20px rgba(167,139,250,0.15)">'
-                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-14px -14px 12px -14px;'
-                    f'background:linear-gradient(90deg,transparent,#a78bfa,#4ade80,transparent)"></div>'
+                    f'<div style="height:2px;border-radius:12px 8px 0 0;margin:-14px -14px 12px -14px;'
+                    f'background:linear-gradient(90deg,transparent,#a78bfa,#00C896,transparent)"></div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
                     f'<div>'
-                    f'<div style="font-size:0.694rem;color:#6B7E6E;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">'
+                    f'<div style="font-size:0.694rem;color:#6B7280;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">'
                     f'🎯 PARLAY · {league_label(_g["league"])}</div>'
-                    f'<div style="font-size:1.064rem;font-weight:700;color:#E0F7F0">'
+                    f'<div style="font-size:1.064rem;font-weight:700;color:#E8E8E8">'
                     f'{_g["away_team"]} vs {_g["home_team"]}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.232rem;font-weight:900;color:#a78bfa;font-family:Cinzel,serif">'
+                    f'<div style="font-size:1.232rem;font-weight:900;color:#a78bfa;font-family:Inter,sans-serif">'
                     f'EV +{_comb_ev:.1f}</div>'
-                    f'<div style="font-size:0.65rem;color:#6B7E6E">combinado</div>'
+                    f'<div style="font-size:0.65rem;color:#6B7280">combinado</div>'
                     f'</div>'
                     f'</div>'
                     f'<div style="margin-top:10px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
                     f'<span style="background:{_mc_do}22;color:{_mc_do};border:1px solid {_mc_do}55;'
                     f'border-radius:5px;padding:3px 9px;font-size:0.762rem;font-weight:800">DO</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.918rem">{_do["label"]}</span>'
-                    f'<span style="color:#3a4a3e;font-size:1.12rem;margin:0 2px">✕</span>'
+                    f'<span style="color:#E8E8E8;font-size:0.918rem">{_do["label"]}</span>'
+                    f'<span style="color:#444444;font-size:1.12rem;margin:0 2px">✕</span>'
                     f'<span style="background:{_mc_gl}22;color:{_mc_gl};border:1px solid {_mc_gl}55;'
                     f'border-radius:5px;padding:3px 9px;font-size:0.762rem;font-weight:800">{_gl["market"]}</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.918rem">{_gl["label"]}</span>'
+                    f'<span style="color:#E8E8E8;font-size:0.918rem">{_gl["label"]}</span>'
                     f'</div>'
                     f'<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">'
                     f'<span style="font-size:0.694rem;color:{_mc_do}">DO EV +{_do["ev"]:.1f} · {_do.get("prob",0):.0f}%</span>'
@@ -5832,7 +5835,7 @@ with tab_picks:
         today_str=datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
         total_sims=len(sr_cur)*sr_cur[0]["sim"]["n_simulations"] if sr_cur else 0
         _src = "DEMO" if is_demo else "ESPN Live"
-        st.markdown(f'<div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:0.806rem;color:#3a4a3e">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.806rem;color:#444444">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_sim:
     # ══════════════════════════════════════════════════════════════════════════
@@ -5845,7 +5848,7 @@ with tab_sim:
 
     _SPORT_META_P = {
         "Basketball": {"emoji":"🏀","color":"#f97316","accent":"rgba(249,115,22,0.12)"},
-        "Soccer":     {"emoji":"⚽","color":"#4ade80","accent":"rgba(74,222,128,0.10)"},
+        "Soccer":     {"emoji":"⚽","color":"#00C896","accent":"rgba(74,222,128,0.10)"},
         "Hockey":     {"emoji":"🏒","color":"#60a5fa","accent":"rgba(96,165,250,0.12)"},
         "Baseball":   {"emoji":"⚾","color":"#ef4444","accent":"rgba(239,68,68,0.10)"},
         "Football":   {"emoji":"🏈","color":"#a78bfa","accent":"rgba(167,139,250,0.10)"},
@@ -5857,7 +5860,7 @@ with tab_sim:
     _d2_mx_p    = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
 
     def _mx_date_p(g):
-        raw = (g.get("date") or "").replace("Z","").replace("+00:00","")
+        raw = g.get("date") or ""
         if not raw: return _today_mx_p
         try:
             from datetime import timezone as _tzp
@@ -5866,7 +5869,7 @@ with tab_sim:
         except: return raw[:10]
 
     def _mx_time_p(g):
-        raw = (g.get("date") or "").replace("Z","").replace("+00:00","")
+        raw = g.get("date") or ""
         if not raw: return ""
         try:
             from datetime import timezone as _tzp
@@ -5900,8 +5903,8 @@ with tab_sim:
                 _ph = (
                     f'<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
                     f'<span style="background:{_mc2_pc}28;color:{_mc2_ac};border:1px solid {_mc2_pc}66;'
-                    f'border-radius:3px;padding:0 6px;font-size:0.627rem;font-weight:800">{_mc2_dl}</span>'
-                    f'<span style="color:#E0F7F0;font-size:0.728rem;min-width:0;overflow:hidden;'
+                    f'border-radius:12px;padding:0 6px;font-size:0.627rem;font-weight:800">{_mc2_dl}</span>'
+                    f'<span style="color:#E8E8E8;font-size:0.728rem;min-width:0;overflow:hidden;'
                     f'text-overflow:ellipsis;white-space:nowrap">{_bs.get("label","")}</span>'
                     f'<span style="color:{_mc2_ac};font-size:0.65rem;margin-left:auto;flex-shrink:0">'
                     f'EV {_ev2s}</span>'
@@ -5912,9 +5915,9 @@ with tab_sim:
             f'background:{sm["accent"]};border-left:2px solid {sm["color"]}66;overflow:hidden">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">'
             f'<div style="min-width:0;overflow:hidden;flex:1">'
-            f'<div style="font-size:0.806rem;font-weight:700;color:#E0F7F0;'
+            f'<div style="font-size:0.806rem;font-weight:700;color:#E8E8E8;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{g["away_team"]}</div>'
-            f'<div style="font-size:0.694rem;color:#6B7E6E;'
+            f'<div style="font-size:0.694rem;color:#6B7280;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@ {g["home_team"]}</div>'
             f'</div>'
             f'<div style="flex-shrink:0;padding-left:4px">{_time_html}</div>'
@@ -5924,14 +5927,9 @@ with tab_sim:
         )
 
     # Build tree — pre + live games, by sport → date → league
-    # Soccer: ESPN sometimes marks games as "post" before we process them OR
-    # returns yesterday's finished games. Filter post only when score is final.
     _tree_p = {}
     for _g in games:
-        _gstate = _g.get("state", "pre")
-        # Skip only truly finished games (post) — keep pre and in (live)
-        if _gstate == "post":
-            continue
+        if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
         if _gd != _today_mx_p: continue
@@ -5960,7 +5958,7 @@ with tab_sim:
         st.markdown('<div class="warn-banner">No hay partidos próximos. Pulsa ▶ ANALIZAR para cargar datos.</div>', unsafe_allow_html=True)
     else:
         st.markdown(
-            f'<div style="font-size:0.762rem;color:#6B7E6E;margin-bottom:10px">'
+            f'<div style="font-size:0.762rem;color:#6B7280;margin-bottom:10px">'
             f'{_total_p} partidos · {len(_sports_p)} deportes · hora CDMX</div>',
             unsafe_allow_html=True
         )
@@ -5985,7 +5983,7 @@ with tab_sim:
                     f'<div style="font-size:1.8rem;line-height:1">{_smp["emoji"]}</div>'
                     f'<div style="font-size:0.68rem;font-weight:700;color:{_smp["color"]};'
                     f'letter-spacing:0.5px;text-transform:uppercase;margin-top:4px">{_sp_p}</div>'
-                    f'<div style="font-size:0.62rem;color:#6B7E6E;margin-top:2px">{_n_p} juegos</div>'
+                    f'<div style="font-size:0.62rem;color:#6B7280;margin-top:2px">{_n_p} juegos</div>'
                     f'{_ev_badge}'
                     f'</div>',
                     unsafe_allow_html=True
@@ -6098,7 +6096,7 @@ with tab_sim:
             parts.append(
                 '<div style="margin-top:5px;padding:4px 6px;background:rgba(201,168,76,0.06);'
                 'border:1px solid rgba(201,168,76,0.15);border-radius:5px">'
-                '<div style="font-size:0.60rem;color:#6B7E6E;margin-bottom:2px">📊 VALUE GAP vs Mercado</div>'
+                '<div style="font-size:0.60rem;color:#6B7280;margin-bottom:2px">📊 VALUE GAP vs Mercado</div>'
                 + '<br>'.join(_vg_parts) + '</div>'
             )
 
@@ -6115,25 +6113,25 @@ with tab_sim:
             _l5   = _h2h.get("last5", [])
             _l5_html = "".join(
                 f'<span style="display:inline-block;width:16px;height:16px;line-height:16px;'
-                f'text-align:center;border-radius:3px;font-size:0.60rem;font-weight:700;margin-right:2px;'
+                f'text-align:center;border-radius:12px;font-size:0.60rem;font-weight:700;margin-right:2px;'
                 f'background:{"#15803d" if r=="W" else ("#7f1d1d" if r=="L" else "#1e3a5f")};'
-                f'color:{"#4ade80" if r=="W" else ("#f87171" if r=="L" else "#93c5fd")}">{r}</span>'
+                f'color:{"#00C896" if r=="W" else ("#f87171" if r=="L" else "#93c5fd")}">{r}</span>'
                 for r in _l5
             )
             parts.append(
                 f'<div style="margin-top:5px;padding:4px 6px;background:rgba(96,165,250,0.05);'
                 f'border:1px solid rgba(96,165,250,0.12);border-radius:5px">'
-                f'<div style="font-size:0.60rem;color:#6B7E6E;margin-bottom:3px">⚔️ H2H últimos {_cnt} enfrentamientos</div>'
+                f'<div style="font-size:0.60rem;color:#6B7280;margin-bottom:3px">⚔️ H2H últimos {_cnt} enfrentamientos</div>'
                 f'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
                 f'<span style="font-size:0.68rem;color:#f97316;font-weight:700">{g["home_team"][:9]}: {_wh}V</span>'
                 f'<span style="font-size:0.68rem;color:#a78bfa">{_dr}E</span>'
                 f'<span style="font-size:0.68rem;color:#60a5fa;font-weight:700">{g["away_team"][:9]}: {_wa}V</span>'
                 f'<span style="font-size:0.65rem;color:#C9A84C">avg {_avg:.1f}gls</span>'
-                f'<span style="font-size:0.65rem;color:#4ade80">BTTS {_btts}%</span>'
+                f'<span style="font-size:0.65rem;color:#00C896">BTTS {_btts}%</span>'
                 f'<span style="font-size:0.65rem;color:#ff6a00">O2.5 {_o25}%</span>'
                 f'</div>'
                 f'<div style="margin-top:3px">{_l5_html}'
-                f'<span style="font-size:0.60rem;color:#3a4a3e;margin-left:4px">← últimos</span></div>'
+                f'<span style="font-size:0.60rem;color:#444444;margin-left:4px">← últimos</span></div>'
                 f'</div>'
             )
 
@@ -6146,7 +6144,7 @@ with tab_sim:
             parts.append(
                 f'<div style="margin-top:5px;padding:4px 6px;background:rgba(147,197,253,0.05);'
                 f'border:1px solid rgba(147,197,253,0.12);border-radius:5px">'
-                f'<div style="font-size:0.60rem;color:#6B7E6E;margin-bottom:1px">🌤 Clima · {_wx.get("desc","")}</div>'
+                f'<div style="font-size:0.60rem;color:#6B7280;margin-bottom:1px">🌤 Clima · {_wx.get("desc","")}</div>'
                 f'<div style="font-size:0.68rem;color:#93c5fd">{_impact}'
                 f'{"  ·  " if _adj_str else ""}'
                 f'<span style="color:#C9A84C">{_adj_str}</span></div>'
@@ -6161,10 +6159,10 @@ with tab_sim:
             _dir    = _lm.get("direction", "neutral")
             _lm_parts = []
             if _ou_d is not None and _ou_d != 0:
-                _oc = "#ef4444" if _ou_d < 0 else "#4ade80"
+                _oc = "#ef4444" if _ou_d < 0 else "#00C896"
                 _lm_parts.append(f'<span style="color:{_oc}">O/U {_ou_d:+.1f}</span>')
             if _hml_d is not None and abs(_hml_d) >= 5:
-                _mc = "#ef4444" if _hml_d < 0 else "#4ade80"
+                _mc = "#ef4444" if _hml_d < 0 else "#00C896"
                 _steam = "🔥 STEAM" if abs(_hml_d) >= 15 else "↗"
                 _lm_parts.append(f'<span style="color:{_mc}">ML {_hml_d:+.0f} {_steam}</span>')
             if _lm_parts:
@@ -6172,9 +6170,9 @@ with tab_sim:
                     f'<div style="margin-top:5px;padding:3px 6px;background:rgba(251,191,36,0.05);'
                     f'border:1px solid rgba(251,191,36,0.15);border-radius:5px;'
                     f'display:flex;gap:10px;align-items:center">'
-                    f'<span style="font-size:0.60rem;color:#6B7E6E">📈 Línea</span>'
+                    f'<span style="font-size:0.60rem;color:#6B7280">📈 Línea</span>'
                     + "  ".join(_lm_parts) +
-                    f'<span style="font-size:0.60rem;color:#3a4a3e;margin-left:auto">{_lm["n_snaps"]} snaps</span>'
+                    f'<span style="font-size:0.60rem;color:#444444;margin-left:auto">{_lm["n_snaps"]} snaps</span>'
                     f'</div>'
                 )
 
@@ -6193,9 +6191,9 @@ with tab_sim:
         else:
             _sd = _sd_raw
         _low_c  = _r["sim"].get("low_confidence",False) if _r else False
-        _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:3px;padding:1px 5px;font-size:0.616rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
+        _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:12px;padding:1px 5px;font-size:0.616rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
         _live_tag = ('<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
-                     'border-radius:3px;padding:1px 5px;font-size:0.616rem;margin-left:4px;font-weight:700">🔴 VIVO</span>'
+                     'border-radius:12px;padding:1px 5px;font-size:0.616rem;margin-left:4px;font-weight:700">🔴 VIVO</span>'
                      if g.get("state") == "in" else "")
         _has_ev = bool(_r and _r["sim"].get("best_single") and _r["sim"]["best_single"].get("ev",0)>0)
 
@@ -6213,34 +6211,34 @@ with tab_sim:
             _html = (
                 f'<div class="game-row" style="border-left:3px solid {sm["color"]}44;margin:4px 0;">'
                 + _html_header +
-                '<div style="color:#3a4a3e;font-size:0.762rem;align-self:center">Sin simular</div></div></div>'
+                '<div style="color:#444444;font-size:0.762rem;align-self:center">Sin simular</div></div></div>'
             )
             return _html
 
         sim = _r["sim"]
         dq  = sim["data_quality"]
-        dqc = "#4ade80" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
+        dqc = "#00C896" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
 
         # ── Pick badge — always one pick, no EV+ required ────────────────────
         bp  = _oracle_pick(_r)
         _bpc, _bac, _, _bdl = _pick_clr(bp["market"], bp.get("label",""))
         _ev = bp.get("ev",0) or 0
         _ev_str = f"+{_ev:.1f}" if _ev >= 0 else f"{_ev:.1f}"
-        _ev_c   = "#4ade80" if _ev>=10 else ("#fbbf24" if _ev>=0 else "#ef4444")
+        _ev_c   = "#00C896" if _ev>=10 else ("#fbbf24" if _ev>=0 else "#ef4444")
         badge = (
             f'<span style="background:{_bpc}28;color:{_bac};border:1px solid {_bpc}66;'
-            f'border-radius:3px;padding:1px 8px;font-size:0.694rem;font-weight:800;margin-right:5px">{_bdl}</span>'
+            f'border-radius:12px;padding:1px 8px;font-size:0.694rem;font-weight:800;margin-right:5px">{_bdl}</span>'
             f'<span style="font-weight:700;font-size:0.896rem;color:#FFE87C">{bp["label"]}</span>'
             f'<span style="color:{_ev_c};font-size:0.762rem;margin-left:6px">EV {_ev_str}</span>'
-            f'<span style="color:#6B7E6E;font-size:0.694rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
+            f'<span style="color:#6B7280;font-size:0.694rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
         )
 
         # ── Build outer card with full pick-color background/border ────────
-        _card_bg     = f"background:linear-gradient(135deg,{_bpc}18 0%,#0a1a16 70%,{_bpc}0a 100%)"
+        _card_bg     = f"background:linear-gradient(135deg,{_bpc}18 0%,#141414 70%,{_bpc}0a 100%)"
         _card_border = f"border:1px solid {_bpc}55"
         _card_shadow = f"box-shadow:0 0 16px {_bpc}18"
         _top_stripe  = (
-            f'<div style="height:2px;border-radius:6px 6px 0 0;margin:-10px -12px 8px -12px;'
+            f'<div style="height:2px;border-radius:12px 6px 0 0;margin:-10px -12px 8px -12px;'
             f'background:linear-gradient(90deg,transparent,{_bac},{_bac}88,transparent)"></div>'
         )
 
@@ -6249,7 +6247,7 @@ with tab_sim:
         _ml_line = (f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}<br>'
                     if _has_ml else "")
         _body = (
-            f'<div style="text-align:right;font-size:0.728rem;color:#6B7E6E;flex-shrink:0">'
+            f'<div style="text-align:right;font-size:0.728rem;color:#6B7280;flex-shrink:0">'
             f'{_ml_line}'
             f'<span style="color:{dqc}">DQ {dq:.0f}%</span></div>'
             f'</div>'
@@ -6264,7 +6262,7 @@ with tab_sim:
         # Goals / totals footer
         _footer = ""
         if sim.get("use_goals") and sim.get("p_btts") is not None and sim.get("is_soccer", False):
-            btc = "#4ade80" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
+            btc = "#00C896" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
             o2c = "#ff6a00" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
             o3c = "#ff6a00" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
             dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
@@ -6273,7 +6271,7 @@ with tab_sim:
                 f'<span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span>'
                 f'<span style="color:{o2c}">O2.5 {sim["p_o25"]}%</span>'
                 f'<span style="color:{o3c}">O3.5 {sim.get("p_o35","—")}%</span>'
-                f'<span style="color:#3a4a3e;margin-left:auto">{dq_src}</span>'
+                f'<span style="color:#444444;margin-left:auto">{dq_src}</span>'
                 f'</div>'
             )
         elif sim.get("ou_line") and sim.get("p_o_total") is not None:
@@ -6306,14 +6304,14 @@ with tab_sim:
                     _arrow_clr = "#ff6a00" if _over_best else "#a78bfa"
                     _arrow_pct = _po_l if _over_best else _pu_l
                     # ESPN line row: slightly highlighted background
-                    _row_bg = "background:rgba(201,168,76,0.07);border-radius:4px;padding:2px 6px;" if _is_espn else "padding:2px 6px;"
-                    _lbl_style = "font-weight:700;color:#C9A84C;" if _is_espn else "color:#3a4a3e;"
+                    _row_bg = "background:rgba(201,168,76,0.07);border-radius:12px;padding:2px 6px;" if _is_espn else "padding:2px 6px;"
+                    _lbl_style = "font-weight:700;color:#C9A84C;" if _is_espn else "color:#444444;"
                     _espn_badge = ' <span style="font-size:0.6rem;color:#C9A84C;opacity:0.7">ESPN</span>' if _is_espn else ""
                     _rows_html += (
                         f'<div style="display:flex;align-items:center;gap:8px;{_row_bg}">'
                         f'<span style="{_lbl_style}min-width:42px">{_implicit_tag}{_l:.1f}{_espn_badge}</span>'
                         f'<span style="color:{_oc};min-width:52px">O {_po_l:.0f}%</span>'
-                        f'<span style="color:#3a4a3e">|</span>'
+                        f'<span style="color:#444444">|</span>'
                         f'<span style="color:{_uc};min-width:52px">U {_pu_l:.0f}%</span>'
                         f'<span style="color:{_arrow_clr};font-weight:700">→ {_arrow_lbl} ({_arrow_pct:.0f}%)</span>'
                         f'</div>'
@@ -6326,20 +6324,20 @@ with tab_sim:
                 _best_clr = "#ff6a00" if _po >= _pu else "#a78bfa"
                 _rows_html = (
                     f'<span style="color:{_otc}">Over {_po}%</span>'
-                    f'<span style="color:#3a4a3e"> | </span>'
+                    f'<span style="color:#444444"> | </span>'
                     f'<span style="color:{_utc}">Under {_pu}%</span>'
                     f'<span style="color:{_best_clr};font-weight:700;margin-left:4px">→ {_best_lbl} ({max(_po,_pu):.0f}%)</span>'
                 )
 
             _footer = (
                 f'<div style="font-size:0.72rem;margin-top:5px">'
-                f'<div style="color:#6B7E6E;margin-bottom:3px">{_sg_icon_ou} O/U · {dq_src_ou}</div>'
+                f'<div style="color:#6B7280;margin-bottom:3px">{_sg_icon_ou} O/U · {dq_src_ou}</div>'
                 + _rows_html +
                 f'</div>'
             )
 
         _html = (
-            f'<div style="border-radius:8px;padding:10px 12px;margin:4px 0;'
+            f'<div style="border-radius:12px;padding:10px 12px;margin:4px 0;'
             f'{_card_bg};{_card_border};{_card_shadow}">'
             + _top_stripe
             + _html_header
@@ -6445,9 +6443,9 @@ with tab_parlays:
             finished_names = " · ".join(
                 f"{g['away_team']} @ {g['home_team']}" for g in finished_parlay_games[:3]
             )
-            st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #4ade80;background:rgba(74,222,128,0.08)">
+            st.markdown(f'''<div class="warn-banner" style="border-left:4px solid #00C896;background:rgba(74,222,128,0.08)">
                 ✅ <b>Partido(s) del parlay terminaron:</b> {finished_names}<br>
-                <span style="color:#6B7E6E;font-size:0.896rem">{len(pending_games)} partidos pendientes disponibles para nuevo parlay.</span>
+                <span style="color:#6B7280;font-size:0.896rem">{len(pending_games)} partidos pendientes disponibles para nuevo parlay.</span>
             </div>''', unsafe_allow_html=True)
 
         # ── Botón manual + auto-regen ─────────────────────────────────────────────
@@ -6477,9 +6475,9 @@ with tab_parlays:
 
         # ── Helpers para armar el parlay de 2 patas de un mismo partido ──────
         # _MKT_C kept for legacy references; new code uses _pick_clr()
-        _MKT_C = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#4ade80","DO":"#a78bfa","COMBO":"#f59e0b"}
+        _MKT_C = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#00C896","DO":"#a78bfa","COMBO":"#f59e0b"}
         _SG_ICON = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
-        _SG_COLOR = {"Soccer":"#4ade80","Basketball":"#f97316","Hockey":"#60a5fa",
+        _SG_COLOR = {"Soccer":"#00C896","Basketball":"#f97316","Hockey":"#60a5fa",
                      "Baseball":"#ef4444","Football":"#a78bfa"}
 
         def _build_game_parlays(r):
@@ -6580,7 +6578,7 @@ with tab_parlays:
             Tries sim result r_obj first (has date field), then games list."""
             # Try from sim result directly (most reliable)
             if r_obj:
-                raw = r_obj.get("date","").replace("Z","").replace("+00:00","")
+                raw = r_obj.get("date","")
                 if raw:
                     try:
                         _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_par.utc)
@@ -6590,7 +6588,7 @@ with tab_parlays:
             # Fallback: look in games list
             g_obj = next((g for g in games if g.get("id") == gid), None)
             if not g_obj: return None
-            raw = g_obj.get("date","").replace("Z","").replace("+00:00","")
+            raw = g_obj.get("date","")
             if not raw: return None
             try:
                 _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_par.utc)
@@ -6761,9 +6759,9 @@ with tab_parlays:
             n_post  = len([g for g in games if g["state"]=="post"])
             n_live  = len([g for g in games if g["state"]=="in"])
             n_pre   = len([g for g in games if g["state"]=="pre"])
-            status_color = "#4ade80" if n_live > 0 else "#60a5fa"
+            status_color = "#00C896" if n_live > 0 else "#60a5fa"
             st.markdown(
-                f'<div style="font-size:0.806rem;color:#6B7E6E;margin-bottom:12px">' +
+                f'<div style="font-size:0.806rem;color:#6B7280;margin-bottom:12px">' +
                 (f'<span style="color:{status_color}">⚡ {n_live} en vivo</span> · ' if n_live else "") +
                 f'{n_pre} próximos · {n_post} terminados</div>',
                 unsafe_allow_html=True
@@ -6782,58 +6780,58 @@ with tab_parlays:
                 _p1c, _p1a, _, _p1l = _pick_clr(_l1["market"], _l1.get("label",""))
                 _p2c, _p2a, _, _p2l = _pick_clr(_l2["market"], _l2.get("label",""))
                 _mc1, _mc2 = _p1a, _p2a  # keep _mc1/_mc2 for compat
-                _sgc  = "#4ade80" if featured else _SG_COLOR.get(_sg,"#4ade80")
+                _sgc  = "#00C896" if featured else _SG_COLOR.get(_sg,"#00C896")
                 _sgi  = _SG_ICON.get(_sg,"🎯")
                 _lg   = league_label(_g["league"])
                 _matchup = f'{_g["away_team"]} @ {_g["home_team"]}'
                 _border_extra = "box-shadow:0 0 30px rgba(74,222,128,0.22);" if featured else ""
                 _feat_stripe  = (
-                    f'background:linear-gradient(90deg,transparent,#4ade80,#C9A84C,transparent)'
+                    f'background:linear-gradient(90deg,transparent,#00C896,#C9A84C,transparent)'
                 ) if featured else f'background:linear-gradient(90deg,transparent,{_sgc},transparent)'
                 _feat_label = (
-                    '<span style="background:rgba(74,222,128,0.18);color:#4ade80;'
-                    'border:1px solid rgba(74,222,128,0.5);border-radius:3px;'
+                    '<span style="background:rgba(74,222,128,0.18);color:#00C896;'
+                    'border:1px solid rgba(74,222,128,0.5);border-radius:12px;'
                     'padding:1px 7px;font-size:0.65rem;font-weight:900;margin-left:6px">'
                     '⚽ GOLES COMBO</span>'
                 ) if featured else ""
 
                 return (
-                    f'<div style="border-radius:10px;padding:14px 16px;margin:8px 0;'
-                    f'background:linear-gradient(135deg,{_sgc}14 0%,#0a1a16 60%,{_sgc}08 100%);'
+                    f'<div style="border-radius:16px;padding:14px 16px;margin:8px 0;'
+                    f'background:linear-gradient(135deg,{_sgc}14 0%,#141414 60%,{_sgc}08 100%);'
                     f'border:1px solid {_sgc}{"66" if featured else "44"};{_border_extra}">'
-                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-14px -16px 12px -16px;{_feat_stripe}"></div>'
+                    f'<div style="height:2px;border-radius:12px 8px 0 0;margin:-14px -16px 12px -16px;{_feat_stripe}"></div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
                     f'<div>'
-                    f'<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">'
+                    f'<div style="font-size:0.65rem;color:#6B7280;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">'
                     f'{_sgi} {_sg} · {_lg}{_feat_label}</div>'
-                    f'<div style="font-size:0.986rem;font-weight:700;color:#E0F7F0">{_matchup}</div>'
-                    f'<div style="font-size:0.728rem;color:#6B7E6E;margin-top:2px">{_ct}</div>'
+                    f'<div style="font-size:0.986rem;font-weight:700;color:#E8E8E8">{_matchup}</div>'
+                    f'<div style="font-size:0.728rem;color:#6B7280;margin-top:2px">{_ct}</div>'
                     f'</div>'
                     f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.232rem;font-weight:900;color:{_sgc};font-family:Cinzel,serif">{dp["comb_prob_pct"]}%</div>'
-                    f'<div style="font-size:0.616rem;color:#6B7E6E">prob. combinada</div>'
+                    f'<div style="font-size:1.232rem;font-weight:900;color:{_sgc};font-family:Inter,sans-serif">{dp["comb_prob_pct"]}%</div>'
+                    f'<div style="font-size:0.616rem;color:#6B7280">prob. combinada</div>'
                     f'</div>'
                     f'</div>'
                     f'<div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">'
                     f'<div style="display:flex;align-items:center;gap:8px">'
                     f'<span style="background:{_p1c}28;color:{_p1a};border:1px solid {_p1c}66;'
-                    f'border-radius:4px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p1l}</span>'
-                    f'<span style="font-size:0.986rem;color:#E0F7F0;font-weight:600">{_l1["label"]}</span>'
+                    f'border-radius:12px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p1l}</span>'
+                    f'<span style="font-size:0.986rem;color:#E8E8E8;font-weight:600">{_l1["label"]}</span>'
                     f'<span style="margin-left:auto;font-size:0.694rem;color:{_p1a};font-weight:700">{_l1["prob"]:.0f}%</span>'
                     f'</div>'
-                    f'<div style="font-size:0.694rem;color:#3a4a3e;text-align:center;letter-spacing:3px">✕ COMBO ✕</div>'
+                    f'<div style="font-size:0.694rem;color:#444444;text-align:center;letter-spacing:3px">✕ COMBO ✕</div>'
                     f'<div style="display:flex;align-items:center;gap:8px">'
                     f'<span style="background:{_p2c}28;color:{_p2a};border:1px solid {_p2c}66;'
-                    f'border-radius:4px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p2l}</span>'
-                    f'<span style="font-size:0.986rem;color:#E0F7F0;font-weight:600">{_l2["label"]}</span>'
+                    f'border-radius:12px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p2l}</span>'
+                    f'<span style="font-size:0.986rem;color:#E8E8E8;font-weight:600">{_l2["label"]}</span>'
                     f'<span style="margin-left:auto;font-size:0.694rem;color:{_p2a};font-weight:700">{_l2["prob"]:.0f}%</span>'
                     f'</div>'
                     f'</div>'
                     f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
                     f'border-top:1px solid {_sgc}22;flex-wrap:wrap">'
-                    f'<span style="font-size:0.694rem;color:#2EE8C0">Pago est. +${dp["payout"]:.0f}/100</span>'
+                    f'<span style="font-size:0.694rem;color:#00C896">Pago est. +${dp["payout"]:.0f}/100</span>'
                     f'<span style="margin-left:auto;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);'
-                    f'border-radius:4px;padding:2px 8px;font-size:0.672rem;color:#ef4444">⚠️ STAKE BAJO</span>'
+                    f'border-radius:12px;padding:2px 8px;font-size:0.672rem;color:#ef4444">⚠️ STAKE BAJO</span>'
                     f'</div>'
                     f'</div>'
                 )
@@ -6848,21 +6846,21 @@ with tab_parlays:
                     _lg_lbl = league_label(_l["league"])
                     _sp_ico = _SG_ICONS.get(_l["sport"],"🎯")
                     if _i > 0:
-                        _legs_html += '<div style="font-size:0.694rem;color:#3a4a3e;text-align:center;letter-spacing:3px;margin:4px 0">✕ COMBO ✕</div>'
+                        _legs_html += '<div style="font-size:0.694rem;color:#444444;text-align:center;letter-spacing:3px;margin:4px 0">✕ COMBO ✕</div>'
                     _legs_html += (
                         f'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;'
-                        f'border-radius:6px;background:rgba(255,255,255,0.03)">'
+                        f'border-radius:12px;background:rgba(255,255,255,0.03)">'
                         f'<span style="background:{_lc}28;color:{_la};border:1px solid {_lc}66;'
-                        f'border-radius:4px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_ll}</span>'
+                        f'border-radius:12px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_ll}</span>'
                         f'<div style="flex:1;min-width:0">'
-                        f'<div style="font-size:0.986rem;color:#E0F7F0;font-weight:600">{_l["label"]}</div>'
-                        f'<div style="font-size:0.65rem;color:#6B7E6E">{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name}</div>'
+                        f'<div style="font-size:0.986rem;color:#E8E8E8;font-weight:600">{_l["label"]}</div>'
+                        f'<div style="font-size:0.65rem;color:#6B7280">{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name}</div>'
                         f'</div>'
                         f'<span style="font-size:0.694rem;color:{_la};font-weight:700;flex-shrink:0">{_l["prob"]:.0f}%</span>'
                         f'</div>'
                     )
                 _multi_ev = round((_multi_prob_pct/100 * (_multi_payout/100) - (1 - _multi_prob_pct/100)) * 100, 1)
-                _ev_clr = "#4ade80" if _multi_ev > 0 else "#ef4444"
+                _ev_clr = "#00C896" if _multi_ev > 0 else "#ef4444"
                 st.markdown(
                     '<div style="font-size:0.762rem;color:#C9A84C;letter-spacing:2px;'
                     'text-transform:uppercase;margin:4px 0 6px 0">'
@@ -6870,29 +6868,29 @@ with tab_parlays:
                     unsafe_allow_html=True
                 )
                 st.markdown(
-                    f'<div style="border-radius:10px;padding:14px 16px;margin:0 0 12px 0;'
-                    f'background:linear-gradient(135deg,#C9A84C14 0%,#0a1a16 60%,#C9A84C08 100%);'
+                    f'<div style="border-radius:16px;padding:14px 16px;margin:0 0 12px 0;'
+                    f'background:linear-gradient(135deg,#C9A84C14 0%,#141414 60%,#C9A84C08 100%);'
                     f'border:1px solid #C9A84C66;box-shadow:0 0 30px rgba(201,168,76,0.15)">'
-                    f'<div style="height:2px;border-radius:8px 8px 0 0;margin:-14px -16px 12px -16px;'
-                    f'background:linear-gradient(90deg,transparent,#C9A84C,#4ade80,#C9A84C,transparent)"></div>'
+                    f'<div style="height:2px;border-radius:12px 8px 0 0;margin:-14px -16px 12px -16px;'
+                    f'background:linear-gradient(90deg,transparent,#C9A84C,#00C896,#C9A84C,transparent)"></div>'
                     f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px">'
                     f'<div>'
-                    f'<div style="font-size:0.65rem;color:#6B7E6E;letter-spacing:2px;text-transform:uppercase">'
+                    f'<div style="font-size:0.65rem;color:#6B7280;letter-spacing:2px;text-transform:uppercase">'
                     f'{len(_multi_legs)} patas · hoy CDMX</div>'
                     f'<div style="font-size:0.8rem;color:#C9A84C;margin-top:2px">'
                     f'{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
                     f'</div>'
                     f'<div style="text-align:right">'
-                    f'<div style="font-size:1.4rem;font-weight:900;color:#C9A84C;font-family:Cinzel,serif">{_multi_prob_pct}%</div>'
-                    f'<div style="font-size:0.616rem;color:#6B7E6E">prob. combinada</div>'
+                    f'<div style="font-size:1.4rem;font-weight:900;color:#C9A84C;font-family:Inter,sans-serif">{_multi_prob_pct}%</div>'
+                    f'<div style="font-size:0.616rem;color:#6B7280">prob. combinada</div>'
                     f'<div style="font-size:0.694rem;color:{_ev_clr};font-weight:700">EV {_multi_ev:+.1f}</div>'
                     f'</div>'
                     f'</div>'
                     f'<div style="display:flex;flex-direction:column;gap:4px">{_legs_html}</div>'
                     f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
                     f'border-top:1px solid #C9A84C22;flex-wrap:wrap">'
-                    f'<span style="font-size:0.694rem;color:#2EE8C0">Pago est. +${_multi_payout:.0f}/100</span>'
-                    f'<span style="font-size:0.672rem;color:#6B7E6E;margin-left:auto">Verifica cuotas en tu casa de apuestas</span>'
+                    f'<span style="font-size:0.694rem;color:#00C896">Pago est. +${_multi_payout:.0f}/100</span>'
+                    f'<span style="font-size:0.672rem;color:#6B7280;margin-left:auto">Verifica cuotas en tu casa de apuestas</span>'
                     f'</div>'
                     f'</div>',
                     unsafe_allow_html=True
@@ -6903,7 +6901,7 @@ with tab_parlays:
             _multi_game_ids = {l["game"].get("id","") for l in _multi_legs}
             if _best_btts_o25 and _best_btts_o25["game"].get("id","") not in _multi_game_ids:
                 st.markdown(
-                    '<div style="font-size:0.694rem;color:#4ade80;letter-spacing:2px;'
+                    '<div style="font-size:0.694rem;color:#00C896;letter-spacing:2px;'
                     'text-transform:uppercase;margin:12px 0 4px 0">'
                     '⚽ COMBO GOLES DESTACADO · Ambos Anotan + Over 2.5</div>',
                     unsafe_allow_html=True
@@ -7277,7 +7275,7 @@ with tab_all:
             _lv_tree.setdefault(_sg, {}).setdefault(_g["league"], []).append(_g)
 
         _LV_SPORT_ORDER  = ["Soccer","Basketball","Hockey","Baseball","Football"]
-        _LV_SPORT_COLORS = {"Soccer":"#4ade80","Basketball":"#f97316","Hockey":"#60a5fa","Baseball":"#f59e0b","Football":"#a78bfa"}
+        _LV_SPORT_COLORS = {"Soccer":"#00C896","Basketball":"#f97316","Hockey":"#60a5fa","Baseball":"#f59e0b","Football":"#a78bfa"}
         _LV_SPORT_ICONS  = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
 
         def _build_live_card(g):
@@ -7303,20 +7301,20 @@ with tab_all:
             picks    = result["picks"]
             headline = result.get("headline","")
             best     = max(picks, key=lambda p: p["prob"])
-            prob_color = "#4ade80" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
+            prob_color = "#00C896" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
 
             # Picks mini-grid (up to 3 cols)
             _cols = min(len(picks), 3)
             ph = f'<div style="display:grid;grid-template-columns:repeat({_cols},1fr);gap:4px;margin-bottom:6px">'
             for i, pk in enumerate(picks):
-                pc = "#4ade80" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
+                pc = "#00C896" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
                 _bg = "rgba(255,232,124,0.08)" if i == 0 else "rgba(255,255,255,0.02)"
-                _bd = "#FFE87C44" if i == 0 else "#2a3a2e"
+                _bd = "#FFE87C44" if i == 0 else "#333333"
                 ph += (
                     f'<div style="background:{_bg};border:1px solid {_bd};border-radius:5px;padding:5px 7px">'
                     f'<div style="font-size:0.72rem;font-weight:700;color:#FFE87C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["label"]}</div>'
                     f'<div style="font-size:1.0rem;color:{pc};font-weight:700">{pk["prob"]:.0f}%</div>'
-                    f'<div style="font-size:0.62rem;color:#6B7E6E;line-height:1.2;overflow:hidden;max-height:2.4em">{pk["rationale"][:70]}</div>'
+                    f'<div style="font-size:0.62rem;color:#6B7280;line-height:1.2;overflow:hidden;max-height:2.4em">{pk["rationale"][:70]}</div>'
                     f'</div>'
                 )
             ph += "</div>"
@@ -7330,10 +7328,10 @@ with tab_all:
                     adj = xgv["adjusted_prob"]
                     conf = xgv["confidence"]
                     delta = adj - ou_pick["prob"]
-                    adj_c = "#4ade80" if adj >= 70 else "#C9A84C" if adj >= 55 else "#f97316"
-                    conf_c = {"alta":"#4ade80","media":"#C9A84C","baja":"#f97316"}.get(conf,"#6B7E6E")
+                    adj_c = "#00C896" if adj >= 70 else "#C9A84C" if adj >= 55 else "#f97316"
+                    conf_c = {"alta":"#00C896","media":"#C9A84C","baja":"#f97316"}.get(conf,"#6B7E6E")
                     ds = f"▲+{delta:.0f}pp" if delta >= 1 else (f"▼{delta:.0f}pp" if delta <= -1 else "=")
-                    dc = "#4ade80" if delta >= 1 else ("#ef4444" if delta <= -1 else "#6B7E6E")
+                    dc = "#00C896" if delta >= 1 else ("#ef4444" if delta <= -1 else "#6B7E6E")
                     if xgv["has_stats"]: ou_pick["prob"] = adj
                     xg_html = (
                         f'<div style="margin:4px 0;padding:5px 8px;background:rgba(96,165,250,0.04);'
@@ -7348,35 +7346,35 @@ with tab_all:
 
             # Stats row
             def _sp(val, lbl, clr):
-                return f'<span style="font-size:0.68rem;color:{clr};font-weight:700">{val}</span><span style="font-size:0.60rem;color:#6B7E6E;margin:0 6px 0 2px">{lbl}</span>'
+                return f'<span style="font-size:0.68rem;color:{clr};font-weight:700">{val}</span><span style="font-size:0.60rem;color:#6B7280;margin:0 6px 0 2px">{lbl}</span>'
             sh = (
                 f'<div style="display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid rgba(255,255,255,0.04);padding-top:5px;margin-top:4px">'
                 + _sp(f'{sim["away_pct"]:.0f}%', g["away_team"][:9], "#60a5fa")
                 + (_sp(f'{sim["draw_pct"]:.0f}%', "X", "#a78bfa") if sim["is_soccer"] else "")
                 + _sp(f'{sim["home_pct"]:.0f}%', g["home_team"][:9], "#f97316")
-                + (_sp(f'{sim["p_btts"]}%', "BTTS", "#4ade80") if sim.get("p_btts") and sport_group=="Soccer" else "")
+                + (_sp(f'{sim["p_btts"]}%', "BTTS", "#00C896") if sim.get("p_btts") and sport_group=="Soccer" else "")
                 + (_sp(f'{sim["p_o25"]}%', "O2.5", "#C9A84C") if sim.get("p_o25") and sport_group=="Soccer" else "")
-                + f'<span style="margin-left:auto;font-size:0.58rem;color:#3a4a3e">DQ{dq:.0f}%</span>'
+                + f'<span style="margin-left:auto;font-size:0.58rem;color:#444444">DQ{dq:.0f}%</span>'
                 + f'</div>'
             )
 
             # League + badges
             badges = (
                 '<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
-                'border-radius:10px;padding:1px 6px;font-size:0.60rem;font-weight:600">🔴</span> '
+                'border-radius:16px;padding:1px 6px;font-size:0.60rem;font-weight:600">🔴</span> '
                 + f'<span style="font-size:0.62rem;color:#C9A84C">{league_label(g["league"])}</span>'
                 + (f' <span style="font-size:0.58rem;color:#e74c3c">⚠</span>' if dq == 0 else '')
             )
 
             return (
-                '<div style="background:linear-gradient(135deg,#0A1E0F,#071A10);'
-                'border:2px solid rgba(255,60,60,0.6);border-radius:8px;overflow:hidden">'
+                '<div style="background:linear-gradient(135deg,#161616,#111111);'
+                'border:2px solid rgba(255,60,60,0.6);border-radius:12px;overflow:hidden">'
                 '<div style="height:2px;background:linear-gradient(90deg,transparent,#ff3c3c,#ff6b6b,#ff3c3c,transparent)"></div>'
                 '<div style="padding:8px 10px">'
                 f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px">'
                 f'<div>'
                 f'<div style="font-size:0.85rem;font-weight:700;color:#fff;line-height:1.2">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div style="font-size:0.75rem;color:#4ade80;font-weight:700">{score_str} <span style="color:#8a9e8a;font-weight:400;font-size:0.68rem">{headline}</span></div>'
+                f'<div style="font-size:0.75rem;color:#00C896;font-weight:700">{score_str} <span style="color:#888888;font-weight:400;font-size:0.68rem">{headline}</span></div>'
                 f'</div>'
                 f'<div style="text-align:right;font-size:0.62rem">{badges}</div>'
                 f'</div>'
@@ -7720,7 +7718,7 @@ with tab_reto:
     # ── Login por apodo ───────────────────────────────────────────────────────
     st.markdown('''<div style="
         text-align:center;
-        font-family:'Cinzel',serif;
+        font-family:'Inter',sans-serif;
         font-size:1.792rem;
         font-weight:700;
         color:#C9A84C;
@@ -7728,8 +7726,8 @@ with tab_reto:
         padding:16px 0 4px;
         text-shadow: 0 0 20px rgba(201,168,76,0.4)
     ">💰 RETO 13 MILLONES</div>
-    <div style="text-align:center;font-family:'DM Sans',sans-serif;font-size:0.896rem;
-        color:#6B7E6E;letter-spacing:2px;margin-bottom:20px">
+    <div style="text-align:center;font-family:'Inter',sans-serif;font-size:0.896rem;
+        color:#6B7280;letter-spacing:2px;margin-bottom:20px">
         DE $2,000 A $13,000,000 · UNA APUESTA A LA VEZ
     </div>''', unsafe_allow_html=True)
 
@@ -7794,7 +7792,7 @@ with tab_reto:
     col_usr1, col_usr2 = st.columns([4,1])
     with col_usr1:
         st.markdown(
-            f'<div style="font-family:\'Cinzel\',serif;font-size:1.008rem;color:#C9A84C;'
+            f'<div style="font-family:\'Inter\',sans-serif;font-size:1.008rem;color:#C9A84C;'
             f'letter-spacing:2px;margin-bottom:12px">👤 {apodo_activo.upper()}</div>',
             unsafe_allow_html=True
         )
@@ -7843,7 +7841,7 @@ with tab_reto:
         <div class="stat-label">Bank Actual</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" style="color:#4ade80">{multiplicador:.1f}×</div>
+        <div class="stat-num" style="color:#00C896">{multiplicador:.1f}×</div>
         <div class="stat-label">Multiplicador</div>
       </div>
       <div class="stat-tile">
@@ -7851,11 +7849,11 @@ with tab_reto:
         <div class="stat-label">Total Picks</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" style="color:#4ade80">{win_rate:.0f}%</div>
+        <div class="stat-num" style="color:#00C896">{win_rate:.0f}%</div>
         <div class="stat-label">Win Rate</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" style="color:#4ade80">{n_gan}</div>
+        <div class="stat-num" style="color:#00C896">{n_gan}</div>
         <div class="stat-label">Ganados</div>
       </div>
       <div class="stat-tile">
@@ -7869,19 +7867,19 @@ with tab_reto:
     st.markdown(f'''
     <div style="margin:8px 0 20px">
       <div style="display:flex;justify-content:space-between;
-          font-family:'DM Sans',sans-serif;font-size:0.806rem;color:#6B7E6E;margin-bottom:6px">
+          font-family:'Inter',sans-serif;font-size:0.806rem;color:#6B7280;margin-bottom:6px">
         <span>${bank_inicial:,.0f} inicio</span>
         <span style="color:#C9A84C;font-weight:700">{progreso_pct:.4f}% completado</span>
         <span>Meta: ${meta:,.0f}</span>
       </div>
-      <div style="background:#0a1a0f;border-radius:4px;height:10px;overflow:hidden;
-          border:1px solid rgba(201,168,76,0.2)">
+      <div style="background:#1A1A1A;border-radius:12px;height:10px;overflow:hidden;
+          border:1px solid rgba(201,168,76,0.15)">
         <div style="height:100%;width:{min(progreso_pct,100):.4f}%;
             background:linear-gradient(90deg,#C9A84C,#FFE87C);
-            border-radius:4px;transition:width 0.5s ease"></div>
+            border-radius:12px;transition:width 0.5s ease"></div>
       </div>
-      <div style="text-align:center;font-family:'DM Sans',sans-serif;
-          font-size:0.806rem;color:#6B7E6E;margin-top:6px">
+      <div style="text-align:center;font-family:'Inter',sans-serif;
+          font-size:0.806rem;color:#6B7280;margin-top:6px">
         Faltan <b style="color:#C9A84C">${falta:,.0f}</b> para la meta
       </div>
     </div>
@@ -7916,7 +7914,7 @@ with tab_reto:
         # Colors per segment: green if up, red if down vs previous
         colors = []
         for i in range(1, len(series_bank)):
-            colors.append("#4ade80" if series_bank[i] >= series_bank[i-1] else "#ef4444")
+            colors.append("#00C896" if series_bank[i] >= series_bank[i-1] else "#ef4444")
 
         # Build rich tooltip data for each pick point
         series_picks = [None]  # index 0 = "Inicio", no pick data
@@ -7983,7 +7981,7 @@ with tab_reto:
             return _PL + i * (_W - _PL - _PR) / (nn - 1)
 
         _n = len(_vals)
-        _RES_CLR = {"ganado":"#4ade80","perdido":"#ef4444","pendiente":"#f59e0b"}
+        _RES_CLR = {"ganado":"#00C896","perdido":"#ef4444","pendiente":"#f59e0b"}
 
         # Y axis grid lines and labels
         _ytick_parts = []
@@ -7992,7 +7990,7 @@ with tab_reto:
             _ylbl = ("$" + str(_yt // 1000) + "k") if _yt >= 1000 else "$0"
             _ytick_parts.append(
                 '<line x1="' + str(_PL) + '" y1="' + str(round(_yy,1)) + '" x2="' + str(_W-_PR) + '" y2="' + str(round(_yy,1)) + '" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>'
-                + '<text x="' + str(_PL-6) + '" y="' + str(round(_yy+4,1)) + '" fill="#5a7060" font-size="10" text-anchor="end">' + _ylbl + '</text>'
+                + '<text x="' + str(_PL-6) + '" y="' + str(round(_yy+4,1)) + '" fill="#555555" font-size="10" text-anchor="end">' + _ylbl + '</text>'
             )
         _ytick_svg = "".join(_ytick_parts)
 
@@ -8001,7 +7999,7 @@ with tab_reto:
         for _i in range(_n - 1):
             _x1, _y1 = _vx(_i, _n), _vy(_vals[_i])
             _x2, _y2 = _vx(_i+1, _n), _vy(_vals[_i+1])
-            _sc = "#4ade80" if _vals[_i+1] >= _vals[_i] else "#ef4444"
+            _sc = "#00C896" if _vals[_i+1] >= _vals[_i] else "#ef4444"
             _seg_parts.append('<line x1="' + str(round(_x1,1)) + '" y1="' + str(round(_y1,1)) + '" x2="' + str(round(_x2,1)) + '" y2="' + str(round(_y2,1)) + '" stroke="' + _sc + '" stroke-width="2.5" stroke-linecap="round"/>')
         _seg_svg = "".join(_seg_parts)
 
@@ -8023,12 +8021,12 @@ with tab_reto:
                 '<circle cx="' + str(round(_cx,1)) + '" cy="' + str(round(_cy,1)) + '" r="' + str(_rb+5) + '" fill="' + _clr + '" opacity="0.18"/>'
                 + '<circle cx="' + str(round(_cx,1)) + '" cy="' + str(round(_cy,1)) + '" r="' + str(_rb) + '" fill="' + _clr + '" stroke="#000" stroke-width="1.5"/>'
                 + '<text x="' + str(round(_cx,1)) + '" y="' + str(round(_cy-14,1)) + '" fill="' + _clr + '" font-size="10" font-weight="bold" text-anchor="middle">' + _vlbl + '</text>'
-                + '<text x="' + str(round(_cx,1)) + '" y="' + str(round(_H-_PB+14,1)) + '" fill="#3a5040" font-size="9" text-anchor="middle">' + _slbl + '</text>'
+                + '<text x="' + str(round(_cx,1)) + '" y="' + str(round(_H-_PB+14,1)) + '" fill="#444444" font-size="9" text-anchor="middle">' + _slbl + '</text>'
             )
         _dot_svg = "".join(_dot_parts)
 
         _svg_html = (
-            '<div style="background:#060C08;padding:16px;border-radius:8px;border:1px solid rgba(201,168,76,0.25);overflow:hidden">'
+            '<div style="background:#080808;padding:16px;border-radius:12px;border:1px solid rgba(201,168,76,0.25);overflow:hidden">'
             + '<svg viewBox="0 0 ' + str(_W) + ' ' + str(_H) + '" width="100%" height="' + str(_H) + '" style="display:block">'
             + '<defs><linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">'
             + '<stop offset="0%" stop-color="#C9A84C" stop-opacity="0.15"/>'
@@ -8063,16 +8061,16 @@ with tab_reto:
     div[data-testid="stTextInput"] p,
     div[data-testid="stNumberInput"] p,
     div[data-testid="stSelectbox"] p {
-        color: #C9A84C !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-size: 0.82rem !important;
+        color: #E8B84B !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.78rem !important;
         font-weight: 600 !important;
-        letter-spacing: 0.5px !important;
+        letter-spacing: 0.3px !important;
     }
     /* Radio option text */
     div[data-testid="stRadio"] div[data-testid="stMarkdownContainer"] p {
-        color: #E0C97F !important;
-        font-size: 0.88rem !important;
+        color: #E8E8E8 !important;
+        font-size: 0.85rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -8195,7 +8193,7 @@ with tab_reto:
                 else:
                     gan = stake * 100 / abs(momio_p)
                 delta_str = f"+${gan:,.2f}"
-                res_color = "#4ade80"
+                res_color = "#00C896"
                 res_icon  = "✅"
             elif res == "perdido":
                 delta_str = f"-${stake:,.2f}"
@@ -8211,7 +8209,7 @@ with tab_reto:
                 res_icon  = "⏳"
 
             momio_fmt = p.get("momio_fmt") or (f"+{momio_p:.0f}" if momio_p > 0 else f"{momio_p:.2f}")
-            nota_html = f'<div style="font-size:0.784rem;color:#3a4a3e;margin-top:2px">{p.get("nota","")}</div>' if p.get("nota") else ""
+            nota_html = f'<div style="font-size:0.784rem;color:#444444;margin-top:2px">{p.get("nota","")}</div>' if p.get("nota") else ""
 
             # ── Render pick row con Streamlit nativo ──────────────────────
             with st.container():
@@ -8219,15 +8217,15 @@ with tab_reto:
                 with h_left:
                     mercado_chip = {"ML":"🎯","O/U":"📊","BTTS":"⚽","DO":"🔄","Spread":"📐","Otro":"🎲"}.get(p.get("mercado","ML"),"🎯")
                     st.markdown(
-                        f'<span style="color:#C9A84C;font-family:\'Cinzel\',serif;font-size:0.874rem">#{num}</span>'
-                        f' <span style="color:#E0F7F0;font-weight:600">{p.get("partido","")}</span>'
+                        f'<span style="color:#C9A84C;font-family:\'Inter\',sans-serif;font-size:0.874rem">#{num}</span>'
+                        f' <span style="color:#E8E8E8;font-weight:600">{p.get("partido","")}</span>'
                         f' <span style="background:rgba(201,168,76,0.15);color:#C9A84C;'
-                        f'border-radius:3px;padding:1px 6px;font-size:0.784rem;margin-left:4px">'
+                        f'border-radius:12px;padding:1px 6px;font-size:0.784rem;margin-left:4px">'
                         f'{mercado_chip} {p.get("mercado","ML")}</span>',
                         unsafe_allow_html=True
                     )
                     st.markdown(
-                        f'<div style="font-size:0.952rem;color:#b8c8b0;margin:2px 0">▶ {p.get("pick","")}</div>',
+                        f'<div style="font-size:0.952rem;color:#A0A0A0;margin:2px 0">▶ {p.get("pick","")}</div>',
                         unsafe_allow_html=True
                     )
                     if p.get("nota"):
@@ -8238,7 +8236,7 @@ with tab_reto:
                         f'<div style="text-align:right">'
                         f'<div style="font-size:1.12rem;font-weight:700;color:{res_color}">{res_icon} {res.upper()}</div>'
                         f'<div style="font-size:0.952rem;color:{res_color};font-weight:600">{delta_str}</div>'
-                        f'<div style="font-size:0.806rem;color:#6B7E6E">${stake:,.0f} @ {momio_fmt}</div>'
+                        f'<div style="font-size:0.806rem;color:#6B7280">${stake:,.0f} @ {momio_fmt}</div>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
@@ -8308,7 +8306,7 @@ with tab_reto:
                                 st.caption(nf)
 
             # ── Manual override ───────────────────────────────────────────────
-            st.markdown('<div style="font-size:0.784rem;color:#6B7E6E;margin:8px 0 4px 0">✏️ Actualizar manualmente</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:0.784rem;color:#6B7280;margin:8px 0 4px 0">✏️ Actualizar manualmente</div>', unsafe_allow_html=True)
             pen_options = {f"#{p['num']} · {p['partido']} · {p['pick']}": i
                            for i, p in enumerate(picks) if p.get("resultado")=="pendiente"}
             sel_pen = st.selectbox("Pick pendiente", list(pen_options.keys()), key="sel_pendiente")
@@ -8356,4 +8354,4 @@ with tab_reto:
         )
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
-st.markdown('<div style="text-align:center;font-family:\'Cinzel\',serif;font-size:0.672rem;color:#2a3a2e;letter-spacing:3px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.65rem;color:#333333;letter-spacing:2px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
