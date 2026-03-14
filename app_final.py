@@ -494,8 +494,84 @@ hr { border-color: var(--border) !important; }
 
 
 /* ══════════════════════════════════════════════════
-   HAMBURGER — via components.html (ver abajo en MAIN)
+   HAMBURGER — cubre todos los selectores de Streamlit
    ══════════════════════════════════════════════════ */
+
+/* Streamlit 1.28+ */
+[data-testid="collapsedControl"],
+/* Streamlit 1.20-1.27 */
+button[data-testid="baseButton-headerNoPadding"],
+/* Cualquier botón en el área del header fuera del sidebar */
+.stApp > header button,
+header[data-testid="stHeader"] button,
+/* Por clase generada */
+div[class*="collapsedControl"] {
+  position: fixed !important;
+  top: 10px !important;
+  left: 10px !important;
+  z-index: 999999 !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  background: rgba(232,184,75,0.13) !important;
+  border: 1.5px solid rgba(232,184,75,0.65) !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  overflow: visible !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  transition: background 0.2s ease, border-color 0.2s ease !important;
+}
+[data-testid="collapsedControl"]:hover,
+button[data-testid="baseButton-headerNoPadding"]:hover,
+.stApp > header button:hover {
+  background: rgba(232,184,75,0.28) !important;
+  border-color: #E8B84B !important;
+}
+/* Ocultar SVG/icono nativo */
+[data-testid="collapsedControl"] svg,
+[data-testid="collapsedControl"] img,
+button[data-testid="baseButton-headerNoPadding"] svg,
+.stApp > header button svg { display: none !important; }
+
+/* Ocultar spans/texto nativo */
+[data-testid="collapsedControl"] span,
+button[data-testid="baseButton-headerNoPadding"] span,
+.stApp > header button span { display: none !important; }
+
+/* Inyectar ☰ */
+[data-testid="collapsedControl"]::after,
+button[data-testid="baseButton-headerNoPadding"]::after,
+.stApp > header button::after {
+  content: '☰' !important;
+  color: #E8B84B !important;
+  font-size: 1.4rem !important;
+  line-height: 1 !important;
+  font-family: 'Inter', Arial, sans-serif !important;
+  display: block !important;
+  pointer-events: none !important;
+}
+
+/* Ocultar el header nativo de Streamlit completamente */
+header[data-testid="stHeader"] {
+  background: transparent !important;
+  height: 0 !important;
+  min-height: 0 !important;
+}
+/* Pero mantener visible el botón hamburguesa que está dentro del header */
+header[data-testid="stHeader"] button {
+  height: 44px !important;
+  min-height: 44px !important;
+}
 
 
 /* ══════════════════════════════════════════════════
@@ -4835,9 +4911,9 @@ with st.sidebar:
     st.markdown("**LIGAS**")
     groups=sorted(set(v["group"] for v in LEAGUES.values()))
     sel_groups=st.multiselect("Grupos",groups,default=["Basketball","Baseball","Soccer","Hockey"],
-                              label_visibility="collapsed")
+                              label_visibility="collapsed", key="sel_groups_v2")
     avail=[n for n,cfg in LEAGUES.items() if cfg["group"] in sel_groups]
-    sel_leagues=st.multiselect("Ligas",avail,default=avail,label_visibility="collapsed")
+    sel_leagues=st.multiselect("Ligas",avail,default=avail,label_visibility="collapsed", key="sel_leagues_v2")
 
     st.markdown("")
     run_sidebar = st.button("▶  ANALIZAR AHORA", use_container_width=True,
@@ -4945,77 +5021,7 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-# ── Hamburguesa dorada — inyección directa al DOM padre ──────────────────
-components.html("""
-<script>
-(function() {
-  var css = `
-    [data-testid="collapsedControl"] {
-      position: fixed !important;
-      top: 12px !important;
-      left: 12px !important;
-      z-index: 999999 !important;
-      width: 46px !important;
-      height: 46px !important;
-      min-width: 46px !important;
-      background: rgba(232,184,75,0.13) !important;
-      border: 1.5px solid rgba(232,184,75,0.6) !important;
-      border-radius: 13px !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      cursor: pointer !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-      pointer-events: auto !important;
-      overflow: visible !important;
-      padding: 0 !important;
-      transition: background 0.2s, border-color 0.2s, transform 0.15s !important;
-    }
-    [data-testid="collapsedControl"]:hover {
-      background: rgba(232,184,75,0.28) !important;
-      border-color: #E8B84B !important;
-      transform: scale(0.96) !important;
-    }
-    [data-testid="collapsedControl"] svg { display: none !important; }
-    [data-testid="collapsedControl"] span { display: none !important; }
-    [data-testid="collapsedControl"]::before {
-      content: '☰' !important;
-      color: #E8B84B !important;
-      font-size: 1.5rem !important;
-      line-height: 1 !important;
-      font-family: 'Inter', Arial, sans-serif !important;
-      display: block !important;
-    }
-  `;
 
-  function inject(doc) {
-    if (!doc) return;
-    var el = doc.createElement('style');
-    el.id = 'den-hamburger-style';
-    if (doc.getElementById('den-hamburger-style')) return;
-    el.textContent = css;
-    (doc.head || doc.documentElement).appendChild(el);
-  }
-
-  // Inject in parent window (where the sidebar button lives)
-  function tryInject() {
-    try {
-      inject(window.parent.document);
-    } catch(e) {}
-    try {
-      inject(window.top.document);
-    } catch(e) {}
-  }
-
-  tryInject();
-  // Retry after Streamlit finishes rendering
-  setTimeout(tryInject, 500);
-  setTimeout(tryInject, 1500);
-  setTimeout(tryInject, 3000);
-})();
-</script>
-""", height=0, scrolling=False)
 
 st.markdown("""
 <div class="den-header">
@@ -6562,7 +6568,6 @@ with tab_sim:
 
     for _sp_p in _sports_to_show:
         _smp   = _SPORT_META_P[_sp_p]
-        _dks_p = sorted(_tree_p[_sp_p].keys())
         _n_p   = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
         _ev_count = sum(
             1 for dmap in _tree_p[_sp_p].values()
@@ -6578,8 +6583,21 @@ with tab_sim:
             f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}</div>',
             unsafe_allow_html=True
         )
-        for _dk_p in _dks_p:
+
+        # ── Colapsar árbol por liga (elimina duplicados por fecha) ────────────
+        _leagues_flat = {}  # {liga: [games...]}
+        for _dk_p in sorted(_tree_p[_sp_p].keys()):
             for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
+                if _lg_p not in _leagues_flat:
+                    _leagues_flat[_lg_p] = []
+                # Dedup by game id
+                _existing_ids = {g.get("id") for g in _leagues_flat[_lg_p]}
+                for _gg in _lg_games_p:
+                    if _gg.get("id") not in _existing_ids:
+                        _leagues_flat[_lg_p].append(_gg)
+                        _existing_ids.add(_gg.get("id"))
+
+        for _lg_p, _lg_games_p in sorted(_leagues_flat.items()):
                 _country_p = LEAGUES.get(_lg_p,{}).get("country","")
                 _ctry_str  = f" · {_country_p}" if _country_p else ""
                 _flag_p    = LEAGUE_FLAG.get(_lg_p, "🌐")
