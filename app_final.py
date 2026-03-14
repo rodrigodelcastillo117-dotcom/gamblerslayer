@@ -2260,6 +2260,7 @@ def parse_games(data, league_name):
     return games
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_all_games(leagues):
     from datetime import timedelta as _td_g
     _now_g        = datetime.now(timezone.utc)
@@ -4943,6 +4944,147 @@ with st.sidebar:
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
+<style>
+/* ── Ocultar el botón nativo de Streamlit ── */
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"],
+button[data-testid="collapsedControl"] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+}
+
+/* ── Nuestro botón hamburguesa custom ── */
+#den-hamburger {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 99999;
+  width: 46px;
+  height: 46px;
+  background: rgba(232,184,75,0.12);
+  border: 1.5px solid rgba(232,184,75,0.6);
+  border-radius: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+#den-hamburger:hover, #den-hamburger:active {
+  background: rgba(232,184,75,0.25);
+  border-color: #E8B84B;
+  transform: scale(0.96);
+}
+#den-hamburger .bar {
+  width: 20px;
+  height: 2px;
+  background: #E8B84B;
+  border-radius: 2px;
+  transition: all 0.25s;
+}
+/* Animación X cuando sidebar está abierto */
+#den-hamburger.open .bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+#den-hamburger.open .bar:nth-child(2) {
+  opacity: 0;
+  transform: scaleX(0);
+}
+#den-hamburger.open .bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+</style>
+
+<div id="den-hamburger">
+  <div class="bar"></div>
+  <div class="bar"></div>
+  <div class="bar"></div>
+</div>
+
+<script>
+(function() {
+  function clickSidebarToggle() {
+    // Intentar todos los selectores conocidos del toggle de Streamlit
+    var selectors = [
+      '[data-testid="collapsedControl"]',
+      '[data-testid="stSidebarCollapsedControl"]',
+      'button[kind="header"]',
+      'section[data-testid="stSidebar"] ~ div button',
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+      var btn = document.querySelector(selectors[i]);
+      if (btn) { btn.click(); return true; }
+    }
+    return false;
+  }
+
+  function isSidebarOpen() {
+    var sidebar = document.querySelector('[data-testid="stSidebar"]');
+    if (!sidebar) return false;
+    var style = window.getComputedStyle(sidebar);
+    return style.display !== 'none' && sidebar.getBoundingClientRect().width > 50;
+  }
+
+  function updateHamburger() {
+    var btn = document.getElementById('den-hamburger');
+    if (!btn) return;
+    if (isSidebarOpen()) {
+      btn.classList.add('open');
+    } else {
+      btn.classList.remove('open');
+    }
+  }
+
+  // Esperar a que el DOM esté listo
+  function init() {
+    var btn = document.getElementById('den-hamburger');
+    if (!btn) { setTimeout(init, 100); return; }
+
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Restaurar visibilidad del botón nativo temporalmente para hacer click
+      var nativeBtn = document.querySelector('[data-testid="collapsedControl"]');
+      if (nativeBtn) {
+        nativeBtn.style.opacity = '1';
+        nativeBtn.style.pointerEvents = 'auto';
+        nativeBtn.style.width = '';
+        nativeBtn.style.height = '';
+        nativeBtn.click();
+        setTimeout(function() {
+          nativeBtn.style.opacity = '0';
+          nativeBtn.style.pointerEvents = 'none';
+          nativeBtn.style.width = '0';
+          nativeBtn.style.height = '0';
+        }, 50);
+      }
+      // Toggle animación
+      btn.classList.toggle('open');
+    });
+
+    // Observar cambios en el sidebar
+    var observer = new MutationObserver(updateHamburger);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    updateHamburger();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+""", unsafe_allow_html=True)
+
+st.markdown("""
 <div class="den-header">
   <div class="den-logo">The Gamblers Den</div>
   <div class="den-subtitle">Monte Carlo · Expected Value · Sports Intelligence</div>
@@ -4965,8 +5107,16 @@ is_demo=False
 if use_demo:
     games=get_demo_games(); is_demo=True
 else:
-    with st.spinner("Consultando ESPN..."):
-        games,fetch_errors=get_all_games(sel_leagues)
+    _leagues_key = tuple(sorted(sel_leagues))
+    _already_cached = _leagues_key in st.session_state.get("_games_fetched", set())
+    if not _already_cached:
+        with st.spinner("Consultando ESPN..."):
+            games,fetch_errors=get_all_games(_leagues_key)
+        _fetched = st.session_state.get("_games_fetched", set())
+        _fetched.add(_leagues_key)
+        st.session_state["_games_fetched"] = _fetched
+    else:
+        games,fetch_errors=get_all_games(_leagues_key)
 
     # ── Persist pre-game soccer matches across refreshes ─────────────────────
     # ESPN soccer API often only returns active games. We cache pre-game soccer
@@ -5370,10 +5520,16 @@ with tab_picks:
             else:  # Baseball, Football, NCAAF
                 return best_ml()
 
-        # ── Build 1 pick per sport group — HOY CDMX únicamente ──────────────
+        # ── Build 1 pick per sport group — ventana ±1 día CDMX ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
         _now_rp      = datetime.now(_tz_rp.utc)
-        _today_rp    = (_now_rp - _td_rp(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-6
+        _now_mx_rp   = _now_rp - _td_rp(hours=6)
+        _today_rp    = _now_mx_rp.strftime("%Y-%m-%d")
+        _valid_rp    = {
+            (_now_mx_rp - _td_rp(days=1)).strftime("%Y-%m-%d"),
+            _today_rp,
+            (_now_mx_rp + _td_rp(days=1)).strftime("%Y-%m-%d"),
+        }
 
         # Build id→game map for quick lookup
         _gmap_rp = {g.get("id", ""): g for g in games}
@@ -5390,7 +5546,7 @@ with tab_picks:
                     from datetime import datetime as _dt_rp
                     _gdt = _dt_rp.fromisoformat(_raw_date.replace("Z", "+00:00"))
                     _gdate_cdmx = (_gdt - _td_rp(hours=6)).strftime("%Y-%m-%d")
-                    if _gdate_cdmx != _today_rp:
+                    if _gdate_cdmx not in _valid_rp:
                         continue
                 except:
                     pass  # si no parsea, incluir igual
@@ -5855,9 +6011,11 @@ with tab_sim:
     }
     _SPORTS_ORDER_P = ["Basketball","Soccer","Hockey","Baseball","Football"]
 
-    _today_mx_p = _now_mx_pt.strftime("%Y-%m-%d")
-    _tom_mx_p   = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
-    _d2_mx_p    = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
+    _today_mx_p    = _now_mx_pt.strftime("%Y-%m-%d")
+    _tom_mx_p      = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
+    _d2_mx_p       = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
+    _yday_mx_p     = (_now_mx_pt - _td_pt(days=1)).strftime("%Y-%m-%d")
+    _valid_dates_p = {_yday_mx_p, _today_mx_p, _tom_mx_p}
 
     def _mx_date_p(g):
         raw = g.get("date") or ""
@@ -5932,7 +6090,7 @@ with tab_sim:
         if _g["state"] == "post": continue   # skip finished only
         _sg_p = LEAGUES.get(_g["league"], {}).get("group", "Soccer")
         _gd   = _mx_date_p(_g)
-        if _gd != _today_mx_p: continue
+        if _gd not in _valid_dates_p: continue
         _tree_p.setdefault(_sg_p, {}).setdefault(_gd, {}).setdefault(_g["league"], []).append(_g)
 
     _sports_p = [s for s in _SPORTS_ORDER_P if s in _tree_p]
@@ -6570,8 +6728,14 @@ with tab_parlays:
 
         # ── TODAY only filter + deduplication ──────────────────────────────
         from datetime import timezone as _tz_par, timedelta as _td_par
-        _now_par   = datetime.now(_tz_par.utc)
-        _today_par = (_now_par - _td_par(hours=6)).strftime("%Y-%m-%d")  # CDMX = UTC-6
+        _now_par      = datetime.now(_tz_par.utc)
+        _now_mx_par   = _now_par - _td_par(hours=6)
+        _today_par    = _now_mx_par.strftime("%Y-%m-%d")
+        _valid_par    = {
+            (_now_mx_par - _td_par(days=1)).strftime("%Y-%m-%d"),
+            _today_par,
+            (_now_mx_par + _td_par(days=1)).strftime("%Y-%m-%d"),
+        }
 
         def _game_date_par(gid, r_obj=None):
             """Returns CDMX date string for a game, or None if can't determine.
@@ -6602,7 +6766,7 @@ with tab_parlays:
             g_state = r.get("state") or next((g["state"] for g in games if g.get("id")==gid), "pre")
             if g_state == "post": continue
             _gd_par = _game_date_par(gid, r)
-            if _gd_par is None or _gd_par != _today_par: continue  # ← TODAY only
+            if _gd_par is None or _gd_par not in _valid_par: continue  # ventana ±1 día
             if gid in _seen_par: continue                    # ← deduplicate
             _seen_par.add(gid)
             for gp in _build_game_parlays(r):
@@ -6640,7 +6804,7 @@ with tab_parlays:
                 _g_state = _r.get("state") or (_gmap_par.get(_gid) or {}).get("state","pre")
                 if _g_state == "post": continue
                 _gd_m = _game_date_par(_gid, _r)
-                if _gd_m is None or _gd_m != _today_par: continue
+                if _gd_m is None or _gd_m not in _valid_par: continue
                 _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
                 if _sg != sg_target: continue
                 _sim = _r["sim"]
