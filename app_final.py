@@ -492,43 +492,53 @@ st.markdown("""
 hr { border-color: var(--border) !important; }
 
 /* ══════════════════════════════════════════════════
-   HAMBURGER BUTTON — reemplaza el toggle del sidebar
+   HAMBURGER — estiliza el botón NATIVO de Streamlit
    ══════════════════════════════════════════════════ */
 
-/* El botón nativo de Streamlit para abrir sidebar */
+/* El botón nativo que abre/cierra el sidebar */
 [data-testid="collapsedControl"] {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 44px !important;
-  height: 44px !important;
-  background: rgba(232,184,75,0.12) !important;
-  border: 1.5px solid rgba(232,184,75,0.5) !important;
-  border-radius: 12px !important;
-  cursor: pointer !important;
   position: fixed !important;
   top: 12px !important;
   left: 12px !important;
-  z-index: 9999 !important;
-  transition: background 0.2s, border-color 0.2s !important;
+  z-index: 99999 !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  background: rgba(232,184,75,0.12) !important;
+  border: 1.5px solid rgba(232,184,75,0.55) !important;
+  border-radius: 13px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  overflow: visible !important;
+  padding: 0 !important;
 }
-[data-testid="collapsedControl"]:hover {
-  background: rgba(232,184,75,0.22) !important;
+[data-testid="collapsedControl"]:hover,
+[data-testid="collapsedControl"]:active {
+  background: rgba(232,184,75,0.28) !important;
   border-color: #E8B84B !important;
+  transform: scale(0.95) !important;
 }
-/* Ocultar el svg original, mostrar hamburger unicode */
+/* Ocultar el icono SVG original de Streamlit */
 [data-testid="collapsedControl"] svg {
   display: none !important;
 }
-[data-testid="collapsedControl"]::after {
-  content: '☰';
+/* Inyectar ☰ con CSS puro — sin JS */
+[data-testid="collapsedControl"]::before {
+  content: '☰' !important;
   color: #E8B84B !important;
-  font-size: 1.3rem !important;
+  font-size: 1.4rem !important;
   line-height: 1 !important;
   font-family: 'Inter', sans-serif !important;
+  display: block !important;
 }
-/* Cuando el sidebar está abierto, ocultar el botón de cerrar interno */
-[data-testid="stSidebarCollapsedControl"] {
+/* Ocultar cualquier texto/label que Streamlit ponga */
+[data-testid="collapsedControl"] span {
   display: none !important;
 }
 
@@ -4943,146 +4953,6 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<style>
-/* ── Ocultar el botón nativo de Streamlit ── */
-[data-testid="collapsedControl"],
-[data-testid="stSidebarCollapsedControl"],
-button[data-testid="collapsedControl"] {
-  opacity: 0 !important;
-  pointer-events: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  overflow: hidden !important;
-  position: absolute !important;
-}
-
-/* ── Nuestro botón hamburguesa custom ── */
-#den-hamburger {
-  position: fixed;
-  top: 14px;
-  left: 14px;
-  z-index: 99999;
-  width: 46px;
-  height: 46px;
-  background: rgba(232,184,75,0.12);
-  border: 1.5px solid rgba(232,184,75,0.6);
-  border-radius: 13px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, transform 0.15s;
-  -webkit-tap-highlight-color: transparent;
-}
-#den-hamburger:hover, #den-hamburger:active {
-  background: rgba(232,184,75,0.25);
-  border-color: #E8B84B;
-  transform: scale(0.96);
-}
-#den-hamburger .bar {
-  width: 20px;
-  height: 2px;
-  background: #E8B84B;
-  border-radius: 2px;
-  transition: all 0.25s;
-}
-/* Animación X cuando sidebar está abierto */
-#den-hamburger.open .bar:nth-child(1) {
-  transform: translateY(7px) rotate(45deg);
-}
-#den-hamburger.open .bar:nth-child(2) {
-  opacity: 0;
-  transform: scaleX(0);
-}
-#den-hamburger.open .bar:nth-child(3) {
-  transform: translateY(-7px) rotate(-45deg);
-}
-</style>
-
-<div id="den-hamburger">
-  <div class="bar"></div>
-  <div class="bar"></div>
-  <div class="bar"></div>
-</div>
-
-<script>
-(function() {
-  function clickSidebarToggle() {
-    // Intentar todos los selectores conocidos del toggle de Streamlit
-    var selectors = [
-      '[data-testid="collapsedControl"]',
-      '[data-testid="stSidebarCollapsedControl"]',
-      'button[kind="header"]',
-      'section[data-testid="stSidebar"] ~ div button',
-    ];
-    for (var i = 0; i < selectors.length; i++) {
-      var btn = document.querySelector(selectors[i]);
-      if (btn) { btn.click(); return true; }
-    }
-    return false;
-  }
-
-  function isSidebarOpen() {
-    var sidebar = document.querySelector('[data-testid="stSidebar"]');
-    if (!sidebar) return false;
-    var style = window.getComputedStyle(sidebar);
-    return style.display !== 'none' && sidebar.getBoundingClientRect().width > 50;
-  }
-
-  function updateHamburger() {
-    var btn = document.getElementById('den-hamburger');
-    if (!btn) return;
-    if (isSidebarOpen()) {
-      btn.classList.add('open');
-    } else {
-      btn.classList.remove('open');
-    }
-  }
-
-  // Esperar a que el DOM esté listo
-  function init() {
-    var btn = document.getElementById('den-hamburger');
-    if (!btn) { setTimeout(init, 100); return; }
-
-    btn.addEventListener('click', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      // Restaurar visibilidad del botón nativo temporalmente para hacer click
-      var nativeBtn = document.querySelector('[data-testid="collapsedControl"]');
-      if (nativeBtn) {
-        nativeBtn.style.opacity = '1';
-        nativeBtn.style.pointerEvents = 'auto';
-        nativeBtn.style.width = '';
-        nativeBtn.style.height = '';
-        nativeBtn.click();
-        setTimeout(function() {
-          nativeBtn.style.opacity = '0';
-          nativeBtn.style.pointerEvents = 'none';
-          nativeBtn.style.width = '0';
-          nativeBtn.style.height = '0';
-        }, 50);
-      }
-      // Toggle animación
-      btn.classList.toggle('open');
-    });
-
-    // Observar cambios en el sidebar
-    var observer = new MutationObserver(updateHamburger);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-    updateHamburger();
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-})();
-</script>
-""", unsafe_allow_html=True)
 
 st.markdown("""
 <div class="den-header">
@@ -6632,10 +6502,9 @@ with tab_sim:
                _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
         )
         _ev_badge = f" 🔥{_ev_count}" if _ev_count else ""
-        # Always show expanded — sport heading + leagues + 3-per-row cards
         st.markdown(
             f'<div style="font-size:0.75rem;font-weight:700;color:{_smp["color"]};'
-            f'letter-spacing:1px;text-transform:uppercase;margin:14px 0 8px 0;'
+            f'letter-spacing:1px;text-transform:uppercase;margin:14px 0 6px 0;'
             f'border-bottom:1px solid {_smp["color"]}33;padding-bottom:4px">'
             f'{_smp["emoji"]} {_sp_p} — {_n_p} partidos{_ev_badge}</div>',
             unsafe_allow_html=True
@@ -6644,18 +6513,64 @@ with tab_sim:
             for _lg_p, _lg_games_p in sorted(_tree_p[_sp_p][_dk_p].items()):
                 _country_p = LEAGUES.get(_lg_p,{}).get("country","")
                 _ctry_str  = f" · {_country_p}" if _country_p else ""
+                _flag_p    = LEAGUE_FLAG.get(_lg_p, "🌐")
+                _n_lg      = len(_lg_games_p)
+
+                # EV count for this league
+                _ev_lg = sum(
+                    1 for _gg in _lg_games_p
+                    if _sim_map.get(_gg.get("id",""),{}).get("sim",{}).get("best_single",{}) and
+                       _sim_map.get(_gg.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+                )
+                _ev_lg_badge = f" · 🔥{_ev_lg} EV+" if _ev_lg else ""
+
+                # Estado abierto/cerrado — por defecto CERRADO (guardado en session_state)
+                _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_')}"
+                _is_open = st.session_state.get(_exp_key, False)
+
+                # Header clickable
+                _hdr_bg     = f"rgba({','.join(str(int(_smp['color'][i:i+2],16)) for i in (1,3,5))},0.10)" if _is_open else "rgba(255,255,255,0.03)"
+                _hdr_border = f"1.5px solid {_smp['color']}66" if _is_open else "1px solid #2A2A2A"
+                _arrow      = "▼" if _is_open else "▶"
+
                 st.markdown(
-                    f'<div style="font-size:0.70rem;color:{_smp["color"]}99;font-weight:600;'
-                    f'letter-spacing:1px;text-transform:uppercase;margin:6px 0 4px 8px">'
-                    f'{league_label(_lg_p)}{_ctry_str} · {len(_lg_games_p)}</div>',
+                    f'<div style="background:{_hdr_bg};border:{_hdr_border};'
+                    f'border-radius:{"12px 12px 0 0" if _is_open else "12px"};'
+                    f'padding:9px 14px;margin-top:5px;'
+                    f'display:flex;justify-content:space-between;align-items:center">'
+                    f'<div>'
+                    f'<span style="font-size:0.85rem">{_flag_p}</span> '
+                    f'<span style="font-size:0.78rem;font-weight:700;color:#E8E8E8">{_lg_p}</span>'
+                    f'<span style="font-size:0.68rem;color:#6B7280;margin-left:6px">{_n_lg} partidos{_ctry_str}{_ev_lg_badge}</span>'
+                    f'</div>'
+                    f'<span style="font-size:0.8rem;color:{_smp["color"]};font-weight:700">{_arrow}</span>'
+                    f'</div>',
                     unsafe_allow_html=True
                 )
-                for _gi3 in range(0, len(_lg_games_p), 3):
-                    _row3 = _lg_games_p[_gi3:_gi3+3]
-                    _c3 = st.columns(len(_row3))
-                    for _ci3, _gg_p in enumerate(_row3):
-                        with _c3[_ci3]:
-                            st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                _btn_k = f"btn_lg_{_lg_p.replace(' ','_').replace('/','_').replace('.','')}"
+                if st.button(
+                    "▼ Cerrar" if _is_open else "▶ Ver partidos",
+                    key=_btn_k,
+                    use_container_width=True,
+                    help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"
+                ):
+                    st.session_state[_exp_key] = not _is_open
+                    st.rerun()
+
+                if _is_open:
+                    st.markdown(
+                        f'<div style="background:#111111;border:1px solid {_smp["color"]}33;'
+                        f'border-top:none;border-radius:0 0 12px 12px;padding:8px 6px 10px 6px;'
+                        f'margin-bottom:2px">',
+                        unsafe_allow_html=True
+                    )
+                    for _gi3 in range(0, len(_lg_games_p), 3):
+                        _row3 = _lg_games_p[_gi3:_gi3+3]
+                        _c3 = st.columns(len(_row3))
+                        for _ci3, _gg_p in enumerate(_row3):
+                            with _c3[_ci3]:
+                                st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
