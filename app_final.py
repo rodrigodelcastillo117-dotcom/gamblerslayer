@@ -1022,12 +1022,12 @@ LEAGUES = {
     "Eredivisie":             {"sport":"soccer",    "league":"ned.1",                  "group":"Soccer"},
     "CONCACAF Champions Cup": {"sport":"soccer", "league":"concacaf.champions",  "group":"Soccer", "country":"CONCACAF"},
     # ── Ligas ocultas: no aparecen en el menú, solo sus equipos favoritos ────
-    "Superliga":              {"sport":"soccer",    "league":"den.1",                  "group":"Soccer", "hidden":True},
-    "Süper Lig":              {"sport":"soccer",    "league":"tur.1",                  "group":"Soccer", "hidden":True},
-    "Super League Greece":    {"sport":"soccer",    "league":"gre.1",                  "group":"Soccer", "hidden":True},
-    "Primeira Liga":          {"sport":"soccer",    "league":"por.1",                  "group":"Soccer", "hidden":True},
-    "Eliteserien":            {"sport":"soccer",    "league":"nor.1",                  "group":"Soccer", "hidden":True},
-    "Allsvenskan":            {"sport":"soccer",    "league":"swe.1",                  "group":"Soccer", "hidden":True},
+    "Superliga":              {"sport":"soccer",    "league":"DEN.1",                  "group":"Soccer", "hidden":True},
+    "Süper Lig":              {"sport":"soccer",    "league":"TUR.1",                  "group":"Soccer", "hidden":True},
+    "Super League Greece":    {"sport":"soccer",    "league":"GRE.1",                  "group":"Soccer", "hidden":True},
+    "Primeira Liga":          {"sport":"soccer",    "league":"POR.1",                  "group":"Soccer", "hidden":True},
+    "Eliteserien":            {"sport":"soccer",    "league":"NOR.1",                  "group":"Soccer", "hidden":True},
+    "Allsvenskan":            {"sport":"soccer",    "league":"SWE.1",                  "group":"Soccer", "hidden":True},
 }
 
 # ── Equipos favoritos de ligas ocultas ──────────────────────────────────────
@@ -1527,12 +1527,12 @@ _ALL_LEAGUE_SLUGS = {
     "Belgian Pro League":    ("soccer",    "bel.1"),
     "Eredivisie":            ("soccer",    "ned.1"),
     # Ligas ocultas (para poblar memoria de equipos favoritos)
-    "Superliga":             ("soccer",    "den.1"),
-    "Süper Lig":             ("soccer",    "tur.1"),
-    "Super League Greece":   ("soccer",    "gre.1"),
-    "Primeira Liga":         ("soccer",    "por.1"),
-    "Eliteserien":           ("soccer",    "nor.1"),
-    "Allsvenskan":           ("soccer",    "swe.1"),
+    "Superliga":             ("soccer",    "DEN.1"),
+    "Süper Lig":             ("soccer",    "TUR.1"),
+    "Super League Greece":   ("soccer",    "GRE.1"),
+    "Primeira Liga":         ("soccer",    "POR.1"),
+    "Eliteserien":           ("soccer",    "NOR.1"),
+    "Allsvenskan":           ("soccer",    "SWE.1"),
 }
 
 def get_team_profile(team_id):
@@ -2562,10 +2562,18 @@ def get_all_games(leagues):
         "bel.1":  ["bel.1", "bel.pro", "bel.jupiler"],
         "UEFA.CHAMPIONS": ["UEFA.CHAMPIONS", "uefa.champions"],
         "UEFA.EUROPA":    ["UEFA.EUROPA",    "uefa.europa"],
-        "tur.1":  ["tur.1", "TUR.1", "tur.super.lig"],
-        "den.1":  ["den.1", "DEN.1", "den.superliga"],
-        "gre.1":  ["gre.1", "GRE.1", "gre.super"],
-        "por.1":  ["por.1", "POR.1", "por.primera"],
+        "tur.1":  ["TUR.1", "tur.1", "tur.super.lig"],
+        "TUR.1":  ["TUR.1", "tur.1", "tur.super.lig"],
+        "den.1":  ["DEN.1", "den.1", "den.superliga"],
+        "DEN.1":  ["DEN.1", "den.1", "den.superliga"],
+        "gre.1":  ["GRE.1", "gre.1", "gre.super"],
+        "GRE.1":  ["GRE.1", "gre.1", "gre.super"],
+        "por.1":  ["POR.1", "por.1", "por.primeira"],
+        "POR.1":  ["POR.1", "por.1", "por.primeira"],
+        "nor.1":  ["NOR.1", "nor.1"],
+        "NOR.1":  ["NOR.1", "nor.1"],
+        "swe.1":  ["SWE.1", "swe.1"],
+        "SWE.1":  ["SWE.1", "swe.1"],
     }
 
     def _fetch_soccer(sport, league):
