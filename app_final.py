@@ -953,6 +953,26 @@ div[data-testid="stMetricValue"] { color: #E8E8E8 !important; font-family: 'Inte
 div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-family: 'Inter', sans-serif !important; }
 div[data-testid="stMetricDelta"] { font-family: 'Inter', sans-serif !important; }
 
+/* ── Suprimir overlay opaco de Streamlit durante reruns ── */
+/* Streamlit pone opacity:0.4 sobre toda la app durante st.rerun() — lo eliminamos */
+.stApp [data-testid="stAppViewContainer"] > section,
+.stApp > div,
+iframe[title="st_on_forward_msg"],
+div[data-testid="stSpinnerContainer"],
+[class*="withScreencast"],
+[class*="AppView"] {
+  opacity: 1 !important;
+}
+/* El overlay que aparece durante reruns */
+div[data-testid="stStatusWidget"] { display: none !important; }
+/* Streamlit pone una clase running que reduce opacidad — forzar opacidad total */
+.stApp.running .main,
+.stApp.running section,
+.stApp.running [data-testid="stAppViewContainer"] {
+  opacity: 1 !important;
+  transition: none !important;
+}
+
 /* ── FORZAR BOTONES OSCUROS — máxima especificidad ── */
 .stApp button:not([data-testid="baseButton-primary"]):not([title="Menú"]):not([aria-label="Menú"]) {
   background-color: #1C1C1C !important;
@@ -1001,6 +1021,29 @@ LEAGUES = {
     "Belgian Pro League":     {"sport":"soccer",    "league":"bel.1",                  "group":"Soccer"},
     "Eredivisie":             {"sport":"soccer",    "league":"ned.1",                  "group":"Soccer"},
     "CONCACAF Champions Cup": {"sport":"soccer", "league":"concacaf.champions",  "group":"Soccer", "country":"CONCACAF"},
+    # ── Ligas ocultas: no aparecen en el menú, solo sus equipos favoritos ────
+    "Superliga":              {"sport":"soccer",    "league":"den.1",                  "group":"Soccer", "hidden":True},
+    "Süper Lig":              {"sport":"soccer",    "league":"tur.1",                  "group":"Soccer", "hidden":True},
+    "Super League Greece":    {"sport":"soccer",    "league":"gre.1",                  "group":"Soccer", "hidden":True},
+    "Primeira Liga":          {"sport":"soccer",    "league":"por.1",                  "group":"Soccer", "hidden":True},
+    "Eliteserien":            {"sport":"soccer",    "league":"nor.1",                  "group":"Soccer", "hidden":True},
+    "Allsvenskan":            {"sport":"soccer",    "league":"swe.1",                  "group":"Soccer", "hidden":True},
+}
+
+# ── Equipos favoritos de ligas ocultas ──────────────────────────────────────
+# Solo se muestran partidos de estos equipos aunque su liga no esté en el menú.
+# Clave: nombre del equipo tal como lo devuelve ESPN (displayName).
+WATCHED_TEAMS = {
+    # Dinamarca — Superliga
+    "FC Midtjylland", "FC Copenhagen", "Brøndby IF", "AGF",
+    # Turquía — Süper Lig
+    "Galatasaray", "Fenerbahçe", "Beşiktaş", "Trabzonspor",
+    # Grecia — Super League
+    "AEK Athens", "PAOK", "Panathinaikos", "Olympiakos",
+    # Portugal — Primeira Liga
+    "Benfica", "FC Porto", "Sporting CP", "Braga",
+    # Noruega / Suecia
+    "Rosenborg", "Molde", "Malmö FF", "AIK",
 }
 LEAGUE_FLAG = {
     "NBA":                    "🇺🇸",
@@ -1022,6 +1065,13 @@ LEAGUE_FLAG = {
     "Belgian Pro League":     "🇧🇪",
     "Eredivisie":             "🇳🇱",
     "CONCACAF Champions Cup": "🌎",
+    # Ligas ocultas
+    "Superliga":              "🇩🇰",
+    "Süper Lig":              "🇹🇷",
+    "Super League Greece":    "🇬🇷",
+    "Primeira Liga":          "🇵🇹",
+    "Eliteserien":            "🇳🇴",
+    "Allsvenskan":            "🇸🇪",
 }
 
 def league_label(name):
@@ -1055,15 +1105,22 @@ HOME_BOOST = {
     "Saudi Pro League": 0.040,  # SPL: strong local support
     "Belgian Pro League":0.038,
     "Eredivisie":       0.038,
+    # Ligas ocultas
+    "Superliga":              0.042,  # Dinamarca: fuerte ventaja local
+    "Süper Lig":              0.045,  # Turquía: afición muy intensa
+    "Super League Greece":    0.044,  # Grecia: ambientes muy calientes
+    "Primeira Liga":          0.038,
+    "Eliteserien":            0.040,
+    "Allsvenskan":            0.038,
     }
 LEAGUE_AVG_GOALS = {
     # ── No-soccer: puntos/carreras TOTALES por partido (ambos equipos) ──────────
     # Fuente: StatMuse, Basketball-Reference, Hockey-Reference — Temporada 2025-26
-    "NBA":   228.0,   # 2025-26: ~228 pts/juego (equipos top ~115 PPG c/u)
-    "MLB":   8.8,     # 2025 MLB: ~8.8 R/G
-    "NFL":   47.8,    # 2025 NFL: Rams 30.5 PPG → promedio liga ~47.8 total
-    "NCAAF": 58.0,    # 2025 NCAAF
-    "NHL":   6.10,    # 2025-26 NHL: ~3.05 G/GP por equipo → total ~6.1
+    "NBA":   228.0,
+    "MLB":   8.8,
+    "NFL":   47.8,
+    "NCAAF": 58.0,
+    "NHL":   6.10,
     # ── Soccer: goles totales por partido (ambos equipos) ─────────────────────
     # Fuente: Sofascore, FootyStats — Temporada 2025-26 (en curso)
     "MLS":              2.90,
@@ -1080,6 +1137,13 @@ LEAGUE_AVG_GOALS = {
     "Saudi Pro League": 2.78,
     "Belgian Pro League":3.08,
     "Eredivisie":       3.15,
+    # Ligas ocultas
+    "Superliga":              2.95,  # Dinamarca 2025-26
+    "Süper Lig":              2.72,  # Turquía 2025-26
+    "Super League Greece":    2.62,  # Grecia 2025-26
+    "Primeira Liga":          2.58,  # Portugal 2025-26
+    "Eliteserien":            2.88,  # Noruega
+    "Allsvenskan":            2.72,  # Suecia
 }
 
 # ── MLB Ballpark Factors ────────────────────────────────────────────────────
@@ -1439,6 +1503,13 @@ _ALL_LEAGUE_SLUGS = {
     "Saudi Pro League":      ("soccer",    "sau.1"),
     "Belgian Pro League":    ("soccer",    "bel.1"),
     "Eredivisie":            ("soccer",    "ned.1"),
+    # Ligas ocultas (para poblar memoria de equipos favoritos)
+    "Superliga":             ("soccer",    "den.1"),
+    "Süper Lig":             ("soccer",    "tur.1"),
+    "Super League Greece":   ("soccer",    "gre.1"),
+    "Primeira Liga":         ("soccer",    "por.1"),
+    "Eliteserien":           ("soccer",    "nor.1"),
+    "Allsvenskan":           ("soccer",    "swe.1"),
 }
 
 def get_team_profile(team_id):
@@ -2473,7 +2544,6 @@ def get_all_games(leagues):
     def _fetch_soccer(sport, league):
         """Hit every known ESPN endpoint for soccer to collect all day's events."""
         all_evts = {}
-        # Build list of slugs to try (main + alternatives)
         slugs_to_try = _EXTRA_SLUGS.get(league, [league])
         if league not in slugs_to_try:
             slugs_to_try = [league] + slugs_to_try
@@ -2503,21 +2573,27 @@ def get_all_games(leagues):
                     if _r.status_code != 200:
                         continue
                     _data = _r.json()
+                    _found = False
                     for _e in _data.get("events", []):
                         if isinstance(_e, dict) and _e.get("id"):
                             all_evts[_e["id"]] = _e
+                            _found = True
                     for _e in _data.get("items", []):
                         if isinstance(_e, dict) and _e.get("id") and _e.get("competitions"):
                             all_evts[_e["id"]] = _e
+                            _found = True
                 except Exception:
                     continue
 
-        print(f"[ESPN] soccer/{league}: {len(all_evts)} raw events fetched")
         return {"events": list(all_evts.values())}
 
     result = []
     errors = []
-    for name in leagues:
+    # Siempre incluir ligas ocultas (equipos favoritos) además de las seleccionadas
+    _hidden_leagues = [n for n, cfg in LEAGUES.items() if cfg.get("hidden")]
+    _all_to_fetch = list(leagues) + [l for l in _hidden_leagues if l not in leagues]
+
+    for name in _all_to_fetch:
         cfg = LEAGUES.get(name)
         if not cfg:
             errors.append(f"{name}: liga no configurada")
@@ -2529,9 +2605,16 @@ def get_all_games(leagues):
                 data = fetch_scoreboard(cfg["sport"], cfg["league"],
                                         tournament_id=cfg.get("tournament_id"))
             parsed = parse_games(data, name)
+            # ── Ligas ocultas: solo mostrar partidos de equipos favoritos ──────
+            if cfg.get("hidden"):
+                parsed = [
+                    g for g in parsed
+                    if g.get("home_team") in WATCHED_TEAMS
+                    or g.get("away_team") in WATCHED_TEAMS
+                ]
             result.extend(parsed)
             print(f"[ESPN] {name}: {len(parsed)} partidos HOY CDMX")
-            if not parsed:
+            if not parsed and not cfg.get("hidden"):
                 errors.append(f"{name}: sin partidos hoy")
         except Exception as e:
             errors.append(f"{name}: {type(e).__name__} — {e}")
@@ -3390,6 +3473,13 @@ LEAGUE_OU_PRIORS = {
     "Saudi Pro League":      (0.230, 0.465, 0.690, 0.770, 0.535, 0.310, 0.570),
     "Belgian Pro League":    (0.195, 0.415, 0.635, 0.805, 0.585, 0.365, 0.615),
     "Eredivisie":            (0.188, 0.400, 0.622, 0.812, 0.600, 0.378, 0.625),
+    # Ligas ocultas
+    "Superliga":             (0.218, 0.445, 0.665, 0.782, 0.555, 0.335, 0.560),
+    "Süper Lig":             (0.255, 0.488, 0.710, 0.745, 0.512, 0.290, 0.525),
+    "Super League Greece":   (0.262, 0.495, 0.720, 0.738, 0.505, 0.280, 0.515),
+    "Primeira Liga":         (0.268, 0.502, 0.725, 0.732, 0.498, 0.275, 0.510),
+    "Eliteserien":           (0.228, 0.458, 0.678, 0.772, 0.542, 0.322, 0.548),
+    "Allsvenskan":           (0.252, 0.485, 0.705, 0.748, 0.515, 0.295, 0.528),
 }
 
 # Minimum deviation from league prior to qualify as a valid O/U or BTTS pick.
@@ -3442,6 +3532,13 @@ SOCCER_CALIB = {
     "Eredivisie":             ( +0.030,  +0.045, -0.035),
     # MLS: clear Over over-prediction by Poisson
     "MLS":                    ( +0.040,  +0.055, -0.060),
+    # Ligas ocultas
+    "Superliga":              ( +0.025,  +0.040, -0.030),
+    "Süper Lig":              ( +0.020,  +0.035, -0.035),
+    "Super League Greece":    ( +0.015,  +0.030, -0.025),
+    "Primeira Liga":          ( +0.020,  +0.035, -0.025),
+    "Eliteserien":            ( +0.030,  +0.045, -0.035),
+    "Allsvenskan":            ( +0.025,  +0.040, -0.030),
 }
 
 def apply_soccer_calib(league, p_u25, p_u35, p_btts, p_o25, p_o35):
@@ -5460,7 +5557,7 @@ if st.session_state.get("menu_open", False):
             key="sel_groups_v3", label_visibility="collapsed"
         )
         st.session_state["sel_groups_val"] = sel_groups
-        _avail = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups]
+        _avail = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups and not cfg.get("hidden")]
         # Agregar ligas nuevas que no estuvieran en la selección guardada
         _saved = st.session_state.get("sel_leagues_val", _avail)
         _new_lgs = [l for l in _avail if l not in _saved]
@@ -5518,7 +5615,7 @@ else:
     # Valores por defecto cuando el menú está cerrado
     n_sims     = st.session_state.get("n_sims_val", 10_000)
     sel_groups = st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"])
-    _avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups]
+    _avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups and not cfg.get("hidden")]
     # Si sel_leagues_val no existe o tiene ligas que ya no existen, usar _avail completo
     _saved_leagues = st.session_state.get("sel_leagues_val", None)
     if _saved_leagues is None:
