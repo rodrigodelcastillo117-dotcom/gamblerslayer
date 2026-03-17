@@ -3180,6 +3180,10 @@ def get_lambda(game):
     avg    = LEAGUE_AVG_GOALS.get(league)
     if avg is None: return None, None
 
+    # Determinar si es soccer para ajustes específicos
+    _sport_grp_lam = LEAGUES.get(league, {}).get("group", "Soccer")
+    is_soccer = _sport_grp_lam == "Soccer"
+
     ou = game["odds"].get("over_under", "")
     try:
         total = float(str(ou))
