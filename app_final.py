@@ -6049,6 +6049,7 @@ with tab_picks:
 
         # ── Mostrar picks ─────────────────────────────────────────────────────────
         sr_cur = st.session_state.get("sim_results", [])
+        sr_cur_filtrado = sr_cur  # default: sin filtro, se sobreescribe abajo si hay filtro de liga
         all_bets=[]
         for r in sr_cur:
             bs=r["sim"].get("best_single")
