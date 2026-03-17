@@ -1034,16 +1034,39 @@ LEAGUES = {
 # Solo se muestran partidos de estos equipos aunque su liga no esté en el menú.
 # Clave: nombre del equipo tal como lo devuelve ESPN (displayName).
 WATCHED_TEAMS = {
-    # Dinamarca — Superliga
-    "FC Midtjylland", "FC Copenhagen", "Brøndby IF", "AGF",
-    # Turquía — Süper Lig
-    "Galatasaray", "Fenerbahçe", "Beşiktaş", "Trabzonspor",
-    # Grecia — Super League
-    "AEK Athens", "PAOK", "Panathinaikos", "Olympiakos",
-    # Portugal — Primeira Liga
-    "Benfica", "FC Porto", "Sporting CP", "Braga",
-    # Noruega / Suecia
-    "Rosenborg", "Molde", "Malmö FF", "AIK",
+    # ── Dinamarca — Superliga ─────────────────────────────────────────────────
+    "FC Midtjylland",       # ESPN: "FC Midtjylland"
+    "FC Copenhagen",        # ESPN: "FC Copenhagen"
+    "Brøndby IF",           # ESPN: "Brøndby IF"
+    "AGF",                  # ESPN: "AGF"
+
+    # ── Turquía — Süper Lig ──────────────────────────────────────────────────
+    "Fenerbahce",           # ESPN: "Fenerbahce" (sin acento)
+    "Galatasaray",          # ESPN: "Galatasaray"
+    "Besiktas",             # ESPN: "Besiktas" (sin acento)
+    "Trabzonspor",          # ESPN: "Trabzonspor"
+
+    # ── Grecia — Super League ────────────────────────────────────────────────
+    "PAOK Salonika",        # ESPN: "PAOK Salonika" (no "PAOK" a secas)
+    "AEK Athens",           # ESPN: "AEK Athens"
+    "Panathinaikos",        # ESPN: "Panathinaikos"
+    "Olympiacos",           # ESPN: "Olympiacos" (no "Olympiakos")
+
+    # ── Portugal — Primeira Liga ─────────────────────────────────────────────
+    "Benfica",              # ESPN: "Benfica"
+    "FC Porto",             # ESPN: "FC Porto"
+    "Sporting CP",          # ESPN: "Sporting CP"
+    "SC Braga",             # ESPN: "SC Braga" (verificar — puede ser "Braga")
+    "Braga",                # variante
+
+    # ── Noruega — Eliteserien ────────────────────────────────────────────────
+    "Rosenborg BK",         # ESPN: "Rosenborg BK"
+    "Molde FK",             # ESPN: "Molde FK"
+    "Bodo/Glimt",           # ESPN: "Bodo/Glimt" (sin tildes)
+
+    # ── Suecia — Allsvenskan ─────────────────────────────────────────────────
+    "Malmö FF",             # ESPN: "Malmö FF"
+    "AIK",                  # ESPN: "AIK"
 }
 LEAGUE_FLAG = {
     "NBA":                    "🇺🇸",
@@ -2539,6 +2562,10 @@ def get_all_games(leagues):
         "bel.1":  ["bel.1", "bel.pro", "bel.jupiler"],
         "UEFA.CHAMPIONS": ["UEFA.CHAMPIONS", "uefa.champions"],
         "UEFA.EUROPA":    ["UEFA.EUROPA",    "uefa.europa"],
+        "tur.1":  ["tur.1", "TUR.1", "tur.super.lig"],
+        "den.1":  ["den.1", "DEN.1", "den.superliga"],
+        "gre.1":  ["gre.1", "GRE.1", "gre.super"],
+        "por.1":  ["por.1", "POR.1", "por.primera"],
     }
 
     def _fetch_soccer(sport, league):
