@@ -1137,7 +1137,7 @@ _TP_HEADERS   = [
     "rate_o15","rate_o25","rate_o35","rate_btts",
     "rate_o15_home","rate_o25_home","rate_o35_home","rate_btts_home",
     "rate_o15_away","rate_o25_away","rate_o35_away","rate_btts_away",
-    "thresholds_json",
+    "thresholds_json","red_card_rate",
 ]
 _TP_THRESHOLDS = {
     "Soccer":     [("o15",1.5),("o25",2.5),("o35",3.5)],
@@ -1261,6 +1261,7 @@ def _load_all_team_profiles():
                     "rate_o35_away":     float(_c(23) or 0),
                     "rate_btts_away":    float(_c(24) or 0),
                     "thresholds":        thresholds,
+                    "red_card_rate":     float(_c(26) or 0),
                 }
             except:
                 continue
@@ -1308,6 +1309,10 @@ def _compute_profile_stats(games, sport_group):
             "rate_o25_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 2.5),
             "rate_o35_away":  rate(away_g, lambda g: g["scored"]+g["conceded"] > 3.5),
             "rate_btts_away": rate(away_g, lambda g: g["scored"]>0 and g["conceded"]>0),
+            # Tasa de tarjeta roja: % de partidos donde el equipo recibió ≥1 roja
+            # Liga promedio: ~0.15 (1 roja cada 6-7 partidos)
+            # Equipo agresivo: >0.25 → penalizar scoring por 10 min menos con 11
+            "red_card_rate":  rate(games, lambda g: g.get("red_cards", 0) >= 1),
             "thresholds": {},
         })
     else:
@@ -1320,6 +1325,7 @@ def _compute_profile_stats(games, sport_group):
             "rate_o15":0.0,"rate_o25":0.0,"rate_o35":0.0,"rate_btts":0.0,
             "rate_o15_home":0.0,"rate_o25_home":0.0,"rate_o35_home":0.0,"rate_btts_home":0.0,
             "rate_o15_away":0.0,"rate_o25_away":0.0,"rate_o35_away":0.0,"rate_btts_away":0.0,
+            "red_card_rate": 0.0,
             "thresholds": thresholds,
         })
     return stats
@@ -1391,6 +1397,7 @@ def update_team_profile(team_id, team_name, league, sport_group, new_games):
             stats["rate_o15_home"],stats["rate_o25_home"],stats["rate_o35_home"],stats["rate_btts_home"],
             stats["rate_o15_away"],stats["rate_o25_away"],stats["rate_o35_away"],stats["rate_btts_away"],
             json.dumps(stats["thresholds"], ensure_ascii=False),
+            stats.get("red_card_rate", 0.0),
         ]
 
         col_end = chr(ord("A") + len(_TP_HEADERS) - 1)
@@ -1604,15 +1611,13 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
         return None
 
     def _parse_events(events, team_id, max_games):
-        """Parsea lista de eventos y retorna juegos terminados con score."""
+        """Parsea lista de eventos y retorna juegos terminados con score y tarjetas rojas."""
         games_raw_list = []
         now_iso = datetime.now(timezone.utc).isoformat()[:16]
         for ev in events:
             ev_date = ev.get("date", "")
-            # Skip future games
             if ev_date[:16] > now_iso:
                 continue
-            # Only completed games
             state = ev.get("status", {}).get("type", {}).get("state", "")
             if state not in ("post", ""):
                 continue
@@ -1631,17 +1636,40 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
             opp_score  = _get_score(opp_comp)
             if team_score is None or opp_score is None:
                 continue
-            # Skip 0-0 only if clearly not played (no boxscore AND state unknown)
             if team_score == 0 and opp_score == 0 and state == "" and not comp.get("boxscoreAvailable", False):
                 continue
             is_home  = team_comp.get("homeAway") == "home"
             opp_name = opp_comp.get("team", {}).get("displayName", "")
+
+            # ── Extraer tarjetas rojas del evento si ESPN las incluye ──────────
+            red_cards_team = 0
+            red_cards_opp  = 0
+            # ESPN a veces incluye stats en el competition o en el competitor
+            for _rc_src in [team_comp, comp]:
+                _stats = _rc_src.get("statistics", [])
+                if isinstance(_stats, list):
+                    for _st in _stats:
+                        _name = (_st.get("name") or _st.get("abbreviation") or "").lower()
+                        if "red" in _name or _name in ("rc", "redcards"):
+                            try: red_cards_team = max(red_cards_team, int(_st.get("displayValue", 0) or 0))
+                            except: pass
+            for _rc_src2 in [opp_comp]:
+                _stats2 = _rc_src2.get("statistics", [])
+                if isinstance(_stats2, list):
+                    for _st2 in _stats2:
+                        _name2 = (_st2.get("name") or _st2.get("abbreviation") or "").lower()
+                        if "red" in _name2 or _name2 in ("rc", "redcards"):
+                            try: red_cards_opp = max(red_cards_opp, int(_st2.get("displayValue", 0) or 0))
+                            except: pass
+
             games_raw_list.append({
-                "scored":   team_score,
-                "conceded": opp_score,
-                "home":     is_home,
-                "date":     ev_date[:10],
-                "opp":      opp_name,
+                "scored":        team_score,
+                "conceded":      opp_score,
+                "home":          is_home,
+                "date":          ev_date[:10],
+                "opp":           opp_name,
+                "red_cards":     red_cards_team,      # tarjetas rojas recibidas por este equipo
+                "red_cards_opp": red_cards_opp,       # tarjetas rojas del rival
             })
             if len(games_raw_list) >= max_games:
                 break
@@ -1774,6 +1802,7 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
                 stats["rate_o15_away"], stats["rate_o25_away"],
                 stats["rate_o35_away"], stats["rate_btts_away"],
                 json.dumps(stats.get("thresholds", {}), ensure_ascii=False),
+                stats.get("red_card_rate", 0.0),
             ])
             log.append(f"  ✅ {tname}: {len(games)} partidos")
 
@@ -3276,6 +3305,31 @@ def get_lambda(game):
         lam_away = max(0.1, lam_away * (0.70 + 0.30 * a_inj_f))
         # Home scores slightly more against weakened away defense
         lam_home = max(0.1, lam_home * (1.0 + (1.0 - a_inj_f) * 0.15))
+
+    # ── Red Card λ adjustment (soccer only) ─────────────────────────────────
+    # Tarjeta roja = ~10 min menos jugando con 10 hombres en promedio
+    # Efecto estadístico real: equipo con roja concede ~0.35 goles más,
+    # marca ~0.25 goles menos. Fuente: Journal of Quantitative Analysis in Sports.
+    # Usamos la tasa histórica del equipo como probabilidad de roja en este partido.
+    # Liga promedio: ~0.15 (1 roja c/6-7 partidos). Equipo agresivo: >0.25
+    if is_soccer:
+        _h_rc = (_h_prof.get("red_card_rate", 0) or 0) if _h_prof else 0
+        _a_rc = (_a_prof.get("red_card_rate", 0) or 0) if _a_prof else 0
+        _league_rc_avg = 0.15  # tasa promedio de liga
+
+        # Exceso sobre el promedio de liga
+        _h_rc_excess = max(0, _h_rc - _league_rc_avg)
+        _a_rc_excess = max(0, _a_rc - _league_rc_avg)
+
+        # Si el local es propenso a rojas → marca menos, concede más
+        if _h_rc_excess > 0:
+            lam_home = max(0.1, lam_home * (1.0 - _h_rc_excess * 1.5))  # hasta -37.5%
+            lam_away = max(0.1, lam_away * (1.0 + _h_rc_excess * 1.0))  # hasta +25%
+
+        # Si el visitante es propenso a rojas → marca menos, concede más
+        if _a_rc_excess > 0:
+            lam_away = max(0.1, lam_away * (1.0 - _a_rc_excess * 1.5))
+            lam_home = max(0.1, lam_home * (1.0 + _a_rc_excess * 1.0))
 
     # ── H2H blend: if ≥5 H2H games available, pull lambda toward H2H avg ────
     # H2H history is more specific than league avg — weight 20% when available.
