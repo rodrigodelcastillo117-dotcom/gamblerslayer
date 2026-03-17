@@ -2639,6 +2639,46 @@ def get_all_games(leagues):
                     if g.get("home_team") in WATCHED_TEAMS
                     or g.get("away_team") in WATCHED_TEAMS
                 ]
+                # Si el scoreboard no devolvió partidos, buscar por equipo directamente
+                if not parsed:
+                    _sport_s = cfg["sport"]
+                    _league_s = cfg["league"]
+                    _extra_evts = []
+                    for _wt in WATCHED_TEAMS:
+                        # Solo equipos de esta liga
+                        try:
+                            _teams_url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+                                         f"{_sport_s}/{_league_s}/teams?limit=50")
+                            _tr = requests.get(_teams_url, timeout=5,
+                                               headers={"User-Agent":"Mozilla/5.0"})
+                            if _tr.status_code != 200:
+                                break
+                            _tdata = _tr.json()
+                            _teams = (_tdata.get("sports",[{}])[0]
+                                           .get("leagues",[{}])[0]
+                                           .get("teams",[]))
+                            for _t in _teams:
+                                _ti = _t.get("team",{})
+                                if _ti.get("displayName","") in WATCHED_TEAMS:
+                                    _tid = _ti.get("id","")
+                                    if _tid:
+                                        _sched_url = (f"https://site.api.espn.com/apis/site/v2/sports/"
+                                                      f"{_sport_s}/{_league_s}/teams/{_tid}/schedule")
+                                        _sr2 = requests.get(_sched_url, timeout=6,
+                                                           headers={"User-Agent":"Mozilla/5.0"})
+                                        if _sr2.status_code == 200:
+                                            for _ev in _sr2.json().get("events",[]):
+                                                if isinstance(_ev, dict) and _ev.get("id"):
+                                                    _extra_evts.append(_ev)
+                            break  # solo necesitamos buscar una vez
+                        except Exception:
+                            break
+                    if _extra_evts:
+                        _extra_data = {"events": _extra_evts}
+                        _extra_parsed = parse_games(_extra_data, name)
+                        parsed = [g for g in _extra_parsed
+                                  if g.get("home_team") in WATCHED_TEAMS
+                                  or g.get("away_team") in WATCHED_TEAMS]
             result.extend(parsed)
             print(f"[ESPN] {name}: {len(parsed)} partidos HOY CDMX")
             if not parsed and not cfg.get("hidden"):
