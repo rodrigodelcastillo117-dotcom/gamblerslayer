@@ -337,17 +337,17 @@ hr { border-color:var(--border) !important; }
 
 
 
-/* ═══ BOTTOM NAV — styled radio ═══ */
-div[data-testid="stRadio"] > label:first-child {
+/* ═══ BOTTOM NAV — styled radio (SOLO #gamblers-nav) ═══ */
+#gamblers-nav [data-testid="stRadio"] > label:first-child {
   display: none !important;
   height: 0 !important;
 }
 
-div[data-testid="stRadio"] input[type="radio"] {
+#gamblers-nav [data-testid="stRadio"] input[type="radio"] {
   display: none !important;
 }
 
-div[data-testid="stRadio"] > div[role="radiogroup"] {
+#gamblers-nav [data-testid="stRadio"] > div[role="radiogroup"] {
   position: fixed !important;
   bottom: 70px !important;
   left: 50% !important;
@@ -369,7 +369,7 @@ div[data-testid="stRadio"] > div[role="radiogroup"] {
   box-shadow: 0 4px 24px rgba(0,0,0,0.5) !important;
 }
 
-div[data-testid="stRadio"] label[data-baseweb="radio"] {
+#gamblers-nav [data-testid="stRadio"] label[data-baseweb="radio"] {
   flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
@@ -381,16 +381,14 @@ div[data-testid="stRadio"] label[data-baseweb="radio"] {
   margin: 0 !important;
   border-radius: 18px !important;
   border-top: none !important;
-  transition: background 0.15s !important;
 }
 
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+#gamblers-nav [data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
   background: rgba(255,107,0,0.20) !important;
-  border-top: none !important;
 }
 
-div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p,
-div[data-testid="stRadio"] label[data-baseweb="radio"] span {
+#gamblers-nav [data-testid="stRadio"] label[data-baseweb="radio"] span,
+#gamblers-nav [data-testid="stRadio"] label[data-baseweb="radio"] p {
   font-size: 0.52rem !important;
   font-weight: 700 !important;
   letter-spacing: 0.3px !important;
@@ -400,8 +398,8 @@ div[data-testid="stRadio"] label[data-baseweb="radio"] span {
   line-height: 1 !important;
 }
 
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
+#gamblers-nav [data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
+#gamblers-nav [data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
   color: #FF6B00 !important;
 }  display: none !important;
 }
@@ -437,6 +435,7 @@ _nav_map_rev = dict(zip(_nav_keys, _nav_display))
 
 _cur_display = _nav_map_rev.get(_active_page, _nav_display[0])
 
+st.markdown('<div id="gamblers-nav">', unsafe_allow_html=True)
 _selected_display = st.radio(
     "nav",
     _nav_display,
@@ -445,6 +444,7 @@ _selected_display = st.radio(
     key="nav_radio_main",
     label_visibility="collapsed",
 )
+st.markdown('</div>', unsafe_allow_html=True)
 _new_page = _nav_map.get(_selected_display, _active_page)
 if _new_page != _active_page:
     st.session_state["active_page"] = _new_page
@@ -8794,7 +8794,7 @@ elif _active_page == "Califica":
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Modo de entrada ───────────────────────────────────────────────────────
+    # ── Modo de entrada — pill tabs estilizados ──────────────────────────────
     _cal_modo = st.radio(
         "Modo",
         ["📸 Screenshot", "✏️ Manual"],
@@ -8802,6 +8802,51 @@ elif _active_page == "Califica":
         key="cal_modo",
         label_visibility="collapsed"
     )
+    # CSS para convertir el radio en pill tabs bonitos
+    st.markdown("""
+    <style>
+    /* Pill tabs para modo califica */
+    div[data-testid="stRadio"]:not([class*="nav"]) > div[role="radiogroup"] {
+      position: relative !important;
+      bottom: auto !important; left: auto !important;
+      transform: none !important; width: 100% !important;
+      height: auto !important; max-width: 100% !important;
+      background: rgba(255,255,255,0.05) !important;
+      border: 1px solid rgba(255,255,255,0.10) !important;
+      border-radius: 14px !important;
+      padding: 4px !important;
+      gap: 4px !important;
+      box-shadow: none !important;
+      display: flex !important;
+      flex-direction: row !important;
+      margin-bottom: 16px !important;
+    }
+    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"] {
+      flex: 1 !important;
+      border-radius: 10px !important;
+      padding: 8px 4px !important;
+      gap: 4px !important;
+      border-top: none !important;
+      background: transparent !important;
+    }
+    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"]:has(input:checked) {
+      background: rgba(255,107,0,0.18) !important;
+      border-top: none !important;
+    }
+    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"] span,
+    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"] p {
+      font-size: 0.82rem !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.3px !important;
+      text-transform: none !important;
+      color: #636366 !important;
+    }
+    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"]:has(input:checked) span,
+    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"]:has(input:checked) p {
+      color: #FF6B00 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     # ── MODO SCREENSHOT ───────────────────────────────────────────────────────
     if _cal_modo == "📸 Screenshot":
@@ -9221,7 +9266,7 @@ Responde SOLO en este formato JSON exacto:
             st.markdown('<div style="padding:8px 0;font-size:0.82rem;color:#AEAEB2">Seleccionado ✓</div>', unsafe_allow_html=True)
 
     # Momio
-    st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:12px 0 6px">③ MOMIO (americano)</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:12px 0 6px">③ MOMIO</div>', unsafe_allow_html=True)
     
     # Sugerir momio automático si está disponible
     _suggested_momio = None
@@ -9232,7 +9277,29 @@ Responde SOLO en este formato JSON exacto:
             _suggested_momio = _cal_sim.get("away_ml") or _cal_r.get("odds", {}).get("away_ml")
     
     _momio_default = int(_suggested_momio) if _suggested_momio else -110
-    _cal_momio = st.number_input("Momio americano", value=_momio_default, step=5, key="cal_momio", label_visibility="collapsed")
+
+    _mcol1, _mcol2 = st.columns(2)
+    with _mcol1:
+        _cal_momio = st.number_input("Americano", value=_momio_default, step=5,
+                                      key="cal_momio", label_visibility="visible")
+    with _mcol2:
+        # Calcular decimal en tiempo real
+        try:
+            if _cal_momio > 0:
+                _cal_momio_dec = round(_cal_momio / 100 + 1, 3)
+            else:
+                _cal_momio_dec = round(100 / abs(_cal_momio) + 1, 3)
+        except:
+            _cal_momio_dec = 1.909
+        st.markdown(
+            f'<div style="background:rgba(96,165,250,0.08);border:1px solid rgba(96,165,250,0.2);'
+            f'border-radius:10px;padding:10px 12px;margin-top:4px">' 
+            f'<div style="font-size:0.65rem;color:#6B7280;margin-bottom:2px">Decimal</div>'
+            f'<div style="font-size:1.3rem;font-weight:800;color:#60a5fa;'
+            f'font-family:Outfit,sans-serif">{_cal_momio_dec}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
     # ── Botón calificar ───────────────────────────────────────────────────────
     st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
