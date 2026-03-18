@@ -329,24 +329,22 @@ hr { border-color:var(--border) !important; }
 }
 
 
-/* ── Invisible nav buttons overlay ── */
+/* ── Nav: invisible functional buttons fixed at bottom ── */
+div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:first-child button[data-testid="baseButton-secondary"][key="nav_Rongol Picks"]),
 div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) {
-  position: fixed !important;
-  bottom: 0 !important; left: 0 !important; right: 0 !important;
-  z-index: 9999 !important; height: var(--nav-h) !important;
-  display: flex !important; align-items: stretch !important;
+  position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
+  height: var(--nav-h) !important; z-index: 100001 !important;
+  display: flex !important; gap: 0 !important; padding: 0 !important; margin: 0 !important;
   background: transparent !important;
-  margin: 0 !important; padding: 0 !important; gap: 0 !important;
 }
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) > div {
-  flex: 1 !important; min-width: 0 !important;
-  padding: 0 !important; margin: 0 !important;
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) [data-testid="column"] {
+  flex: 1 !important; padding: 0 !important; min-width: 0 !important;
 }
 div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) button {
-  opacity: 0 !important; width: 100% !important; height: var(--nav-h) !important;
-  background: transparent !important; border: none !important;
-  border-radius: 0 !important; cursor: pointer !important;
-  padding: 0 !important; margin: 0 !important;
+  opacity: 0 !important; height: var(--nav-h) !important; width: 100% !important;
+  background: transparent !important; border: none !important; box-shadow: none !important;
+  padding: 0 !important; margin: 0 !important; border-radius: 0 !important;
+  cursor: pointer !important; font-size: 0 !important;
 }
 
 </style>
@@ -355,7 +353,7 @@ div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) button 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# NAVIGATION — HTML visual nav + invisible st.buttons on top
+# NAVIGATION
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "Rongol"},
@@ -370,34 +368,36 @@ if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
 _active_page = st.session_state["active_page"]
 
-# ── 1. HTML visual nav bar (always looks right) ───────────────────────────────
-_nav_parts = []
+# ── HTML visual nav bar (always looks right) ─────────────────────────────────
+_np = []
 for _ni in _NAV_ITEMS:
-    _a   = _ni["key"] == _active_page
-    _c   = "#FF6B00" if _a else "#636366"
-    _bb  = "border-top:2px solid #FF6B00;" if _a else "border-top:2px solid transparent;"
-    _nav_parts.append(
-        f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;' +
-        f'justify-content:center;gap:2px;padding:6px 2px;{_bb};cursor:pointer">' +
-        f'<span style="font-size:1.25rem;line-height:1">{_ni["icon"]}</span>' +
-        f'<span style="font-size:0.50rem;font-weight:700;letter-spacing:0.5px;' +
-        f'text-transform:uppercase;color:{_c}">{_ni["label"]}</span>' +
+    _a  = _ni["key"] == _active_page
+    _c  = "#FF6B00" if _a else "#636366"
+    _bb = "border-top:2px solid #FF6B00;" if _a else "border-top:2px solid transparent;"
+    _np.append(
+        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;'
+        'justify-content:center;gap:2px;padding:6px 2px;' + _bb + '">'
+        '<span style="font-size:1.25rem;line-height:1">' + _ni["icon"] + '</span>'
+        '<span style="font-size:0.50rem;font-weight:700;letter-spacing:0.5px;'
+        'text-transform:uppercase;color:' + _c + '">' + _ni["label"] + '</span>'
         '</div>'
     )
 st.markdown(
-    '<div class="ios-bottom-nav">' + ''.join(_nav_parts) + '</div>',
+    '<div class="ios-bottom-nav">' + ''.join(_np) + '</div>',
     unsafe_allow_html=True
 )
 
-# ── 2. Invisible functional st.buttons — CSS positions them over the nav ──────
-_ncols = st.columns(len(_NAV_ITEMS))
+# ── Functional nav buttons hidden behind the visual nav ──────────────────────
+# CSS makes these 100% transparent and fixed at bottom
+_nc = st.columns(len(_NAV_ITEMS))
 for _i, _item in enumerate(_NAV_ITEMS):
-    with _ncols[_i]:
-        if st.button(" ", key=f"nav_{_item['key']}", use_container_width=True):
+    with _nc[_i]:
+        if st.button("​", key="nav_" + _item["key"], use_container_width=True):
             st.session_state["active_page"] = _item["key"]
             st.rerun()
 
 _active_page = st.session_state["active_page"]
+
 
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
@@ -1858,7 +1858,8 @@ def parse_games(data, league_name):
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
     _tomorrow_cdmx  = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
-    _valid_dates = {_today_cdmx, _tomorrow_cdmx}
+    _d2_cdmx = (_now_mx + _td(days=2)).strftime("%Y-%m-%d")
+    _valid_dates = {_today_cdmx, _tomorrow_cdmx, _d2_cdmx}  # wide window for ESPN UTC mismatch
 
     for event in data.get("events", []):
         try:
@@ -4541,10 +4542,20 @@ def bar(pct, color, label):
 
 def _espn_logo(team_id, league_name=""):
     if not team_id: return ""
-    s  = LEAGUES.get(league_name, {}).get("sport", "")
-    lg = LEAGUES.get(league_name, {}).get("league", "")
-    m  = {"soccer":"soccer","basketball":"nba","hockey":"nhl","baseball":"mlb","football":"nfl"}
-    b  = m.get(s, "soccer")
+    info = LEAGUES.get(league_name, {})
+    s  = info.get("sport", "")
+    lg = info.get("league", "")
+    # Map sport to ESPN logo path
+    paths = {"soccer":"soccer","basketball":"nba","hockey":"nhl","baseball":"mlb","football":"nfl"}
+    b = paths.get(s, "")
+    if not b:
+        # Fallback: guess from league name
+        ln = league_name.lower()
+        if any(x in ln for x in ["nba","basketball"]): b = "nba"
+        elif any(x in ln for x in ["nhl","hockey"]): b = "nhl"
+        elif any(x in ln for x in ["mlb","baseball"]): b = "mlb"
+        elif any(x in ln for x in ["nfl","football"]): b = "nfl"
+        else: b = "soccer"
     if s == "football" and "college" in lg: b = "ncaa"
     return f"https://a.espncdn.com/i/teamlogos/{b}/500/{team_id}.png"
 
@@ -6350,15 +6361,17 @@ elif _active_page == "Picks":
                     f'EV {_ev2s}</span>'
                     f'</div>'
                 )
+        _al = _logo_img(g.get("away_team_id",""), g.get("league",""), 22)
+        _hl = _logo_img(g.get("home_team_id",""), g.get("league",""), 22)
         return (
             f'<div style="padding:7px 8px;margin:3px 0;border-radius:7px;'
             f'background:{sm["accent"]};border-left:2px solid {sm["color"]}66;overflow:hidden">'
             f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">'
             f'<div style="min-width:0;overflow:hidden;flex:1">'
-            f'<div style="font-size:0.806rem;font-weight:700;color:#E8E8E8;'
-            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{g["away_team"]}</div>'
-            f'<div style="font-size:0.694rem;color:#6B7280;'
-            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@ {g["home_team"]}</div>'
+            f'<div style="display:flex;align-items:center;gap:5px;font-size:0.806rem;font-weight:700;color:#E8E8E8;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_al}{g["away_team"]}</div>'
+            f'<div style="display:flex;align-items:center;gap:5px;font-size:0.694rem;color:#6B7280;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_hl}@ {g["home_team"]}</div>'
             f'</div>'
             f'<div style="flex-shrink:0;padding-left:4px">{_time_html}</div>'
             f'</div>'
