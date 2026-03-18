@@ -2161,12 +2161,24 @@ def enrich_game_with_form(game):
         "Saudi Pro League":       ("soccer", "sau.1"),
         "Belgian Pro League":     ("soccer", "bel.1"),
         "Eredivisie":             ("soccer", "ned.1"),
+        # Ligas ocultas
+        "Süper Lig":              ("soccer", "TUR.1"),
+        "Super League Greece":    ("soccer", "GRE.1"),
+        "Primeira Liga":          ("soccer", "POR.1"),
+        "Superliga":              ("soccer", "DEN.1"),
+        "Eliteserien":            ("soccer", "NOR.1"),
+        "Allsvenskan":            ("soccer", "SWE.1"),
     }
 
     if league not in LEAGUE_SLUGS:
-        return
-
-    sport_slug, league_slug = LEAGUE_SLUGS[league]
+        # Fallback: try building from LEAGUES dict directly
+        lg_sport = LEAGUES.get(league, {}).get("sport", "")
+        lg_slug  = LEAGUES.get(league, {}).get("league", "")
+        if not lg_sport or not lg_slug:
+            return
+        sport_slug, league_slug = lg_sport, lg_slug
+    else:
+        sport_slug, league_slug = LEAGUE_SLUGS[league]
 
     # Try to get team IDs from the game object itself first (parse_games stores them)
     home_id = game.get("home_team_id") or get_team_ids(sport_slug, league_slug, game["home_team"])
