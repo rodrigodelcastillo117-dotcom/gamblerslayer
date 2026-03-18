@@ -329,21 +329,21 @@ hr { border-color:var(--border) !important; }
 }
 
 
-/* ── Nav invisible buttons overlay ── */
+/* ── Invisible nav buttons overlay ── */
 div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) {
   position: fixed !important;
   bottom: 0 !important; left: 0 !important; right: 0 !important;
-  z-index: 9999 !important; height: 68px !important;
+  z-index: 9999 !important; height: var(--nav-h) !important;
   display: flex !important; align-items: stretch !important;
   background: transparent !important;
   margin: 0 !important; padding: 0 !important; gap: 0 !important;
 }
 div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) > div {
-  flex: 1 !important;
+  flex: 1 !important; min-width: 0 !important;
+  padding: 0 !important; margin: 0 !important;
 }
 div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) button {
-  opacity: 0 !important;
-  height: 68px !important; width: 100% !important;
+  opacity: 0 !important; width: 100% !important; height: var(--nav-h) !important;
   background: transparent !important; border: none !important;
   border-radius: 0 !important; cursor: pointer !important;
   padding: 0 !important; margin: 0 !important;
@@ -355,7 +355,7 @@ div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) button 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV — HTML visual + invisible functional buttons on top
+# NAVIGATION — HTML visual nav + invisible st.buttons on top
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "Rongol"},
@@ -370,37 +370,31 @@ if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
 _active_page = st.session_state["active_page"]
 
-# ── Visual nav bar (HTML, always looks right) ─────────────────────────────────
+# ── 1. HTML visual nav bar (always looks right) ───────────────────────────────
 _nav_parts = []
 for _ni in _NAV_ITEMS:
     _a   = _ni["key"] == _active_page
-    _clr = "#FF6B00" if _a else "#636366"
-    _dot = '<div style="width:4px;height:4px;background:#FF6B00;border-radius:50%;margin-top:2px"></div>' if _a else ""
-    _bb  = "border-bottom:2px solid #FF6B00;" if _a else ""
+    _c   = "#FF6B00" if _a else "#636366"
+    _bb  = "border-top:2px solid #FF6B00;" if _a else "border-top:2px solid transparent;"
     _nav_parts.append(
-        f'<div style="display:flex;flex-direction:column;align-items:center;gap:2px;' +
-        f'padding:6px 8px;cursor:pointer;min-width:44px;{_bb}">' +
-        f'<span style="font-size:1.2rem;line-height:1">{_ni["icon"]}</span>' +
+        f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;' +
+        f'justify-content:center;gap:2px;padding:6px 2px;{_bb};cursor:pointer">' +
+        f'<span style="font-size:1.25rem;line-height:1">{_ni["icon"]}</span>' +
         f'<span style="font-size:0.50rem;font-weight:700;letter-spacing:0.5px;' +
-        f'text-transform:uppercase;font-family:Outfit,sans-serif;color:{_clr}">{_ni["label"]}</span>' +
-        _dot + '</div>'
+        f'text-transform:uppercase;color:{_c}">{_ni["label"]}</span>' +
+        '</div>'
     )
 st.markdown(
-    f'''<div style="position:fixed;bottom:0;left:0;right:0;height:68px;
-    background:rgba(28,28,30,0.97);backdrop-filter:blur(20px);
-    -webkit-backdrop-filter:blur(20px);border-top:1px solid rgba(255,255,255,0.08);
-    display:flex;align-items:center;justify-content:space-around;
-    padding:0 8px;z-index:9998;padding-bottom:env(safe-area-inset-bottom)">
-    {"".join(_nav_parts)}</div>''',
+    '<div class="ios-bottom-nav">' + ''.join(_nav_parts) + '</div>',
     unsafe_allow_html=True
 )
 
-# ── Invisible functional buttons (positioned over nav via CSS) ─────────────────
+# ── 2. Invisible functional st.buttons — CSS positions them over the nav ──────
 _ncols = st.columns(len(_NAV_ITEMS))
-for _i2, _item2 in enumerate(_NAV_ITEMS):
-    with _ncols[_i2]:
-        if st.button(" ", key=f"nav_{_item2['key']}", use_container_width=True):
-            st.session_state["active_page"] = _item2["key"]
+for _i, _item in enumerate(_NAV_ITEMS):
+    with _ncols[_i]:
+        if st.button(" ", key=f"nav_{_item['key']}", use_container_width=True):
+            st.session_state["active_page"] = _item["key"]
             st.rerun()
 
 _active_page = st.session_state["active_page"]
@@ -4547,45 +4541,47 @@ def bar(pct, color, label):
 
 def _espn_logo(team_id, league_name=""):
     if not team_id: return ""
-    info = LEAGUES.get(league_name, {})
-    sport = info.get("sport",""); league = info.get("league","")
-    if sport=="soccer":     return f"https://a.espncdn.com/i/teamlogos/soccer/500/{team_id}.png"
-    if sport=="basketball": return f"https://a.espncdn.com/i/teamlogos/nba/500/{team_id}.png"
-    if sport=="hockey":     return f"https://a.espncdn.com/i/teamlogos/nhl/500/{team_id}.png"
-    if sport=="baseball":   return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
-    if sport=="football":
-        return f"https://a.espncdn.com/i/teamlogos/{'ncaa' if 'college' in league else 'nfl'}/500/{team_id}.png"
-    return ""
+    s  = LEAGUES.get(league_name, {}).get("sport", "")
+    lg = LEAGUES.get(league_name, {}).get("league", "")
+    m  = {"soccer":"soccer","basketball":"nba","hockey":"nhl","baseball":"mlb","football":"nfl"}
+    b  = m.get(s, "soccer")
+    if s == "football" and "college" in lg: b = "ncaa"
+    return f"https://a.espncdn.com/i/teamlogos/{b}/500/{team_id}.png"
 
-def _logo_img(team_id, league_name, size=32):
-    url = _espn_logo(team_id, league_name)
-    if not url: return ""
-    return (f'<img src="{url}" width="{size}" height="{size}" '
+def _logo_img(tid, lg, sz=30):
+    u = _espn_logo(tid, lg)
+    if not u: return ""
+    return (f'<img src="{u}" width="{sz}" height="{sz}" '
             f'style="border-radius:50%;object-fit:contain;background:rgba(255,255,255,0.08);padding:2px;flex-shrink:0;vertical-align:middle;" '
             f'onerror="this.style.display=\'none\'" />')
 
-def _matchup_with_logos(r, score_html=""):
-    away=r.get("away_team","V"); home=r.get("home_team","L")
-    league=r.get("league",""); is_live=r.get("state","")=="in"
-    al=_logo_img(r.get("away_team_id",""),league,30)
-    hl=_logo_img(r.get("home_team_id",""),league,30)
-    if is_live and r.get("home_score") is not None:
-        sc=str(r["away_score"])+" — "+str(r["home_score"])
+def _matchup_html(r, score_html=""):
+    away    = r.get("away_team", "V")
+    home    = r.get("home_team", "L")
+    lg      = r.get("league", "")
+    is_live = r.get("state", "") == "in"
+    al = _logo_img(r.get("away_team_id", ""), lg, 30)
+    hl = _logo_img(r.get("home_team_id", ""), lg, 30)
+    if is_live and r.get("away_score") is not None:
+        sc = str(r["away_score"]) + " — " + str(r["home_score"])
         return (
-            '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;gap:8px">' +
-            '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:60px">' +
-            al + f'<span style="font-size:0.68rem;font-weight:700;color:#F2F2F7;text-align:center">{away}</span></div>' +
-            '<div style="text-align:center">' +
-            f'<div style="font-size:2rem;font-weight:900;color:#fff;letter-spacing:2px;line-height:1">{sc}</div>' +
-            '<div style="font-size:0.52rem;color:#FF453A;font-weight:800;letter-spacing:2px;margin-top:3px">● LIVE</div>' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;gap:6px">' +
+            '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1">' +
+            al + f'<span style="font-size:0.68rem;font-weight:700;text-align:center;color:#F2F2F7">{away}</span></div>' +
+            '<div style="text-align:center;padding:0 4px">' +
+            f'<div style="font-size:1.9rem;font-weight:900;color:#fff;letter-spacing:2px;line-height:1">{sc}</div>' +
+            '<div style="font-size:0.50rem;color:#FF453A;font-weight:800;letter-spacing:2px;margin-top:2px">● LIVE</div>' +
             score_html + '</div>' +
-            '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:60px">' +
-            hl + f'<span style="font-size:0.68rem;font-weight:700;color:#F2F2F7;text-align:center">{home}</span></div>' +
-            '</div>')
+            '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1">' +
+            hl + f'<span style="font-size:0.68rem;font-weight:700;text-align:center;color:#F2F2F7">{home}</span></div>' +
+            '</div>'
+        )
     return (
         '<div style="display:flex;align-items:center;gap:7px">' +
-        al + f'<span class="pick-matchup">{away} <span style="color:#636366;font-weight:400">vs</span> {home}</span>' +
-        hl + score_html + '</div>')
+        al +
+        f'<span class="pick-matchup">{away} <span style="color:#636366;font-weight:400">vs</span> {home}</span>' +
+        hl + score_html + '</div>'
+    )
 
 def render_pick_card(r, rank=None):
     """Render pick card - all HTML built via string concat, no ternaries in f-strings."""
@@ -4822,7 +4818,7 @@ def render_pick_card(r, rank=None):
     return (
         '<div class="pick-card">'
           '<div class="pick-header">'
-            '<div>' + rank_html + _matchup_with_logos(r, score_html) + '</div>'
+            '<div>' + rank_html + _matchup_html(r, score_html) + '</div>'
             '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
               + live_html
               + '<span class="pick-league-badge">' + league_label(r["league"]) + '</span>'
@@ -5132,7 +5128,14 @@ odds_g=[g for g in games if g["odds"]]
 sr=st.session_state.get("sim_results",[])
 pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
 
-st.markdown(f"""<div class="stat-grid"><div class="stat-tile"><div class="stat-num" style="color:#FF6B00">{len(games)}</div><div class="stat-label">Partidos</div></div><div class="stat-tile"><div class="stat-num" style="color:#FF453A">{len(live_g)}</div><div class="stat-label">En Vivo</div></div><div class="stat-tile"><div class="stat-num" style="color:#0A84FF">{len(pre_g)}</div><div class="stat-label">Próximos</div></div><div class="stat-tile"><div class="stat-num" style="color:#FFD60A">{pos_ev}</div><div class="stat-label">EV+ Picks</div></div><div class="stat-tile"><div class="stat-num" style="color:#30D158">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays</div></div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="stat-grid">
+  <div class="stat-tile"><div class="stat-num">{len(games)}</div><div class="stat-label">Partidos</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len(live_g)}</div><div class="stat-label">En Vivo</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
+  <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
+</div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
@@ -8672,7 +8675,7 @@ elif _active_page == "Config":
     use_demo_cfg = st.toggle("🧪 Demo", value=st.session_state.get("use_demo_val", False), key="use_demo_v2")
     st.session_state["use_demo_val"] = use_demo_cfg
 
-    if st.button("⚡  Analizar ahora", key="run_btn_menu", use_container_width=True, type="primary"):
+    if st.button("▶  Analizar ahora", key="run_btn_menu", use_container_width=True):
         st.session_state["trigger_analyze"] = True
         st.rerun()
 
