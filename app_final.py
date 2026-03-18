@@ -49,37 +49,17 @@ header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebar"],[data-testid="collapsedControl"],
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
-
-/* NAV BUTTON ROW — target by ID we inject via markdown */
-#nav-click-layer {
-  position:fixed !important; bottom:0 !important; left:0 !important; right:0 !important;
-  z-index:999999 !important; height:var(--nav-h) !important;
-}
-#nav-click-layer + div[data-testid="stHorizontalBlock"],
-div[data-testid="stHorizontalBlock"].nav-row {
-  position:fixed !important; bottom:0 !important; left:0 !important; right:0 !important;
-  z-index:999999 !important; height:var(--nav-h) !important;
-  display:flex !important; background:transparent !important;
-  margin:0 !important; padding:0 !important; gap:0 !important;
-}
-div[data-testid="stHorizontalBlock"].nav-row > div,
-div[data-testid="stHorizontalBlock"].nav-row [data-testid="column"] {
-  flex:1 !important; margin:0 !important; padding:0 !important;
-}
-div[data-testid="stHorizontalBlock"].nav-row button,
-div[data-testid="stHorizontalBlock"].nav-row [data-testid="baseButton-secondary"] {
-  width:100% !important; height:var(--nav-h) !important;
-  opacity:0 !important; background:transparent !important;
-  border:none !important; border-radius:0 !important;
-  cursor:pointer !important; margin:0 !important; padding:0 !important;
-}
-
-/* HIDE ALL regular st.button gray appearance in nav area */
-.nav-row .stButton > button { 
-  all:unset !important;
-  width:100% !important; height:var(--nav-h) !important;
-  display:block !important; cursor:pointer !important; opacity:0 !important;
-}
+/* Hide manage app button */
+[data-testid="manage-app-button"]{display:none !important;}
+button[title="Manage app"]{display:none !important;}
+.stAppDeployButton{display:none !important;}
+iframe[title="manage-app"]{display:none !important;}
+/* Hide the manage app area completely */
+.stMainMenu{display:none !important;}
+[data-testid="stMainMenu"]{display:none !important;}
+[data-testid="stToolbar"]{display:none !important;}
+[data-testid="stDecoration"]{display:none !important;}
+[data-testid="stHeader"] *{display:none !important;}
 
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
@@ -95,43 +75,51 @@ div[data-testid="stHorizontalBlock"].nav-row [data-testid="baseButton-secondary"
 .den-nav{
   position:fixed;bottom:0;left:0;right:0;
   height:calc(var(--nav-h) + env(safe-area-inset-bottom));
-  background:rgba(8,8,10,0.94);
+  background:rgba(8,8,10,0.96);
   backdrop-filter:blur(40px) saturate(180%);
   -webkit-backdrop-filter:blur(40px) saturate(180%);
-  border-top:1px solid rgba(255,255,255,0.07);
-  display:flex;z-index:99998;padding-bottom:env(safe-area-inset-bottom);
+  border-top:1px solid rgba(255,255,255,0.08);
+  display:flex;z-index:99999;
+  padding-bottom:env(safe-area-inset-bottom);
 }
-@media(min-width:768px){.den-nav{padding-right:96px !important;}}
 .den-nav::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
   background:linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
 }
-/* Manage app button pushes items left on PC — compensate */
-@media(min-width:768px){
-  .den-nav { padding-right: 120px !important; }
+.den-nav-item{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;padding:6px 2px;position:relative;
+  transition:all 0.15s;
 }
-.den-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 2px;position:relative;}
+.den-nav-item:active{background:rgba(255,107,0,0.08);}
 .den-nav-item.act::before{
   content:'';position:absolute;top:0;left:20%;right:20%;height:2px;
   background:linear-gradient(90deg,transparent,#FF6B00,#FFD60A,#FF6B00,transparent);
-  border-radius:0 0 4px 4px;animation:nav-pulse 2s ease-in-out infinite;
+  border-radius:0 0 4px 4px;
 }
-@keyframes nav-pulse{0%,100%{opacity:1}50%{opacity:0.6}}
 .den-nav-icon{font-size:1.3rem;line-height:1;transition:transform 0.2s;}
 .den-nav-item.act .den-nav-icon{transform:scale(1.15) translateY(-1px);}
-.den-nav-label{font-size:0.47rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:#404048;transition:color 0.2s;}
+.den-nav-label{
+  font-size:0.47rem;font-weight:800;letter-spacing:0.8px;
+  text-transform:uppercase;color:#404048;transition:color 0.2s;
+  font-family:'Outfit',sans-serif;
+}
 .den-nav-item.act .den-nav-label{color:#FF6B00;}
 
 /* HEADER */
 .den-header{text-align:center;padding:20px 0 10px;}
 .den-logo{
-  font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;letter-spacing:-1.5px;line-height:1;
+  font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;
+  letter-spacing:-1.5px;line-height:1;
   background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 45%,#FF8C00 100%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
   filter:drop-shadow(0 0 24px rgba(255,107,0,0.35));
 }
 .den-subtitle{font-size:0.58rem;color:#404048;letter-spacing:4px;text-transform:uppercase;margin-top:5px;}
-.den-divider{width:100%;height:1px;margin:10px 0;background:linear-gradient(90deg,transparent,rgba(255,107,0,0.35) 30%,rgba(255,214,10,0.5) 50%,rgba(255,107,0,0.35) 70%,transparent);}
+.den-divider{
+  width:100%;height:1px;margin:10px 0;
+  background:linear-gradient(90deg,transparent,rgba(255,107,0,0.4) 30%,rgba(255,214,10,0.6) 50%,rgba(255,107,0,0.4) 70%,transparent);
+}
 .den-corner{display:none;}
 
 /* STAT TILES */
@@ -251,55 +239,32 @@ div[data-testid="stHorizontalBlock"].nav-row [data-testid="baseButton-secondary"
   padding:9px 16px !important;border-radius:12px !important;
   width:100% !important;transition:all 0.2s !important;
 }
-.stButton > button:hover{
-  background:rgba(255,107,0,0.1) !important;border-color:rgba(255,107,0,0.45) !important;
-  color:#FF6B00 !important;transform:translateY(-1px) !important;
-}
+.stButton > button:hover{background:rgba(255,107,0,0.1) !important;border-color:rgba(255,107,0,0.45) !important;color:#FF6B00 !important;transform:translateY(-1px) !important;}
 .stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{
   background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;
   color:#000 !important;border:none !important;font-weight:900 !important;
   box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;
 }
-.stButton > button[kind="primary"]:hover{
-  background:linear-gradient(135deg,#FF8C00,#FFB300) !important;
-  box-shadow:0 8px 32px rgba(255,107,0,0.55) !important;transform:translateY(-2px) !important;
-}
+.stButton > button[kind="primary"]:hover{background:linear-gradient(135deg,#FF8C00,#FFB300) !important;box-shadow:0 8px 32px rgba(255,107,0,0.55) !important;transform:translateY(-2px) !important;}
 .stDownloadButton > button{background:rgba(255,255,255,0.04) !important;color:#FF6B00 !important;border:1px solid rgba(255,107,0,0.3) !important;border-radius:12px !important;}
 
 /* INPUTS */
-div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,
-div[data-testid="stTextArea"] textarea{
+div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,div[data-testid="stTextArea"] textarea{
   background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;
-  border-radius:12px !important;color:#fff !important;
-  font-family:'Outfit',sans-serif !important;font-size:16px !important;
+  border-radius:12px !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:16px !important;
 }
-div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{
-  border-color:rgba(255,107,0,0.5) !important;box-shadow:0 0 0 3px rgba(255,107,0,0.1) !important;
-}
-div[data-testid="stSelectbox"] > div > div{
-  background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;
-  border-radius:12px !important;color:#fff !important;
-}
+div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{border-color:rgba(255,107,0,0.5) !important;box-shadow:0 0 0 3px rgba(255,107,0,0.1) !important;}
+div[data-testid="stSelectbox"] > div > div{background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;color:#fff !important;}
 div[data-testid="stSelectbox"] label,div[data-testid="stTextInput"] label,
 div[data-testid="stNumberInput"] label,div[data-testid="stSlider"] label,div[data-testid="stRadio"] label{
-  color:#FF6B00 !important;font-family:'Outfit',sans-serif !important;
-  font-size:0.72rem !important;font-weight:700 !important;letter-spacing:0.5px !important;
+  color:#FF6B00 !important;font-family:'Outfit',sans-serif !important;font-size:0.72rem !important;font-weight:700 !important;
 }
-div[data-testid="stMultiSelect"] > div > div{
-  background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;
-}
+div[data-testid="stMultiSelect"] > div > div{background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;}
 
 /* EXPANDERS */
-[data-testid="stExpander"] > details > summary{
-  background:rgba(255,255,255,0.03) !important;color:#fff !important;
-  border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px !important;
-  font-family:'Outfit',sans-serif !important;font-weight:600 !important;
-}
+[data-testid="stExpander"] > details > summary{background:rgba(255,255,255,0.03) !important;color:#fff !important;border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px !important;font-family:'Outfit',sans-serif !important;font-weight:600 !important;}
 [data-testid="stExpander"] > details > summary:hover{border-color:rgba(255,107,0,0.35) !important;}
-[data-testid="stExpander"] > details > div{
-  background:rgba(255,255,255,0.02) !important;border:1px solid rgba(255,255,255,0.06) !important;
-  border-top:none !important;border-radius:0 0 12px 12px !important;padding:10px 8px !important;
-}
+[data-testid="stExpander"] > details > div{background:rgba(255,255,255,0.02) !important;border:1px solid rgba(255,255,255,0.06) !important;border-top:none !important;border-radius:0 0 12px 12px !important;padding:10px 8px !important;}
 [data-testid="stExpander"]{background:transparent !important;border:none !important;box-shadow:none !important;}
 
 /* MISC */
@@ -321,8 +286,7 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 
 @media(max-width:768px){
   .block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}
-  .den-logo{font-size:1.55rem !important;}
-  .pick-action{font-size:1.05rem !important;}
+  .den-logo{font-size:1.55rem !important;}.pick-action{font-size:1.05rem !important;}
   .stat-num{font-size:1.35rem !important;}
   [data-testid="column"]{min-width:0 !important;overflow:hidden !important;}
   *{word-break:break-word !important;overflow-wrap:break-word !important;}
@@ -336,7 +300,7 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV — JS-powered, no gray boxes
+# BOTTOM NAV — pure HTML + query_params routing (zero st.button)
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
@@ -347,66 +311,34 @@ _NAV_ITEMS = [
     {"key": "Config",       "icon": "⚙️",  "label": "CONFIG"},
 ]
 
+# Read page from query params (set by JS clicks)
+_qp = st.query_params.get("page", None)
+if _qp and _qp in [n["key"] for n in _NAV_ITEMS]:
+    st.session_state["active_page"] = _qp
+    # Clear query param to avoid stale state
+    st.query_params.clear()
+
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
 _active_page = st.session_state["active_page"]
 
-# ── Visual nav (pure HTML) ─────────────────────────────────────────────────────
+# Build nav HTML — each item is a real <a> link with ?page=KEY
 _nh = '<div class="den-nav">'
 for _ni in _NAV_ITEMS:
-    _a  = "act" if _ni["key"] == _active_page else ""
-    _lc = "#FF6B00" if _a else "#404048"
-    _nh += (f'<div class="den-nav-item {_a}">' 
-            f'<span class="den-nav-icon">{_ni["icon"]}</span>'
-            f'<span class="den-nav-label" style="color:{_lc}">{_ni["label"]}</span>'
-            f'</div>')
+    _a   = "act" if _ni["key"] == _active_page else ""
+    _clr = "#FF6B00" if _a else "#404048"
+    # Use JS onclick to set query param and submit — no page reload
+    _page_key = _ni["key"].replace(" ", "+").replace("&", "%26")
+    _nh += (
+        f'<div class="den-nav-item {_a}" '
+        f'onclick="window.location.href=window.location.pathname+''?page={_page_key}''" '
+        f'style="cursor:pointer;-webkit-tap-highlight-color:rgba(255,107,0,0.2)">' 
+        f'<span class="den-nav-icon">{_ni["icon"]}</span>'
+        f'<span class="den-nav-label" style="color:{_clr}">{_ni["label"]}</span>'
+        f'</div>'
+    )
 _nh += '</div>'
 st.markdown(_nh, unsafe_allow_html=True)
-
-# ── Invisible functional buttons — hidden via JavaScript ─────────────────────
-# JS finds the button row after render and hides it + positions it over nav
-components.html("""
-<script>
-(function() {
-  function fixNav() {
-    try {
-      var parent = window.parent.document;
-      var blocks = parent.querySelectorAll('[data-testid="stHorizontalBlock"]');
-      blocks.forEach(function(block) {
-        var btns = block.querySelectorAll('button');
-        if (btns.length === 6) {
-          var isNav = true;
-          btns.forEach(function(b) { if (b.textContent.trim() !== '') isNav = false; });
-          if (isNav) {
-            block.style.cssText = 'position:fixed!important;bottom:0!important;left:0!important;right:0!important;z-index:999999!important;height:64px!important;display:flex!important;background:transparent!important;margin:0!important;padding:0!important;gap:0!important;pointer-events:auto!important;';
-            var cols = block.querySelectorAll('[data-testid="column"]');
-            cols.forEach(function(col) {
-              col.style.cssText = 'flex:1!important;margin:0!important;padding:0!important;min-width:0!important;';
-            });
-            btns.forEach(function(btn) {
-              btn.style.cssText = 'width:100%!important;height:64px!important;opacity:0!important;background:transparent!important;border:none!important;border-radius:0!important;cursor:pointer!important;margin:0!important;padding:0!important;display:block!important;position:relative!important;z-index:1!important;';
-            });
-          }
-        }
-      });
-    } catch(e) {}
-  }
-  // Run multiple times to catch Streamlit rerenders
-  [100, 300, 600, 1000, 2000, 3000].forEach(function(t) { setTimeout(fixNav, t); });
-  var obs = new MutationObserver(fixNav);
-  obs.observe(document.body, {childList:true, subtree:true});
-})();
-</script>
-""", height=0)
-
-# The actual nav buttons (6 columns, each with one invisible button)
-_nc = st.columns(len(_NAV_ITEMS))
-for _i, _nitem in enumerate(_NAV_ITEMS):
-    with _nc[_i]:
-        if st.button(" ", key=f"_nb_{_nitem['key']}", help=_nitem["label"],
-                     use_container_width=True):
-            st.session_state["active_page"] = _nitem["key"]
-            st.rerun()
 
 _active_page = st.session_state["active_page"]
 
