@@ -23,978 +23,387 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=SF+Pro+Display:wght@700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 :root {
-  --gold:    #C9A84C;
-  --gold2:   #E8B84B;
-  --felt:    #111111;
-  --felt2:   #0D0D0D;
-  --felt3:   #0A0A0A;
-  --dark:    #080808;
-  --card:    #161616;
-  --card2:   #1C1C1C;
-  --border:  #2A2A2A;
-  --red:     #EF4444;
-  --green:   #00C896;
-  --cyan:    #00C896;
-  --text:    #E8E8E8;
-  --muted:   #6B7280;
-  --white:   #FFFFFF;
+  --bg:        #1C1C1E;
+  --bg2:       #2C2C2E;
+  --bg3:       #3A3A3C;
+  --card:      #2C2C2E;
+  --card2:     #3A3A3C;
+  --border:    rgba(255,255,255,0.08);
+  --orange:    #FF6B00;
+  --orange2:   #FF8C00;
+  --yellow:    #FFD60A;
+  --yellow2:   #FFEC3D;
+  --text:      #F2F2F7;
+  --text2:     #AEAEB2;
+  --text3:     #636366;
+  --white:     #FFFFFF;
+  --red:       #FF453A;
+  --green:     #30D158;
+  --blue:      #0A84FF;
+  --nav-h:     72px;
+  --radius:    16px;
+  --radius-sm: 10px;
+  --radius-lg: 22px;
+  /* legacy compat */
+  --gold:    #FFD60A;
+  --gold2:   #FF8C00;
+  --felt:    #1C1C1E;
+  --dark:    #1C1C1E;
+  --muted:   #636366;
+  --cyan:    #30D158;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
 
-.main, .stApp, .stMainBlockContainer {
-  background-color: var(--dark) !important;
+html, body, .stApp, .main, .stMainBlockContainer {
+  background-color: var(--bg) !important;
   color: var(--text) !important;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
 
-/* Hide streamlit chrome */
-#MainMenu, footer, header { visibility: hidden; }
-.stDeployButton { display: none; }
+#MainMenu, footer { visibility: hidden !important; }
+.stDeployButton { display: none !important; }
+header[data-testid="stHeader"] { display: none !important; }
+[data-testid="stSidebar"] { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
+[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+.stApp > header { display: none !important; }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--dark); }
-::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 3px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 4px; }
+
+.block-container {
+  padding: 16px 14px calc(var(--nav-h) + 20px) 14px !important;
+  max-width: 520px !important;
+  margin: 0 auto !important;
+}
+@media (min-width: 768px) {
+  .block-container { max-width: 720px !important; padding: 20px 24px calc(var(--nav-h) + 24px) 24px !important; }
+}
 
 /* ── HEADER ── */
-.den-header {
-  text-align: center;
-  padding: 1.5rem 0 0.75rem 0;
-  position: relative;
-}
+.den-header { text-align:center; padding:16px 0 8px; }
 .den-logo {
-  font-family: 'Inter', sans-serif;
-  font-size: 2.8rem;
-  font-weight: 800;
-  color: var(--gold2);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  line-height: 1;
-  margin: 0;
+  font-family:'Outfit',sans-serif; font-size:1.8rem; font-weight:900; letter-spacing:-0.5px;
+  background:linear-gradient(135deg,var(--orange),var(--yellow));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  line-height:1; margin:0;
 }
-.den-subtitle {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.75rem;
-  color: var(--muted);
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  margin-top: 6px;
-}
-.den-divider {
-  width: 100%;
-  height: 1px;
-  background: var(--border);
-  margin: 1rem 0;
-  opacity: 0.8;
-}
-.den-corner {
-  display: inline-block;
-  color: var(--gold);
-  opacity: 0.4;
-  font-size: 1.2rem;
-  margin: 0 10px;
+.den-subtitle { font-size:0.62rem; color:var(--text3); letter-spacing:3px; text-transform:uppercase; margin-top:4px; }
+.den-divider { width:100%; height:1px; background:var(--border); margin:10px 0; opacity:0.8; }
+.den-corner { display:none; }
+
+/* ── BOTTOM NAV ── */
+.ios-bottom-nav {
+  position:fixed; bottom:0; left:0; right:0; height:var(--nav-h);
+  background:rgba(28,28,30,0.94);
+  backdrop-filter:saturate(180%) blur(20px);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  border-top:1px solid var(--border);
+  display:flex; align-items:flex-start; justify-content:space-around;
+  padding:10px 4px 0; z-index:99999;
 }
 
-/* ── METRIC TILES ── */
-.stat-grid { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
-.stat-tile {
-  flex: 1; min-width: 100px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px 12px;
-  text-align: center;
-}
-.stat-num {
-  font-family: 'Inter', sans-serif;
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--white);
-  line-height: 1;
-}
-.stat-label {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.68rem;
-  color: var(--muted);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-top: 4px;
-}
+/* ── STAT TILES ── */
+.stat-grid { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+.stat-tile { flex:1; min-width:72px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:12px 8px; text-align:center; }
+.stat-num { font-size:1.6rem; font-weight:800; color:var(--white); line-height:1; }
+.stat-label { font-size:0.58rem; color:var(--text3); letter-spacing:0.8px; text-transform:uppercase; margin-top:3px; }
 
-/* ── PICK CARD (THE MAIN ATTRACTION) ── */
-.pick-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 0;
-  margin: 12px 0;
-  overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-  position: relative;
-}
-.pick-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--gold), var(--gold2), var(--gold));
-}
-.pick-card::after { display: none; }
-.pick-header {
-  padding: 16px 18px 12px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.pick-matchup {
-  font-family: 'Inter', sans-serif;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--white);
-}
-.pick-league-badge {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.7rem;
-  color: var(--gold2);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  background: rgba(201,168,76,0.12);
-  border: 1px solid rgba(201,168,76,0.25);
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-weight: 600;
-}
-.pick-body { padding: 14px 18px; }
+/* ── PICK CARD ── */
+.pick-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:0; margin:10px 0; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.3); position:relative; }
+.pick-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--orange),var(--yellow)); border-radius:var(--radius-lg) var(--radius-lg) 0 0; }
+.pick-card::after { display:none; }
+.pick-header { padding:14px 16px 10px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; }
+.pick-matchup { font-size:0.96rem; font-weight:700; color:var(--white); letter-spacing:-0.2px; }
+.pick-league-badge { font-size:0.62rem; color:var(--orange); letter-spacing:0.5px; text-transform:uppercase; background:rgba(255,107,0,0.12); border:1px solid rgba(255,107,0,0.25); padding:3px 9px; border-radius:20px; font-weight:700; }
+.pick-body { padding:12px 16px; }
+.pick-action { font-size:1.45rem; font-weight:800; background:linear-gradient(90deg,var(--orange),var(--yellow)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; letter-spacing:0px; margin:6px 0 8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 0; border-bottom:1px solid var(--border); }
+.pick-action-arrow { -webkit-text-fill-color:var(--green); font-size:1.3rem; animation:pulse-arrow 2s ease-in-out infinite; }
+@keyframes pulse-arrow { 0%,100%{opacity:1;transform:translateX(0)} 50%{opacity:0.5;transform:translateX(4px)} }
 
-.pick-action {
-  font-family: 'Inter', sans-serif;
-  font-size: 1.7rem;
-  font-weight: 800;
-  color: var(--gold2);
-  letter-spacing: 0px;
-  margin: 8px 0 6px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.pick-action-arrow {
-  color: var(--green);
-  font-size: 1.8rem;
-  animation: pulse-arrow 2s ease-in-out infinite;
-}
-@keyframes pulse-arrow {
-  0%, 100% { opacity: 1; transform: translateX(0); }
-  50% { opacity: 0.6; transform: translateX(3px); }
-}
+/* ── MARKET CHIPS ── */
+.market-chip { display:inline-block; font-size:0.62rem; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; padding:3px 9px; border-radius:8px; margin-right:4px; }
+.chip-ml     { background:rgba(255,107,0,0.15);  color:var(--orange);  border:1px solid rgba(255,107,0,0.3); }
+.chip-btts   { background:rgba(48,209,88,0.15);  color:var(--green);   border:1px solid rgba(48,209,88,0.3); }
+.chip-ou     { background:rgba(255,214,10,0.15); color:var(--yellow);  border:1px solid rgba(255,214,10,0.3); }
+.chip-ou-u   { background:rgba(10,132,255,0.15); color:var(--blue);    border:1px solid rgba(10,132,255,0.3); }
+.chip-combo  { background:rgba(255,107,0,0.12);  color:var(--orange2); border:1px solid rgba(255,107,0,0.25); }
+.chip-dc     { background:rgba(10,132,255,0.15); color:var(--blue);    border:1px solid rgba(10,132,255,0.3); }
+.chip-parlay { background:rgba(48,209,88,0.15);  color:var(--green);   border:1px solid rgba(48,209,88,0.3); }
+.chip-warn   { background:rgba(255,69,58,0.15);  color:var(--red);     border:1px solid rgba(255,69,58,0.3); }
 
-.market-chip {
-  display: inline-block;
-  font-family: 'Inter', sans-serif;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  padding: 3px 10px;
-  border-radius: 8px;
-  margin-right: 4px;
-}
-.chip-ml     { background: rgba(96,165,250,0.15);   color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
-.chip-btts   { background: rgba(0,200,150,0.15);    color: #00C896; border: 1px solid rgba(0,200,150,0.3); }
-.chip-ou     { background: rgba(251,146,60,0.15);   color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
-.chip-ou-u   { background: rgba(167,139,250,0.15);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
-.chip-combo  { background: rgba(201,168,76,0.15);   color: var(--gold2); border: 1px solid rgba(201,168,76,0.3); }
-.chip-dc     { background: rgba(167,139,250,0.15);  color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
-.chip-parlay { background: rgba(0,200,150,0.15);    color: #00C896; border: 1px solid rgba(0,200,150,0.3); }
-.chip-warn   { background: rgba(239,68,68,0.15);    color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+/* ── STATS ROW ── */
+.stats-row { display:flex; gap:12px; flex-wrap:wrap; margin:10px 0; padding:12px 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+.stat-item { text-align:center; min-width:60px; }
+.stat-item-val { font-size:1.15rem; font-weight:800; line-height:1; }
+.stat-item-lbl { font-size:0.58rem; color:var(--text3); letter-spacing:0.5px; text-transform:uppercase; margin-top:3px; }
+.val-gold   { color:var(--yellow); }
+.val-orange { color:var(--orange); }
+.val-yellow { color:var(--yellow); }
+.val-green  { color:var(--green); }
+.val-cyan   { color:var(--green); }
+.val-blue   { color:var(--blue); }
+.val-purple { color:var(--blue); }
+.val-red    { color:var(--red); }
+.val-muted  { color:var(--text3); }
+.val-white  { color:var(--white); }
 
-.stats-row {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin: 10px 0;
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-}
-.stat-item { text-align: center; min-width: 70px; }
-.stat-item-val {
-  font-family: 'Inter', sans-serif;
-  font-size: 1.3rem;
-  font-weight: 700;
-  line-height: 1;
-}
-.stat-item-lbl {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.64rem;
-  color: var(--muted);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  margin-top: 3px;
-}
-.val-gold   { color: var(--gold2); }
-.val-green  { color: #00C896; }
-.val-cyan   { color: #00C896; }
-.val-blue   { color: #60a5fa; }
-.val-purple { color: #a78bfa; }
-.val-red    { color: #ef4444; }
-.val-muted  { color: var(--muted); }
+/* ── CONF BADGE ── */
+.conf-badge { display:inline-flex; align-items:center; gap:4px; font-size:0.65rem; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; padding:4px 10px; border-radius:20px; }
+.conf-high   { background:rgba(48,209,88,0.15);  color:var(--green);  border:1px solid rgba(48,209,88,0.3); }
+.conf-medium { background:rgba(255,214,10,0.15); color:var(--yellow); border:1px solid rgba(255,214,10,0.3); }
+.conf-low    { background:rgba(255,69,58,0.15);  color:var(--red);    border:1px solid rgba(255,69,58,0.3); }
 
-/* confidence badge */
-.conf-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: 'Inter', sans-serif;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  padding: 4px 12px;
-  border-radius: 20px;
-}
-.conf-high   { background: rgba(0,200,150,0.15);  color: #00C896; border: 1px solid rgba(0,200,150,0.3); }
-.conf-medium { background: rgba(201,168,76,0.15); color: var(--gold2); border: 1px solid rgba(201,168,76,0.3); }
-.conf-low    { background: rgba(239,68,68,0.15);  color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
-
-/* pick rationale */
-.pick-rationale {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.875rem;
-  color: var(--muted);
-  line-height: 1.7;
-  margin-top: 10px;
-}
-.pick-rationale b { color: var(--text); }
+.pick-rationale { font-size:0.82rem; color:var(--text2); line-height:1.7; margin-top:10px; }
+.pick-rationale b { color:var(--text); }
 
 /* ── PARLAY CARD ── */
-.parlay-card {
-  background: var(--card);
-  border: 1px solid rgba(0,200,150,0.35);
-  border-radius: 20px;
-  padding: 0;
-  margin: 12px 0;
-  overflow: hidden;
-  box-shadow:
-    0 0 0 1px rgba(0,200,150,0.12),
-    0 0 40px rgba(0,200,150,0.20),
-    0 0 80px rgba(0,200,150,0.08);
-  position: relative;
-}
-.parlay-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, #00C896, transparent);
-}
-.parlay-header {
-  background: rgba(0,200,150,0.08);
-  border-bottom: 1px solid rgba(0,200,150,0.2);
-  padding: 14px 18px;
-  font-family: 'Inter', sans-serif;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #00C896;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-.parlay-body { padding: 12px 16px; }
-.parlay-leg {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  font-family: 'Inter', sans-serif;
-  font-size: 0.875rem;
-  color: var(--text);
-}
-.parlay-leg:last-child { border-bottom: none; }
-.parlay-connector {
-  text-align: center;
-  color: var(--gold);
-  font-size: 0.72rem;
-  letter-spacing: 2px;
-  padding: 2px 0;
-  font-family: 'Inter', sans-serif;
-}
+.parlay-card { background:var(--card); border:1px solid rgba(48,209,88,0.35); border-radius:var(--radius-lg); padding:0; margin:10px 0; overflow:hidden; box-shadow:0 0 24px rgba(48,209,88,0.12); position:relative; }
+.parlay-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,transparent,var(--green),transparent); }
+.parlay-header { background:rgba(48,209,88,0.07); border-bottom:1px solid rgba(48,209,88,0.2); padding:12px 16px; font-size:0.82rem; font-weight:800; color:var(--green); letter-spacing:1px; text-transform:uppercase; }
+.parlay-body { padding:10px 14px; }
+.parlay-leg { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:0.82rem; color:var(--text); }
+.parlay-leg:last-child { border-bottom:none; }
+.parlay-connector { text-align:center; color:var(--orange); font-size:0.65rem; letter-spacing:2px; padding:2px 0; }
 
-/* ── GAME LIST CARD ── */
-.game-row {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px 16px;
-  margin: 6px 0;
-  transition: border-color 0.2s;
-}
-.game-row:hover { border-color: rgba(201,168,76,0.4); }
-.game-row-ev {
-  border-color: rgba(0,200,150,0.35);
-}
-.game-title {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--white);
-}
-.game-meta {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.78rem;
-  color: var(--muted);
-  margin-top: 2px;
-}
+/* ── GAME ROW ── */
+.game-row { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:10px 13px; margin:5px 0; transition:border-color 0.2s; }
+.game-row:hover { border-color:rgba(255,107,0,0.35); }
+.game-row-ev { border-color:rgba(48,209,88,0.3); }
+.game-title { font-size:0.88rem; font-weight:700; color:var(--white); }
+.game-meta  { font-size:0.72rem; color:var(--text3); margin-top:2px; }
 
 /* ── PROB BARS ── */
-.bar-wrap { margin: 4px 0; }
-.bar-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
-.bar-team { font-family: 'Inter',sans-serif; font-size: 0.78rem; color:var(--muted); }
-.bar-pct  { font-family: 'Inter',sans-serif; font-size: 0.78rem; font-weight:700; }
-.bar-bg   { background: rgba(255,255,255,0.06); border-radius:12px; height:5px; }
+.bar-wrap { margin:4px 0; }
+.bar-row  { display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; }
+.bar-team { font-size:0.72rem; color:var(--text2); }
+.bar-pct  { font-size:0.72rem; font-weight:700; }
+.bar-bg   { background:rgba(255,255,255,0.06); border-radius:12px; height:5px; }
 .bar-fill { height:5px; border-radius:12px; }
 
 /* ── SECTION HEADING ── */
-.section-heading {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--muted);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  margin: 20px 0 10px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.section-heading::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
+.section-heading { font-size:0.68rem; font-weight:800; color:var(--text3); letter-spacing:2px; text-transform:uppercase; margin:16px 0 8px; display:flex; align-items:center; gap:10px; }
+.section-heading::after { content:''; flex:1; height:1px; background:var(--border); }
 
-/* ── WARNING BANNER ── */
-.warn-banner {
-  background: rgba(201,168,76,0.08);
-  border: 1px solid rgba(201,168,76,0.2);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-family: 'Inter', sans-serif;
-  font-size: 0.84rem;
-  color: var(--gold2);
-  margin: 8px 0;
-}
-.demo-banner {
-  background: rgba(239,68,68,0.08);
-  border: 1px solid rgba(239,68,68,0.25);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-family: 'Inter', sans-serif;
-  font-size: 0.84rem;
-  color: #ef4444;
-  margin: 8px 0;
-}
+/* ── BANNERS ── */
+.warn-banner { background:rgba(255,214,10,0.08); border:1px solid rgba(255,214,10,0.2); border-radius:var(--radius-sm); padding:10px 13px; font-size:0.8rem; color:var(--yellow); margin:8px 0; }
+.demo-banner { background:rgba(255,69,58,0.08); border:1px solid rgba(255,69,58,0.25); border-radius:var(--radius-sm); padding:10px 13px; font-size:0.8rem; color:var(--red); margin:8px 0; }
 
-/* ── SIDEBAR ── */
-[data-testid="stSidebar"] {
-  background: #0D0D0D !important;
-  border-right: 1px solid var(--border) !important;
-}
-[data-testid="stSidebar"] .stMarkdown p,
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stSelectSlider span {
-  font-family: 'Inter', sans-serif !important;
-  color: var(--text) !important;
-}
-.sidebar-logo {
-  font-family: 'Inter', sans-serif;
-  font-size: 1.3rem;
-  font-weight: 800;
-  color: var(--gold2);
-  letter-spacing: 1px;
-  text-align: center;
-  padding: 12px 0 4px;
-}
-.sidebar-sub {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.65rem;
-  color: var(--muted);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  text-align: center;
-  margin-bottom: 8px;
-}
+/* ── SIDEBAR LEGACY (hidden) ── */
+.sidebar-logo, .sidebar-sub { display:none; }
+[data-testid="stSidebar"] { display:none !important; }
 
 /* ── TABS ── */
-.stTabs [data-baseweb="tab-list"] {
-  background: var(--dark) !important;
-  border-bottom: 1px solid var(--border) !important;
-  gap: 0 !important;
-}
-.stTabs [data-baseweb="tab"] {
-  font-family: 'Inter', sans-serif !important;
-  font-size: 0.78rem !important;
-  letter-spacing: 0.5px !important;
-  font-weight: 600 !important;
-  color: var(--muted) !important;
-  background: transparent !important;
-  border: none !important;
-  padding: 10px 18px !important;
-}
-.stTabs [aria-selected="true"] {
-  color: var(--gold2) !important;
-  border-bottom: 2px solid var(--gold2) !important;
-}
-.stTabs [data-baseweb="tab-panel"] {
-  background: var(--dark) !important;
-  padding-top: 14px !important;
-}
+.stTabs [data-baseweb="tab-list"] { background:transparent !important; border-bottom:1px solid var(--border) !important; gap:0 !important; overflow-x:auto !important; flex-wrap:nowrap !important; scrollbar-width:none !important; -webkit-overflow-scrolling:touch !important; }
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display:none !important; }
+.stTabs [data-baseweb="tab"] { font-family:'Outfit',sans-serif !important; font-size:0.75rem !important; font-weight:600 !important; color:var(--text3) !important; background:transparent !important; border:none !important; padding:10px 14px !important; white-space:nowrap !important; letter-spacing:0.2px !important; }
+.stTabs [aria-selected="true"] { color:var(--orange) !important; border-bottom:2px solid var(--orange) !important; }
+.stTabs [data-baseweb="tab-panel"] { background:transparent !important; padding-top:12px !important; }
 
-/* ── BUTTON — oscuro por defecto, todos los selectores de Streamlit ── */
-.stButton > button,
-button[data-testid="baseButton-secondary"],
-button[data-testid="baseButton-secondaryFormSubmit"],
-button[kind="secondary"],
-[data-testid="stBaseButton-secondary"],
-div[data-testid="stButton"] > button {
-  background: #1C1C1C !important;
-  color: #E8E8E8 !important;
-  font-family: 'Inter', sans-serif !important;
-  font-size: 0.82rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.3px !important;
-  border: 1px solid #333333 !important;
-  padding: 9px 16px !important;
-  border-radius: 12px !important;
-  width: 100% !important;
-  cursor: pointer !important;
-  transition: all 0.15s !important;
-  box-shadow: none !important;
+/* ── BUTTONS ── */
+.stButton > button, button[data-testid="baseButton-secondary"], button[data-testid="baseButton-secondaryFormSubmit"], button[kind="secondary"], [data-testid="stBaseButton-secondary"], div[data-testid="stButton"] > button {
+  background:var(--bg3) !important; color:var(--text) !important;
+  font-family:'Outfit',sans-serif !important; font-size:0.82rem !important; font-weight:600 !important;
+  letter-spacing:0.3px !important; border:1px solid var(--border) !important;
+  padding:9px 16px !important; border-radius:var(--radius-sm) !important;
+  width:100% !important; cursor:pointer !important; transition:all 0.15s !important; box-shadow:none !important;
 }
-.stButton > button:hover,
-button[data-testid="baseButton-secondary"]:hover,
-div[data-testid="stButton"] > button:hover {
-  background: #242424 !important;
-  border-color: rgba(232,184,75,0.4) !important;
-  color: #E8B84B !important;
+.stButton > button:hover, button[data-testid="baseButton-secondary"]:hover, div[data-testid="stButton"] > button:hover {
+  background:rgba(255,107,0,0.12) !important; border-color:rgba(255,107,0,0.45) !important; color:var(--orange) !important;
 }
-/* Botones primarios — dorados */
-.stButton > button[kind="primary"],
-button[data-testid="baseButton-primary"],
-div[data-testid="stButton"] > button[kind="primary"] {
-  background: #E8B84B !important;
-  color: #000000 !important;
-  border: none !important;
-  font-weight: 700 !important;
+.stButton > button[kind="primary"], button[data-testid="baseButton-primary"], div[data-testid="stButton"] > button[kind="primary"] {
+  background:linear-gradient(135deg,var(--orange),var(--orange2)) !important; color:#fff !important; border:none !important; font-weight:700 !important;
 }
-/* Download button */
-.stDownloadButton > button {
-  background: #1C1C1C !important;
-  color: #E8B84B !important;
-  border: 1px solid rgba(232,184,75,0.3) !important;
-  border-radius: 12px !important;
+.stDownloadButton > button { background:var(--bg3) !important; color:var(--orange) !important; border:1px solid rgba(255,107,0,0.3) !important; border-radius:var(--radius-sm) !important; }
+.stDownloadButton > button:hover { background:rgba(255,107,0,0.1) !important; border-color:rgba(255,107,0,0.6) !important; }
+
+/* ── INPUTS ── */
+div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stTextArea"] textarea {
+  background:var(--bg3) !important; border:1px solid var(--border) !important; border-radius:var(--radius-sm) !important; color:var(--text) !important; font-family:'Outfit',sans-serif !important; font-size:0.88rem !important;
 }
-.stDownloadButton > button:hover {
-  background: rgba(232,184,75,0.1) !important;
-  border-color: rgba(232,184,75,0.6) !important;
+div[data-testid="stTextInput"] input:focus, div[data-testid="stNumberInput"] input:focus, div[data-testid="stTextArea"] textarea:focus {
+  border-color:var(--orange) !important; box-shadow:0 0 0 2px rgba(255,107,0,0.15) !important;
+}
+div[data-testid="stSelectbox"] > div > div { background:var(--bg3) !important; border:1px solid var(--border) !important; border-radius:var(--radius-sm) !important; color:var(--text) !important; font-family:'Outfit',sans-serif !important; }
+div[data-testid="stMultiSelect"] > div > div { background:var(--bg3) !important; border:1px solid var(--border) !important; border-radius:var(--radius-sm) !important; }
+div[data-testid="stSelectbox"] label, div[data-testid="stTextInput"] label, div[data-testid="stNumberInput"] label, div[data-testid="stTextArea"] label, div[data-testid="stSlider"] label, div[data-testid="stRadio"] label {
+  color:var(--orange) !important; font-family:'Outfit',sans-serif !important; font-size:0.75rem !important; font-weight:600 !important; letter-spacing:0.3px !important;
 }
 
-/* ── NO RESULTS ── */
-.empty-state {
-  text-align: center;
-  padding: 48px 24px;
-  color: var(--muted);
-  font-family: 'Inter', sans-serif;
+/* ── EXPANDERS ── */
+[data-testid="stExpander"] > details > summary, .streamlit-expanderHeader, [data-testid="stExpander"] summary {
+  background:var(--card) !important; color:var(--text) !important; border:1px solid var(--border) !important;
+  border-radius:var(--radius) !important; padding:10px 16px !important; font-family:'Outfit',sans-serif !important; font-weight:600 !important;
 }
-.empty-icon { font-size: 3rem; margin-bottom: 12px; }
-.empty-title { font-family: 'Inter', sans-serif; font-size: 1rem; font-weight: 700; color: var(--white); letter-spacing: 0.5px; margin-bottom: 8px; }
-
-hr { border-color: var(--border) !important; }
-
-
-/* ══════════════════════════════════════════════════
-   HAMBURGER — cubre todos los selectores de Streamlit
-   ══════════════════════════════════════════════════ */
-
-/* Streamlit 1.28+ */
-[data-testid="collapsedControl"],
-/* Streamlit 1.20-1.27 */
-button[data-testid="baseButton-headerNoPadding"],
-/* Cualquier botón en el área del header fuera del sidebar */
-.stApp > header button,
-header[data-testid="stHeader"] button,
-/* Por clase generada */
-div[class*="collapsedControl"] {
-  position: fixed !important;
-  top: 10px !important;
-  left: 10px !important;
-  z-index: 999999 !important;
-  width: 44px !important;
-  height: 44px !important;
-  min-width: 44px !important;
-  max-width: 44px !important;
-  background: rgba(232,184,75,0.13) !important;
-  border: 1.5px solid rgba(232,184,75,0.65) !important;
-  border-radius: 12px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
-  opacity: 1 !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
-  overflow: visible !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transition: background 0.2s ease, border-color 0.2s ease !important;
+[data-testid="stExpander"] > details[open] > summary { border-radius:var(--radius) var(--radius) 0 0 !important; background:var(--card2) !important; }
+[data-testid="stExpander"] summary:hover { background:var(--card2) !important; border-color:rgba(255,107,0,0.3) !important; }
+[data-testid="stExpander"] summary svg { fill:var(--text3) !important; color:var(--text3) !important; }
+[data-testid="stExpander"] > details > div, [data-testid="stExpander"] .streamlit-expanderContent {
+  background:var(--card) !important; border:1px solid var(--border) !important; border-top:none !important; border-radius:0 0 var(--radius) var(--radius) !important; padding:12px 10px !important;
 }
-[data-testid="collapsedControl"]:hover,
-button[data-testid="baseButton-headerNoPadding"]:hover,
-.stApp > header button:hover {
-  background: rgba(232,184,75,0.28) !important;
-  border-color: #E8B84B !important;
-}
-/* Ocultar SVG/icono nativo */
-[data-testid="collapsedControl"] svg,
-[data-testid="collapsedControl"] img,
-button[data-testid="baseButton-headerNoPadding"] svg,
-.stApp > header button svg { display: none !important; }
+[data-testid="stExpander"] { background:transparent !important; border:none !important; box-shadow:none !important; }
 
-/* Ocultar spans/texto nativo */
-[data-testid="collapsedControl"] span,
-button[data-testid="baseButton-headerNoPadding"] span,
-.stApp > header button span { display: none !important; }
+/* ── METRICS ── */
+div[data-testid="stMetric"] { background:var(--card) !important; border-radius:var(--radius) !important; padding:12px !important; border:1px solid var(--border) !important; }
+div[data-testid="stMetricValue"] { color:var(--text) !important; font-family:'Outfit',sans-serif !important; font-weight:700 !important; }
+div[data-testid="stMetricLabel"] { color:var(--text3) !important; font-family:'Outfit',sans-serif !important; }
 
-/* Inyectar ☰ */
-[data-testid="collapsedControl"]::after,
-button[data-testid="baseButton-headerNoPadding"]::after,
-.stApp > header button::after {
-  content: '☰' !important;
-  color: #E8B84B !important;
-  font-size: 1.4rem !important;
-  line-height: 1 !important;
-  font-family: 'Inter', Arial, sans-serif !important;
-  display: block !important;
-  pointer-events: none !important;
-}
+/* ── SPINNER / TOAST ── */
+.stSpinner > div { border-top-color:var(--orange) !important; }
+.stToast { background:var(--card) !important; border:1px solid var(--border) !important; border-radius:var(--radius) !important; }
+.stCaption, div[data-testid="stCaptionContainer"] p { color:var(--text3) !important; font-family:'Outfit',sans-serif !important; }
 
-/* Ocultar el header nativo de Streamlit completamente */
-header[data-testid="stHeader"] {
-  background: transparent !important;
-  height: 0 !important;
-  min-height: 0 !important;
-}
-/* Pero mantener visible el botón hamburguesa que está dentro del header */
-header[data-testid="stHeader"] button {
-  height: 44px !important;
-  min-height: 44px !important;
-}
+/* ── SUPPRESS RERUN OVERLAY ── */
+.stApp.running .main, .stApp.running section, .stApp.running [data-testid="stAppViewContainer"] { opacity:1 !important; transition:none !important; }
+div[data-testid="stStatusWidget"] { display:none !important; }
+.stApp [data-testid="stAppViewContainer"] > section, .stApp > div { opacity:1 !important; }
 
+/* ── EMPTY STATE ── */
+.empty-state { text-align:center; padding:48px 24px; color:var(--text3); }
+.empty-icon { font-size:3rem; margin-bottom:12px; }
+.empty-title { font-size:0.95rem; font-weight:700; color:var(--white); letter-spacing:0.5px; margin-bottom:8px; }
 
-/* ══════════════════════════════════════════════════
-   MOBILE — iPhone optimizado  (≤ 768 px)
-   ══════════════════════════════════════════════════ */
-@media (max-width: 768px) {
+/* ── LIVE DOT ── */
+.live-dot { display:inline-block; width:7px; height:7px; background:var(--red); border-radius:50%; margin-right:5px; animation:blink 1.2s ease-in-out infinite; vertical-align:middle; }
+@keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.7)} }
 
-  /* ── Safe area / notch awareness ── */
-  .stApp {
-    padding-top: env(safe-area-inset-top) !important;
-    padding-bottom: env(safe-area-inset-bottom) !important;
-  }
+hr { border-color:var(--border) !important; }
 
-  /* ── Global container ── */
-  .block-container {
-    padding-left: 10px !important;
-    padding-right: 10px !important;
-    padding-top: 56px !important; /* espacio para hamburguesa */
-    max-width: 100% !important;
-    overflow-x: hidden !important;
-  }
-
-  /* ── Sidebar: ocupa casi toda la pantalla cuando abre ── */
-  [data-testid="stSidebar"] {
-    min-width: 85vw !important;
-    max-width: 92vw !important;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.8) !important;
-  }
-  /* Close button dentro del sidebar */
-  [data-testid="stSidebar"] button[data-testid="baseButton-headerNoPadding"] {
-    color: #E8B84B !important;
-  }
-
-  /* ── Main content siempre full width ── */
-  .main .block-container {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
-
-  /* ── Header ── */
-  .den-logo {
-    font-size: 1.6rem !important;
-    letter-spacing: 0px !important;
-  }
-  .den-subtitle {
-    font-size: 0.58rem !important;
-    letter-spacing: 1.5px !important;
-  }
-
-  /* ── TABS: scroll horizontal sin cortar palabras ── */
-  .stTabs [data-baseweb="tab-list"] {
-    overflow-x: auto !important;
-    flex-wrap: nowrap !important;
-    -webkit-overflow-scrolling: touch !important;
-    scrollbar-width: none !important;
-    padding-bottom: 2px !important;
-  }
-  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none !important; }
-  .stTabs [data-baseweb="tab"] {
-    font-size: 0.72rem !important;
-    padding: 9px 12px !important;
-    white-space: nowrap !important;
-    letter-spacing: 0px !important;
-    min-width: max-content !important;
-  }
-
-  /* ── Pick card ── */
-  .pick-card { margin: 8px 0 !important; }
-  .pick-header {
-    padding: 10px 12px !important;
-    flex-direction: column !important;
-    gap: 5px !important;
-  }
-  .pick-matchup { font-size: 0.95rem !important; }
-  .pick-body { padding: 10px 12px !important; }
-  .pick-action {
-    font-size: 1.15rem !important;
-    letter-spacing: 0px !important;
-    gap: 8px !important;
-    padding: 8px 0 !important;
-  }
-  .pick-action-arrow { font-size: 1.2rem !important; }
-
-  /* ── Stats ── */
-  .stats-row { gap: 8px !important; }
-  .stat-item { min-width: 52px !important; }
-  .stat-item-val { font-size: 1rem !important; }
-  .stat-item-lbl { font-size: 0.58rem !important; }
-
-  /* ── Stat tiles (bankroll) ── */
-  .stat-grid { gap: 6px !important; }
-  .stat-tile { padding: 10px 6px !important; border-radius: 12px !important; }
-  .stat-num { font-size: 1.3rem !important; }
-  .stat-label { font-size: 0.58rem !important; }
-
-  /* ── Game row ── */
-  .game-row { padding: 8px 10px !important; border-radius: 12px !important; }
-  .game-title { font-size: 0.82rem !important; }
-  .game-meta  { font-size: 0.68rem !important; }
-
-  /* ── Section heading ── */
-  .section-heading {
-    font-size: 0.72rem !important;
-    letter-spacing: 1px !important;
-    margin: 14px 0 8px !important;
-  }
-
-  /* ── Parlay card ── */
-  .parlay-card { margin: 8px 0 !important; }
-  .parlay-header {
-    font-size: 0.78rem !important;
-    padding: 10px 12px !important;
-    letter-spacing: 0.5px !important;
-  }
-  .parlay-body { padding: 10px 12px !important; }
-  .parlay-leg  { font-size: 0.76rem !important; gap: 6px !important; }
-
-  /* ── Probability bars ── */
-  .bar-team, .bar-pct { font-size: 0.68rem !important; }
-  .bar-bg, .bar-fill { height: 4px !important; }
-
-  /* ── Buttons ── */
-  .stButton > button {
-    font-size: 0.78rem !important;
-    padding: 11px 16px !important;
-    letter-spacing: 0.3px !important;
-    border-radius: 12px !important;
-  }
-  [data-testid="stSidebar"] .stButton > button {
-    font-size: 0.75rem !important;
-    padding: 9px 12px !important;
-  }
-
-  /* ── Chips / badges ── */
-  .market-chip {
-    font-size: 0.6rem !important;
-    padding: 2px 6px !important;
-    border-radius: 6px !important;
-  }
-  .conf-badge { font-size: 0.62rem !important; padding: 3px 8px !important; }
-  .pick-league-badge { font-size: 0.62rem !important; padding: 2px 8px !important; }
-
-  /* ── Pick rationale ── */
-  .pick-rationale { font-size: 0.78rem !important; line-height: 1.6 !important; }
-
-  /* ── Expanders ── */
-  [data-testid="stExpander"] > details > summary {
-    font-size: 0.8rem !important;
-    padding: 9px 12px !important;
-  }
-
-  /* ── Banners ── */
-  .warn-banner, .demo-banner {
-    font-size: 0.75rem !important;
-    padding: 7px 10px !important;
-    border-radius: 10px !important;
-  }
-
-  /* ── Sidebar logo ── */
-  .sidebar-logo { font-size: 1.1rem !important; }
-  .sidebar-sub  { font-size: 0.55rem !important; letter-spacing: 1.5px !important; }
-
-  /* ── Empty state ── */
-  .empty-state { padding: 28px 10px !important; }
-  .empty-icon  { font-size: 2rem !important; }
-  .empty-title { font-size: 0.9rem !important; }
-
-  /* ── Columns: sin overflow ── */
-  [data-testid="column"] {
-    min-width: 0 !important;
-    overflow: hidden !important;
-  }
-
-  /* ── Texto general: nunca recortar con ellipsis ── */
-  * {
-    word-break: break-word !important;
-    overflow-wrap: break-word !important;
-  }
-
-  /* ── Inputs nativos ── */
-  div[data-testid="stTextInput"] input,
-  div[data-testid="stNumberInput"] input {
-    font-size: 0.9rem !important;
-    padding: 9px 12px !important;
-    border-radius: 10px !important;
-  }
-
-  /* ── Live tiles ── */
-  div[style*="border-radius:16px"] {
-    border-radius: 12px !important;
-  }
-}
-
-/* ── iPhone SE / teléfonos muy chicos (≤ 390 px) ── */
-@media (max-width: 390px) {
-  .den-logo { font-size: 1.35rem !important; }
-  .stTabs [data-baseweb="tab"] {
-    font-size: 0.64rem !important;
-    padding: 8px 9px !important;
-  }
-  .pick-action { font-size: 1rem !important; }
-  .stat-item-val { font-size: 0.9rem !important; }
-  .pick-matchup { font-size: 0.85rem !important; }
-  .stat-num { font-size: 1.1rem !important; }
-}
-
-/* ══════════════════════════════════════════════════
-   DARK EXPANDER THEME — all expanders
-   ══════════════════════════════════════════════════ */
-
-/* Header (the clickable bar) */
-[data-testid="stExpander"] > details > summary,
-.streamlit-expanderHeader,
-[data-testid="stExpander"] summary {
-  background: var(--card) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-  padding: 10px 16px !important;
-  font-family: 'Inter', sans-serif !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.2px !important;
-  transition: background 0.15s, border-color 0.15s !important;
-}
-[data-testid="stExpander"] > details[open] > summary,
-[data-testid="stExpander"] summary[aria-expanded="true"] {
-  border-radius: 12px 12px 0 0 !important;
-  border-bottom-color: var(--border) !important;
-  background: var(--card2) !important;
-}
-[data-testid="stExpander"] summary:hover {
-  background: var(--card2) !important;
-  border-color: rgba(201,168,76,0.3) !important;
-}
-/* Expand arrow icon */
-[data-testid="stExpander"] summary svg {
-  fill: var(--muted) !important;
-  color: var(--muted) !important;
-}
-/* Content area */
-[data-testid="stExpander"] > details > div,
-[data-testid="stExpander"] .streamlit-expanderContent {
-  background: var(--card) !important;
-  border: 1px solid var(--border) !important;
-  border-top: none !important;
-  border-radius: 0 0 12px 12px !important;
-  padding: 12px 10px !important;
-}
-/* Nested expanders */
-[data-testid="stExpander"] [data-testid="stExpander"] > details > summary {
-  background: var(--card2) !important;
-  color: var(--text) !important;
-  border-color: rgba(255,255,255,0.08) !important;
-  font-weight: 500 !important;
-}
-[data-testid="stExpander"] [data-testid="stExpander"] > details[open] > summary {
-  background: #202020 !important;
-}
-[data-testid="stExpander"] [data-testid="stExpander"] summary:hover {
-  background: #242424 !important;
-  border-color: rgba(201,168,76,0.3) !important;
-}
-[data-testid="stExpander"] [data-testid="stExpander"] > details > div {
-  background: #141414 !important;
-  border-color: rgba(255,255,255,0.05) !important;
-}
-/* Remove Streamlit's default white bg on expander wrapper */
-[data-testid="stExpander"] {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-/* ── STREAMLIT NATIVE WIDGET DARK THEME ── */
-div[data-testid="stTextInput"] input,
-div[data-testid="stNumberInput"] input,
-div[data-testid="stTextArea"] textarea {
-  background: #1C1C1C !important;
-  border: 1px solid #2A2A2A !important;
-  border-radius: 12px !important;
-  color: #E8E8E8 !important;
-  font-family: 'Inter', sans-serif !important;
-  font-size: 0.875rem !important;
-}
-div[data-testid="stTextInput"] input:focus,
-div[data-testid="stNumberInput"] input:focus,
-div[data-testid="stTextArea"] textarea:focus {
-  border-color: rgba(232,184,75,0.5) !important;
-  box-shadow: 0 0 0 2px rgba(232,184,75,0.1) !important;
-}
-div[data-testid="stSelectbox"] > div > div {
-  background: #1C1C1C !important;
-  border: 1px solid #2A2A2A !important;
-  border-radius: 12px !important;
-  color: #E8E8E8 !important;
-  font-family: 'Inter', sans-serif !important;
-}
-div[data-testid="stSelectbox"] label,
-div[data-testid="stTextInput"] label,
-div[data-testid="stNumberInput"] label,
-div[data-testid="stTextArea"] label,
-div[data-testid="stSlider"] label,
-div[data-testid="stRadio"] label {
-  color: #E8B84B !important;
-  font-family: 'Inter', sans-serif !important;
-  font-size: 0.78rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.3px !important;
-}
-/* Slider */
-div[data-testid="stSlider"] [data-testid="stSlider"] {
-  color: #E8B84B !important;
-}
-/* Sidebar widget labels */
-[data-testid="stSidebar"] div[data-testid="stSelectbox"] label,
-[data-testid="stSidebar"] div[data-testid="stTextInput"] label,
-[data-testid="stSidebar"] div[data-testid="stNumberInput"] label,
-[data-testid="stSidebar"] div[data-testid="stSlider"] label,
-[data-testid="stSidebar"] div[data-testid="stRadio"] label {
-  color: #E8B84B !important;
-  font-family: 'Inter', sans-serif !important;
-}
-/* Multiselect */
-div[data-testid="stMultiSelect"] > div > div {
-  background: #1C1C1C !important;
-  border: 1px solid #2A2A2A !important;
-  border-radius: 12px !important;
-}
-/* Download button */
-.stDownloadButton > button {
-  background: #1C1C1C !important;
-  color: #E8B84B !important;
-  border: 1px solid rgba(232,184,75,0.3) !important;
-  border-radius: 12px !important;
-  font-family: 'Inter', sans-serif !important;
-  font-weight: 600 !important;
-}
-.stDownloadButton > button:hover {
-  background: rgba(232,184,75,0.1) !important;
-  border-color: rgba(232,184,75,0.6) !important;
-}
-/* Spinner */
-.stSpinner > div { border-top-color: #E8B84B !important; }
-/* Toast */
-.stToast { background: #1C1C1C !important; border: 1px solid #2A2A2A !important; border-radius: 12px !important; }
-/* Caption text */
-.stCaption, div[data-testid="stCaptionContainer"] p { color: #6B7280 !important; font-family: 'Inter', sans-serif !important; }
-/* Metric */
-div[data-testid="stMetric"] { background: #161616; border-radius: 16px; padding: 12px; border: 1px solid #2A2A2A; }
-div[data-testid="stMetricValue"] { color: #E8E8E8 !important; font-family: 'Inter', sans-serif !important; font-weight: 700 !important; }
-div[data-testid="stMetricLabel"] { color: #6B7280 !important; font-family: 'Inter', sans-serif !important; }
-div[data-testid="stMetricDelta"] { font-family: 'Inter', sans-serif !important; }
-
-/* ── Suprimir overlay opaco de Streamlit durante reruns ── */
-/* Streamlit pone opacity:0.4 sobre toda la app durante st.rerun() — lo eliminamos */
-.stApp [data-testid="stAppViewContainer"] > section,
-.stApp > div,
-iframe[title="st_on_forward_msg"],
-div[data-testid="stSpinnerContainer"],
-[class*="withScreencast"],
-[class*="AppView"] {
-  opacity: 1 !important;
-}
-/* El overlay que aparece durante reruns */
-div[data-testid="stStatusWidget"] { display: none !important; }
-/* Streamlit pone una clase running que reduce opacidad — forzar opacidad total */
-.stApp.running .main,
-.stApp.running section,
-.stApp.running [data-testid="stAppViewContainer"] {
-  opacity: 1 !important;
-  transition: none !important;
-}
-
-/* ── FORZAR BOTONES OSCUROS — máxima especificidad ── */
+/* ── FORZAR BOTONES OSCUROS ── */
 .stApp button:not([data-testid="baseButton-primary"]):not([title="Menú"]):not([aria-label="Menú"]) {
-  background-color: #1C1C1C !important;
-  background: #1C1C1C !important;
-  color: #E8E8E8 !important;
-  border: 1px solid #333333 !important;
-  border-radius: 12px !important;
-  box-shadow: none !important;
+  background-color:var(--bg3) !important; background:var(--bg3) !important; color:var(--text) !important; border:1px solid var(--border) !important; border-radius:var(--radius-sm) !important; box-shadow:none !important;
 }
 .stApp button:not([data-testid="baseButton-primary"]):not([title="Menú"]):hover {
-  background-color: #252525 !important;
-  background: #252525 !important;
-  color: #E8B84B !important;
-  border-color: rgba(232,184,75,0.4) !important;
+  background-color:rgba(255,107,0,0.12) !important; color:var(--orange) !important; border-color:rgba(255,107,0,0.4) !important;
 }
-.stApp button[data-testid="baseButton-primary"] {
-  background-color: #E8B84B !important;
-  background: #E8B84B !important;
-  color: #000000 !important;
-  border: none !important;
+.stApp button[data-testid="baseButton-primary"] { background-color:var(--orange) !important; background:linear-gradient(135deg,var(--orange),var(--orange2)) !important; color:#fff !important; border:none !important; }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .stApp { padding-top:env(safe-area-inset-top) !important; padding-bottom:env(safe-area-inset-bottom) !important; }
+  .block-container { padding-left:10px !important; padding-right:10px !important; max-width:100% !important; overflow-x:hidden !important; }
+  .den-logo { font-size:1.6rem !important; }
+  .den-subtitle { font-size:0.58rem !important; }
+  .stTabs [data-baseweb="tab"] { font-size:0.68rem !important; padding:9px 10px !important; }
+  .pick-card { margin:8px 0 !important; }
+  .pick-header { padding:10px 12px !important; flex-direction:column !important; gap:5px !important; }
+  .pick-matchup { font-size:0.9rem !important; }
+  .pick-body { padding:10px 12px !important; }
+  .pick-action { font-size:1.1rem !important; gap:8px !important; padding:8px 0 !important; }
+  .stats-row { gap:8px !important; }
+  .stat-item { min-width:52px !important; }
+  .stat-item-val { font-size:0.95rem !important; }
+  .market-chip { font-size:0.58rem !important; padding:2px 6px !important; }
+  .conf-badge { font-size:0.58rem !important; padding:3px 8px !important; }
+  .pick-league-badge { font-size:0.58rem !important; padding:2px 8px !important; }
+  .pick-rationale { font-size:0.75rem !important; }
+  .game-row { padding:8px 10px !important; }
+  .game-title { font-size:0.82rem !important; }
+  .game-meta  { font-size:0.68rem !important; }
+  .section-heading { font-size:0.65rem !important; margin:14px 0 8px !important; }
+  .parlay-header { font-size:0.75rem !important; padding:10px 12px !important; }
+  .parlay-body { padding:10px 12px !important; }
+  .parlay-leg  { font-size:0.75rem !important; }
+  .stat-grid { gap:6px !important; }
+  .stat-tile { padding:10px 6px !important; border-radius:12px !important; }
+  .stat-num { font-size:1.3rem !important; }
+  .warn-banner, .demo-banner { font-size:0.72rem !important; padding:7px 10px !important; border-radius:10px !important; }
+  .empty-state { padding:28px 10px !important; }
+  .empty-icon  { font-size:2rem !important; }
+  .empty-title { font-size:0.9rem !important; }
+  [data-testid="column"] { min-width:0 !important; overflow:hidden !important; }
+  * { word-break:break-word !important; overflow-wrap:break-word !important; }
+  div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input { font-size:0.9rem !important; padding:9px 12px !important; border-radius:10px !important; }
+}
+@media (max-width: 390px) {
+  .den-logo { font-size:1.35rem !important; }
+  .pick-action { font-size:1rem !important; }
+  .stat-item-val { font-size:0.88rem !important; }
+  .pick-matchup { font-size:0.85rem !important; }
+  .stat-num { font-size:1.1rem !important; }
 }
 
+
+/* Primary button */
+.stButton > button[kind="primary"],
+button[data-testid="baseButton-primary"] {
+  background: linear-gradient(135deg,#FF6B00,#FF8C00) !important;
+  color: #000 !important; border: none !important; font-weight: 800 !important;
+  box-shadow: 0 3px 12px rgba(255,107,0,0.4) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BOTTOM NAV iOS — 6 secciones
+# ═══════════════════════════════════════════════════════════════════════════════
+_NAV_ITEMS = [
+    {"key": "Rongol Picks", "icon": "⚡", "label": "Rongol"},
+    {"key": "Picks",        "icon": "🎯", "label": "Picks"},
+    {"key": "Parlays",      "icon": "🎰", "label": "Parlays"},
+    {"key": "En Vivo",      "icon": "🔴", "label": "Live"},
+    {"key": "Reto 13M",     "icon": "💰", "label": "Reto"},
+    {"key": "Config",       "icon": "⚙️",  "label": "Config"},
+]
+
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "Rongol Picks"
+
+_active_page = st.session_state["active_page"]
+
+# Bottom nav HTML
+_nav_html_parts = []
+for _ni in _NAV_ITEMS:
+    _is_a = _ni["key"] == _active_page
+    _clr  = "#FF6B00" if _is_a else "#636366"
+    _dot  = '<div style="width:4px;height:4px;background:#FF6B00;border-radius:50%;margin-top:1px"></div>' if _is_a else ''
+    _bb   = "border-bottom:2px solid #FF6B00;" if _is_a else ""
+    _nav_html_parts.append(
+        f'<div style="display:flex;flex-direction:column;align-items:center;gap:2px;'
+        f'padding:4px 8px;cursor:pointer;min-width:44px;{_bb}">'
+        f'<span style="font-size:1.18rem;line-height:1">{_ni["icon"]}</span>'
+        f'<span style="font-size:0.52rem;font-weight:700;letter-spacing:0.3px;'
+        f'text-transform:uppercase;font-family:Outfit,sans-serif;color:{_clr}">{_ni["label"]}</span>'
+        f'{_dot}</div>'
+    )
+
+st.markdown(
+    f'<div class="ios-bottom-nav">{"".join(_nav_html_parts)}</div>',
+    unsafe_allow_html=True
+)
+
+# Real (invisible) nav buttons — positioned over the HTML nav
+_ncols = st.columns(len(_NAV_ITEMS))
+for _ni2, _nitem in enumerate(_NAV_ITEMS):
+    with _ncols[_ni2]:
+        if st.button(_nitem["icon"], key=f"_nav_{_nitem['key']}", help=_nitem["key"]):
+            st.session_state["active_page"] = _nitem["key"]
+            st.rerun()
+
+# Overlay nav buttons on top of HTML nav
+st.markdown(f"""
+<style>
+/* Stack real nav buttons over HTML nav */
+div[data-testid="stHorizontalBlock"]:has(button[key="_nav_Rongol Picks"]) {{
+  position:fixed !important; bottom:0 !important; left:0 !important; right:0 !important;
+  z-index:100000 !important; height:var(--nav-h) !important;
+  display:flex !important; align-items:stretch !important;
+  background:transparent !important; margin:0 !important; padding:0 !important;
+}}
+div[data-testid="stHorizontalBlock"]:has(button[key="_nav_Rongol Picks"]) > div {{
+  flex:1 !important;
+}}
+div[data-testid="stHorizontalBlock"]:has(button[key="_nav_Rongol Picks"]) button {{
+  opacity:0 !important; height:var(--nav-h) !important;
+  width:100% !important; border:none !important; background:transparent !important;
+  border-radius:0 !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -5497,227 +4906,23 @@ def render_parlay_card(r):
           + '</div>'
         '</div>'
     )
-# ═══════════════════════════════════════════════════════════════════════════════
-# HAMBURGER PANEL — controles en el contenido principal, sin sidebar nativo
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Inicializar estado del panel
-if "menu_open" not in st.session_state:
-    st.session_state["menu_open"] = False
-
-# CSS del botón hamburguesa fijo + ocultar sidebar nativo
-st.markdown("""
-<style>
-/* Ocultar sidebar nativo completamente */
-[data-testid="stSidebar"],
-[data-testid="collapsedControl"],
-[data-testid="stSidebarCollapsedControl"],
-header[data-testid="stHeader"] {
-  display: none !important;
-}
-.stApp > header { display: none !important; }
-
-/* Sacar el botón hamburguesa del flujo del layout — fijarlo en pantalla */
-div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"][title="Menú"]) {
-  position: fixed !important;
-  top: 10px !important;
-  left: 10px !important;
-  z-index: 99999 !important;
-  width: 48px !important;
-  height: 48px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-/* El botón en sí */
-button[title="Menú"],
-button[aria-label="Menú"] {
-  position: fixed !important;
-  top: 10px !important;
-  left: 10px !important;
-  z-index: 99999 !important;
-  width: 46px !important;
-  height: 46px !important;
-  min-width: 46px !important;
-  background: rgba(232,184,75,0.13) !important;
-  border: 1.5px solid rgba(232,184,75,0.65) !important;
-  border-radius: 13px !important;
-  color: #E8B84B !important;
-  font-size: 1.4rem !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  line-height: 1 !important;
-}
-button[title="Menú"]:hover,
-button[aria-label="Menú"]:hover {
-  background: rgba(232,184,75,0.28) !important;
-  border-color: #E8B84B !important;
-}
-/* Compensar el espacio que ocupa el botón fijo */
-.block-container {
-  padding-top: 62px !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Botón hamburguesa — nativo de Streamlit, fijado con CSS
-if st.button("☰", key="btn_hamburger", help="Menú"):
-    st.session_state["menu_open"] = not st.session_state["menu_open"]
-
-# Panel lateral custom
-if st.session_state.get("menu_open", False):
-    st.markdown("""
-    <style>
-    /* Panel compacto */
-    .den-panel-wrap { margin: 0; padding: 0; }
-
-    /* Todos los botones dentro del panel — oscuros */
-    .den-panel-wrap .stButton > button {
-      background: #1C1C1C !important;
-      border: 1px solid #2A2A2A !important;
-      color: #E8E8E8 !important;
-      border-radius: 10px !important;
-      font-size: 0.78rem !important;
-      font-weight: 600 !important;
-      padding: 7px 12px !important;
-      height: auto !important;
-      min-height: 34px !important;
-      letter-spacing: 0.3px !important;
-    }
-    .den-panel-wrap .stButton > button:hover {
-      background: #242424 !important;
-      border-color: rgba(232,184,75,0.4) !important;
-      color: #E8B84B !important;
-    }
-    /* Botón analizar — dorado */
-    .den-panel-wrap .stButton > button[data-testid*="run_btn"] {
-      background: rgba(232,184,75,0.15) !important;
-      border: 1px solid rgba(232,184,75,0.5) !important;
-      color: #E8B84B !important;
-    }
-    /* Slider compacto */
-    .den-panel-wrap .stSlider { margin: 0 !important; }
-    .den-panel-wrap .stCaption { font-size: 0.68rem !important; color: #6B7280 !important; margin: 0 !important; }
-    /* Multiselect compacto */
-    .den-panel-wrap .stMultiSelect { margin-bottom: 4px !important; }
-    .den-panel-wrap [data-baseweb="tag"] {
-      font-size: 0.65rem !important;
-      padding: 1px 5px !important;
-      border-radius: 6px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    with st.container():
-        st.markdown('<div class="den-panel-wrap">', unsafe_allow_html=True)
-
-        # Header
-        _hcol1, _hcol2 = st.columns([3, 1])
-        with _hcol1:
-            st.markdown('<div style="font-size:0.95rem;font-weight:800;color:#E8B84B;letter-spacing:1px;padding-top:4px">⚙️ THE DEN</div>', unsafe_allow_html=True)
-        with _hcol2:
-            if st.button("✕", key="btn_close_menu", help="Cerrar"):
-                st.session_state["menu_open"] = False
-                st.rerun()
-
-        st.markdown('<div style="height:1px;background:#2A2A2A;margin:8px 0 10px"></div>', unsafe_allow_html=True)
-
-        # Simulaciones
-        st.markdown('<div style="font-size:0.65rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔮 SIMULACIONES</div>', unsafe_allow_html=True)
-        n_sims = st.select_slider(
-            "Iteraciones",
-            options=[1_000, 2_500, 5_000, 10_000, 25_000],
-            value=st.session_state.get("n_sims_val", 10_000),
-            key="n_sims_slider",
-            label_visibility="collapsed"
-        )
-        st.session_state["n_sims_val"] = n_sims
-        st.caption(f"⚡ {n_sims:,} por partido")
-
-        st.markdown('<div style="height:1px;background:#1E1E1E;margin:8px 0"></div>', unsafe_allow_html=True)
-
-        # Ligas
-        st.markdown('<div style="font-size:0.65rem;color:#E8B84B;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🌍 DEPORTES</div>', unsafe_allow_html=True)
-        _groups_all = sorted(set(v["group"] for v in LEAGUES.values()))
-        sel_groups = st.multiselect(
-            "Deportes", _groups_all,
-            default=st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"]),
-            key="sel_groups_v3", label_visibility="collapsed"
-        )
-        st.session_state["sel_groups_val"] = sel_groups
-        _avail = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups and not cfg.get("hidden")]
-        # Agregar ligas nuevas que no estuvieran en la selección guardada
-        _saved = st.session_state.get("sel_leagues_val", _avail)
-        _new_lgs = [l for l in _avail if l not in _saved]
-        if _new_lgs:
-            _saved = _saved + _new_lgs
-            st.session_state["sel_leagues_val"] = _saved
-        _default_leagues = [l for l in _saved if l in _avail]
-
-        st.markdown('<div style="font-size:0.65rem;color:#6B7280;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin:6px 0 3px">LIGAS</div>', unsafe_allow_html=True)
-        sel_leagues = st.multiselect(
-            "Ligas", _avail,
-            default=_default_leagues,
-            key="sel_leagues_v3", label_visibility="collapsed"
-        )
-        st.session_state["sel_leagues_val"] = sel_leagues
-
-        st.markdown('<div style="height:1px;background:#1E1E1E;margin:8px 0"></div>', unsafe_allow_html=True)
-
-        use_demo = st.toggle("🧪 Demo", value=st.session_state.get("use_demo_val", False), key="use_demo_v2")
-        st.session_state["use_demo_val"] = use_demo
-
-        if st.button("▶  Analizar ahora", key="run_btn_menu", use_container_width=True):
-            st.session_state["menu_open"] = False
-            st.session_state["trigger_analyze"] = True
-            st.rerun()
-
-        st.markdown('<div style="height:1px;background:#1E1E1E;margin:8px 0"></div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:0.65rem;color:#6B7280;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🛠 HERRAMIENTAS</div>', unsafe_allow_html=True)
-
-        _tc1, _tc2 = st.columns(2)
-        with _tc1:
-            if st.button("↺ Caché", key="clear_cache_menu", use_container_width=True):
-                st.cache_data.clear()
-                st.session_state.pop("sim_results", None)
-                st.session_state.pop("_games_fetched", None)
-                st.session_state["menu_open"] = False
-                st.rerun()
-        with _tc2:
-            if st.button("🔍 Test ESPN", key="test_espn_menu", use_container_width=True):
-                st.session_state["run_espn_test"] = True
-                st.session_state["menu_open"] = False
-                st.rerun()
-
-        _tp_count_sb = st.session_state.get("_tp_count_cached", 0)
-        _mem_label = f"✅ {_tp_count_sb} equipos" if _tp_count_sb > 0 else "⬜ Sin memoria"
-        st.caption(_mem_label)
-        if st.button("🧠 Poblar memoria", key="populate_menu", use_container_width=True):
-            st.session_state["run_populate"] = True
-            st.session_state["menu_open"] = False
-            st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-else:
-    # Valores por defecto cuando el menú está cerrado
-    n_sims     = st.session_state.get("n_sims_val", 10_000)
-    sel_groups = st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"])
-    _avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups and not cfg.get("hidden")]
-    # Si sel_leagues_val no existe o tiene ligas que ya no existen, usar _avail completo
-    _saved_leagues = st.session_state.get("sel_leagues_val", None)
-    if _saved_leagues is None:
-        sel_leagues = _avail
-        st.session_state["sel_leagues_val"] = _avail
-    else:
-        # Agregar cualquier liga nueva que no estuviera guardada
-        _new_leagues = [l for l in _avail if l not in _saved_leagues]
-        if _new_leagues:
-            _saved_leagues = _saved_leagues + _new_leagues
-            st.session_state["sel_leagues_val"] = _saved_leagues
-        sel_leagues = [l for l in _saved_leagues if l in _avail]
-    use_demo   = st.session_state.get("use_demo_val", False)
-
 run_sidebar = st.session_state.pop("trigger_analyze", False)
+
+# Valores de configuración persistentes (antes estaban en sidebar / panel hamburguesa)
+n_sims     = st.session_state.get("n_sims_val", 10_000)
+sel_groups = st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"])
+_avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups and not cfg.get("hidden")]
+_saved_leagues = st.session_state.get("sel_leagues_val", None)
+if _saved_leagues is None:
+    sel_leagues = _avail
+    st.session_state["sel_leagues_val"] = _avail
+else:
+    _new_leagues = [l for l in _avail if l not in _saved_leagues]
+    if _new_leagues:
+        _saved_leagues = _saved_leagues + _new_leagues
+        st.session_state["sel_leagues_val"] = _saved_leagues
+    sel_leagues = [l for l in _saved_leagues if l in _avail]
+use_demo   = st.session_state.get("use_demo_val", False)
 
 
 
@@ -5730,8 +4935,8 @@ run_sidebar = st.session_state.pop("trigger_analyze", False)
 
 st.markdown("""
 <div class="den-header">
-  <div class="den-logo">The Gamblers Den</div>
-  <div class="den-subtitle">Monte Carlo · Expected Value · Sports Intelligence</div>
+  <div class="den-logo">🎰 The Gamblers Den</div>
+  <div class="den-subtitle">Monte Carlo · EV · Apuestas Inteligentes</div>
   <div style="margin-top:10px">
     <span class="den-corner">♠</span>
     <span class="den-corner">♣</span>
@@ -5892,12 +5097,11 @@ sr=st.session_state.get("sim_results",[])
 pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
 
 st.markdown(f"""<div class="stat-grid">
-  <div class="stat-tile"><div class="stat-num">{len(games)}</div><div class="stat-label">Partidos</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len(live_g)}</div><div class="stat-label">En Vivo</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
-  <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:var(--orange)">{len(games)}</div><div class="stat-label">🏟 Partidos</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:var(--red)">{len(live_g)}</div><div class="stat-label">🔴 Live</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:var(--blue)">{len(pre_g)}</div><div class="stat-label">📅 Próximos</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:var(--yellow)">{pos_ev}</div><div class="stat-label">⚡ Value</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:var(--green)">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">🎰 Parlays</div></div>
 </div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
@@ -6003,24 +5207,307 @@ if st.session_state.pop("run_populate", False):
         # Solo limpiar cache, NO hacer rerun para que el log sea visible
         st.cache_data.clear()
 
-# ── TABS ──────────────────────────────────────────────────────────────────────
-tab_picks, tab_sim, tab_parlays, tab_all, tab_reto = st.tabs([
-    "🃏  RONGOL PICKS",
-    f"🎯  PICKS  ({n_sims:,}×)",
-    "🎰  PARLAYS DEL DÍA",
-    "🔴  EN VIVO",
-    "💰  RETO 13M",
-])
+# ── ROUTING ───────────────────────────────────────────────────────────────────
+
+# ── Reto / resolve helpers ─────────────────────────────────────────────────
+def _normalize_team(name):
+    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
+    import unicodedata
+    name = name.lower().strip()
+    name = ''.join(c for c in unicodedata.normalize('NFD', name)
+                   if unicodedata.category(c) != 'Mn')
+    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
+        name = name.replace(suffix, "")
+    return name.strip()
+
+def _team_match(pick_team, game_home, game_away, threshold=0.70):
+    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
+    pt = _normalize_team(pick_team)
+    ht = _normalize_team(game_home)
+    at = _normalize_team(game_away)
+    # Exact substring match first
+    if pt in ht or ht in pt: return "home"
+    if pt in at or at in pt: return "away"
+    # Token overlap
+    pt_tok = set(pt.split())
+    ht_tok = set(ht.split())
+    at_tok = set(at.split())
+    def overlap(a, b):
+        if not a or not b: return 0
+        return len(a & b) / max(len(a), len(b))
+    h_sc = overlap(pt_tok, ht_tok)
+    a_sc = overlap(pt_tok, at_tok)
+    if h_sc >= threshold and h_sc > a_sc: return "home"
+    if a_sc >= threshold: return "away"
+    return None
+
+def _evaluate_pick(pick, game):
+    """
+    Given a finished game and a pick dict, return 'ganado'|'perdido'|'push'|None.
+    pick keys: partido, pick (team/label), mercado (ML|O/U|BTTS|DO), momio
+    game keys: home_team, away_team, home_score, away_score, state
+    """
+    if game.get("state") != "post":
+        return None
+    try:
+        hs = int(str(game.get("home_score","")).strip() or "x")
+        as_ = int(str(game.get("away_score","")).strip() or "x")
+    except:
+        return None  # no score yet
+
+    mercado  = (pick.get("mercado") or "ML").upper()
+    pick_lbl = pick.get("pick","").strip()
+    sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
+
+    # ── ML ────────────────────────────────────────────────────────────────────
+    if mercado == "ML":
+        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
+        if side is None: return None
+        if sg == "Soccer":
+            if hs == as_: return "push"  # draw = push on ML? no, it loses
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        else:
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        # Draw in soccer = ML loses (not a push)
+        if sg == "Soccer" and hs == as_:
+            return "perdido"
+        return "ganado" if won else "perdido"
+
+    # ── O/U ───────────────────────────────────────────────────────────────────
+    if mercado in ("O/U", "OU", "OVER/UNDER"):
+        total = hs + as_
+        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
+        import re
+        lbl_lower = pick_lbl.lower()
+        nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
+        if not nums: return None
+        line = float(nums[0])
+        if total == line: return "push"
+        if "over" in lbl_lower or "o/" in lbl_lower:
+            return "ganado" if total > line else "perdido"
+        if "under" in lbl_lower or "u/" in lbl_lower:
+            return "ganado" if total < line else "perdido"
+        return None
+
+    # ── BTTS ──────────────────────────────────────────────────────────────────
+    if mercado == "BTTS":
+        both_scored = hs > 0 and as_ > 0
+        lbl_lower = pick_lbl.lower()
+        if "no" in lbl_lower or "not" in lbl_lower:
+            return "ganado" if not both_scored else "perdido"
+        return "ganado" if both_scored else "perdido"
+
+    # ── DO (Doble Oportunidad) ─────────────────────────────────────────────────
+    if mercado == "DO":
+        # "Home o Empate (1X)", "Away o Empate (X2)", "Home o Away (12)"
+        lbl_lower = pick_lbl.lower()
+        home_w = hs > as_
+        away_w = as_ > hs
+        draw   = hs == as_
+        if "1x" in lbl_lower or ("empate" in lbl_lower and game["home_team"].lower() in lbl_lower):
+            return "ganado" if (home_w or draw) else "perdido"
+        if "x2" in lbl_lower or ("empate" in lbl_lower and game["away_team"].lower() in lbl_lower):
+            return "ganado" if (away_w or draw) else "perdido"
+        if "12" in lbl_lower or "sin empate" in lbl_lower:
+            return "ganado" if (home_w or away_w) else "perdido"
+        return None
+
+    return None
+
+@st.cache_data(ttl=300)
+def _fetch_finished_games():
+    """Fetch recently finished games across all leagues for auto-resolve."""
+    finished = []
+    for league_name, cfg in LEAGUES.items():
+        try:
+            data = fetch_scoreboard(cfg["sport"], cfg["league"],
+                                    tournament_id=cfg.get("tournament_id"))
+            for g in parse_games(data, league_name):
+                if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
+                    finished.append(g)
+        except:
+            pass
+    return finished
+
+
+# RETO 13M — Bitácora permanente de bankroll
+# Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
+# ══════════════════════════════════════════════════════════════════════════════
+import json, os as _os, re as _re
+
+# ── Google Sheets persistence ─────────────────────────────────────────────────
+# Requires st.secrets["gsheets"] with keys:
+#   type, project_id, private_key_id, private_key, client_email,
+#   client_id, auth_uri, token_uri, spreadsheet_id
+#
+# Each user = one sheet tab named after their apodo.
+# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
+# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
+# Row 3+ = picks
+
 
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_picks:
+# TEAM PROFILES — Sistema de aprendizaje por equipo
+# Pestaña "team_profiles" en Google Sheets
+# Aprende de los últimos 10 partidos de cada equipo y usa ese historial
+# para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# _TP constants moved to top
+
+
+# [_load_all_team_profiles moved to top]
+
+
+# _compute_profile_stats moved to top
+# populate_all_team_profiles defined above
+def _safe_apodo(apodo):
+    return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
+
+def _get_or_create_tab(gc, spreadsheet_id, apodo):
+    """Get or create a worksheet tab for this apodo."""
+    sh = gc.open_by_key(spreadsheet_id)
+    safe = _safe_apodo(apodo)
+    try:
+        ws = sh.worksheet(safe)
+    except:
+        ws = sh.add_worksheet(title=safe, rows=1000, cols=12)
+        # Write headers
+        ws.update("A1:J1", [["num","fecha","partido","pick","mercado",
+                              "momio","momio_fmt","monto","resultado","nota"]])
+        # Config row (bank_inicial, meta)
+        ws.update("A2:B2", [[2000.0, 13000000.0]])
+    return ws
+
+def _load_reto(apodo):
+    """Load reto data. Google Sheets if configured, else local JSON fallback."""
+    default = {"bank_inicial": 2000.0, "meta": 13_000_000.0, "picks": [], "apodo": apodo}
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            ws = _get_or_create_tab(gc, sid, apodo)
+            rows = ws.get_all_values()
+            if len(rows) < 2:
+                return default
+            # Row 2 = config
+            try:
+                bank_inicial = float(rows[1][0]) if rows[1][0] else 2000.0
+                meta         = float(rows[1][1]) if len(rows[1]) > 1 and rows[1][1] else 13_000_000.0
+            except:
+                bank_inicial, meta = 2000.0, 13_000_000.0
+            # Rows 3+ = picks (index 2+)
+            picks = []
+            for row in rows[2:]:
+                if not any(row):
+                    continue
+                def cell(i, default=""):
+                    return row[i] if i < len(row) else default
+                try:
+                    picks.append({
+                        "num":       int(cell(0, 0)) if cell(0) else len(picks)+1,
+                        "fecha":     cell(1),
+                        "partido":   cell(2),
+                        "pick":      cell(3),
+                        "mercado":   cell(4, "ML"),
+                        "momio":     float(cell(5, 1.909)),
+                        "momio_fmt": cell(6),
+                        "monto":     float(cell(7, 0)),
+                        "resultado": cell(8, "pendiente"),
+                        "nota":      cell(9),
+                    })
+                except:
+                    continue
+            return {"bank_inicial": bank_inicial, "meta": meta, "picks": picks, "apodo": apodo}
+        except Exception as e:
+            st.warning(f"⚠ Google Sheets no disponible: {e}. Usando almacenamiento local.")
+    # Fallback: local JSON
+    try:
+        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return default
+
+def _save_reto(data, apodo):
+    """Save reto data to Google Sheets (or local JSON fallback)."""
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            ws = _get_or_create_tab(gc, sid, apodo)
+            # Config row
+            ws.update("A2:B2", [[data.get("bank_inicial", 2000.0), data.get("meta", 13_000_000.0)]])
+            # Clear old pick rows and rewrite
+            picks = data.get("picks", [])
+            if picks:
+                rows = []
+                for p in picks:
+                    rows.append([
+                        p.get("num",""), p.get("fecha",""), p.get("partido",""),
+                        p.get("pick",""), p.get("mercado","ML"),
+                        p.get("momio",""), p.get("momio_fmt",""),
+                        p.get("monto",""), p.get("resultado","pendiente"),
+                        p.get("nota",""),
+                    ])
+                # Clear from row 3 down then write
+                last_row = len(picks) + 10
+                ws.batch_clear([f"A3:J{last_row}"])
+                ws.update(f"A3:J{len(picks)+2}", rows)
+            else:
+                ws.batch_clear(["A3:J1000"])
+            return True
+        except Exception as e:
+            st.warning(f"⚠ Error guardando en Sheets: {e}")
+    # Fallback: local JSON
+    try:
+        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
+        with open(path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except:
+        return False
+
+def _list_reto_users():
+    """List all users from Google Sheets tabs or local files."""
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            sh = gc.open_by_key(sid)
+            return sorted([ws.title for ws in sh.worksheets()])
+        except:
+            pass
+    # Fallback: local files
+    home = _os.path.expanduser("~")
+    users = []
+    try:
+        for fn in _os.listdir(home):
+            if fn.startswith(".gamblers_den_reto_") and fn.endswith(".json"):
+                users.append(fn.replace(".gamblers_den_reto_","").replace(".json",""))
+    except:
+        pass
+    return sorted(users)
+
+
+if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     if not sr:
-        st.markdown("""<div class="empty-state">
-          <div class="empty-icon">🎲</div>
-          <div class="empty-title">Sin simulaciones</div>
-          <div>Presiona <b>▶ ANALIZAR AHORA</b> en el sidebar o ve al tab <b>🔮 ORÁCULO</b> para generar los picks del día.</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown("""
+        <div style="text-align:center;padding:36px 16px 24px">
+          <div style="font-size:3.5rem;margin-bottom:10px">⚡</div>
+          <div style="font-family:'Outfit',sans-serif;font-size:1.3rem;font-weight:800;color:#F2F2F7;margin-bottom:6px">¡Bienvenido al Den!</div>
+          <div style="font-size:0.88rem;color:#AEAEB2;line-height:1.7;margin-bottom:22px">
+            Toca <b style="color:#FF6B00">⚙️ Config</b> en la barra de abajo<br>
+            y presiona <b style="color:#FF6B00">🚀 Analizar ahora</b>
+          </div>
+          <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap">
+            <div style="background:#2C2C2E;border:1px solid rgba(255,107,0,0.35);border-radius:14px;padding:10px 14px;font-size:0.72rem;color:#FF6B00;font-weight:700;letter-spacing:0.5px">⚡ Monte Carlo</div>
+            <div style="background:#2C2C2E;border:1px solid rgba(255,214,10,0.35);border-radius:14px;padding:10px 14px;font-size:0.72rem;color:#FFD60A;font-weight:700;letter-spacing:0.5px">🎯 EV+ Picks</div>
+            <div style="background:#2C2C2E;border:1px solid rgba(48,209,88,0.35);border-radius:14px;padding:10px 14px;font-size:0.72rem;color:#30D158;font-weight:700;letter-spacing:0.5px">🎰 Parlays</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         # ── Detectar picks terminados ─────────────────────────────────────────────
         pick_game_ids = {r.get("id","") for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0}
@@ -6767,7 +6254,7 @@ with tab_picks:
         _src = "DEMO" if is_demo else "ESPN Live"
         st.markdown(f'<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.806rem;color:#444444">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_sim:
+elif _active_page == "Picks":
     # ══════════════════════════════════════════════════════════════════════════
     # PRÓXIMOS PARTIDOS — sport tiles + date/league expanders  (TOP of tab)
     # ══════════════════════════════════════════════════════════════════════════
@@ -7446,13 +6933,13 @@ with tab_sim:
                                file_name=f"gamblers_den_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", mime="text/csv")
 
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_parlays:
+elif _active_page == "Parlays":
     sr=st.session_state.get("sim_results",[])
     if not sr:
         st.markdown("""<div class="empty-state">
           <div class="empty-icon">🎰</div>
           <div class="empty-title">Sin parlays aún</div>
-          <div>Presiona <b>▶ ANALIZAR AHORA</b> en el sidebar para generar parlays.</div>
+          <div>Ve a <b>⚙️ Config</b> abajo → <b>🚀 Analizar ahora</b>.</div>
         </div>""",unsafe_allow_html=True)
     else:
         # ── Detectar si algún partido del parlay original ya terminó ─────────────
@@ -7966,7 +7453,7 @@ with tab_parlays:
             st.markdown('<div class="warn-banner">Todos los partidos del día han terminado. No hay partidos pendientes para nuevos parlays.</div>',unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_all:
+elif _active_page == "En Vivo":
     # ── LIVE PICKS — runs instant simulation on in-progress games ─────────────
     # ─────────────────────────────────────────────────────────────────────────
     # LIVE PICK ENGINE — contextual logic based on score + minute + probs
@@ -8472,7 +7959,7 @@ with tab_all:
         st.markdown("""<div class="empty-state">
           <div class="empty-icon">🔴</div>
           <div class="empty-title">Sin partidos en vivo ahora</div>
-          <div>No hay partidos en curso. Ve a <b>🎯 PICKS</b> para ver próximos partidos.</div>
+          <div>No hay partidos en vivo. Revisa <b>🎯 Picks</b> para próximos.</div>
         </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -8480,292 +7967,13 @@ with tab_all:
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTO-RESOLVE PICKS — compara picks pendientes contra resultados ESPN
 # ══════════════════════════════════════════════════════════════════════════════
-def _normalize_team(name):
-    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
-    import unicodedata
-    name = name.lower().strip()
-    name = ''.join(c for c in unicodedata.normalize('NFD', name)
-                   if unicodedata.category(c) != 'Mn')
-    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
-        name = name.replace(suffix, "")
-    return name.strip()
-
-def _team_match(pick_team, game_home, game_away, threshold=0.70):
-    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
-    pt = _normalize_team(pick_team)
-    ht = _normalize_team(game_home)
-    at = _normalize_team(game_away)
-    # Exact substring match first
-    if pt in ht or ht in pt: return "home"
-    if pt in at or at in pt: return "away"
-    # Token overlap
-    pt_tok = set(pt.split())
-    ht_tok = set(ht.split())
-    at_tok = set(at.split())
-    def overlap(a, b):
-        if not a or not b: return 0
-        return len(a & b) / max(len(a), len(b))
-    h_sc = overlap(pt_tok, ht_tok)
-    a_sc = overlap(pt_tok, at_tok)
-    if h_sc >= threshold and h_sc > a_sc: return "home"
-    if a_sc >= threshold: return "away"
-    return None
-
-def _evaluate_pick(pick, game):
-    """
-    Given a finished game and a pick dict, return 'ganado'|'perdido'|'push'|None.
-    pick keys: partido, pick (team/label), mercado (ML|O/U|BTTS|DO), momio
-    game keys: home_team, away_team, home_score, away_score, state
-    """
-    if game.get("state") != "post":
-        return None
-    try:
-        hs = int(str(game.get("home_score","")).strip() or "x")
-        as_ = int(str(game.get("away_score","")).strip() or "x")
-    except:
-        return None  # no score yet
-
-    mercado  = (pick.get("mercado") or "ML").upper()
-    pick_lbl = pick.get("pick","").strip()
-    sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
-
-    # ── ML ────────────────────────────────────────────────────────────────────
-    if mercado == "ML":
-        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
-        if side is None: return None
-        if sg == "Soccer":
-            if hs == as_: return "push"  # draw = push on ML? no, it loses
-            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
-        else:
-            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
-        # Draw in soccer = ML loses (not a push)
-        if sg == "Soccer" and hs == as_:
-            return "perdido"
-        return "ganado" if won else "perdido"
-
-    # ── O/U ───────────────────────────────────────────────────────────────────
-    if mercado in ("O/U", "OU", "OVER/UNDER"):
-        total = hs + as_
-        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
-        import re
-        lbl_lower = pick_lbl.lower()
-        nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
-        if not nums: return None
-        line = float(nums[0])
-        if total == line: return "push"
-        if "over" in lbl_lower or "o/" in lbl_lower:
-            return "ganado" if total > line else "perdido"
-        if "under" in lbl_lower or "u/" in lbl_lower:
-            return "ganado" if total < line else "perdido"
-        return None
-
-    # ── BTTS ──────────────────────────────────────────────────────────────────
-    if mercado == "BTTS":
-        both_scored = hs > 0 and as_ > 0
-        lbl_lower = pick_lbl.lower()
-        if "no" in lbl_lower or "not" in lbl_lower:
-            return "ganado" if not both_scored else "perdido"
-        return "ganado" if both_scored else "perdido"
-
-    # ── DO (Doble Oportunidad) ─────────────────────────────────────────────────
-    if mercado == "DO":
-        # "Home o Empate (1X)", "Away o Empate (X2)", "Home o Away (12)"
-        lbl_lower = pick_lbl.lower()
-        home_w = hs > as_
-        away_w = as_ > hs
-        draw   = hs == as_
-        if "1x" in lbl_lower or ("empate" in lbl_lower and game["home_team"].lower() in lbl_lower):
-            return "ganado" if (home_w or draw) else "perdido"
-        if "x2" in lbl_lower or ("empate" in lbl_lower and game["away_team"].lower() in lbl_lower):
-            return "ganado" if (away_w or draw) else "perdido"
-        if "12" in lbl_lower or "sin empate" in lbl_lower:
-            return "ganado" if (home_w or away_w) else "perdido"
-        return None
-
-    return None
-
-@st.cache_data(ttl=300)
-def _fetch_finished_games():
-    """Fetch recently finished games across all leagues for auto-resolve."""
-    finished = []
-    for league_name, cfg in LEAGUES.items():
-        try:
-            data = fetch_scoreboard(cfg["sport"], cfg["league"],
-                                    tournament_id=cfg.get("tournament_id"))
-            for g in parse_games(data, league_name):
-                if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
-                    finished.append(g)
-        except:
-            pass
-    return finished
-
-
-# RETO 13M — Bitácora permanente de bankroll
-# Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
-# ══════════════════════════════════════════════════════════════════════════════
-import json, os as _os, re as _re
-
-# ── Google Sheets persistence ─────────────────────────────────────────────────
-# Requires st.secrets["gsheets"] with keys:
-#   type, project_id, private_key_id, private_key, client_email,
-#   client_id, auth_uri, token_uri, spreadsheet_id
-#
-# Each user = one sheet tab named after their apodo.
-# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
-# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
-# Row 3+ = picks
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TEAM PROFILES — Sistema de aprendizaje por equipo
-# Pestaña "team_profiles" en Google Sheets
-# Aprende de los últimos 10 partidos de cada equipo y usa ese historial
-# para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
-# ══════════════════════════════════════════════════════════════════════════════
-
-# _TP constants moved to top
-
-
-# [_load_all_team_profiles moved to top]
-
-
-# _compute_profile_stats moved to top
-# populate_all_team_profiles defined above
-def _safe_apodo(apodo):
-    return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
-
-def _get_or_create_tab(gc, spreadsheet_id, apodo):
-    """Get or create a worksheet tab for this apodo."""
-    sh = gc.open_by_key(spreadsheet_id)
-    safe = _safe_apodo(apodo)
-    try:
-        ws = sh.worksheet(safe)
-    except:
-        ws = sh.add_worksheet(title=safe, rows=1000, cols=12)
-        # Write headers
-        ws.update("A1:J1", [["num","fecha","partido","pick","mercado",
-                              "momio","momio_fmt","monto","resultado","nota"]])
-        # Config row (bank_inicial, meta)
-        ws.update("A2:B2", [[2000.0, 13000000.0]])
-    return ws
-
-def _load_reto(apodo):
-    """Load reto data. Google Sheets if configured, else local JSON fallback."""
-    default = {"bank_inicial": 2000.0, "meta": 13_000_000.0, "picks": [], "apodo": apodo}
-    if _gsheets_available():
-        try:
-            gc = _get_gsheet_client()
-            sid = st.secrets["gsheets"]["spreadsheet_id"]
-            ws = _get_or_create_tab(gc, sid, apodo)
-            rows = ws.get_all_values()
-            if len(rows) < 2:
-                return default
-            # Row 2 = config
-            try:
-                bank_inicial = float(rows[1][0]) if rows[1][0] else 2000.0
-                meta         = float(rows[1][1]) if len(rows[1]) > 1 and rows[1][1] else 13_000_000.0
-            except:
-                bank_inicial, meta = 2000.0, 13_000_000.0
-            # Rows 3+ = picks (index 2+)
-            picks = []
-            for row in rows[2:]:
-                if not any(row):
-                    continue
-                def cell(i, default=""):
-                    return row[i] if i < len(row) else default
-                try:
-                    picks.append({
-                        "num":       int(cell(0, 0)) if cell(0) else len(picks)+1,
-                        "fecha":     cell(1),
-                        "partido":   cell(2),
-                        "pick":      cell(3),
-                        "mercado":   cell(4, "ML"),
-                        "momio":     float(cell(5, 1.909)),
-                        "momio_fmt": cell(6),
-                        "monto":     float(cell(7, 0)),
-                        "resultado": cell(8, "pendiente"),
-                        "nota":      cell(9),
-                    })
-                except:
-                    continue
-            return {"bank_inicial": bank_inicial, "meta": meta, "picks": picks, "apodo": apodo}
-        except Exception as e:
-            st.warning(f"⚠ Google Sheets no disponible: {e}. Usando almacenamiento local.")
-    # Fallback: local JSON
-    try:
-        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
-        with open(path, "r") as f:
-            return json.load(f)
-    except:
-        return default
-
-def _save_reto(data, apodo):
-    """Save reto data to Google Sheets (or local JSON fallback)."""
-    if _gsheets_available():
-        try:
-            gc = _get_gsheet_client()
-            sid = st.secrets["gsheets"]["spreadsheet_id"]
-            ws = _get_or_create_tab(gc, sid, apodo)
-            # Config row
-            ws.update("A2:B2", [[data.get("bank_inicial", 2000.0), data.get("meta", 13_000_000.0)]])
-            # Clear old pick rows and rewrite
-            picks = data.get("picks", [])
-            if picks:
-                rows = []
-                for p in picks:
-                    rows.append([
-                        p.get("num",""), p.get("fecha",""), p.get("partido",""),
-                        p.get("pick",""), p.get("mercado","ML"),
-                        p.get("momio",""), p.get("momio_fmt",""),
-                        p.get("monto",""), p.get("resultado","pendiente"),
-                        p.get("nota",""),
-                    ])
-                # Clear from row 3 down then write
-                last_row = len(picks) + 10
-                ws.batch_clear([f"A3:J{last_row}"])
-                ws.update(f"A3:J{len(picks)+2}", rows)
-            else:
-                ws.batch_clear(["A3:J1000"])
-            return True
-        except Exception as e:
-            st.warning(f"⚠ Error guardando en Sheets: {e}")
-    # Fallback: local JSON
-    try:
-        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
-        with open(path, "w") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
-    except:
-        return False
-
-def _list_reto_users():
-    """List all users from Google Sheets tabs or local files."""
-    if _gsheets_available():
-        try:
-            gc = _get_gsheet_client()
-            sid = st.secrets["gsheets"]["spreadsheet_id"]
-            sh = gc.open_by_key(sid)
-            return sorted([ws.title for ws in sh.worksheets()])
-        except:
-            pass
-    # Fallback: local files
-    home = _os.path.expanduser("~")
-    users = []
-    try:
-        for fn in _os.listdir(home):
-            if fn.startswith(".gamblers_den_reto_") and fn.endswith(".json"):
-                users.append(fn.replace(".gamblers_den_reto_","").replace(".json",""))
-    except:
-        pass
-    return sorted(users)
-
-with tab_reto:
+elif _active_page == "Reto 13M":
 
     # ── Login por apodo ───────────────────────────────────────────────────────
     st.markdown('''<div style="
         text-align:center;
-        font-family:'Inter',sans-serif;
-        font-size:1.792rem;
+        font-family:'Outfit',sans-serif;
+        font-size:1.8rem;
         font-weight:700;
         color:#C9A84C;
         letter-spacing:4px;
@@ -9398,6 +8606,85 @@ with tab_reto:
             mime="text/csv",
             key="btn_export_reto"
         )
+
+elif _active_page == "Config":
+    st.markdown("""
+    <div style="text-align:center;padding:18px 0 12px">
+      <div style="font-size:2.2rem">⚙️</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:1.25rem;font-weight:800;color:#F2F2F7;margin-top:4px">Configuración</div>
+      <div style="font-size:0.62rem;color:#636366;letter-spacing:2px;text-transform:uppercase;margin-top:3px">ajusta · analiza · gana</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div style="font-size:0.65rem;color:var(--orange);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔮 SIMULACIONES</div>', unsafe_allow_html=True)
+    n_sims_cfg = st.select_slider(
+        "Iteraciones",
+        options=[1_000, 2_500, 5_000, 10_000, 25_000],
+        value=st.session_state.get("n_sims_val", 10_000),
+        key="n_sims_slider",
+    )
+    st.session_state["n_sims_val"] = n_sims_cfg
+    st.caption(f"⚡ {n_sims_cfg:,} por partido")
+
+    st.markdown('<div class="den-divider" style="margin:12px 0"></div>', unsafe_allow_html=True)
+
+    st.markdown('<div style="font-size:0.65rem;color:var(--orange);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🌍 DEPORTES</div>', unsafe_allow_html=True)
+    _groups_all_cfg = sorted(set(v["group"] for v in LEAGUES.values()))
+    sel_groups_cfg = st.multiselect(
+        "Deportes",
+        _groups_all_cfg,
+        default=st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"]),
+        key="sel_groups_v3",
+    )
+    st.session_state["sel_groups_val"] = sel_groups_cfg
+
+    _avail_cfg = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups_cfg and not cfg.get("hidden")]
+    _saved_cfg = st.session_state.get("sel_leagues_val", _avail_cfg)
+    _new_lgs_cfg = [l for l in _avail_cfg if l not in _saved_cfg]
+    if _new_lgs_cfg:
+        _saved_cfg = _saved_cfg + _new_lgs_cfg
+        st.session_state["sel_leagues_val"] = _saved_cfg
+    _default_leagues_cfg = [l for l in _saved_cfg if l in _avail_cfg]
+
+    st.markdown('<div style="font-size:0.65rem;color:var(--text3);font-weight:600;letter-spacing:1px;text-transform:uppercase;margin:6px 0 3px">LIGAS</div>', unsafe_allow_html=True)
+    sel_leagues_cfg = st.multiselect(
+        "Ligas",
+        _avail_cfg,
+        default=_default_leagues_cfg,
+        key="sel_leagues_v3",
+    )
+    st.session_state["sel_leagues_val"] = sel_leagues_cfg
+
+    st.markdown('<div class="den-divider" style="margin:12px 0"></div>', unsafe_allow_html=True)
+
+    use_demo_cfg = st.toggle("🧪 Demo", value=st.session_state.get("use_demo_val", False), key="use_demo_v2")
+    st.session_state["use_demo_val"] = use_demo_cfg
+
+    if st.button("🚀  Analizar ahora", key="run_btn_menu", use_container_width=True, type="primary"):
+        st.session_state["trigger_analyze"] = True
+        st.rerun()
+
+    st.markdown('<div class="den-divider" style="margin:12px 0"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.65rem;color:var(--text3);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🛠 HERRAMIENTAS</div>', unsafe_allow_html=True)
+
+    _tc1, _tc2 = st.columns(2)
+    with _tc1:
+        if st.button("↺ Caché", key="clear_cache_menu", use_container_width=True):
+            st.cache_data.clear()
+            st.session_state.pop("sim_results", None)
+            st.session_state.pop("_games_fetched", None)
+            st.rerun()
+    with _tc2:
+        if st.button("🔍 Test ESPN", key="test_espn_menu", use_container_width=True):
+            st.session_state["run_espn_test"] = True
+            st.rerun()
+
+    _tp_count_sb = st.session_state.get("_tp_count_cached", 0)
+    _mem_label = f"✅ {_tp_count_sb} equipos" if _tp_count_sb > 0 else "⬜ Sin memoria"
+    st.caption(_mem_label)
+    if st.button("🧠 Poblar memoria", key="populate_menu", use_container_width=True):
+        st.session_state["run_populate"] = True
+        st.rerun()
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.65rem;color:#333333;letter-spacing:2px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
