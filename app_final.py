@@ -8789,11 +8789,363 @@ elif _active_page == "Califica":
         background-clip:text;letter-spacing:-0.5px">CALIFICA TU PICK</div>
       <div style="font-size:0.65rem;color:#636366;letter-spacing:3px;
         text-transform:uppercase;margin-top:4px">
-        Motor Monte Carlo · Señales 1-6 · Análisis completo
+        Sube tu screenshot · Claude lo lee · Monte Carlo lo califica
       </div>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Modo de entrada ───────────────────────────────────────────────────────
+    _cal_modo = st.radio(
+        "Modo",
+        ["📸 Screenshot", "✏️ Manual"],
+        horizontal=True,
+        key="cal_modo",
+        label_visibility="collapsed"
+    )
+
+    # ── MODO SCREENSHOT ───────────────────────────────────────────────────────
+    if _cal_modo == "📸 Screenshot":
+        st.markdown(
+            '<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;'
+            'letter-spacing:2px;text-transform:uppercase;margin:8px 0 6px">'
+            '① SUBE TU PICK</div>',
+            unsafe_allow_html=True
+        )
+
+        _cal_img = st.file_uploader(
+            "Screenshot de tu pick",
+            type=["png","jpg","jpeg","webp"],
+            key="cal_screenshot",
+            label_visibility="collapsed"
+        )
+
+        if _cal_img:
+            # Mostrar preview
+            st.image(_cal_img, use_container_width=True)
+            st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+
+            if st.button("🔍  ANALIZAR SCREENSHOT", key="btn_analyze_img",
+                         use_container_width=True, type="primary"):
+                # Leer imagen como base64
+                import base64
+                _cal_img.seek(0)
+                _img_bytes = _cal_img.read()
+                _img_b64 = base64.b64encode(_img_bytes).decode("utf-8")
+                _img_type = _cal_img.type or "image/jpeg"
+
+                with st.spinner("🔍 Claude leyendo tu pick..."):
+                    try:
+                        # Llamar Claude Vision
+                        _api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+                        if not _api_key:
+                            st.error("⚠️ Agrega ANTHROPIC_API_KEY en Streamlit secrets para usar screenshots.")
+                            st.stop()
+
+                        import requests as _req
+                        _vision_resp = _req.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={
+                                "x-api-key": _api_key,
+                                "anthropic-version": "2023-06-01",
+                                "content-type": "application/json"
+                            },
+                            json={
+                                "model": "claude-opus-4-6",
+                                "max_tokens": 400,
+                                "messages": [{
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "image",
+                                            "source": {
+                                                "type": "base64",
+                                                "media_type": _img_type,
+                                                "data": _img_b64
+                                            }
+                                        },
+                                        {
+                                            "type": "text",
+                                            "text": """Analiza este screenshot de una apuesta deportiva y extrae EXACTAMENTE:
+1. Partido (equipo local vs equipo visitante)
+2. Liga o deporte
+3. Mercado (ML, Over/Under, BTTS, Spread, etc.)
+4. Pick específico (ej: Lakers ML, Over 224.5, BTTS Sí)
+5. Momio americano (ej: -110, +150)
+6. Línea O/U si aplica (ej: 2.5, 224.5)
+
+Responde SOLO en este formato JSON exacto:
+{
+  "partido": "Team A vs Team B",
+  "liga": "NBA",
+  "mercado": "ML",
+  "pick": "Lakers",
+  "momio_americano": -150,
+  "linea": null
+}"""
+                                        }
+                                    ]
+                                }]
+                            },
+                            timeout=30
+                        )
+
+                        if _vision_resp.status_code == 200:
+                            _vision_data = _vision_resp.json()
+                            _vision_text = _vision_data["content"][0]["text"].strip()
+                            # Limpiar JSON
+                            import re as _re2
+                            _json_match = _re2.search(r'\{.*\}', _vision_text, _re2.DOTALL)
+                            if _json_match:
+                                import json as _json2
+                                _extracted = _json2.loads(_json_match.group())
+                                st.session_state["_cal_extracted"] = _extracted
+                                st.success(f"✅ Pick detectado: **{_extracted.get('pick','?')}** @ {_extracted.get('momio_americano','?')} · {_extracted.get('mercado','?')} · {_extracted.get('liga','?')} ")
+                            else:
+                                st.error("No pude extraer el pick. Intenta con modo manual.")
+                        else:
+                            st.error(f"Error API: {_vision_resp.status_code}")
+                    except Exception as _ve:
+                        st.error(f"Error: {_ve}")
+
+        # Si ya tenemos datos extraídos, mostrar confirmación y calificar
+        _extracted = st.session_state.get("_cal_extracted")
+        if _extracted:
+            st.markdown(
+                '<div style="background:rgba(0,200,150,0.08);border:1px solid rgba(0,200,150,0.25);'
+                'border-radius:16px;padding:12px 16px;margin:8px 0">'
+                f'<div style="font-size:0.65rem;color:#00C896;font-weight:700;letter-spacing:2px;'
+                'text-transform:uppercase;margin-bottom:8px">📋 PICK DETECTADO</div>'
+                f'<div style="display:flex;flex-wrap:wrap;gap:8px">'
+                f'<span style="background:rgba(255,255,255,0.06);border-radius:8px;padding:4px 10px;font-size:0.78rem;color:#E8E8E8">'
+                f'⚽ {_extracted.get("partido","?")} </span>'
+                f'<span style="background:rgba(255,107,0,0.12);border-radius:8px;padding:4px 10px;font-size:0.78rem;color:#FF6B00;font-weight:700">'
+                f'{_extracted.get("pick","?")} · {_extracted.get("mercado","?")}</span>'
+                f'<span style="background:rgba(96,165,250,0.12);border-radius:8px;padding:4px 10px;font-size:0.78rem;color:#60a5fa;font-weight:700">'
+                f'@ {_extracted.get("momio_americano","?")} americano</span>'
+                f'</div></div>',
+                unsafe_allow_html=True
+            )
+
+            # Convertir momio a decimal
+            _mom_am = _extracted.get("momio_americano", -110)
+            try:
+                _mom_am = int(_mom_am)
+                if _mom_am > 0:
+                    _mom_dec = round(_mom_am / 100 + 1, 3)
+                else:
+                    _mom_dec = round(100 / abs(_mom_am) + 1, 3)
+            except:
+                _mom_am = -110
+                _mom_dec = 1.909
+
+            st.markdown(
+                f'<div style="display:flex;gap:10px;margin:8px 0">'
+                f'<div style="flex:1;background:rgba(255,255,255,0.04);border-radius:12px;padding:10px;text-align:center">'
+                f'<div style="font-size:1.2rem;font-weight:800;color:#FFD60A">{_mom_am:+d}</div>'
+                f'<div style="font-size:0.55rem;color:#636366;letter-spacing:1px;text-transform:uppercase">Americano</div>'
+                f'</div>'
+                f'<div style="flex:1;background:rgba(255,255,255,0.04);border-radius:12px;padding:10px;text-align:center">'
+                f'<div style="font-size:1.2rem;font-weight:800;color:#60a5fa">{_mom_dec}</div>'
+                f'<div style="font-size:0.55rem;color:#636366;letter-spacing:1px;text-transform:uppercase">Decimal</div>'
+                f'</div></div>',
+                unsafe_allow_html=True
+            )
+
+            if st.button("🏆  CALIFICAR ESTE PICK", key="btn_cal_from_img",
+                         use_container_width=True, type="primary"):
+                # Buscar partido en sim_results
+                _sr_match = st.session_state.get("sim_results", [])
+                _partido_str = _extracted.get("partido", "").lower()
+                _best_match_r = None
+                _best_match_score = 0
+
+                for _rr in _sr_match:
+                    _home_n = _rr.get("home_team", "").lower()
+                    _away_n = _rr.get("away_team", "").lower()
+                    # Score de coincidencia por palabras
+                    _words = _partido_str.replace(" vs ", " ").replace(" @ ", " ").split()
+                    _match_score = sum(1 for w in _words if w in _home_n or w in _away_n or _home_n in w or _away_n in w)
+                    if _match_score > _best_match_score:
+                        _best_match_score = _match_score
+                        _best_match_r = _rr
+
+                if _best_match_r and _best_match_score >= 1:
+                    # Guardar para calificación
+                    st.session_state["_cal_from_img"] = {
+                        "r": _best_match_r,
+                        "market": _extracted.get("mercado", "ML"),
+                        "pick": _extracted.get("pick", ""),
+                        "momio": _mom_am,
+                        "momio_dec": _mom_dec,
+                        "linea": _extracted.get("linea"),
+                    }
+                    st.rerun()
+                else:
+                    st.warning("⚠️ No encontré este partido en los datos de hoy. Asegúrate de haber cargado los picks primero en ⚡ Rongol.")
+
+        # Procesar calificación desde imagen
+        _from_img = st.session_state.get("_cal_from_img")
+        if _from_img:
+            _cal_r = _from_img["r"]
+            _cal_sim = _cal_r.get("sim", {})
+            _cal_league = _cal_r.get("league", "")
+            _cal_home = _cal_r.get("home_team", "Local")
+            _cal_away = _cal_r.get("away_team", "Visita")
+            _cal_sg = LEAGUES.get(_cal_league, {}).get("group", "Soccer")
+            _cal_market = _from_img["market"]
+            _cal_momio = _from_img["momio"]
+            _mom_dec_show = _from_img["momio_dec"]
+            _dq_r = _cal_sim.get("data_quality", 0)
+            _consensus_score = _cal_sim.get("consensus_score", 0)
+
+            # Determinar probabilidad del modelo
+            _pick_str = _from_img["pick"].lower()
+            _home_n = _cal_home.lower()
+            _away_n = _cal_away.lower()
+
+            _mercado_up = _cal_market.upper()
+            if "ML" in _mercado_up or "MONEYLINE" in _mercado_up:
+                if any(w in _home_n for w in _pick_str.split()):
+                    _model_prob = (_cal_sim.get("home_pct", 50) or 50) / 100
+                else:
+                    _model_prob = (_cal_sim.get("away_pct", 50) or 50) / 100
+            elif "OVER" in _mercado_up or "O/U" in _mercado_up:
+                if "over" in _pick_str or "over" in _mercado_up.lower():
+                    _model_prob = (_cal_sim.get("p_o_total") or _cal_sim.get("p_o25") or 50) / 100
+                else:
+                    _model_prob = (_cal_sim.get("p_u_total") or _cal_sim.get("p_u25") or 50) / 100
+            elif "BTTS" in _mercado_up:
+                _model_prob = (_cal_sim.get("p_btts") or 50) / 100
+            else:
+                _model_prob = max(
+                    (_cal_sim.get("home_pct", 0) or 0),
+                    (_cal_sim.get("away_pct", 0) or 0)
+                ) / 100
+
+            _impl_prob = ml_to_prob(_cal_momio)
+            _ev = calc_ev(_model_prob, str(_cal_momio))
+            _edge = round((_model_prob - _impl_prob) * 100, 1)
+            _kelly = quarter_kelly(_model_prob, str(_cal_momio))
+
+            # Calificar
+            def _grade_pick(ev, edge_pp, model_prob, dq, consensus_score):
+                score = 0
+                if ev is None: ev = 0
+                if ev >= 20: score += 40
+                elif ev >= 12: score += 32
+                elif ev >= 6: score += 22
+                elif ev >= 2: score += 14
+                elif ev >= 0: score += 6
+                else: score += max(0, 6 + ev)
+                if edge_pp >= 12: score += 25
+                elif edge_pp >= 7: score += 20
+                elif edge_pp >= 4: score += 14
+                elif edge_pp >= 1: score += 8
+                elif edge_pp >= 0: score += 3
+                if model_prob >= 0.72: score += 20
+                elif model_prob >= 0.62: score += 16
+                elif model_prob >= 0.54: score += 11
+                elif model_prob >= 0.50: score += 6
+                else: score += 2
+                if consensus_score >= 0.50: score += 15
+                elif consensus_score >= 0.20: score += 11
+                elif consensus_score >= 0.0: score += 7
+                elif consensus_score >= -0.3: score += 3
+                if dq < 25: score -= 8
+                if dq < 10: score -= 10
+                if edge_pp < -5: score -= 10
+                score = max(0, min(100, score))
+                if score >= 88: return "A+", score
+                elif score >= 80: return "A", score
+                elif score >= 72: return "B+", score
+                elif score >= 64: return "B", score
+                elif score >= 56: return "C+", score
+                elif score >= 48: return "C", score
+                elif score >= 38: return "D", score
+                elif score >= 26: return "E", score
+                else: return "F", score
+
+            _grade, _score = _grade_pick(_ev or 0, _edge, _model_prob, _dq_r, _consensus_score)
+
+            _GRADE_COLORS = {
+                "A+": ("#00C896","rgba(0,200,150,0.15)","APUESTA FUERTE 🔥"),
+                "A":  ("#00C896","rgba(0,200,150,0.12)","EXCELENTE ✅"),
+                "B+": ("#86efac","rgba(134,239,172,0.12)","MUY BUENA ⚡"),
+                "B":  ("#60a5fa","rgba(96,165,250,0.12)","BUENA 👍"),
+                "C+": ("#fbbf24","rgba(251,191,36,0.12)","ACEPTABLE 📊"),
+                "C":  ("#C9A84C","rgba(201,168,76,0.10)","MARGINAL ➡️"),
+                "D":  ("#f97316","rgba(249,115,22,0.10)","DÉBIL ⚠️"),
+                "E":  ("#ef4444","rgba(239,68,68,0.10)","EVITAR ❌"),
+                "F":  ("#7f1d1d","rgba(127,29,29,0.15)","TRAMPA 🚫"),
+            }
+            _gc, _gbg, _gverdict = _GRADE_COLORS.get(_grade, ("#636366","rgba(99,99,102,0.10)","SIN DATOS"))
+
+            # Render resultado
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,{_gbg},#0a0a0a);'
+                f'border:2px solid {_gc}44;border-radius:24px;padding:20px 16px;'
+                f'margin:8px 0;text-align:center;box-shadow:0 0 40px {_gc}22">'
+                f'<div style="width:110px;height:110px;border-radius:50%;'
+                f'display:flex;align-items:center;justify-content:center;flex-direction:column;'
+                f'margin:0 auto 14px;border:4px solid {_gc};'
+                f'background:radial-gradient(circle,{_gbg} 0%,#0a0a0a 100%);'
+                f'box-shadow:0 0 40px {_gc}66">'
+                f'<span style="font-size:3rem;font-weight:900;color:{_gc};line-height:1;'
+                f'font-family:Outfit,sans-serif">{_grade}</span>'
+                f'<span style="font-size:0.52rem;color:{_gc};font-weight:700">{_score}/100</span>'
+                f'</div>'
+                f'<div style="font-size:1.1rem;font-weight:800;color:{_gc};margin-bottom:8px">{_gverdict}</div>'
+                f'<div style="font-size:0.78rem;color:#AEAEB2">{_cal_away} @ {_cal_home}</div>'
+                f'<div style="font-size:0.9rem;font-weight:700;color:#E8E8E8;margin-top:2px">{_from_img["pick"]} · {_cal_market}</div>'
+                f'<div style="display:flex;gap:8px;justify-content:center;margin-top:10px">'
+                f'<span style="background:rgba(255,214,10,0.12);border-radius:8px;padding:4px 12px;'
+                f'font-size:0.82rem;color:#FFD60A;font-weight:700">{_cal_momio:+d} americano</span>'
+                f'<span style="background:rgba(96,165,250,0.12);border-radius:8px;padding:4px 12px;'
+                f'font-size:0.82rem;color:#60a5fa;font-weight:700">{_mom_dec_show} decimal</span>'
+                f'</div></div>',
+                unsafe_allow_html=True
+            )
+
+            # Métricas
+            _m_cols2 = st.columns(3)
+            for _mi2, (_lbl2, _val2, _clr2) in enumerate([
+                ("Prob Modelo", f'{_model_prob*100:.1f}%', "#00C896" if _model_prob > _impl_prob else "#ef4444"),
+                ("Prob Impl.", f'{_impl_prob*100:.1f}%', "#AEAEB2"),
+                ("EV / $100", f'{(_ev or 0):+.1f}', "#00C896" if (_ev or 0) > 0 else "#ef4444"),
+                ("Edge", f'{_edge:+.1f}pp', "#00C896" if _edge > 0 else "#ef4444"),
+                ("Kelly 25%", f'{(_kelly or 0)*100:.1f}%', "#60a5fa"),
+                ("DQ", f'{_dq_r:.0f}%', "#00C896" if _dq_r > 60 else "#C9A84C"),
+            ]):
+                with _m_cols2[_mi2 % 3]:
+                    st.markdown(
+                        f'<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);'
+                        f'border-radius:12px;padding:10px 6px;text-align:center;margin-bottom:8px">'
+                        f'<div style="font-size:1.1rem;font-weight:800;color:{_clr2}">{_val2}</div>'
+                        f'<div style="font-size:0.55rem;color:#636366;letter-spacing:1px;text-transform:uppercase;margin-top:2px">{_lbl2}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+            # Barra de score
+            st.markdown(
+                f'<div style="margin:8px 0 16px">'
+                f'<div style="background:rgba(255,255,255,0.06);border-radius:12px;height:8px;overflow:hidden">'
+                f'<div style="width:{_score}%;height:100%;border-radius:12px;'
+                f'background:linear-gradient(90deg,#ef4444,#f97316,#fbbf24,#00C896)"></div>'
+                f'</div>'
+                f'<div style="text-align:right;font-size:0.65rem;color:{_gc};font-weight:700;margin-top:2px">{_score}/100</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+            if st.button("↩ Nuevo pick", key="btn_img_reset", use_container_width=True):
+                st.session_state.pop("_cal_from_img", None)
+                st.session_state.pop("_cal_extracted", None)
+                st.rerun()
+
+            st.stop()
+
+    # ── MODO MANUAL ───────────────────────────────────────────────────────────
     # ── Formulario de entrada ─────────────────────────────────────────────────
     sr_cal = st.session_state.get("sim_results", [])
     
