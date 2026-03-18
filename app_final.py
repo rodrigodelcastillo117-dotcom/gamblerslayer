@@ -35,137 +35,75 @@ st.markdown("""
   --gold:#FFD60A; --gold2:#FF8C00; --felt:#08080A; --dark:#08080A;
   --muted:#404048; --cyan:#00E676; --orange2:#FF8C00;
 }
-
 *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
 html,body,.stApp,.main,.stMainBlockContainer{
-  background:#08080A !important;
-  color:#FFFFFF !important;
+  background:#08080A !important; color:#FFFFFF !important;
   font-family:'Outfit',-apple-system,sans-serif !important;
 }
-
-/* HIDE ALL STREAMLIT CHROME */
 #MainMenu,footer,.stDeployButton{display:none !important;}
 header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebar"],[data-testid="collapsedControl"],
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
-/* Hide manage app button */
-[data-testid="manage-app-button"]{display:none !important;}
-button[title="Manage app"]{display:none !important;}
-.stAppDeployButton{display:none !important;}
-iframe[title="manage-app"]{display:none !important;}
-/* Hide the manage app area completely */
-.stMainMenu{display:none !important;}
-[data-testid="stMainMenu"]{display:none !important;}
-[data-testid="stToolbar"]{display:none !important;}
-[data-testid="stDecoration"]{display:none !important;}
-[data-testid="stHeader"] *{display:none !important;}
+
+/* ══ HIDE RADIO NAV ══ */
+[data-testid="stRadio"] {
+  position: fixed !important;
+  bottom: 0 !important; left: -9999px !important;
+  opacity: 0 !important; pointer-events: none !important;
+  width: 0 !important; height: 0 !important; overflow: hidden !important;
+}
+
+/* ══ HIDE MANAGE APP ══ */
+[data-testid="stToolbar"],[data-testid="stToolbarActions"],
+[data-testid="manage-app-button"],[data-testid="stMainMenu"],
+button[title="Manage app"],button[aria-label="Manage app"],
+[class*="ToolbarActions"],[class*="deployButton"],[class*="AppToolbar"] {
+  display:none !important; visibility:hidden !important;
+  pointer-events:none !important; width:0 !important; height:0 !important;
+}
 
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
-
-.block-container{
-  padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;
-  max-width:620px !important; margin:0 auto !important;
-}
+.block-container{padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;max-width:620px !important;margin:0 auto !important;}
 @media(min-width:820px){.block-container{max-width:920px !important;padding:24px 40px calc(var(--nav-h)+28px) !important;}}
 @media(min-width:1240px){.block-container{max-width:1180px !important;padding:28px 56px calc(var(--nav-h)+28px) !important;}}
 
-/* BOTTOM NAV */
-.den-nav{
-  position:fixed;bottom:0;left:0;right:0;
-  height:calc(var(--nav-h) + env(safe-area-inset-bottom));
-  background:rgba(8,8,10,0.96);
-  backdrop-filter:blur(40px) saturate(180%);
-  -webkit-backdrop-filter:blur(40px) saturate(180%);
-  border-top:1px solid rgba(255,255,255,0.08);
-  display:flex;z-index:99999;
-  padding-bottom:env(safe-area-inset-bottom);
-}
-.den-nav::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
-}
-.den-nav-item{
-  flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:3px;padding:6px 2px;position:relative;
-  transition:all 0.15s;
-}
-.den-nav-item:active{background:rgba(255,107,0,0.08);}
-.den-nav-item.act::before{
-  content:'';position:absolute;top:0;left:20%;right:20%;height:2px;
-  background:linear-gradient(90deg,transparent,#FF6B00,#FFD60A,#FF6B00,transparent);
-  border-radius:0 0 4px 4px;
-}
+.den-nav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + env(safe-area-inset-bottom));background:rgba(8,8,10,0.96);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border-top:1px solid rgba(255,255,255,0.08);display:flex;z-index:99999;padding-bottom:env(safe-area-inset-bottom);}
+.den-nav::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);}
+.den-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 2px;position:relative;transition:all 0.15s;-webkit-tap-highlight-color:rgba(255,107,0,0.15);}
+.den-nav-item:active{background:rgba(255,107,0,0.08) !important;}
+.den-nav-item.act::before{content:'';position:absolute;top:0;left:20%;right:20%;height:2px;background:linear-gradient(90deg,transparent,#FF6B00,#FFD60A,#FF6B00,transparent);border-radius:0 0 4px 4px;}
 .den-nav-icon{font-size:1.3rem;line-height:1;transition:transform 0.2s;}
 .den-nav-item.act .den-nav-icon{transform:scale(1.15) translateY(-1px);}
-.den-nav-label{
-  font-size:0.47rem;font-weight:800;letter-spacing:0.8px;
-  text-transform:uppercase;color:#404048;transition:color 0.2s;
-  font-family:'Outfit',sans-serif;
-}
+.den-nav-label{font-size:0.47rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:#404048;transition:color 0.2s;font-family:'Outfit',sans-serif;}
 .den-nav-item.act .den-nav-label{color:#FF6B00;}
 
-/* HEADER */
 .den-header{text-align:center;padding:20px 0 10px;}
-.den-logo{
-  font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;
-  letter-spacing:-1.5px;line-height:1;
-  background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 45%,#FF8C00 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  filter:drop-shadow(0 0 24px rgba(255,107,0,0.35));
-}
+.den-logo{font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;letter-spacing:-1.5px;line-height:1;background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 45%,#FF8C00 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 24px rgba(255,107,0,0.35));}
 .den-subtitle{font-size:0.58rem;color:#404048;letter-spacing:4px;text-transform:uppercase;margin-top:5px;}
-.den-divider{
-  width:100%;height:1px;margin:10px 0;
-  background:linear-gradient(90deg,transparent,rgba(255,107,0,0.4) 30%,rgba(255,214,10,0.6) 50%,rgba(255,107,0,0.4) 70%,transparent);
-}
+.den-divider{width:100%;height:1px;margin:10px 0;background:linear-gradient(90deg,transparent,rgba(255,107,0,0.4) 30%,rgba(255,214,10,0.6) 50%,rgba(255,107,0,0.4) 70%,transparent);}
 .den-corner{display:none;}
 
-/* STAT TILES */
 .stat-grid{display:flex;gap:7px;margin:12px 0;flex-wrap:wrap;}
-.stat-tile{
-  flex:1;min-width:68px;
-  background:linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02));
-  border:1px solid rgba(255,255,255,0.07);
-  border-radius:16px;padding:12px 7px;text-align:center;
-  transition:all 0.25s;position:relative;overflow:hidden;
-}
+.stat-tile{flex:1;min-width:68px;background:linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02));border:1px solid rgba(255,255,255,0.07);border-radius:16px;padding:12px 7px;text-align:center;transition:all 0.25s;position:relative;overflow:hidden;}
 .stat-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent);}
 .stat-tile:hover{transform:translateY(-3px);border-color:rgba(255,107,0,0.4);box-shadow:0 8px 32px rgba(255,107,0,0.12);}
 .stat-num{font-size:1.6rem;font-weight:900;line-height:1;letter-spacing:-1px;}
 .stat-label{font-size:0.52rem;color:#404048;letter-spacing:0.8px;text-transform:uppercase;margin-top:4px;}
 
-/* PICK CARD */
-.pick-card{
-  background:linear-gradient(145deg,#111114,#141418,#111114);
-  border:1px solid rgba(255,255,255,0.07);
-  border-radius:22px;margin:10px 0;overflow:hidden;
-  box-shadow:0 4px 40px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04);
-  position:relative;transition:all 0.3s;
-}
+.pick-card{background:linear-gradient(145deg,#111114,#141418,#111114);border:1px solid rgba(255,255,255,0.07);border-radius:22px;margin:10px 0;overflow:hidden;box-shadow:0 4px 40px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04);position:relative;transition:all 0.3s;}
 .pick-card:hover{transform:translateY(-2px);box-shadow:0 8px 48px rgba(255,107,0,0.1),0 4px 40px rgba(0,0,0,0.5);}
-.pick-card::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,#FF6B00,#FFD60A,#FF6B00);
-  background-size:200% 100%;animation:shimmer 4s linear infinite;
-}
+.pick-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#FF6B00,#FFD60A,#FF6B00);background-size:200% 100%;animation:shimmer 4s linear infinite;}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .pick-card::after{display:none;}
 .pick-header{padding:14px 18px 10px;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;}
-.pick-matchup{font-size:0.97rem;font-weight:700;color:#FFFFFF;letter-spacing:-0.2px;}
+.pick-matchup{font-size:0.97rem;font-weight:700;color:#FFFFFF;}
 .pick-league-badge{font-size:0.60rem;color:#FF6B00;text-transform:uppercase;background:rgba(255,107,0,0.10);border:1px solid rgba(255,107,0,0.25);padding:3px 10px;border-radius:20px;font-weight:700;}
 .pick-body{padding:12px 18px;}
-.pick-action{
-  font-size:1.45rem;font-weight:900;
-  background:linear-gradient(90deg,#FF6B00,#FFD60A);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  margin:6px 0 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);letter-spacing:-0.5px;
-}
+.pick-action{font-size:1.45rem;font-weight:900;background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin:6px 0 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);letter-spacing:-0.5px;}
 .pick-action-arrow{-webkit-text-fill-color:#00E676;font-size:1.3rem;}
 
-/* CHIPS */
 .market-chip{display:inline-block;font-size:0.60rem;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;padding:3px 9px;border-radius:8px;margin-right:4px;}
 .chip-ml{background:rgba(255,107,0,0.12);color:#FF6B00;border:1px solid rgba(255,107,0,0.3);}
 .chip-btts{background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
@@ -176,16 +114,14 @@ iframe[title="manage-app"]{display:none !important;}
 .chip-parlay{background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
 .chip-warn{background:rgba(255,23,68,0.10);color:#FF1744;border:1px solid rgba(255,23,68,0.25);}
 
-/* STATS ROW */
 .stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);border-bottom:1px solid rgba(255,255,255,0.05);}
 .stat-item{text-align:center;min-width:56px;}
-.stat-item-val{font-size:1.15rem;font-weight:900;line-height:1;letter-spacing:-0.5px;}
+.stat-item-val{font-size:1.15rem;font-weight:900;line-height:1;}
 .stat-item-lbl{font-size:0.56rem;color:#404048;letter-spacing:0.4px;text-transform:uppercase;margin-top:2px;}
 .val-gold{color:#FFD60A;}.val-orange{color:#FF6B00;}.val-yellow{color:#FFD60A;}
 .val-green{color:#00E676;}.val-cyan{color:#00E676;}.val-blue{color:#448AFF;}
 .val-purple{color:#D500F9;}.val-red{color:#FF1744;}.val-muted{color:#404048;}.val-white{color:#fff;}
 
-/* CONF BADGE */
 .conf-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;font-weight:800;text-transform:uppercase;padding:3px 9px;border-radius:20px;}
 .conf-high{background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
 .conf-medium{background:rgba(255,214,10,0.10);color:#FFD60A;border:1px solid rgba(255,214,10,0.25);}
@@ -193,14 +129,7 @@ iframe[title="manage-app"]{display:none !important;}
 .pick-rationale{font-size:0.82rem;color:#B0B0B8;line-height:1.7;margin-top:10px;}
 .pick-rationale b{color:#fff;}
 
-/* PARLAY CARD */
-.parlay-card{
-  background:linear-gradient(145deg,#081410,#0D1C18,#081410);
-  border:1px solid rgba(0,230,118,0.2);
-  border-radius:22px;margin:10px 0;overflow:hidden;
-  box-shadow:0 0 60px rgba(0,230,118,0.05),0 4px 40px rgba(0,0,0,0.5);
-  position:relative;
-}
+.parlay-card{background:linear-gradient(145deg,#081410,#0D1C18,#081410);border:1px solid rgba(0,230,118,0.2);border-radius:22px;margin:10px 0;overflow:hidden;box-shadow:0 0 60px rgba(0,230,118,0.05),0 4px 40px rgba(0,0,0,0.5);position:relative;}
 .parlay-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#00E676,#FFD60A,#00E676,transparent);}
 .parlay-header{background:rgba(0,230,118,0.05);border-bottom:1px solid rgba(0,230,118,0.12);padding:12px 18px;font-size:0.80rem;font-weight:800;color:#00E676;letter-spacing:1px;text-transform:uppercase;}
 .parlay-body{padding:10px 14px;}
@@ -208,66 +137,40 @@ iframe[title="manage-app"]{display:none !important;}
 .parlay-leg:last-child{border-bottom:none;}
 .parlay-connector{text-align:center;color:#FF6B00;font-size:0.63rem;letter-spacing:2px;padding:2px 0;}
 
-/* GAME ROW */
 .game-row{background:linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:10px 13px;margin:5px 0;transition:all 0.25s;}
-.game-row:hover{border-color:rgba(255,107,0,0.35);transform:translateX(3px);background:rgba(255,107,0,0.03);}
+.game-row:hover{border-color:rgba(255,107,0,0.35);transform:translateX(3px);}
 .game-row-ev{border-color:rgba(0,230,118,0.2);}
 .game-title{font-size:0.88rem;font-weight:700;color:#fff;}
 .game-meta{font-size:0.72rem;color:#404048;margin-top:2px;}
 
-/* BARS */
-.bar-wrap{margin:3px 0;}
-.bar-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
-.bar-team{font-size:0.72rem;color:#B0B0B8;}
-.bar-pct{font-size:0.72rem;font-weight:700;}
+.bar-wrap{margin:3px 0;}.bar-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
+.bar-team{font-size:0.72rem;color:#B0B0B8;}.bar-pct{font-size:0.72rem;font-weight:700;}
 .bar-bg{background:rgba(255,255,255,0.05);border-radius:4px;height:4px;}
 .bar-fill{height:4px;border-radius:4px;}
 
-/* SECTION HEADING */
 .section-heading{font-size:0.66rem;font-weight:800;color:#404048;letter-spacing:2.5px;text-transform:uppercase;margin:18px 0 10px;display:flex;align-items:center;gap:10px;}
 .section-heading::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.06),transparent);}
 
-/* BANNERS */
 .warn-banner{background:rgba(255,214,10,0.06);border:1px solid rgba(255,214,10,0.2);border-left:3px solid #FFD60A;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FFD60A;margin:8px 0;}
 .demo-banner{background:rgba(255,23,68,0.06);border:1px solid rgba(255,23,68,0.2);border-left:3px solid #FF1744;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FF1744;margin:8px 0;}
 
-/* BUTTONS */
-.stButton > button{
-  background:rgba(255,255,255,0.04) !important;color:#fff !important;
-  font-family:'Outfit',sans-serif !important;font-size:0.82rem !important;
-  font-weight:600 !important;border:1px solid rgba(255,255,255,0.09) !important;
-  padding:9px 16px !important;border-radius:12px !important;
-  width:100% !important;transition:all 0.2s !important;
-}
+.stButton > button{background:rgba(255,255,255,0.04) !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:0.82rem !important;font-weight:600 !important;border:1px solid rgba(255,255,255,0.09) !important;padding:9px 16px !important;border-radius:12px !important;width:100% !important;transition:all 0.2s !important;}
 .stButton > button:hover{background:rgba(255,107,0,0.1) !important;border-color:rgba(255,107,0,0.45) !important;color:#FF6B00 !important;transform:translateY(-1px) !important;}
-.stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{
-  background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;
-  color:#000 !important;border:none !important;font-weight:900 !important;
-  box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;
-}
+.stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;color:#000 !important;border:none !important;font-weight:900 !important;box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;}
 .stButton > button[kind="primary"]:hover{background:linear-gradient(135deg,#FF8C00,#FFB300) !important;box-shadow:0 8px 32px rgba(255,107,0,0.55) !important;transform:translateY(-2px) !important;}
 .stDownloadButton > button{background:rgba(255,255,255,0.04) !important;color:#FF6B00 !important;border:1px solid rgba(255,107,0,0.3) !important;border-radius:12px !important;}
 
-/* INPUTS */
-div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,div[data-testid="stTextArea"] textarea{
-  background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;
-  border-radius:12px !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:16px !important;
-}
+div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,div[data-testid="stTextArea"] textarea{background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:16px !important;}
 div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{border-color:rgba(255,107,0,0.5) !important;box-shadow:0 0 0 3px rgba(255,107,0,0.1) !important;}
 div[data-testid="stSelectbox"] > div > div{background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;color:#fff !important;}
-div[data-testid="stSelectbox"] label,div[data-testid="stTextInput"] label,
-div[data-testid="stNumberInput"] label,div[data-testid="stSlider"] label,div[data-testid="stRadio"] label{
-  color:#FF6B00 !important;font-family:'Outfit',sans-serif !important;font-size:0.72rem !important;font-weight:700 !important;
-}
+div[data-testid="stSelectbox"] label,div[data-testid="stTextInput"] label,div[data-testid="stNumberInput"] label,div[data-testid="stSlider"] label,div[data-testid="stRadio"] label{color:#FF6B00 !important;font-family:'Outfit',sans-serif !important;font-size:0.72rem !important;font-weight:700 !important;}
 div[data-testid="stMultiSelect"] > div > div{background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;}
 
-/* EXPANDERS */
 [data-testid="stExpander"] > details > summary{background:rgba(255,255,255,0.03) !important;color:#fff !important;border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px !important;font-family:'Outfit',sans-serif !important;font-weight:600 !important;}
 [data-testid="stExpander"] > details > summary:hover{border-color:rgba(255,107,0,0.35) !important;}
 [data-testid="stExpander"] > details > div{background:rgba(255,255,255,0.02) !important;border:1px solid rgba(255,255,255,0.06) !important;border-top:none !important;border-radius:0 0 12px 12px !important;padding:10px 8px !important;}
 [data-testid="stExpander"]{background:transparent !important;border:none !important;box-shadow:none !important;}
 
-/* MISC */
 .empty-state{text-align:center;padding:40px 20px;color:#404048;}
 .empty-icon{font-size:3rem;margin-bottom:12px;}
 .empty-title{font-size:1rem;font-weight:800;color:#fff;margin-bottom:6px;}
@@ -284,90 +187,76 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 .sidebar-logo{font-family:'Outfit',sans-serif;font-size:1.2rem;font-weight:800;color:#FF6B00;}
 .sidebar-sub{font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase;}
 
-@media(max-width:768px){
-  .block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}
-  .den-logo{font-size:1.55rem !important;}.pick-action{font-size:1.05rem !important;}
-  .stat-num{font-size:1.35rem !important;}
-  [data-testid="column"]{min-width:0 !important;overflow:hidden !important;}
-  *{word-break:break-word !important;overflow-wrap:break-word !important;}
-  div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}
-}
+@media(max-width:768px){.block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}.den-logo{font-size:1.55rem !important;}.pick-action{font-size:1.05rem !important;}.stat-num{font-size:1.35rem !important;}[data-testid="column"]{min-width:0 !important;overflow:hidden !important;}*{word-break:break-word !important;overflow-wrap:break-word !important;}div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}}
 @media(max-width:390px){.den-logo{font-size:1.3rem !important;}.pick-action{font-size:0.97rem !important;}.stat-num{font-size:1.15rem !important;}}
 @media(min-width:1240px){.den-logo{font-size:2.3rem !important;}.pick-action{font-size:1.7rem !important;}.stat-num{font-size:1.9rem !important;}}
-
-/* ══ HIDE MANAGE APP — all selectors ══ */
-[data-testid="stToolbar"],
-[data-testid="stToolbarActions"],
-[data-testid="manage-app-button"],
-[data-testid="stMainMenu"],
-[data-testid="stAppDeployButton"],
-.stAppDeployButton,
-button[title="Manage app"],
-button[aria-label="Manage app"],
-a[href*="share.streamlit"],
-iframe[title="streamlit_app"],
-[class*="ToolbarActions"],
-[class*="manage-app"],
-[class*="ManageApp"],
-[class*="deployButton"],
-[class*="AppToolbar"] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  position: absolute !important;
-  overflow: hidden !important;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV — pure HTML + query_params routing (zero st.button)
+# BOTTOM NAV
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
-    {"key": "Config",       "icon": "⚙️",  "label": "CONFIG"},
     {"key": "Picks",        "icon": "🎯", "label": "PICKS"},
     {"key": "Parlays",      "icon": "🎰", "label": "PARLAYS"},
     {"key": "En Vivo",      "icon": "🔴", "label": "LIVE"},
     {"key": "Reto 13M",     "icon": "💰", "label": "RETO"},
+    {"key": "Config",       "icon": "⚙️",  "label": "CONFIG"},
 ]
-
-# Read page from query params (set by JS clicks)
-_qp = st.query_params.get("page", None)
-if _qp and _qp in [n["key"] for n in _NAV_ITEMS]:
-    st.session_state["active_page"] = _qp
-    # Clear query param to avoid stale state
-    st.query_params.clear()
+_NAV_KEYS  = [n["key"]   for n in _NAV_ITEMS]
+_NAV_ICONS = [n["icon"]  for n in _NAV_ITEMS]
 
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
+
+# ── HIDDEN radio — this is what actually drives navigation ────────────────────
+# Streamlit radio always works. We hide it and drive it from the HTML nav.
+_nav_sel = st.radio(
+    "nav",
+    options=_NAV_KEYS,
+    format_func=lambda k: next(n["icon"] for n in _NAV_ITEMS if n["key"]==k),
+    index=_NAV_KEYS.index(st.session_state["active_page"]),
+    key="_nav_radio",
+    horizontal=True,
+    label_visibility="collapsed",
+)
+if _nav_sel != st.session_state["active_page"]:
+    st.session_state["active_page"] = _nav_sel
+    st.rerun()
+
 _active_page = st.session_state["active_page"]
 
-# Build nav HTML — each item is a real <a> link with ?page=KEY
+# ── Visual nav ────────────────────────────────────────────────────────────────
 _nh = '<div class="den-nav">'
 for _ni in _NAV_ITEMS:
     _a   = "act" if _ni["key"] == _active_page else ""
     _clr = "#FF6B00" if _a else "#404048"
-    # Use JS onclick to set query param and submit — no page reload
-    _page_key = _ni["key"].replace(" ", "+").replace("&", "%26")
     _nh += (
-        f'<div class="den-nav-item {_a}" '
-        f'onclick="window.location.href=window.location.pathname+''?page={_page_key}''" '
-        f'style="cursor:pointer;-webkit-tap-highlight-color:rgba(255,107,0,0.2)">' 
-        f'<span class="den-nav-icon">{_ni["icon"]}</span>'
-        f'<span class="den-nav-label" style="color:{_clr}">{_ni["label"]}</span>'
+        f'<div class="den-nav-item {_a}" onclick="navClick(\'{_ni["key"]}\')" style="cursor:pointer">' +
+        f'<span class="den-nav-icon">{_ni["icon"]}</span>' +
+        f'<span class="den-nav-label" style="color:{_clr}">{_ni["label"]}</span>' +
         f'</div>'
     )
 _nh += '</div>'
-st.markdown(_nh, unsafe_allow_html=True)
 
-_active_page = st.session_state["active_page"]
+# JS: clicking a nav item clicks the corresponding hidden radio button
+_nav_js = """
+<script>
+function navClick(pageKey) {
+    // Find all radio buttons in the hidden nav radio
+    var labels = window.parent.document.querySelectorAll('[data-testid="stRadio"] label');
+    var keys = """ + str(_NAV_KEYS) + """;
+    var idx = keys.indexOf(pageKey);
+    if (idx >= 0 && labels[idx]) {
+        labels[idx].click();
+    }
+}
+</script>
+"""
+st.markdown(_nh + _nav_js, unsafe_allow_html=True)
 
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
@@ -5455,18 +5344,13 @@ if _active_page == "Rongol Picks":
         <div style="text-align:center;padding:44px 16px 28px">
           <div style="font-size:3.8rem;margin-bottom:12px;display:inline-block;animation:glow-pulse 2s ease-in-out infinite">⚡</div>
           <style>@keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 12px rgba(255,107,0,0.5))}50%{filter:drop-shadow(0 0 36px rgba(255,214,10,0.9))}}</style>
-          <div style="font-size:1.5rem;font-weight:900;letter-spacing:-1px;margin-bottom:8px;
-            background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">
-            ¡Bienvenido al Den!</div>
-          <div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">
-            Toca <b style="color:#FF6B00">⚙️ CONFIG</b> en la barra de abajo<br>
-            y presiona <b style="color:#FFD60A">🚀 Analizar ahora</b></div>
+          <div style="font-size:1.5rem;font-weight:900;letter-spacing:-1px;margin-bottom:8px;background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">¡Bienvenido al Den!</div>
+          <div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">Toca <b style="color:#FF6B00">⚙️ CONFIG</b> en la barra de abajo<br>y presiona <b style="color:#FFD60A">🚀 Analizar ahora</b></div>
           <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:22px">
             <div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.03));border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FF6B00">⚡ Monte Carlo</div>
             <div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.03));border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FFD60A">🎯 EV+ Picks</div>
             <div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.03));border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#00E676">🎰 Parlays</div>
           </div>
-          <div style="font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase">10,000 sims · ESPN Live · Monte Carlo</div>
         </div>""", unsafe_allow_html=True)
     else:
         # ── Detectar picks terminados ─────────────────────────────────────────────
@@ -8568,11 +8452,9 @@ elif _active_page == "Reto 13M":
         )
 
 elif _active_page == "Config":
-    st.markdown("""
-    <div style="text-align:center;padding:28px 0 16px">
+    st.markdown("""<div style="text-align:center;padding:28px 0 16px">
       <div style="font-size:3rem;margin-bottom:8px;filter:drop-shadow(0 0 20px rgba(255,107,0,0.45))">⚙️</div>
-      <div style="font-size:1.4rem;font-weight:900;letter-spacing:-1px;
-        background:linear-gradient(135deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Configuración</div>
+      <div style="font-size:1.4rem;font-weight:900;letter-spacing:-1px;background:linear-gradient(135deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Configuración</div>
       <div style="font-size:0.57rem;color:#404048;letter-spacing:3px;text-transform:uppercase;margin-top:5px">ajusta · analiza · gana</div>
     </div>""", unsafe_allow_html=True)
 
