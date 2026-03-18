@@ -45,22 +45,49 @@ header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
 
-/* ══ NAV BAR ══ */
+/* ══ NAV BAR — FIXED BOTTOM ══ */
+/* Fix overflow on entire Streamlit container chain */
+.stApp, .stApp > div, [data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > section,
+[data-testid="stVerticalBlock"],
+[data-testid="stVerticalBlockBorderWrapper"],
+.main, .block-container {
+  overflow: visible !important;
+}
+
 .nav-container {
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-  background: rgba(8,8,10,0.97);
-  backdrop-filter: blur(20px);
-  padding: 8px 0;
-  margin: -16px -14px 12px -14px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 999999 !important;
+  background: rgba(8,8,10,0.97) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  padding: 6px 8px !important;
+  margin: 0 !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+  border-bottom: none !important;
+  pointer-events: auto !important;
 }
 .nav-container::before {
   content: '';
   position: absolute;
-  bottom: 0; left: 0; right: 0; height: 1px;
+  top: 0; left: 0; right: 0; height: 2px;
   background: linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
+}
+/* Make sure all children are clickable */
+.nav-container * {
+  pointer-events: auto !important;
+}
+/* Columns inside nav */
+.nav-container [data-testid="stHorizontalBlock"] {
+  gap: 0 !important;
+  pointer-events: auto !important;
+}
+.nav-container [data-testid="column"] {
+  padding: 0 !important;
+  pointer-events: auto !important;
 }
 
 /* Override ALL button styles inside nav */
@@ -160,9 +187,9 @@ button[title="Manage app"],button[aria-label="Manage app"],
 
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
-.block-container{padding:0 14px 40px 14px !important;max-width:620px !important;margin:0 auto !important;}
-@media(min-width:820px){.block-container{max-width:920px !important;padding:0 40px 40px !important;}}
-@media(min-width:1240px){.block-container{max-width:1180px !important;padding:0 56px 40px !important;}}
+.block-container{padding:16px 14px 90px 14px !important;max-width:620px !important;margin:0 auto !important;}
+@media(min-width:820px){.block-container{max-width:920px !important;padding:24px 40px 90px !important;}}
+@media(min-width:1240px){.block-container{max-width:1180px !important;padding:28px 56px 90px !important;}}
 .den-header{text-align:center;padding:16px 0 10px;}
 .den-logo{font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;letter-spacing:-1.5px;line-height:1;background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 45%,#FF8C00 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 24px rgba(255,107,0,0.35));}
 .den-subtitle{font-size:0.58rem;color:#404048;letter-spacing:4px;text-transform:uppercase;margin-top:5px;}
@@ -257,7 +284,7 @@ div[data-testid="stMetricLabel"]{color:#404048 !important;}
 div[data-testid="stStatusWidget"]{display:none !important;}
 .sidebar-logo{font-family:'Outfit',sans-serif;font-size:1.2rem;font-weight:800;color:#FF6B00;}
 .sidebar-sub{font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase;}
-@media(max-width:768px){.block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}.nav-container{margin:-16px -10px 10px -10px !important;}.den-logo{font-size:1.55rem !important;}.pick-action{font-size:1.05rem !important;}.stat-num{font-size:1.35rem !important;}[data-testid="column"]{min-width:0 !important;overflow:hidden !important;}*{word-break:break-word !important;overflow-wrap:break-word !important;}div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}}
+@media(max-width:768px){.block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}.nav-container{margin:0 !important;}.den-logo{font-size:1.55rem !important;}.pick-action{font-size:1.05rem !important;}.stat-num{font-size:1.35rem !important;}[data-testid="column"]{min-width:0 !important;overflow:hidden !important;}*{word-break:break-word !important;overflow-wrap:break-word !important;}div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}}
 @media(max-width:390px){.den-logo{font-size:1.3rem !important;}.pick-action{font-size:0.97rem !important;}.stat-num{font-size:1.15rem !important;}}
 @media(min-width:1240px){.den-logo{font-size:2.3rem !important;}.pick-action{font-size:1.7rem !important;}.stat-num{font-size:1.9rem !important;}}
 </style>
