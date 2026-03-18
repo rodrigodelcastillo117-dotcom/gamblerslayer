@@ -26,153 +26,122 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 :root {
-  --bg:     #08080A;
-  --bg2:    #111114;
-  --bg3:    #1A1A1E;
-  --card:   #111114;
-  --card2:  #161619;
-  --border: rgba(255,255,255,0.06);
-  --orange: #FF6B00;
-  --yellow: #FFD60A;
-  --green:  #00E676;
-  --blue:   #448AFF;
-  --red:    #FF1744;
-  --purple: #D500F9;
-  --text:   #FFFFFF;
-  --text2:  #B0B0B8;
-  --text3:  #404048;
-  --nav-h:  68px;
-  /* legacy compat */
+  --bg:#08080A; --bg2:#111114; --bg3:#1A1A1E;
+  --card:#111114; --card2:#161619; --border:rgba(255,255,255,0.06);
+  --orange:#FF6B00; --orange2:#FF8C00; --yellow:#FFD60A;
+  --green:#00E676; --blue:#448AFF; --red:#FF1744; --purple:#D500F9;
+  --text:#FFFFFF; --text2:#B0B0B8; --text3:#404048; --white:#FFFFFF;
+  --nav-h:64px;
   --gold:#FFD60A; --gold2:#FF8C00; --felt:#08080A; --dark:#08080A;
-  --muted:#404048; --cyan:#00E676; --white:#FFFFFF;
+  --muted:#404048; --cyan:#00E676;
 }
 
 *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
-
 html,body,.stApp,.main,.stMainBlockContainer{
   background:#08080A !important;
   color:#FFFFFF !important;
   font-family:'Outfit',-apple-system,sans-serif !important;
 }
 
-/* ── HIDE ALL STREAMLIT CHROME ── */
+/* ── HIDE STREAMLIT CHROME ── */
 #MainMenu,footer,.stDeployButton{display:none !important;}
 header[data-testid="stHeader"]{display:none !important;}
-[data-testid="stSidebar"]{display:none !important;}
-[data-testid="collapsedControl"]{display:none !important;}
+[data-testid="stSidebar"],[data-testid="collapsedControl"],
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
-/* Hide ALL st.columns button rows that appear as gray boxes */
-div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"]){
-  position:fixed !important;
-  bottom:0 !important; left:0 !important; right:0 !important;
-  z-index:999999 !important;
-  height:var(--nav-h) !important;
-  display:flex !important;
-  background:transparent !important;
-  margin:0 !important; padding:0 !important; gap:0 !important;
+
+/* ── FIX NAV BUTTONS — make columns fixed+transparent ── */
+div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) {
+  position:fixed !important; bottom:0 !important; left:0 !important; right:0 !important;
+  z-index:999999 !important; height:var(--nav-h) !important;
+  display:flex !important; align-items:stretch !important;
+  background:transparent !important; margin:0 !important; padding:0 !important; gap:0 !important;
 }
-div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"]) > div[data-testid="column"]{
-  flex:1 !important; margin:0 !important; padding:0 !important;
+div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) > div {
+  flex:1 !important; min-width:0 !important; margin:0 !important; padding:0 !important;
 }
-div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondary"]) button{
-  opacity:0 !important; width:100% !important; height:var(--nav-h) !important;
-  background:transparent !important; border:none !important;
-  border-radius:0 !important; margin:0 !important; padding:0 !important;
-  cursor:pointer !important; position:relative !important; z-index:1000000 !important;
+div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) button {
+  width:100% !important; height:var(--nav-h) !important;
+  opacity:0 !important; background:transparent !important; border:none !important;
+  border-radius:0 !important; cursor:pointer !important;
+  position:relative !important; z-index:1000000 !important;
+  margin:0 !important; padding:0 !important;
 }
 
-/* Scrollbar */
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
 
-/* ── MAIN LAYOUT ── */
+/* ── LAYOUT ── */
 .block-container{
-  padding:16px 14px calc(var(--nav-h) + 28px) 14px !important;
+  padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;
   max-width:620px !important; margin:0 auto !important;
 }
-@media(min-width:820px){
-  .block-container{max-width:920px !important;padding:24px 40px calc(var(--nav-h) + 32px) !important;}
-}
-@media(min-width:1240px){
-  .block-container{max-width:1200px !important;padding:28px 60px calc(var(--nav-h) + 32px) !important;}
-}
+@media(min-width:820px){.block-container{max-width:920px !important;padding:24px 40px calc(var(--nav-h)+28px) !important;}}
+@media(min-width:1240px){.block-container{max-width:1180px !important;padding:28px 56px calc(var(--nav-h)+28px) !important;}}
 
-/* ── BOTTOM NAV — WOW ── */
+/* ── BOTTOM NAV ── */
 .den-nav{
   position:fixed;bottom:0;left:0;right:0;
   height:calc(var(--nav-h) + env(safe-area-inset-bottom));
-  background:rgba(8,8,10,0.92);
-  backdrop-filter:blur(40px) saturate(200%);
-  -webkit-backdrop-filter:blur(40px) saturate(200%);
-  border-top:1px solid rgba(255,107,0,0.2);
-  display:flex;z-index:99998;
-  padding-bottom:env(safe-area-inset-bottom);
+  background:rgba(8,8,10,0.94);
+  backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);
+  border-top:1px solid rgba(255,255,255,0.06);
+  display:flex;z-index:99998;padding-bottom:env(safe-area-inset-bottom);
 }
 .den-nav::before{
   content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent 0%,#FF6B00 20%,#FFD60A 50%,#FF6B00 80%,transparent 100%);
+  background:linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
 }
 .den-nav-item{
   flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:4px;padding:8px 4px;position:relative;
+  justify-content:center;gap:3px;padding:6px 2px;position:relative;
 }
-.den-nav-item.act::after{
-  content:'';position:absolute;top:0;left:25%;right:25%;height:3px;
+.den-nav-item.act::before{
+  content:'';position:absolute;top:0;left:20%;right:20%;height:2px;
   background:linear-gradient(90deg,transparent,#FF6B00,#FFD60A,#FF6B00,transparent);
-  border-radius:0 0 6px 6px;animation:nav-glow 2s ease-in-out infinite;
+  border-radius:0 0 4px 4px;animation:nav-pulse 2s ease-in-out infinite;
 }
-@keyframes nav-glow{0%,100%{opacity:1;box-shadow:0 0 12px #FF6B00}50%{opacity:0.7;box-shadow:0 0 24px #FFD60A}}
-.den-nav-icon{font-size:1.35rem;line-height:1;transition:transform 0.25s;}
-.den-nav-item.act .den-nav-icon{transform:scale(1.18) translateY(-2px);}
-.den-nav-label{
-  font-size:0.48rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;
-  color:#404048;transition:color 0.2s;
-}
+@keyframes nav-pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+.den-nav-icon{font-size:1.3rem;line-height:1;transition:transform 0.2s;}
+.den-nav-item.act .den-nav-icon{transform:scale(1.15) translateY(-1px);}
+.den-nav-label{font-size:0.47rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:#404048;transition:color 0.2s;}
 .den-nav-item.act .den-nav-label{color:#FF6B00;}
 
 /* ── HEADER ── */
-.den-header{text-align:center;padding:20px 0 12px;position:relative;}
+.den-header{text-align:center;padding:20px 0 10px;}
 .den-logo{
-  font-family:'Outfit',sans-serif;font-size:2.1rem;font-weight:900;
-  letter-spacing:-1.5px;line-height:1;
-  background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 40%,#FF8C00 70%,#FF6B00 100%);
+  font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;letter-spacing:-1.5px;line-height:1;
+  background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 45%,#FF8C00 100%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  filter:drop-shadow(0 0 20px rgba(255,107,0,0.4));
+  filter:drop-shadow(0 0 24px rgba(255,107,0,0.35));
 }
-.den-subtitle{font-size:0.58rem;color:#404048;letter-spacing:4px;text-transform:uppercase;margin-top:6px;}
-.den-divider{
-  width:100%;height:1px;margin:12px 0;
-  background:linear-gradient(90deg,transparent 0%,rgba(255,107,0,0.4) 30%,rgba(255,214,10,0.6) 50%,rgba(255,107,0,0.4) 70%,transparent 100%);
-}
+.den-subtitle{font-size:0.58rem;color:#404048;letter-spacing:4px;text-transform:uppercase;margin-top:5px;}
+.den-divider{width:100%;height:1px;margin:10px 0;background:linear-gradient(90deg,transparent,rgba(255,107,0,0.35) 30%,rgba(255,214,10,0.5) 50%,rgba(255,107,0,0.35) 70%,transparent);}
 .den-corner{display:none;}
 
-/* ── STAT TILES — glassmorphism ── */
+/* ── STAT TILES ── */
 .stat-grid{display:flex;gap:7px;margin:12px 0;flex-wrap:wrap;}
 .stat-tile{
-  flex:1;min-width:70px;
-  background:linear-gradient(135deg,rgba(255,255,255,0.04) 0%,rgba(255,255,255,0.02) 100%);
+  flex:1;min-width:68px;
+  background:linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02));
   border:1px solid rgba(255,255,255,0.07);
-  border-radius:16px;padding:12px 8px;text-align:center;
-  backdrop-filter:blur(10px);transition:all 0.25s;position:relative;overflow:hidden;
+  border-radius:16px;padding:12px 7px;text-align:center;
+  transition:all 0.25s;position:relative;overflow:hidden;
 }
-.stat-tile::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);
-}
-.stat-tile:hover{transform:translateY(-3px);border-color:rgba(255,107,0,0.4);box-shadow:0 8px 32px rgba(255,107,0,0.15);}
-.stat-num{font-size:1.7rem;font-weight:900;line-height:1;letter-spacing:-1px;}
-.stat-label{font-size:0.53rem;color:#404048;letter-spacing:0.8px;text-transform:uppercase;margin-top:4px;}
+.stat-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent);}
+.stat-tile:hover{transform:translateY(-3px);border-color:rgba(255,107,0,0.4);box-shadow:0 8px 32px rgba(255,107,0,0.12);}
+.stat-num{font-size:1.6rem;font-weight:900;line-height:1;letter-spacing:-1px;}
+.stat-label{font-size:0.52rem;color:#404048;letter-spacing:0.8px;text-transform:uppercase;margin-top:4px;}
 
-/* ── PICK CARD — premium ── */
+/* ── PICK CARD ── */
 .pick-card{
-  background:linear-gradient(145deg,#111114 0%,#141418 50%,#111114 100%);
+  background:linear-gradient(145deg,#111114,#141418,#111114);
   border:1px solid rgba(255,255,255,0.07);
   border-radius:22px;margin:10px 0;overflow:hidden;
-  box-shadow:0 4px 40px rgba(0,0,0,0.6),0 1px 0 rgba(255,255,255,0.05) inset;
+  box-shadow:0 4px 40px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.04);
   position:relative;transition:all 0.3s;
 }
-.pick-card:hover{transform:translateY(-2px);box-shadow:0 8px 48px rgba(255,107,0,0.12),0 4px 40px rgba(0,0,0,0.6);}
+.pick-card:hover{transform:translateY(-2px);box-shadow:0 8px 48px rgba(255,107,0,0.1),0 4px 40px rgba(0,0,0,0.5);}
 .pick-card::before{
   content:'';position:absolute;top:0;left:0;right:0;height:3px;
   background:linear-gradient(90deg,#FF6B00,#FFD60A,#FF6B00);
@@ -180,32 +149,21 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondar
 }
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .pick-card::after{display:none;}
-.pick-header{
-  padding:14px 18px 10px;border-bottom:1px solid rgba(255,255,255,0.05);
-  display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;
-}
+.pick-header{padding:14px 18px 10px;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;}
 .pick-matchup{font-size:0.97rem;font-weight:700;color:#FFFFFF;letter-spacing:-0.2px;}
-.pick-league-badge{
-  font-size:0.60rem;color:#FF6B00;text-transform:uppercase;
-  background:rgba(255,107,0,0.10);border:1px solid rgba(255,107,0,0.25);
-  padding:3px 10px;border-radius:20px;font-weight:700;letter-spacing:0.5px;
-}
+.pick-league-badge{font-size:0.60rem;color:#FF6B00;text-transform:uppercase;background:rgba(255,107,0,0.10);border:1px solid rgba(255,107,0,0.25);padding:3px 10px;border-radius:20px;font-weight:700;}
 .pick-body{padding:12px 18px;}
 .pick-action{
-  font-size:1.5rem;font-weight:900;
-  background:linear-gradient(90deg,#FF6B00 0%,#FFD60A 100%);
+  font-size:1.45rem;font-weight:900;
+  background:linear-gradient(90deg,#FF6B00,#FFD60A);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  margin:6px 0 8px;display:flex;align-items:center;gap:10px;
-  flex-wrap:wrap;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);
-  letter-spacing:-0.5px;
+  margin:6px 0 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);letter-spacing:-0.5px;
 }
 .pick-action-arrow{-webkit-text-fill-color:#00E676;font-size:1.3rem;}
 
 /* ── CHIPS ── */
-.market-chip{
-  display:inline-block;font-size:0.60rem;font-weight:800;
-  letter-spacing:0.5px;text-transform:uppercase;padding:3px 9px;border-radius:8px;margin-right:4px;
-}
+.market-chip{display:inline-block;font-size:0.60rem;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;padding:3px 9px;border-radius:8px;margin-right:4px;}
 .chip-ml    {background:rgba(255,107,0,0.12);color:#FF6B00;border:1px solid rgba(255,107,0,0.3);}
 .chip-btts  {background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
 .chip-ou    {background:rgba(255,214,10,0.10);color:#FFD60A;border:1px solid rgba(255,214,10,0.25);}
@@ -216,11 +174,7 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondar
 .chip-warn  {background:rgba(255,23,68,0.10);color:#FF1744;border:1px solid rgba(255,23,68,0.25);}
 
 /* ── STATS ROW ── */
-.stats-row{
-  display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;
-  padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);
-  border-bottom:1px solid rgba(255,255,255,0.05);
-}
+.stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);border-bottom:1px solid rgba(255,255,255,0.05);}
 .stat-item{text-align:center;min-width:56px;}
 .stat-item-val{font-size:1.15rem;font-weight:900;line-height:1;letter-spacing:-0.5px;}
 .stat-item-lbl{font-size:0.56rem;color:#404048;letter-spacing:0.4px;text-transform:uppercase;margin-top:2px;}
@@ -229,7 +183,7 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondar
 .val-purple{color:#D500F9;} .val-red{color:#FF1744;} .val-muted{color:#404048;} .val-white{color:#fff;}
 
 /* ── CONF BADGE ── */
-.conf-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;font-weight:800;text-transform:uppercase;padding:3px 9px;border-radius:20px;letter-spacing:0.5px;}
+.conf-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;font-weight:800;text-transform:uppercase;padding:3px 9px;border-radius:20px;}
 .conf-high  {background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
 .conf-medium{background:rgba(255,214,10,0.10);color:#FFD60A;border:1px solid rgba(255,214,10,0.25);}
 .conf-low   {background:rgba(255,23,68,0.10);color:#FF1744;border:1px solid rgba(255,23,68,0.25);}
@@ -239,33 +193,21 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondar
 /* ── PARLAY CARD ── */
 .parlay-card{
   background:linear-gradient(145deg,#081410,#0D1C18,#081410);
-  border:1px solid rgba(0,230,118,0.25);
+  border:1px solid rgba(0,230,118,0.2);
   border-radius:22px;margin:10px 0;overflow:hidden;
-  box-shadow:0 0 60px rgba(0,230,118,0.06),0 4px 40px rgba(0,0,0,0.6);
-  position:relative;transition:all 0.3s;
+  box-shadow:0 0 60px rgba(0,230,118,0.05),0 4px 40px rgba(0,0,0,0.5);
+  position:relative;
 }
-.parlay-card:hover{box-shadow:0 0 80px rgba(0,230,118,0.12),0 8px 48px rgba(0,0,0,0.6);}
-.parlay-card::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,transparent,#00E676,#FFD60A,#00E676,transparent);
-}
-.parlay-header{
-  background:rgba(0,230,118,0.05);border-bottom:1px solid rgba(0,230,118,0.12);
-  padding:12px 18px;font-size:0.80rem;font-weight:800;color:#00E676;
-  letter-spacing:1px;text-transform:uppercase;
-}
+.parlay-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#00E676,#FFD60A,#00E676,transparent);}
+.parlay-header{background:rgba(0,230,118,0.05);border-bottom:1px solid rgba(0,230,118,0.12);padding:12px 18px;font-size:0.80rem;font-weight:800;color:#00E676;letter-spacing:1px;text-transform:uppercase;}
 .parlay-body{padding:10px 14px;}
 .parlay-leg{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.82rem;color:#fff;}
 .parlay-leg:last-child{border-bottom:none;}
 .parlay-connector{text-align:center;color:#FF6B00;font-size:0.63rem;letter-spacing:2px;padding:2px 0;}
 
 /* ── GAME ROW ── */
-.game-row{
-  background:linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));
-  border:1px solid rgba(255,255,255,0.06);
-  border-radius:14px;padding:10px 13px;margin:5px 0;transition:all 0.25s;
-}
-.game-row:hover{border-color:rgba(255,107,0,0.35);transform:translateX(4px);background:rgba(255,107,0,0.03);}
+.game-row{background:linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:10px 13px;margin:5px 0;transition:all 0.25s;}
+.game-row:hover{border-color:rgba(255,107,0,0.35);transform:translateX(3px);background:rgba(255,107,0,0.03);}
 .game-row-ev{border-color:rgba(0,230,118,0.2);}
 .game-title{font-size:0.88rem;font-weight:700;color:#fff;}
 .game-meta{font-size:0.72rem;color:#404048;margin-top:2px;}
@@ -279,11 +221,7 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondar
 .bar-fill{height:4px;border-radius:4px;}
 
 /* ── SECTION HEADING ── */
-.section-heading{
-  font-size:0.66rem;font-weight:800;color:#404048;
-  letter-spacing:2.5px;text-transform:uppercase;
-  margin:20px 0 10px;display:flex;align-items:center;gap:10px;
-}
+.section-heading{font-size:0.66rem;font-weight:800;color:#404048;letter-spacing:2.5px;text-transform:uppercase;margin:18px 0 10px;display:flex;align-items:center;gap:10px;}
 .section-heading::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.06),transparent);}
 
 /* ── BANNERS ── */
@@ -292,68 +230,55 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid="baseButton-secondar
 
 /* ── BUTTONS ── */
 .stButton > button{
-  background:rgba(255,255,255,0.04) !important; color:#fff !important;
-  font-family:'Outfit',sans-serif !important; font-size:0.82rem !important;
-  font-weight:600 !important; border:1px solid rgba(255,255,255,0.09) !important;
-  padding:9px 16px !important; border-radius:12px !important;
-  width:100% !important; transition:all 0.2s !important; letter-spacing:0.3px !important;
+  background:rgba(255,255,255,0.04) !important;color:#fff !important;
+  font-family:'Outfit',sans-serif !important;font-size:0.82rem !important;
+  font-weight:600 !important;border:1px solid rgba(255,255,255,0.09) !important;
+  padding:9px 16px !important;border-radius:12px !important;
+  width:100% !important;transition:all 0.2s !important;
 }
 .stButton > button:hover{
-  background:rgba(255,107,0,0.1) !important; border-color:rgba(255,107,0,0.45) !important;
-  color:#FF6B00 !important; transform:translateY(-1px) !important;
-  box-shadow:0 4px 20px rgba(255,107,0,0.15) !important;
+  background:rgba(255,107,0,0.1) !important;border-color:rgba(255,107,0,0.45) !important;
+  color:#FF6B00 !important;transform:translateY(-1px) !important;
 }
-.stButton > button[kind="primary"],
-button[data-testid="baseButton-primary"]{
-  background:linear-gradient(135deg,#FF6B00 0%,#FF8C00 100%) !important;
-  color:#000 !important; border:none !important; font-weight:900 !important;
-  box-shadow:0 4px 24px rgba(255,107,0,0.45) !important; letter-spacing:0.5px !important;
+.stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{
+  background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;
+  color:#000 !important;border:none !important;font-weight:900 !important;
+  box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;letter-spacing:0.3px !important;
 }
 .stButton > button[kind="primary"]:hover{
   background:linear-gradient(135deg,#FF8C00,#FFB300) !important;
-  box-shadow:0 8px 32px rgba(255,107,0,0.6) !important;
-  transform:translateY(-2px) !important;
+  box-shadow:0 8px 32px rgba(255,107,0,0.55) !important;transform:translateY(-2px) !important;
 }
 .stDownloadButton > button{background:rgba(255,255,255,0.04) !important;color:#FF6B00 !important;border:1px solid rgba(255,107,0,0.3) !important;border-radius:12px !important;}
 
 /* ── INPUTS ── */
-div[data-testid="stTextInput"] input,
-div[data-testid="stNumberInput"] input,
+div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,
 div[data-testid="stTextArea"] textarea{
-  background:rgba(255,255,255,0.04) !important;
-  border:1px solid rgba(255,255,255,0.08) !important;
-  border-radius:12px !important; color:#fff !important;
-  font-family:'Outfit',sans-serif !important; font-size:16px !important;
+  background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;
+  border-radius:12px !important;color:#fff !important;
+  font-family:'Outfit',sans-serif !important;font-size:16px !important;
 }
-div[data-testid="stTextInput"] input:focus,
-div[data-testid="stNumberInput"] input:focus{
-  border-color:rgba(255,107,0,0.5) !important;
-  box-shadow:0 0 0 3px rgba(255,107,0,0.1) !important;
+div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{
+  border-color:rgba(255,107,0,0.5) !important;box-shadow:0 0 0 3px rgba(255,107,0,0.1) !important;
 }
 div[data-testid="stSelectbox"] > div > div{
-  background:rgba(255,255,255,0.04) !important;
-  border:1px solid rgba(255,255,255,0.08) !important;
-  border-radius:12px !important; color:#fff !important;
+  background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;
+  border-radius:12px !important;color:#fff !important;
 }
 div[data-testid="stSelectbox"] label,div[data-testid="stTextInput"] label,
-div[data-testid="stNumberInput"] label,div[data-testid="stSlider"] label,
-div[data-testid="stRadio"] label{
+div[data-testid="stNumberInput"] label,div[data-testid="stSlider"] label,div[data-testid="stRadio"] label{
   color:#FF6B00 !important;font-family:'Outfit',sans-serif !important;
   font-size:0.72rem !important;font-weight:700 !important;letter-spacing:0.5px !important;
 }
 div[data-testid="stMultiSelect"] > div > div{
   background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;
 }
-/* HIDE select dropdown gray area */
-div[data-testid="stMultiSelect"] span[data-baseweb="tag"]{
-  background:rgba(255,107,0,0.15) !important;border-color:rgba(255,107,0,0.3) !important;
-}
 
 /* ── EXPANDERS ── */
 [data-testid="stExpander"] > details > summary{
   background:rgba(255,255,255,0.03) !important;color:#fff !important;
   border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px !important;
-  font-family:'Outfit',sans-serif !important;font-weight:600 !important;transition:all 0.2s !important;
+  font-family:'Outfit',sans-serif !important;font-weight:600 !important;
 }
 [data-testid="stExpander"] > details > summary:hover{border-color:rgba(255,107,0,0.35) !important;}
 [data-testid="stExpander"] > details > div{
@@ -379,39 +304,29 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 .sidebar-logo{font-family:'Outfit',sans-serif;font-size:1.2rem;font-weight:800;color:#FF6B00;}
 .sidebar-sub{font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase;}
 
-/* ── MOBILE ── */
+/* ── RESPONSIVE ── */
 @media(max-width:768px){
   .block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}
-  .den-logo{font-size:1.6rem !important;}
+  .den-logo{font-size:1.55rem !important;}
   .pick-action{font-size:1.05rem !important;}
-  .pick-matchup{font-size:0.90rem !important;}
-  .stat-num{font-size:1.4rem !important;}
-  .stat-item-val{font-size:0.95rem !important;}
-  .market-chip{font-size:0.57rem !important;padding:2px 6px !important;}
-  .conf-badge{font-size:0.57rem !important;padding:2px 7px !important;}
-  .game-row{padding:8px 10px !important;}
+  .pick-matchup{font-size:0.88rem !important;}
+  .stat-num{font-size:1.35rem !important;}
+  .stat-item-val{font-size:0.92rem !important;}
+  .market-chip{font-size:0.56rem !important;padding:2px 6px !important;}
+  .conf-badge{font-size:0.56rem !important;padding:2px 7px !important;}
   [data-testid="column"]{min-width:0 !important;overflow:hidden !important;}
   *{word-break:break-word !important;overflow-wrap:break-word !important;}
-  div[data-testid="stTextInput"] input,
-  div[data-testid="stNumberInput"] input{font-size:16px !important;}
+  div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}
 }
-@media(max-width:390px){
-  .den-logo{font-size:1.35rem !important;}
-  .pick-action{font-size:0.97rem !important;}
-  .stat-num{font-size:1.2rem !important;}
-}
-@media(min-width:1240px){
-  .den-logo{font-size:2.4rem !important;}
-  .pick-action{font-size:1.7rem !important;}
-  .stat-num{font-size:2rem !important;}
-}
+@media(max-width:390px){.den-logo{font-size:1.3rem !important;}.pick-action{font-size:0.97rem !important;}.stat-num{font-size:1.15rem !important;}}
+@media(min-width:1240px){.den-logo{font-size:2.3rem !important;}.pick-action{font-size:1.7rem !important;}.stat-num{font-size:1.9rem !important;}}
 </style>
 """, unsafe_allow_html=True)
 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV — WOW edition
+# BOTTOM NAV
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
@@ -426,32 +341,28 @@ if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
 _active_page = st.session_state["active_page"]
 
-# ── Visual nav (pure HTML — always looks perfect) ─────────────────────────────
-_nav_html = '''<div class="den-nav">'''
+# Visual nav HTML
+_nh = '<div class="den-nav">'
 for _ni in _NAV_ITEMS:
-    _a = "act" if _ni["key"] == _active_page else ""
+    _a  = "act" if _ni["key"] == _active_page else ""
     _lc = "#FF6B00" if _a else "#404048"
-    _nav_html += (
-        f'<div class="den-nav-item {_a}">' 
-        f'<span class="den-nav-icon">{_ni["icon"]}</span>'
-        f'<span class="den-nav-label" style="color:{_lc}">{_ni["label"]}</span>'
-        f'</div>'
-    )
-_nav_html += '</div>'
-st.markdown(_nav_html, unsafe_allow_html=True)
+    _nh += (f'<div class="den-nav-item {_a}">'
+            f'<span class="den-nav-icon">{_ni["icon"]}</span>'
+            f'<span class="den-nav-label" style="color:{_lc}">{_ni["label"]}</span>'
+            f'</div>')
+_nh += '</div>'
+st.markdown(_nh, unsafe_allow_html=True)
 
-# ── Invisible buttons FIXED over nav — this is the click layer ───────────────
-# CSS selector targets this specific stHorizontalBlock and makes it fixed
-_ncols = st.columns(len(_NAV_ITEMS))
-for _ni2, _nitem in enumerate(_NAV_ITEMS):
-    with _ncols[_ni2]:
+# Invisible click layer — st.columns fixed over nav by CSS
+_nc = st.columns(len(_NAV_ITEMS))
+for _i, _nitem in enumerate(_NAV_ITEMS):
+    with _nc[_i]:
         if st.button(" ", key=f"_nb_{_nitem['key']}", help=_nitem["label"],
                      use_container_width=True):
             st.session_state["active_page"] = _nitem["key"]
             st.rerun()
 
 _active_page = st.session_state["active_page"]
-
 
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
@@ -5536,24 +5447,30 @@ if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     if not sr:
         st.markdown("""
-        <div style="text-align:center;padding:48px 16px 32px">
-          <div style="font-size:4rem;margin-bottom:14px;animation:pulse 2s infinite;display:inline-block">⚡</div>
-          <style>@keyframes pulse{0%,100%{filter:drop-shadow(0 0 16px rgba(255,107,0,0.6))}50%{filter:drop-shadow(0 0 40px rgba(255,214,10,0.9))}}</style>
-          <div style="font-family:'Outfit',sans-serif;font-size:1.5rem;font-weight:900;color:#fff;margin-bottom:8px;letter-spacing:-1px">
-            <span style="background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
-              ¡Bienvenido al Den!
-            </span>
-          </div>
-          <div style="font-size:0.90rem;color:#B0B0B8;line-height:1.8;margin-bottom:28px">
-            Toca <b style="color:#FF6B00">⚙️ CONFIG</b> en la barra inferior<br>
+        <div style="text-align:center;padding:44px 16px 28px">
+          <div style="font-size:3.8rem;margin-bottom:12px;display:inline-block;
+            animation:glow-pulse 2s ease-in-out infinite">⚡</div>
+          <style>@keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 12px rgba(255,107,0,0.5))}50%{filter:drop-shadow(0 0 36px rgba(255,214,10,0.9))}}</style>
+          <div style="font-size:1.5rem;font-weight:900;letter-spacing:-1px;margin-bottom:8px;
+            background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;
+            -webkit-text-fill-color:transparent;background-clip:text">¡Bienvenido al Den!</div>
+          <div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">
+            Toca <b style="color:#FF6B00">⚙️ CONFIG</b> en la barra de abajo<br>
             y presiona <b style="color:#FFD60A">🚀 Analizar ahora</b>
           </div>
-          <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:20px">
-            <div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.04));border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;font-size:0.75rem;font-weight:800;color:#FF6B00;letter-spacing:0.5px">⚡ Monte Carlo</div>
-            <div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.04));border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;font-size:0.75rem;font-weight:800;color:#FFD60A;letter-spacing:0.5px">🎯 EV+ Picks</div>
-            <div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.04));border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;font-size:0.75rem;font-weight:800;color:#00E676;letter-spacing:0.5px">🎰 Parlays</div>
+          <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:22px">
+            <div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.03));
+              border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;
+              font-size:0.74rem;font-weight:800;color:#FF6B00;letter-spacing:0.5px">⚡ Monte Carlo</div>
+            <div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.03));
+              border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;
+              font-size:0.74rem;font-weight:800;color:#FFD60A;letter-spacing:0.5px">🎯 EV+ Picks</div>
+            <div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.03));
+              border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;
+              font-size:0.74rem;font-weight:800;color:#00E676;letter-spacing:0.5px">🎰 Parlays</div>
           </div>
-          <div style="font-size:0.62rem;color:#404048;letter-spacing:1.5px;text-transform:uppercase">10,000 sims · ESPN Live · Monte Carlo</div>
+          <div style="font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase">
+            10,000 sims · ESPN Live · Monte Carlo</div>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -8658,12 +8575,11 @@ elif _active_page == "Reto 13M":
 elif _active_page == "Config":
     st.markdown("""
     <div style="text-align:center;padding:28px 0 16px">
-      <div style="font-size:3rem;filter:drop-shadow(0 0 20px rgba(255,107,0,0.5));margin-bottom:8px">⚙️</div>
-      <div style="font-family:'Outfit',sans-serif;font-size:1.4rem;font-weight:900;letter-spacing:-1px;
-        background:linear-gradient(135deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
-        Configuración
-      </div>
-      <div style="font-size:0.58rem;color:#404048;letter-spacing:3px;text-transform:uppercase;margin-top:4px">ajusta · analiza · gana</div>
+      <div style="font-size:3rem;margin-bottom:8px;filter:drop-shadow(0 0 20px rgba(255,107,0,0.45))">⚙️</div>
+      <div style="font-size:1.4rem;font-weight:900;letter-spacing:-1px;
+        background:linear-gradient(135deg,#FF6B00,#FFD60A);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;">Configuración</div>
+      <div style="font-size:0.57rem;color:#404048;letter-spacing:3px;text-transform:uppercase;margin-top:5px">ajusta · analiza · gana</div>
     </div>
     """, unsafe_allow_html=True)
 
