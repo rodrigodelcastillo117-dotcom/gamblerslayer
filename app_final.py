@@ -23,76 +23,61 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   --black: #050508;
   --d1:    #09090E;
-  --d2:    #0D0D15;
-  --d3:    #12121C;
-  --d4:    #181825;
-  --v:     #7C3AED;
-  --v2:    #9333EA;
-  --v3:    #A855F7;
+  --d2:    #0E0E16;
+  --d3:    #131320;
+  --d4:    #18182A;
+  --v:     #6D28D9;
+  --v2:    #7C3AED;
+  --v3:    #8B5CF6;
   --blue:  #2563EB;
-  --blue2: #3B82F6;
-  --cyan:  #06B6D4;
-  --neon:  #00FF94;
-  --lime:  #84CC16;
-  --orange:#F97316;
-  --red:   #EF4444;
-  --pink:  #EC4899;
-  --amber: #F59E0B;
-  --text:  #F0F0F8;
-  --text2: #7878A0;
-  --text3: #32324A;
+  --cyan:  #0891B2;
+  --green: #059669;
+  --neon:  #10B981;
+  --orange:#EA580C;
+  --red:   #DC2626;
+  --amber: #D97706;
+  --text:  #E8E8F0;
+  --text2: #6B6B90;
+  --text3: #2A2A40;
   --white: #FFFFFF;
   /* compat */
-  --bg:#050508;--bg2:#09090E;--bg3:#0D0D15;--card:#0D0D15;--card2:#12121C;
-  --border:rgba(124,58,237,0.18);--muted:#32324A;
-  --gold:#F59E0B;--gold2:#F97316;--felt:#050508;--dark:#050508;
-  --green:#00FF94;--purple:#A855F7;--nav-h:64px;--orange2:#F97316;
+  --bg:#050508;--bg2:#09090E;--bg3:#0E0E16;--card:#0E0E16;--card2:#131320;
+  --border:rgba(109,40,217,0.15);--muted:#2A2A40;
+  --gold:#D97706;--gold2:#EA580C;--felt:#050508;--dark:#050508;
+  --green:#10B981;--purple:#8B5CF6;--nav-h:64px;--orange2:#EA580C;
+  --cyan2:#0891B2;
 }
 
-@keyframes gradient-x {
-  0%,100% { background-position:0% 50%; }
-  50%      { background-position:100% 50%; }
+@keyframes live-blink {
+  0%,100% { opacity:1; } 50% { opacity:0.3; }
 }
-@keyframes shimmer {
+@keyframes fade-up {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes shimmer-slow {
   0%   { background-position:-200% 0; }
   100% { background-position: 200% 0; }
 }
-@keyframes fade-up {
-  from { opacity:0; transform:translateY(14px); }
-  to   { opacity:1; transform:translateY(0); }
-}
-@keyframes pulse-dot {
-  0%,100% { transform:scale(1); opacity:1; }
-  50%      { transform:scale(1.4); opacity:0.7; }
-}
-@keyframes glow-v {
-  0%,100% { box-shadow:0 0 12px rgba(124,58,237,0.3); }
-  50%      { box-shadow:0 0 28px rgba(124,58,237,0.6),0 0 48px rgba(124,58,237,0.2); }
-}
-@keyframes spin {
-  to { transform:rotate(360deg); }
-}
 
-*  { box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+* { box-sizing:border-box; -webkit-font-smoothing:antialiased; }
 html,body,.stApp,.main,.stMainBlockContainer {
   background:#050508 !important;
-  color:#F0F0F8 !important;
+  color:#E8E8F0 !important;
   font-family:'Inter',sans-serif !important;
 }
 
-/* Vivid mesh bg */
+/* Subtle ambient */
 .stApp::before {
   content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
   background:
-    radial-gradient(ellipse 70% 50% at 15% -5%,  rgba(124,58,237,0.14) 0%,transparent 60%),
-    radial-gradient(ellipse 50% 40% at 85% 105%, rgba(6,182,212,0.10)  0%,transparent 60%),
-    radial-gradient(ellipse 60% 35% at 50% 50%,  rgba(0,255,148,0.03)  0%,transparent 70%),
-    radial-gradient(ellipse 40% 30% at 90% 10%,  rgba(249,115,22,0.06) 0%,transparent 50%);
+    radial-gradient(ellipse 50% 35% at 5% 0%, rgba(109,40,217,0.07) 0%,transparent 70%),
+    radial-gradient(ellipse 40% 30% at 95% 100%, rgba(8,145,178,0.05) 0%,transparent 70%);
 }
 
 /* HIDE CHROME */
@@ -106,7 +91,7 @@ button[title="Manage app"],button[aria-label="Manage app"],
 [class*="ToolbarActions"],[class*="deployButton"]{display:none !important;}
 
 ::-webkit-scrollbar{width:2px;}
-::-webkit-scrollbar-thumb{background:linear-gradient(#7C3AED,#06B6D4);border-radius:2px;}
+::-webkit-scrollbar-thumb{background:#6D28D9;border-radius:2px;}
 
 /* LAYOUT */
 .block-container{
@@ -119,296 +104,251 @@ button[title="Manage app"],button[aria-label="Manage app"],
 @media(min-width:1280px){.block-container{max-width:1260px !important;padding:0 64px 48px !important;}}
 
 /* ══ HEADER ══ */
-.den-header{text-align:center;padding:28px 0 0;}
-.den-logo {
+.den-header{text-align:center;padding:24px 0 0;}
+.den-logo{
   font-family:'Bebas Neue',sans-serif;
-  font-size:3.2rem; font-weight:400; letter-spacing:5px; line-height:1;
-  background:linear-gradient(90deg,#7C3AED,#A855F7,#06B6D4,#00FF94,#F97316,#EF4444,#7C3AED);
-  background-size:300% 100%;
-  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-  animation:gradient-x 6s ease infinite;
-  filter:drop-shadow(0 0 32px rgba(124,58,237,0.5));
+  font-size:3rem; font-weight:400; letter-spacing:6px; line-height:1;
+  color:#FFFFFF;
+  text-shadow: 0 0 40px rgba(109,40,217,0.3);
 }
 .den-subtitle{
   font-family:'JetBrains Mono',monospace;
-  font-size:0.52rem; color:#32324A; letter-spacing:5px; text-transform:uppercase; margin-top:8px;
+  font-size:0.50rem; color:#2A2A40; letter-spacing:5px; text-transform:uppercase; margin-top:6px;
 }
-.den-divider{display:none;}
+.den-divider{
+  width:100%; height:1px; margin:12px 0;
+  background:linear-gradient(90deg,transparent,rgba(109,40,217,0.35) 30%,rgba(8,145,178,0.35) 70%,transparent);
+}
 .den-corner{display:none;}
 
 /* ══ NAV ══ */
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child [data-testid="stHorizontalBlock"] {
+[data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) [data-testid="stHorizontalBlock"] {
   position:sticky !important; top:0 !important; z-index:9999 !important;
-  background:rgba(5,5,8,0.94) !important;
-  backdrop-filter:blur(28px) saturate(200%) !important;
-  -webkit-backdrop-filter:blur(28px) saturate(200%) !important;
-  margin:10px -16px 0 !important; width:calc(100% + 32px) !important;
-  padding:8px 8px 6px !important;
-  border-bottom:1px solid rgba(124,58,237,0.18) !important;
-  gap:4px !important;
+  background:rgba(5,5,8,0.97) !important;
+  backdrop-filter:blur(24px) !important;
+  -webkit-backdrop-filter:blur(24px) !important;
+  margin:0 -16px !important; width:calc(100% + 32px) !important;
+  padding:6px 8px !important;
+  border-bottom:1px solid rgba(109,40,217,0.15) !important;
+  gap:2px !important;
 }
 @media(min-width:860px){
-  [data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child [data-testid="stHorizontalBlock"]{
-    margin:10px -40px 0 !important; width:calc(100% + 80px) !important; padding:8px 24px 6px !important;
+  [data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) [data-testid="stHorizontalBlock"]{
+    margin:0 -40px !important; width:calc(100% + 80px) !important; padding:6px 24px !important;
   }
 }
-/* Rainbow shimmer line */
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child [data-testid="stHorizontalBlock"]::after{
-  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,#7C3AED,#06B6D4,#00FF94,#F97316,#EF4444,#A855F7);
-  background-size:300% 100%; animation:gradient-x 4s ease infinite;
-}
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child [data-testid="column"]{
-  padding:0 2px !important;
-}
-/* Nav buttons */
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child button{
-  all:unset !important; width:100% !important;
-  display:flex !important; flex-direction:column !important;
-  align-items:center !important; justify-content:center !important;
-  gap:2px !important; padding:9px 4px 7px !important;
-  cursor:pointer !important; border-radius:10px !important;
-  transition:all 0.18s !important; white-space:pre-line !important;
-  font-family:'Inter',sans-serif !important; color:#32324A !important;
-  font-size:0.38rem !important; font-weight:700 !important;
+[data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) [data-testid="column"]{padding:0 1px !important;}
+[data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) button{
+  all:unset !important; width:100% !important; display:flex !important;
+  flex-direction:column !important; align-items:center !important; justify-content:center !important;
+  gap:2px !important; padding:8px 2px 6px !important; cursor:pointer !important;
+  border-radius:8px !important; transition:all 0.15s !important; white-space:pre-line !important;
+  font-family:'Inter',sans-serif !important; color:#2A2A40 !important;
+  font-size:0.37rem !important; font-weight:700 !important;
   letter-spacing:1px !important; text-transform:uppercase !important;
   line-height:1.4 !important; box-sizing:border-box !important;
   border:1px solid transparent !important;
   -webkit-tap-highlight-color:transparent !important;
 }
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child button p{
+[data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) button p{
   white-space:pre-line !important; text-align:center !important;
   margin:0 !important; font-size:inherit !important; color:inherit !important;
 }
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child button p::first-line{
-  font-size:1.2rem !important; line-height:1.5 !important;
-}
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child button:hover{
-  color:#A855F7 !important; background:rgba(124,58,237,0.1) !important;
-  border-color:rgba(124,58,237,0.25) !important;
-}
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child button[kind="primary"]{
-  color:#F0F0F8 !important;
-  background:linear-gradient(135deg,rgba(124,58,237,0.25),rgba(6,182,212,0.15)) !important;
-  border:1px solid rgba(124,58,237,0.45) !important;
-  box-shadow:0 0 20px rgba(124,58,237,0.2),inset 0 1px 0 rgba(255,255,255,0.07) !important;
+[data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) button p::first-line{font-size:1.15rem !important; line-height:1.5 !important;}
+[data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) button:hover{color:#8B5CF6 !important;background:rgba(109,40,217,0.08) !important;border-color:rgba(109,40,217,0.2) !important;}
+[data-testid="stVerticalBlock"] > [data-testid="element-container"]:nth-child(2) button[kind="primary"]{
+  color:#FFFFFF !important;
+  background:rgba(109,40,217,0.2) !important;
+  border:1px solid rgba(109,40,217,0.5) !important;
+  box-shadow:0 0 16px rgba(109,40,217,0.15) !important;
   font-weight:800 !important;
 }
 
 /* ══ STAT TILES ══ */
-.stat-grid{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap;}
+.stat-grid{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
 .stat-tile{
-  flex:1; min-width:62px;
-  background:linear-gradient(145deg,#0D0D15,#11111C);
+  flex:1; min-width:60px;
+  background:#0E0E16;
   border:1px solid rgba(255,255,255,0.05);
-  border-radius:14px; padding:14px 6px; text-align:center;
-  transition:all 0.3s; position:relative; overflow:hidden;
+  border-top:1px solid rgba(109,40,217,0.3);
+  border-radius:12px; padding:14px 6px; text-align:center;
+  transition:all 0.25s; position:relative; overflow:hidden;
   animation:fade-up 0.4s ease both;
 }
-/* Colored top accent per tile — set via inline style on stat-num color */
-.stat-tile::before{
-  content:''; position:absolute; top:0; left:0; right:0; height:2px;
-  background:linear-gradient(90deg,#7C3AED,#06B6D4,#00FF94);
-  background-size:200% 100%; animation:shimmer 3s linear infinite;
-}
-.stat-tile:hover{
-  border-color:rgba(124,58,237,0.3); transform:translateY(-4px) scale(1.02);
-  box-shadow:0 12px 32px rgba(0,0,0,0.5),0 0 24px rgba(124,58,237,0.1);
-}
-.stat-num{
-  font-family:'Bebas Neue',sans-serif;
-  font-size:2.1rem; font-weight:400; line-height:1; letter-spacing:1px;
-}
-.stat-label{
-  font-family:'JetBrains Mono',monospace;
-  font-size:0.42rem; color:#32324A; letter-spacing:1.5px; text-transform:uppercase; margin-top:5px;
-}
+.stat-tile:hover{border-color:rgba(109,40,217,0.4);transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4),0 0 16px rgba(109,40,217,0.08);}
+.stat-num{font-family:'Bebas Neue',sans-serif;font-size:2rem;font-weight:400;line-height:1;letter-spacing:1px;}
+.stat-label{font-family:'JetBrains Mono',monospace;font-size:0.42rem;color:#2A2A40;letter-spacing:1.5px;text-transform:uppercase;margin-top:5px;}
 
-/* ══ PICK CARD ══ */
+/* ══ PICK CARD — Modern Sports App Style ══ */
 .pick-card{
-  background:linear-gradient(155deg,rgba(13,13,21,0.98),rgba(17,17,26,0.95));
-  border:1px solid rgba(124,58,237,0.18);
-  border-radius:20px; margin:12px 0; overflow:hidden;
-  backdrop-filter:blur(12px);
-  box-shadow:0 4px 32px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.04);
-  position:relative; transition:all 0.3s;
-  animation:fade-up 0.4s ease both;
+  background:#0E0E16;
+  border:1px solid rgba(255,255,255,0.07);
+  border-radius:18px; margin:10px 0; overflow:hidden;
+  box-shadow:0 2px 20px rgba(0,0,0,0.4);
+  position:relative; transition:all 0.25s;
+  animation:fade-up 0.35s ease both;
 }
 .pick-card:hover{
-  border-color:rgba(124,58,237,0.38); transform:translateY(-3px);
-  box-shadow:0 16px 48px rgba(0,0,0,0.65),0 0 40px rgba(124,58,237,0.12);
+  border-color:rgba(109,40,217,0.3); transform:translateY(-2px);
+  box-shadow:0 8px 32px rgba(0,0,0,0.5),0 0 24px rgba(109,40,217,0.08);
 }
+/* Color accent bar top */
 .pick-card::before{
-  content:''; position:absolute; top:0; left:0; right:0; height:3px;
-  background:linear-gradient(90deg,#7C3AED,#A855F7,#06B6D4,#00FF94,#F97316,#EF4444,#7C3AED);
-  background-size:300% 100%; animation:gradient-x 5s ease infinite;
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,#6D28D9,#0891B2);
 }
 .pick-card::after{display:none;}
 
 .pick-header{
-  padding:16px 20px 12px; border-bottom:1px solid rgba(255,255,255,0.05);
+  padding:14px 18px 10px; border-bottom:1px solid rgba(255,255,255,0.05);
   display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;
 }
-.pick-matchup{
-  font-family:'Inter',sans-serif; font-size:1.02rem; font-weight:700; color:#F0F0F8;
-}
+.pick-matchup{font-family:'Inter',sans-serif;font-size:0.97rem;font-weight:700;color:#E8E8F0;}
 .pick-league-badge{
-  font-family:'JetBrains Mono',monospace; font-size:0.54rem; color:#A855F7;
-  background:rgba(168,85,247,0.1); border:1px solid rgba(168,85,247,0.25);
-  padding:3px 10px; border-radius:20px; font-weight:500;
+  font-family:'JetBrains Mono',monospace;font-size:0.54rem;color:#8B5CF6;
+  background:rgba(109,40,217,0.1);border:1px solid rgba(109,40,217,0.25);
+  padding:3px 10px;border-radius:20px;font-weight:500;
 }
-.pick-body{padding:14px 20px;}
+.pick-body{padding:12px 18px;}
 .pick-action{
-  font-family:'Bebas Neue',sans-serif; font-size:1.85rem; font-weight:400; letter-spacing:2px;
-  background:linear-gradient(90deg,#7C3AED,#06B6D4,#00FF94);
-  background-size:200% 100%; animation:shimmer 5s linear infinite;
-  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-  margin:6px 0 10px; display:flex; align-items:center; gap:10px;
+  font-family:'Bebas Neue',sans-serif; font-size:1.7rem; font-weight:400; letter-spacing:2px;
+  color:#FFFFFF;
+  margin:6px 0 8px; display:flex; align-items:center; gap:10px;
   flex-wrap:wrap; padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.05);
 }
-.pick-action-arrow{-webkit-text-fill-color:#00FF94; font-size:1.3rem;}
+.pick-action-arrow{color:#10B981;font-size:1.2rem;}
 
 /* CHIPS */
-.market-chip{
-  display:inline-block; font-family:'JetBrains Mono',monospace;
-  font-size:0.54rem; font-weight:600; letter-spacing:0.5px;
-  text-transform:uppercase; padding:3px 10px; border-radius:20px; margin-right:4px;
-}
-.chip-ml    {background:rgba(124,58,237,0.12); color:#A855F7; border:1px solid rgba(124,58,237,0.3);}
-.chip-btts  {background:rgba(0,255,148,0.08);  color:#00FF94; border:1px solid rgba(0,255,148,0.2);}
-.chip-ou    {background:rgba(245,158,11,0.1);   color:#F59E0B; border:1px solid rgba(245,158,11,0.25);}
-.chip-ou-u  {background:rgba(6,182,212,0.08);   color:#06B6D4; border:1px solid rgba(6,182,212,0.2);}
-.chip-combo {background:rgba(249,115,22,0.08);  color:#F97316; border:1px solid rgba(249,115,22,0.2);}
-.chip-dc    {background:rgba(59,130,246,0.1);   color:#3B82F6; border:1px solid rgba(59,130,246,0.25);}
-.chip-parlay{background:rgba(0,255,148,0.08);   color:#00FF94; border:1px solid rgba(0,255,148,0.2);}
-.chip-warn  {background:rgba(239,68,68,0.08);   color:#EF4444; border:1px solid rgba(239,68,68,0.2);}
+.market-chip{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:0.54rem;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;padding:3px 10px;border-radius:20px;margin-right:4px;}
+.chip-ml    {background:rgba(109,40,217,0.12);color:#8B5CF6;border:1px solid rgba(109,40,217,0.3);}
+.chip-btts  {background:rgba(16,185,129,0.08);color:#10B981;border:1px solid rgba(16,185,129,0.2);}
+.chip-ou    {background:rgba(217,119,6,0.10);  color:#D97706;border:1px solid rgba(217,119,6,0.25);}
+.chip-ou-u  {background:rgba(8,145,178,0.08);  color:#0891B2;border:1px solid rgba(8,145,178,0.2);}
+.chip-combo {background:rgba(234,88,12,0.08);  color:#EA580C;border:1px solid rgba(234,88,12,0.2);}
+.chip-dc    {background:rgba(37,99,235,0.10);  color:#2563EB;border:1px solid rgba(37,99,235,0.25);}
+.chip-parlay{background:rgba(16,185,129,0.08); color:#10B981;border:1px solid rgba(16,185,129,0.2);}
+.chip-warn  {background:rgba(220,38,38,0.08);  color:#DC2626;border:1px solid rgba(220,38,38,0.2);}
 
 /* STATS ROW */
 .stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);border-bottom:1px solid rgba(255,255,255,0.05);}
 .stat-item{text-align:center;min-width:56px;}
 .stat-item-val{font-family:'Bebas Neue',sans-serif;font-size:1.3rem;font-weight:400;line-height:1;letter-spacing:1px;}
-.stat-item-lbl{font-family:'JetBrains Mono',monospace;font-size:0.50rem;color:#32324A;letter-spacing:0.5px;text-transform:uppercase;margin-top:3px;}
-.val-gold   {color:#F59E0B;} .val-orange {color:#F97316;} .val-yellow {color:#F59E0B;}
-.val-green  {color:#00FF94;} .val-cyan   {color:#06B6D4;} .val-blue   {color:#3B82F6;}
-.val-purple {color:#A855F7;} .val-red    {color:#EF4444;} .val-muted  {color:#32324A;} .val-white{color:#fff;}
+.stat-item-lbl{font-family:'JetBrains Mono',monospace;font-size:0.50rem;color:#2A2A40;letter-spacing:0.5px;text-transform:uppercase;margin-top:3px;}
+.val-gold  {color:#D97706;} .val-orange{color:#EA580C;} .val-yellow{color:#D97706;}
+.val-green {color:#10B981;} .val-cyan  {color:#0891B2;} .val-blue  {color:#2563EB;}
+.val-purple{color:#8B5CF6;} .val-red   {color:#DC2626;} .val-muted {color:#2A2A40;} .val-white{color:#fff;}
 
 /* CONF BADGE */
 .conf-badge{display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:0.54rem;font-weight:500;text-transform:uppercase;padding:3px 10px;border-radius:20px;}
-.conf-high  {background:rgba(0,255,148,0.1);  color:#00FF94; border:1px solid rgba(0,255,148,0.25); animation:glow-v 2.5s infinite;}
-.conf-medium{background:rgba(245,158,11,0.1); color:#F59E0B; border:1px solid rgba(245,158,11,0.25);}
-.conf-low   {background:rgba(239,68,68,0.1);  color:#EF4444; border:1px solid rgba(239,68,68,0.25);}
-.pick-rationale{font-size:0.83rem;color:#7878A0;line-height:1.8;margin-top:10px;}
-.pick-rationale b{color:#F0F0F8;}
+.conf-high  {background:rgba(16,185,129,0.1); color:#10B981;border:1px solid rgba(16,185,129,0.25);}
+.conf-medium{background:rgba(217,119,6,0.1);  color:#D97706;border:1px solid rgba(217,119,6,0.25);}
+.conf-low   {background:rgba(220,38,38,0.1);  color:#DC2626;border:1px solid rgba(220,38,38,0.25);}
+.pick-rationale{font-size:0.83rem;color:#6B6B90;line-height:1.8;margin-top:10px;}
+.pick-rationale b{color:#E8E8F0;}
 
 /* PARLAY CARD */
 .parlay-card{
-  background:linear-gradient(155deg,rgba(5,18,10,0.98),rgba(8,22,14,0.95));
-  border:1px solid rgba(0,255,148,0.15); border-radius:20px; margin:12px 0; overflow:hidden;
-  box-shadow:0 0 40px rgba(0,255,148,0.04),0 4px 32px rgba(0,0,0,0.5); position:relative; transition:all 0.3s;
+  background:#0A140E; border:1px solid rgba(16,185,129,0.15);
+  border-radius:18px;margin:10px 0;overflow:hidden;
+  box-shadow:0 2px 20px rgba(0,0,0,0.4);position:relative;transition:all 0.25s;
 }
-.parlay-card:hover{border-color:rgba(0,255,148,0.3);box-shadow:0 0 60px rgba(0,255,148,0.08),0 8px 40px rgba(0,0,0,0.6);}
-.parlay-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#00FF94,#06B6D4,#00FF94,transparent);}
-.parlay-header{background:rgba(0,255,148,0.05);border-bottom:1px solid rgba(0,255,148,0.08);padding:12px 20px;font-family:'JetBrains Mono',monospace;font-size:0.70rem;font-weight:600;color:#00FF94;letter-spacing:2px;text-transform:uppercase;}
+.parlay-card:hover{border-color:rgba(16,185,129,0.3);box-shadow:0 8px 32px rgba(0,0,0,0.5);}
+.parlay-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#059669,#0891B2);}
+.parlay-header{background:rgba(16,185,129,0.05);border-bottom:1px solid rgba(16,185,129,0.08);padding:12px 18px;font-family:'JetBrains Mono',monospace;font-size:0.70rem;font-weight:600;color:#10B981;letter-spacing:2px;text-transform:uppercase;}
 .parlay-body{padding:10px 16px;}
-.parlay-leg{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.84rem;color:#F0F0F8;}
+.parlay-leg{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.84rem;color:#E8E8F0;}
 .parlay-leg:last-child{border-bottom:none;}
-.parlay-connector{text-align:center;font-family:'JetBrains Mono',monospace;color:#7C3AED;font-size:0.58rem;letter-spacing:3px;padding:2px 0;}
+.parlay-connector{text-align:center;font-family:'JetBrains Mono',monospace;color:#6D28D9;font-size:0.58rem;letter-spacing:3px;padding:2px 0;}
 
 /* GAME ROW */
 .game-row{
-  background:rgba(13,13,21,0.9); border:1px solid rgba(255,255,255,0.05);
-  border-radius:12px; padding:11px 14px; margin:5px 0;
-  transition:all 0.25s; position:relative; overflow:hidden;
+  background:#0E0E16;border:1px solid rgba(255,255,255,0.05);
+  border-radius:12px;padding:11px 14px;margin:5px 0;
+  transition:all 0.2s;position:relative;overflow:hidden;
 }
-.game-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#7C3AED,#06B6D4);opacity:0.25;transition:all 0.2s;border-radius:0 2px 2px 0;}
-.game-row:hover{border-color:rgba(124,58,237,0.2);background:rgba(17,17,26,0.95);transform:translateX(4px);}
-.game-row:hover::before{opacity:1;background:linear-gradient(180deg,#7C3AED,#06B6D4,#00FF94);}
-.game-row-ev::before{background:linear-gradient(180deg,#00FF94,#06B6D4);opacity:0.5;}
-.game-title{font-family:'Inter',sans-serif;font-size:0.89rem;font-weight:600;color:#F0F0F8;}
-.game-meta{font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#32324A;margin-top:3px;}
+.game-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:#6D28D9;opacity:0.2;transition:opacity 0.2s;}
+.game-row:hover{border-color:rgba(109,40,217,0.2);background:#111118;transform:translateX(3px);}
+.game-row:hover::before{opacity:1;}
+.game-row-ev::before{background:#10B981;opacity:0.5;}
+.game-title{font-family:'Inter',sans-serif;font-size:0.88rem;font-weight:600;color:#E8E8F0;}
+.game-meta{font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#2A2A40;margin-top:3px;}
 
 /* BARS */
 .bar-wrap{margin:3px 0;}.bar-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
-.bar-team{font-size:0.72rem;color:#7878A0;}.bar-pct{font-family:'JetBrains Mono',monospace;font-size:0.72rem;font-weight:500;}
+.bar-team{font-size:0.72rem;color:#6B6B90;}.bar-pct{font-family:'JetBrains Mono',monospace;font-size:0.72rem;font-weight:500;}
 .bar-bg{background:rgba(255,255,255,0.04);border-radius:2px;height:3px;}.bar-fill{height:3px;border-radius:2px;}
 
 /* SECTION HEADING */
 .section-heading{
-  font-family:'JetBrains Mono',monospace; font-size:0.60rem; font-weight:700; color:#32324A;
-  letter-spacing:3px; text-transform:uppercase; margin:22px 0 12px;
-  display:flex; align-items:center; gap:12px;
+  font-family:'JetBrains Mono',monospace;font-size:0.60rem;font-weight:600;color:#2A2A40;
+  letter-spacing:3px;text-transform:uppercase;margin:20px 0 10px;display:flex;align-items:center;gap:10px;
 }
-.section-heading::before{
-  content:''; display:inline-block; width:8px; height:8px;
-  border-radius:50%; background:linear-gradient(135deg,#7C3AED,#06B6D4);
-  flex-shrink:0;
-}
-.section-heading::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(124,58,237,0.25),transparent);}
+.section-heading::before{content:'▸';color:#6D28D9;font-size:0.7rem;}
+.section-heading::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(109,40,217,0.2),transparent);}
 
 /* BANNERS */
-.warn-banner{background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);border-left:2px solid #F59E0B;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#F59E0B;margin:8px 0;}
-.demo-banner{background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.15);border-left:2px solid #EF4444;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#EF4444;margin:8px 0;}
+.warn-banner{background:rgba(217,119,6,0.05);border:1px solid rgba(217,119,6,0.15);border-left:2px solid #D97706;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#D97706;margin:8px 0;}
+.demo-banner{background:rgba(220,38,38,0.05);border:1px solid rgba(220,38,38,0.15);border-left:2px solid #DC2626;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#DC2626;margin:8px 0;}
 
 /* REGULAR BUTTONS */
 .stButton > button{
-  background:rgba(255,255,255,0.03) !important; color:#7878A0 !important;
-  font-family:'Inter',sans-serif !important; font-size:0.80rem !important;
-  font-weight:600 !important; border:1px solid rgba(255,255,255,0.07) !important;
-  padding:10px 16px !important; border-radius:10px !important;
-  width:100% !important; transition:all 0.2s !important;
+  background:rgba(255,255,255,0.03) !important;color:#6B6B90 !important;
+  font-family:'Inter',sans-serif !important;font-size:0.80rem !important;
+  font-weight:600 !important;border:1px solid rgba(255,255,255,0.07) !important;
+  padding:10px 16px !important;border-radius:10px !important;
+  width:100% !important;transition:all 0.2s !important;
 }
-.stButton > button:hover{background:rgba(124,58,237,0.1) !important;border-color:rgba(124,58,237,0.35) !important;color:#A855F7 !important;}
+.stButton > button:hover{background:rgba(109,40,217,0.1) !important;border-color:rgba(109,40,217,0.35) !important;color:#8B5CF6 !important;}
 .stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{
-  background:linear-gradient(90deg,#7C3AED,#A855F7,#06B6D4,#7C3AED) !important;
-  background-size:300% 100% !important; animation:gradient-x 3s ease infinite !important;
-  color:#fff !important; border:none !important; font-weight:700 !important;
-  box-shadow:0 0 24px rgba(124,58,237,0.4),0 4px 16px rgba(0,0,0,0.5) !important;
+  background:linear-gradient(135deg,#5B21B6,#6D28D9) !important;
+  color:#fff !important;border:none !important;font-weight:700 !important;
+  box-shadow:0 4px 16px rgba(109,40,217,0.35),0 2px 8px rgba(0,0,0,0.3) !important;
   border-radius:10px !important;
 }
-.stButton > button[kind="primary"]:hover{box-shadow:0 0 40px rgba(124,58,237,0.6),0 8px 24px rgba(0,0,0,0.5) !important;transform:translateY(-1px) !important;}
-.stDownloadButton > button{background:rgba(255,255,255,0.03) !important;color:#A855F7 !important;border:1px solid rgba(124,58,237,0.25) !important;border-radius:10px !important;}
+.stButton > button[kind="primary"]:hover{background:linear-gradient(135deg,#6D28D9,#7C3AED) !important;box-shadow:0 6px 24px rgba(109,40,217,0.5) !important;transform:translateY(-1px) !important;}
+.stDownloadButton > button{background:rgba(255,255,255,0.03) !important;color:#8B5CF6 !important;border:1px solid rgba(109,40,217,0.25) !important;border-radius:10px !important;}
 
 /* INPUTS */
 div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,div[data-testid="stTextArea"] textarea{
   background:#09090E !important;border:1px solid rgba(255,255,255,0.07) !important;
-  border-radius:10px !important;color:#F0F0F8 !important;
+  border-radius:10px !important;color:#E8E8F0 !important;
   font-family:'Inter',sans-serif !important;font-size:16px !important;
 }
-div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{border-color:rgba(124,58,237,0.45) !important;box-shadow:0 0 0 2px rgba(124,58,237,0.1),0 0 20px rgba(124,58,237,0.08) !important;}
-div[data-testid="stSelectbox"] > div > div{background:#09090E !important;border:1px solid rgba(255,255,255,0.07) !important;border-radius:10px !important;color:#F0F0F8 !important;}
+div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{border-color:rgba(109,40,217,0.45) !important;box-shadow:0 0 0 2px rgba(109,40,217,0.1) !important;}
+div[data-testid="stSelectbox"] > div > div{background:#09090E !important;border:1px solid rgba(255,255,255,0.07) !important;border-radius:10px !important;color:#E8E8F0 !important;}
 div[data-testid="stSelectbox"] label,div[data-testid="stTextInput"] label,
 div[data-testid="stNumberInput"] label,div[data-testid="stSlider"] label,div[data-testid="stRadio"] label{
-  color:#A855F7 !important;font-family:'Inter',sans-serif !important;
+  color:#8B5CF6 !important;font-family:'Inter',sans-serif !important;
   font-size:0.70rem !important;font-weight:600 !important;text-transform:uppercase !important;letter-spacing:0.5px !important;
 }
 div[data-testid="stMultiSelect"] > div > div{background:#09090E !important;border:1px solid rgba(255,255,255,0.07) !important;border-radius:10px !important;}
 
 /* EXPANDERS */
-[data-testid="stExpander"] > details > summary{background:#09090E !important;color:#F0F0F8 !important;border:1px solid rgba(255,255,255,0.06) !important;border-radius:10px !important;font-family:'Inter',sans-serif !important;font-weight:600 !important;}
-[data-testid="stExpander"] > details > summary:hover{border-color:rgba(124,58,237,0.3) !important;}
+[data-testid="stExpander"] > details > summary{background:#09090E !important;color:#E8E8F0 !important;border:1px solid rgba(255,255,255,0.06) !important;border-radius:10px !important;font-family:'Inter',sans-serif !important;font-weight:600 !important;}
+[data-testid="stExpander"] > details > summary:hover{border-color:rgba(109,40,217,0.3) !important;}
 [data-testid="stExpander"] > details > div{background:#07070C !important;border:1px solid rgba(255,255,255,0.05) !important;border-top:none !important;border-radius:0 0 10px 10px !important;padding:10px 8px !important;}
 [data-testid="stExpander"]{background:transparent !important;border:none !important;box-shadow:none !important;}
 
 /* MISC */
-.empty-state{text-align:center;padding:48px 20px;color:#32324A;}
+.empty-state{text-align:center;padding:48px 20px;color:#2A2A40;}
 .empty-icon{font-size:3.5rem;margin-bottom:14px;}
-.empty-title{font-family:'Bebas Neue',sans-serif;font-size:1.5rem;letter-spacing:2px;color:#F0F0F8;margin-bottom:8px;}
+.empty-title{font-family:'Bebas Neue',sans-serif;font-size:1.5rem;letter-spacing:2px;color:#E8E8F0;margin-bottom:8px;}
 hr{border-color:rgba(255,255,255,0.05) !important;}
-.stSpinner > div{border-top-color:#7C3AED !important;}
-div[data-testid="stCaptionContainer"] p{color:#32324A !important;font-family:'JetBrains Mono',monospace !important;font-size:0.64rem !important;}
-div[data-testid="stMetric"]{background:#09090E;border-radius:12px;padding:14px;border:1px solid rgba(124,58,237,0.12);border-top:2px solid rgba(124,58,237,0.35);}
-div[data-testid="stMetricValue"]{color:#F0F0F8 !important;font-family:'Bebas Neue',sans-serif !important;letter-spacing:1px !important;}
-div[data-testid="stMetricLabel"]{color:#32324A !important;}
-.stToast{background:#09090E !important;border:1px solid rgba(124,58,237,0.2) !important;border-radius:10px !important;}
+.stSpinner > div{border-top-color:#6D28D9 !important;}
+div[data-testid="stCaptionContainer"] p{color:#2A2A40 !important;font-family:'JetBrains Mono',monospace !important;font-size:0.64rem !important;}
+div[data-testid="stMetric"]{background:#09090E;border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.06);border-top:2px solid rgba(109,40,217,0.35);}
+div[data-testid="stMetricValue"]{color:#E8E8F0 !important;font-family:'Bebas Neue',sans-serif !important;letter-spacing:1px !important;}
+div[data-testid="stMetricLabel"]{color:#2A2A40 !important;}
+.stToast{background:#09090E !important;border:1px solid rgba(109,40,217,0.2) !important;border-radius:10px !important;}
 .stTabs [data-baseweb="tab-list"]{display:none !important;}
 div[data-testid="stStatusWidget"]{display:none !important;}
-.sidebar-logo{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:#A855F7;letter-spacing:3px;}
-.sidebar-sub{font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:#32324A;letter-spacing:3px;text-transform:uppercase;}
+.sidebar-logo{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:#8B5CF6;letter-spacing:3px;}
+.sidebar-sub{font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:#2A2A40;letter-spacing:3px;text-transform:uppercase;}
 
 /* RESPONSIVE */
 @media(max-width:768px){
   .block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}
-  .den-logo{font-size:2.4rem !important;letter-spacing:3px !important;}
+  .den-logo{font-size:2.4rem !important;letter-spacing:4px !important;}
   .pick-action{font-size:1.4rem !important;}
   .stat-num{font-size:1.7rem !important;}
   .stat-item-val{font-size:1.1rem !important;}
@@ -417,15 +357,13 @@ div[data-testid="stStatusWidget"]{display:none !important;}
   div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}
 }
 @media(max-width:390px){.den-logo{font-size:2rem !important;}.stat-num{font-size:1.4rem !important;}}
-@media(min-width:1280px){.den-logo{font-size:4rem !important;}.stat-num{font-size:2.4rem !important;}.pick-action{font-size:2.2rem !important;}}
+@media(min-width:1280px){.den-logo{font-size:3.6rem !important;}.stat-num{font-size:2.2rem !important;}.pick-action{font-size:2rem !important;}}
 </style>
 """, unsafe_allow_html=True)
 
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# NAV
-# ═══════════════════════════════════════════════════════════════════════════════
+# ── Nav state ──
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
     {"key": "Picks",        "icon": "🎯", "label": "PICKS"},
@@ -436,18 +374,6 @@ _NAV_ITEMS = [
 ]
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
-_active_page = st.session_state["active_page"]
-_nc = st.columns(len(_NAV_ITEMS), gap="small")
-for _i, _item in enumerate(_NAV_ITEMS):
-    with _nc[_i]:
-        if st.button(
-            f"{_item['icon']}\n{_item['label']}",
-            key=f"nav_{_item['key']}",
-            use_container_width=True,
-            type="primary" if _item["key"] == _active_page else "secondary",
-        ):
-            st.session_state["active_page"] = _item["key"]
-            st.rerun()
 _active_page = st.session_state["active_page"]
 
 LEAGUES = {
@@ -687,7 +613,7 @@ ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/score
 
 def get_demo_games():
     return [
-        {"id":"d1","league":"Champions League","home_team":"Real Madrid","away_team":"Bayern Munich","home_team_id":"86","away_team_id":"132",
+        {"id":"d1","league":"Champions League","home_team":"Real Madrid","away_team":"Bayern Munich",
          "home_score":"","away_score":"","home_record":"24-5-2","away_record":"22-6-3",
          "state":"pre","status_detail":"Mar 3:00 PM","date":"","venue":"Santiago Bernabéu",
          "odds":{"spread":"","over_under":"3.0","home_ml":"-118","away_ml":"+290","home_wp":"47","away_wp":"28"}},
@@ -1909,7 +1835,7 @@ def parse_games(data, league_name):
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
     _tomorrow_cdmx  = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
-    _valid_dates = {_today_cdmx, _yesterday_cdmx, _tomorrow_cdmx}
+    _valid_dates = {_today_cdmx, _tomorrow_cdmx}  # solo hoy y mañana
 
     for event in data.get("events", []):
         try:
@@ -4590,44 +4516,88 @@ def bar(pct, color, label):
     </div>"""
 
 
-def _espn_logo(team_id, size=32):
-    """Return ESPN team logo URL or empty string."""
-    if not team_id:
-        return ""
-    return f"https://a.espncdn.com/i/teamlogos/leagues_sport/500/{team_id}.png"
+def _espn_logo(team_id, league_name=""):
+    """Return correct ESPN logo URL per sport."""
+    if not team_id: return ""
+    info = LEAGUES.get(league_name, {})
+    sport = info.get("sport", "")
+    league = info.get("league", "")
+    if sport == "soccer":
+        return f"https://a.espncdn.com/i/teamlogos/soccer/500/{team_id}.png"
+    elif sport == "basketball":
+        return f"https://a.espncdn.com/i/teamlogos/nba/500/{team_id}.png"
+    elif sport == "hockey":
+        return f"https://a.espncdn.com/i/teamlogos/nhl/500/{team_id}.png"
+    elif sport == "baseball":
+        return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
+    elif sport == "football":
+        if "college" in league:
+            return f"https://a.espncdn.com/i/teamlogos/ncaa/500/{team_id}.png"
+        return f"https://a.espncdn.com/i/teamlogos/nfl/500/{team_id}.png"
+    return f"https://a.espncdn.com/i/teamlogos/soccer/500/{team_id}.png"
+
+def _logo_img(team_id, league_name, size=44):
+    """Return <img> tag for ESPN logo."""
+    url = _espn_logo(team_id, league_name)
+    if not url: return f'<div style="width:{size}px;height:{size}px;border-radius:50%;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:{size//2}px">🏟</div>'
+    return (
+        f'<img src="{url}" width="{size}" height="{size}" '
+        f'style="border-radius:50%;object-fit:contain;background:rgba(255,255,255,0.08);padding:3px;flex-shrink:0;" '
+        f'onerror="this.style.display=\'none\'" />'
+    )
 
 def _matchup_with_logos(r, score_html=""):
-    """Build matchup HTML with team logos."""
-    away = r.get("away_team", "Visita")
-    home = r.get("home_team", "Local")
+    """Matchup HTML with logos."""
+    away    = r.get("away_team", "Visita")
+    home    = r.get("home_team", "Local")
     away_id = r.get("away_team_id", "")
     home_id = r.get("home_team_id", "")
-    away_logo = _espn_logo(away_id)
-    home_logo = _espn_logo(home_id)
+    league  = r.get("league", "")
+    is_live = r.get("state", "") == "in"
+    away_logo = _logo_img(away_id, league, 40)
+    home_logo = _logo_img(home_id, league, 40)
 
-    def logo_tag(url, name):
-        if not url:
-            return f'<span style="font-size:1.4rem;width:32px;text-align:center">🏟</span>'
-        return (
-            f'<img src="{url}" width="32" height="32" '
-            f'style="border-radius:50%;background:rgba(255,255,255,0.08);'
-            f'object-fit:contain;padding:2px;" '
-            f'onerror="this.style.display=\'none\'" alt="{name}"/>'
+    if is_live and r.get("home_score") is not None and r.get("away_score") is not None:
+        # LIVE — logos a los lados, score en el centro
+        score_text = str(r["away_score"]) + " : " + str(r["home_score"])
+        html = (
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0">'
+            + '<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">'
+            + away_logo
+            + '<span style="font-size:0.72rem;font-weight:700;color:#E0E0F0;text-align:center;'
+            + 'max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + away + '</span>'
+            + '</div>'
+            + '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+            + '<div style="font-family:Bebas Neue,sans-serif;font-size:2.2rem;font-weight:400;'
+            + 'color:#FFFFFF;letter-spacing:3px;line-height:1">' + score_text + '</div>'
+            + '<div style="font-size:0.55rem;color:#DC2626;font-weight:700;letter-spacing:2px;'
+            + 'text-transform:uppercase;animation:live-blink 1.5s infinite">● EN VIVO</div>'
+            + score_html
+            + '</div>'
+            + '<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">'
+            + home_logo
+            + '<span style="font-size:0.72rem;font-weight:700;color:#E0E0F0;text-align:center;'
+            + 'max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + home + '</span>'
+            + '</div>'
+            + '</div>'
         )
+        return html
+    else:
+        # PRE-GAME — logos + nombres en línea
+        html = (
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap">'
+            + away_logo
+            + '<div style="min-width:0;flex:1">'
+            + '<span class="pick-matchup">' + away
+            + ' <span style="color:#2A2A40;font-weight:400;font-size:0.85rem">vs</span> '
+            + home + '</span>'
+            + '</div>'
+            + home_logo
+            + score_html
+            + '</div>'
+        )
+        return html
 
-    away_img = logo_tag(away_logo, away)
-    home_img = logo_tag(home_logo, home)
-
-    return (
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-        away_img +
-        f'<span class="pick-matchup">{away}</span>' +
-        '<span style="color:#3A3A55;font-size:0.8rem;font-weight:400">vs</span>' +
-        f'<span class="pick-matchup">{home}</span>' +
-        home_img +
-        score_html +
-        '</div>'
-    )
 
 def render_pick_card(r, rank=None):
     """Render pick card - all HTML built via string concat, no ternaries in f-strings."""
@@ -4864,10 +4834,9 @@ def render_pick_card(r, rank=None):
     return (
         '<div class="pick-card">'
           '<div class="pick-header">'
-            '<div style="display:flex;flex-direction:column;gap:6px">'
-            + rank_html
-            + _matchup_with_logos(r, score_html)
-            + '</div>'
+            '<div>' + rank_html
+              + '<span class="pick-matchup">' + r["away_team"] + ' @ ' + r["home_team"] + score_html + '</span>'
+            '</div>'
             '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
               + live_html
               + '<span class="pick-league-badge">' + league_label(r["league"]) + '</span>'
@@ -5066,7 +5035,7 @@ else:
     # Purge old days — mantener ventana ±1 día para no perder partidos europeos
     _yesterday_cdmx_cache = (_now_cache - _td_cache(hours=6) - _td_cache(days=1)).strftime("%Y-%m-%d")
     _tomorrow_cdmx_cache  = (_now_cache - _td_cache(hours=6) + _td_cache(days=1)).strftime("%Y-%m-%d")
-    _valid_cache_dates = {_yesterday_cdmx_cache, _today_cdmx_cache, _tomorrow_cdmx_cache}
+    _valid_cache_dates = {_today_cdmx_cache, _tomorrow_cdmx_cache}  # solo hoy+mañana
     for _gid in [k for k, v in list(_cached_pre.items())]:
         try:
             _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","")[:19]).replace("T"," "),
@@ -5178,11 +5147,11 @@ sr=st.session_state.get("sim_results",[])
 pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
 
 st.markdown(f"""<div class="stat-grid">
-  <div class="stat-tile"><div class="stat-num" style="color:#A855F7">{len(games)}</div><div class="stat-label">PARTIDOS</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#EF4444">{len(live_g)}</div><div class="stat-label">EN VIVO</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#06B6D4">{len(pre_g)}</div><div class="stat-label">PRÓXIMOS</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#F59E0B">{pos_ev}</div><div class="stat-label">EV+ PICKS</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00FF94">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">PARLAYS</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#8B5CF6">{len(games)}</div><div class="stat-label">PARTIDOS</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#DC2626">{len(live_g)}</div><div class="stat-label">EN VIVO</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#0891B2">{len(pre_g)}</div><div class="stat-label">PRÓXIMOS</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#D97706">{pos_ev}</div><div class="stat-label">EV+ PICKS</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#10B981">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">PARLAYS</div></div>
 </div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
@@ -5575,17 +5544,16 @@ if _active_page == "Rongol Picks":
     if not sr:
         st.markdown("""
         <div style="text-align:center;padding:52px 16px 40px">
-          <div style="font-size:4rem;margin-bottom:16px;filter:drop-shadow(0 0 40px rgba(124,58,237,0.8))">🎰</div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:4px;margin-bottom:10px;
-            background:linear-gradient(90deg,#7C3AED,#06B6D4,#00FF94);-webkit-background-clip:text;-webkit-text-fill-color:transparent">
+          <div style="font-size:3.5rem;margin-bottom:16px;filter:drop-shadow(0 0 32px rgba(109,40,217,0.6))">🎰</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:1.9rem;letter-spacing:4px;margin-bottom:8px;color:#FFFFFF">
             GAMBLERS DEN ONLINE</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:0.76rem;color:#7878A0;line-height:2.2;margin-bottom:32px">
-            IR A <span style="color:#A855F7">⚙️ CONFIG</span> · CONFIGURAR · <span style="color:#00FF94">ANALIZAR</span>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#2A2A40;line-height:2.2;margin-bottom:28px">
+            ⚙️ CONFIG → CONFIGURAR LIGAS → ⚡ ANALIZAR
           </div>
           <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
-            <div style="background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:20px;padding:10px 18px;font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#A855F7;letter-spacing:1px">⚡ MONTE CARLO</div>
-            <div style="background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.2);border-radius:20px;padding:10px 18px;font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#06B6D4;letter-spacing:1px">🎯 EV+ PICKS</div>
-            <div style="background:rgba(0,255,148,0.06);border:1px solid rgba(0,255,148,0.2);border-radius:20px;padding:10px 18px;font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#00FF94;letter-spacing:1px">🎰 PARLAYS</div>
+            <div style="background:rgba(109,40,217,0.1);border:1px solid rgba(109,40,217,0.3);border-radius:20px;padding:10px 18px;font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#8B5CF6;letter-spacing:1px">⚡ MONTE CARLO</div>
+            <div style="background:rgba(8,145,178,0.08);border:1px solid rgba(8,145,178,0.2);border-radius:20px;padding:10px 18px;font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#0891B2;letter-spacing:1px">🎯 EV+ PICKS</div>
+            <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);border-radius:20px;padding:10px 18px;font-family:'JetBrains Mono',monospace;font-size:0.60rem;color:#10B981;letter-spacing:1px">🎰 PARLAYS</div>
           </div>
         </div>""", unsafe_allow_html=True)
     else:
@@ -5741,10 +5709,9 @@ if _active_page == "Rongol Picks":
         _now_mx_rp   = _now_rp - _td_rp(hours=6)
         _today_rp    = _now_mx_rp.strftime("%Y-%m-%d")
         _valid_rp    = {
-            (_now_mx_rp - _td_rp(days=1)).strftime("%Y-%m-%d"),
             _today_rp,
             (_now_mx_rp + _td_rp(days=1)).strftime("%Y-%m-%d"),
-        }
+        }  # solo hoy+mañana
 
         # Build id→game map for quick lookup
         _gmap_rp = {g.get("id", ""): g for g in games}
@@ -6356,7 +6323,7 @@ elif _active_page == "Picks":
     _tom_mx_p      = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
     _d2_mx_p       = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
     _yday_mx_p     = (_now_mx_pt - _td_pt(days=1)).strftime("%Y-%m-%d")
-    _valid_dates_p = {_yday_mx_p, _today_mx_p, _tom_mx_p}
+    _valid_dates_p = {_today_mx_p, _tom_mx_p}
 
     def _mx_date_p(g):
         raw = g.get("date") or ""
@@ -8689,11 +8656,10 @@ elif _active_page == "Reto 13M":
 
 elif _active_page == "Config":
     st.markdown("""
-    <div style="text-align:center;padding:32px 0 18px">
-      <div style="font-size:3rem;margin-bottom:12px;filter:drop-shadow(0 0 24px rgba(124,58,237,0.7))">⚙️</div>
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:4px;
-        background:linear-gradient(90deg,#7C3AED,#06B6D4,#00FF94);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">CONFIGURACIÓN</div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:#32324A;letter-spacing:3px;margin-top:6px">AJUSTA · ANALIZA · GANA</div>
+    <div style="text-align:center;padding:28px 0 16px">
+      <div style="font-size:2.8rem;margin-bottom:10px;filter:drop-shadow(0 0 20px rgba(109,40,217,0.5))">⚙️</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:1.9rem;letter-spacing:4px;color:#FFFFFF">CONFIGURACIÓN</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:#2A2A40;letter-spacing:3px;margin-top:6px">AJUSTA · ANALIZA · GANA</div>
     </div>""", unsafe_allow_html=True)
 
     st.markdown('<div style="font-size:0.65rem;color:var(--orange);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔮 SIMULACIONES</div>', unsafe_allow_html=True)
