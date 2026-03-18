@@ -45,49 +45,56 @@ header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
 
-/* ══ NAV BAR — FIXED BOTTOM ══ */
-/* Fix overflow on entire Streamlit container chain */
-.stApp, .stApp > div, [data-testid="stAppViewContainer"],
-[data-testid="stAppViewContainer"] > section,
-[data-testid="stVerticalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"],
-.main, .block-container {
-  overflow: visible !important;
+/* ══ NAV VISUAL — fixed bottom HTML ══ */
+.den-nav-bg {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 64px;
+  background: rgba(8,8,10,0.97);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  display: flex;
+  align-items: center;
+  z-index: 9998;
+  padding: 0 4px;
+  padding-bottom: env(safe-area-inset-bottom);
 }
-
-.nav-container {
-  position: fixed !important;
-  bottom: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  z-index: 999999 !important;
-  background: rgba(8,8,10,0.97) !important;
-  backdrop-filter: blur(24px) !important;
-  -webkit-backdrop-filter: blur(24px) !important;
-  padding: 6px 8px !important;
-  margin: 0 !important;
-  border-top: 1px solid rgba(255,255,255,0.08) !important;
-  border-bottom: none !important;
-  pointer-events: auto !important;
-}
-.nav-container::before {
-  content: '';
+.den-nav-line {
   position: absolute;
   top: 0; left: 0; right: 0; height: 2px;
   background: linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
 }
-/* Make sure all children are clickable */
-.nav-container * {
-  pointer-events: auto !important;
+.den-nav-item {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px; height: 64px; cursor: pointer;
 }
-/* Columns inside nav */
-.nav-container [data-testid="stHorizontalBlock"] {
-  gap: 0 !important;
-  pointer-events: auto !important;
+.den-nav-item.act .den-nav-icon-label { color: #FF6B00; }
+
+/* ══ FUNCTIONAL BUTTONS — last stHorizontalBlock in DOM ══
+   These are rendered LAST so :last-child always targets them.
+   No :has() needed. Works in all browsers since 2009. ══ */
+[data-testid="stVerticalBlock"] > div:last-child [data-testid="stHorizontalBlock"],
+[data-testid="stVerticalBlock"] > div:nth-last-child(2) [data-testid="stHorizontalBlock"] {
+  position: fixed !important;
+  bottom: 0 !important; left: 0 !important; right: 0 !important;
+  z-index: 9999 !important; height: 64px !important;
+  background: transparent !important;
+  margin: 0 !important; padding: 0 !important; gap: 0 !important;
+  display: flex !important;
 }
-.nav-container [data-testid="column"] {
-  padding: 0 !important;
-  pointer-events: auto !important;
+[data-testid="stVerticalBlock"] > div:last-child [data-testid="stHorizontalBlock"] > div,
+[data-testid="stVerticalBlock"] > div:nth-last-child(2) [data-testid="stHorizontalBlock"] > div {
+  flex: 1 !important; padding: 0 !important; margin: 0 !important;
+}
+[data-testid="stVerticalBlock"] > div:last-child [data-testid="stHorizontalBlock"] button,
+[data-testid="stVerticalBlock"] > div:nth-last-child(2) [data-testid="stHorizontalBlock"] button {
+  width: 100% !important; height: 64px !important;
+  opacity: 0 !important;
+  background: transparent !important; border: none !important;
+  border-radius: 0 !important; cursor: pointer !important;
+  padding: 0 !important; margin: 0 !important;
 }
 
 /* Override ALL button styles inside nav */
@@ -187,7 +194,7 @@ button[title="Manage app"],button[aria-label="Manage app"],
 
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
-.block-container{padding:16px 14px 90px 14px !important;max-width:620px !important;margin:0 auto !important;}
+.block-container{padding:16px 14px 80px 14px !important;max-width:620px !important;margin:0 auto !important;}
 @media(min-width:820px){.block-container{max-width:920px !important;padding:24px 40px 90px !important;}}
 @media(min-width:1240px){.block-container{max-width:1180px !important;padding:28px 56px 90px !important;}}
 .den-header{text-align:center;padding:16px 0 10px;}
@@ -8577,3 +8584,24 @@ elif _active_page == "Config":
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.65rem;color:#333333;letter-spacing:2px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════
+# NAV — al final para que quede abajo
+# ═══════════════════════════════════════════
+# Visual nav background (pure HTML, fixed bottom)
+_nav_bg = '<div class="den-nav-bg"><div class="den-nav-line"></div>'
+for _ni in _NAV_ITEMS:
+    _a = " act" if _ni["key"] == _active_page else ""
+    _c = "#FF6B00" if _ni["key"] == _active_page else "#636366"
+    _nav_bg += f'<div class="den-nav-item{_a}"><span style="font-size:1.3rem">{_ni["icon"]}</span><span style="font-size:0.43rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:{_c}">{_ni["label"]}</span></div>'
+_nav_bg += '</div>'
+st.markdown(_nav_bg, unsafe_allow_html=True)
+
+# Functional invisible buttons — last columns in DOM
+# CSS targets them as the last stHorizontalBlock
+_nav_cols2 = st.columns(len(_NAV_ITEMS))
+for _i2, _item2 in enumerate(_NAV_ITEMS):
+    with _nav_cols2[_i2]:
+        if st.button(" ", key=f"nav2_{_item2['key']}", use_container_width=True):
+            st.session_state["active_page"] = _item2["key"]
+            st.rerun()
