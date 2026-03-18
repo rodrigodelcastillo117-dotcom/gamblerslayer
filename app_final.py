@@ -294,6 +294,33 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 }
 @media(max-width:390px){.den-logo{font-size:1.3rem !important;}.pick-action{font-size:0.97rem !important;}.stat-num{font-size:1.15rem !important;}}
 @media(min-width:1240px){.den-logo{font-size:2.3rem !important;}.pick-action{font-size:1.7rem !important;}.stat-num{font-size:1.9rem !important;}}
+
+/* ══ HIDE MANAGE APP — all selectors ══ */
+[data-testid="stToolbar"],
+[data-testid="stToolbarActions"],
+[data-testid="manage-app-button"],
+[data-testid="stMainMenu"],
+[data-testid="stAppDeployButton"],
+.stAppDeployButton,
+button[title="Manage app"],
+button[aria-label="Manage app"],
+a[href*="share.streamlit"],
+iframe[title="streamlit_app"],
+[class*="ToolbarActions"],
+[class*="manage-app"],
+[class*="ManageApp"],
+[class*="deployButton"],
+[class*="AppToolbar"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  position: absolute !important;
+  overflow: hidden !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -304,11 +331,11 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
+    {"key": "Config",       "icon": "⚙️",  "label": "CONFIG"},
     {"key": "Picks",        "icon": "🎯", "label": "PICKS"},
     {"key": "Parlays",      "icon": "🎰", "label": "PARLAYS"},
     {"key": "En Vivo",      "icon": "🔴", "label": "LIVE"},
     {"key": "Reto 13M",     "icon": "💰", "label": "RETO"},
-    {"key": "Config",       "icon": "⚙️",  "label": "CONFIG"},
 ]
 
 # Read page from query params (set by JS clicks)
