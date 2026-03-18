@@ -24,7 +24,6 @@ st.set_page_config(
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
-
 :root {
   --bg:#08080A; --bg2:#111114; --bg3:#1A1A1E;
   --card:#111114; --card2:#161619; --border:rgba(255,255,255,0.06);
@@ -46,65 +45,109 @@ header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
 
-/* ══ VISUAL NAV BAR ══ */
-.den-nav-visual {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  height: 64px;
+/* ══ NAV BAR ══ */
+.nav-container {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
   background: rgba(8,8,10,0.97);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  display: flex;
-  align-items: center;
-  z-index: 9998;
-  padding-bottom: env(safe-area-inset-bottom);
+  backdrop-filter: blur(20px);
+  padding: 8px 0;
+  margin: -16px -14px 12px -14px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
 }
-.den-nav-line {
+.nav-container::before {
+  content: '';
   position: absolute;
-  top: 0; left: 0; right: 0; height: 2px;
+  bottom: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
 }
-.den-nav-item {
-  flex: 1;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 3px; height: 64px; position: relative;
+
+/* Override ALL button styles inside nav */
+.nav-container button {
+  all: unset !important;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  padding: 8px 2px !important;
+  cursor: pointer !important;
+  border-radius: 10px !important;
+  transition: all 0.15s !important;
+  white-space: pre-line !important;
+  font-family: 'Outfit', sans-serif !important;
+  color: #636366 !important;
+  font-size: 0.42rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.8px !important;
+  text-transform: uppercase !important;
+  line-height: 1.6 !important;
+  -webkit-tap-highlight-color: rgba(255,107,0,0.2) !important;
+  box-sizing: border-box !important;
 }
-.den-nav-item.act::after {
-  content: '';
-  position: absolute; top: 0; left: 20%; right: 20%; height: 2px;
-  background: linear-gradient(90deg, transparent, #FF6B00, #FFD60A, #FF6B00, transparent);
-  border-radius: 0 0 4px 4px;
+.nav-container .stButton > button {
+  all: unset !important;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  padding: 8px 2px !important;
+  cursor: pointer !important;
+  border-radius: 10px !important;
+  transition: all 0.15s !important;
+  white-space: pre-line !important;
+  font-family: 'Outfit', sans-serif !important;
+  color: #636366 !important;
+  font-size: 0.42rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.8px !important;
+  text-transform: uppercase !important;
+  line-height: 1.6 !important;
+  -webkit-tap-highlight-color: rgba(255,107,0,0.2) !important;
+  box-sizing: border-box !important;
+}
+/* Active = primary type */
+.nav-container button[data-testid="baseButton-primary"],
+.nav-container .stButton > button[kind="primary"] {
+  all: unset !important;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  padding: 8px 2px !important;
+  cursor: pointer !important;
+  border-radius: 10px !important;
+  background: rgba(255,107,0,0.12) !important;
+  color: #FF6B00 !important;
+  font-family: 'Outfit', sans-serif !important;
+  font-size: 0.42rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.8px !important;
+  text-transform: uppercase !important;
+  line-height: 1.6 !important;
+  white-space: pre-line !important;
+  box-shadow: none !important;
+  border: none !important;
+  box-sizing: border-box !important;
+}
+.nav-container button:hover {
+  color: #FF6B00 !important;
+  background: rgba(255,107,0,0.08) !important;
 }
 
-/* ══ FIX FUNCTIONAL BUTTON ROW TO BOTTOM ══
-   This targets the LAST stHorizontalBlock in the page.
-   Since we render nav buttons last, this always works.
-   Uses :last-of-type — supported in ALL browsers since 2009. ══ */
-[data-testid="stAppViewContainer"] > section > div > div > div:last-child [data-testid="stHorizontalBlock"],
-[data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"]:last-child {
-  position: fixed !important;
-  bottom: 0 !important; left: 0 !important; right: 0 !important;
-  z-index: 9999 !important;
-  height: 64px !important;
-  display: flex !important;
-  background: transparent !important;
-  margin: 0 !important; padding: 0 !important; gap: 0 !important;
+/* Make text inside button display properly (emoji + label) */
+.nav-container button p,
+.nav-container button span {
+  display: none !important;
 }
-[data-testid="stAppViewContainer"] > section > div > div > div:last-child [data-testid="stHorizontalBlock"] > div,
-[data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"]:last-child > div {
-  flex: 1 !important; padding: 0 !important; margin: 0 !important;
-}
-[data-testid="stAppViewContainer"] > section > div > div > div:last-child [data-testid="stHorizontalBlock"] button,
-[data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"]:last-child button {
-  width: 100% !important;
-  height: 64px !important;
-  opacity: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0 !important;
-  cursor: pointer !important;
-  padding: 0 !important; margin: 0 !important;
+.nav-container button::first-line {
+  font-size: 1.3rem !important;
 }
 
 /* ══ HIDE MANAGE APP ══ */
@@ -117,10 +160,10 @@ button[title="Manage app"],button[aria-label="Manage app"],
 
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
-.block-container{padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;max-width:620px !important;margin:0 auto !important;}
-@media(min-width:820px){.block-container{max-width:920px !important;padding:24px 40px calc(var(--nav-h)+28px) !important;}}
-@media(min-width:1240px){.block-container{max-width:1180px !important;padding:28px 56px calc(var(--nav-h)+28px) !important;}}
-.den-header{text-align:center;padding:20px 0 10px;}
+.block-container{padding:0 14px 40px 14px !important;max-width:620px !important;margin:0 auto !important;}
+@media(min-width:820px){.block-container{max-width:920px !important;padding:0 40px 40px !important;}}
+@media(min-width:1240px){.block-container{max-width:1180px !important;padding:0 56px 40px !important;}}
+.den-header{text-align:center;padding:16px 0 10px;}
 .den-logo{font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;letter-spacing:-1.5px;line-height:1;background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 45%,#FF8C00 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 24px rgba(255,107,0,0.35));}
 .den-subtitle{font-size:0.58rem;color:#404048;letter-spacing:4px;text-transform:uppercase;margin-top:5px;}
 .den-divider{width:100%;height:1px;margin:10px 0;background:linear-gradient(90deg,transparent,rgba(255,107,0,0.4) 30%,rgba(255,214,10,0.6) 50%,rgba(255,107,0,0.4) 70%,transparent);}
@@ -184,10 +227,11 @@ button[title="Manage app"],button[aria-label="Manage app"],
 .section-heading::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.06),transparent);}
 .warn-banner{background:rgba(255,214,10,0.06);border:1px solid rgba(255,214,10,0.2);border-left:3px solid #FFD60A;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FFD60A;margin:8px 0;}
 .demo-banner{background:rgba(255,23,68,0.06);border:1px solid rgba(255,23,68,0.2);border-left:3px solid #FF1744;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FF1744;margin:8px 0;}
+/* Regular buttons (not nav) */
 .stButton > button{background:rgba(255,255,255,0.04) !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:0.82rem !important;font-weight:600 !important;border:1px solid rgba(255,255,255,0.09) !important;padding:9px 16px !important;border-radius:12px !important;width:100% !important;transition:all 0.2s !important;}
 .stButton > button:hover{background:rgba(255,107,0,0.1) !important;border-color:rgba(255,107,0,0.45) !important;color:#FF6B00 !important;}
 .stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;color:#000 !important;border:none !important;font-weight:900 !important;box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;}
-.stButton > button[kind="primary"]:hover{background:linear-gradient(135deg,#FF8C00,#FFB300) !important;box-shadow:0 8px 32px rgba(255,107,0,0.55) !important;}
+.stButton > button[kind="primary"]:hover{background:linear-gradient(135deg,#FF8C00,#FFB300) !important;}
 .stDownloadButton > button{background:rgba(255,255,255,0.04) !important;color:#FF6B00 !important;border:1px solid rgba(255,107,0,0.3) !important;border-radius:12px !important;}
 div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,div[data-testid="stTextArea"] textarea{background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:16px !important;}
 div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{border-color:rgba(255,107,0,0.5) !important;box-shadow:0 0 0 3px rgba(255,107,0,0.1) !important;}
@@ -213,7 +257,7 @@ div[data-testid="stMetricLabel"]{color:#404048 !important;}
 div[data-testid="stStatusWidget"]{display:none !important;}
 .sidebar-logo{font-family:'Outfit',sans-serif;font-size:1.2rem;font-weight:800;color:#FF6B00;}
 .sidebar-sub{font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase;}
-@media(max-width:768px){.block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}.den-logo{font-size:1.55rem !important;}.pick-action{font-size:1.05rem !important;}.stat-num{font-size:1.35rem !important;}[data-testid="column"]{min-width:0 !important;overflow:hidden !important;}*{word-break:break-word !important;overflow-wrap:break-word !important;}div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}}
+@media(max-width:768px){.block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}.nav-container{margin:-16px -10px 10px -10px !important;}.den-logo{font-size:1.55rem !important;}.pick-action{font-size:1.05rem !important;}.stat-num{font-size:1.35rem !important;}[data-testid="column"]{min-width:0 !important;overflow:hidden !important;}*{word-break:break-word !important;overflow-wrap:break-word !important;}div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}}
 @media(max-width:390px){.den-logo{font-size:1.3rem !important;}.pick-action{font-size:0.97rem !important;}.stat-num{font-size:1.15rem !important;}}
 @media(min-width:1240px){.den-logo{font-size:2.3rem !important;}.pick-action{font-size:1.7rem !important;}.stat-num{font-size:1.9rem !important;}}
 </style>
@@ -221,7 +265,9 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 
 
 
-# ── Nav state ──────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# NAV — botones reales sticky top
+# ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
     {"key": "Picks",        "icon": "🎯", "label": "PICKS"},
@@ -230,8 +276,27 @@ _NAV_ITEMS = [
     {"key": "Reto 13M",     "icon": "💰", "label": "RETO"},
     {"key": "Config",       "icon": "⚙️",  "label": "CONFIG"},
 ]
+
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
+_active_page = st.session_state["active_page"]
+
+# Nav container
+st.markdown('<div class="nav-container">', unsafe_allow_html=True)
+_nav_cols = st.columns(len(_NAV_ITEMS))
+for _i, _item in enumerate(_NAV_ITEMS):
+    _active = _item["key"] == _active_page
+    with _nav_cols[_i]:
+        if st.button(
+            f"{_item['icon']}\n{_item['label']}",
+            key=f"nav_{_item['key']}",
+            use_container_width=True,
+            type="primary" if _active else "secondary",
+        ):
+            st.session_state["active_page"] = _item["key"]
+            st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
+
 _active_page = st.session_state["active_page"]
 
 LEAGUES = {
@@ -5310,7 +5375,7 @@ def _list_reto_users():
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     if not sr:
-        st.markdown("""<div style="text-align:center;padding:44px 16px 28px"><div style="font-size:3.8rem;margin-bottom:12px;display:inline-block;animation:glow-pulse 2s ease-in-out infinite">⚡</div><style>@keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 12px rgba(255,107,0,0.5))}50%{filter:drop-shadow(0 0 36px rgba(255,214,10,0.9))}}</style><div style="font-size:1.5rem;font-weight:900;letter-spacing:-1px;margin-bottom:8px;background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">¡Bienvenido al Den!</div><div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">Toca <b style="color:#FF6B00">⚙️ CONFIG</b> abajo · <b style="color:#FFD60A">🚀 Analizar</b></div><div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap"><div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.03));border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FF6B00">⚡ Monte Carlo</div><div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.03));border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FFD60A">🎯 EV+ Picks</div><div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.03));border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#00E676">🎰 Parlays</div></div></div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="text-align:center;padding:44px 16px 28px"><div style="font-size:3.8rem;margin-bottom:12px;display:inline-block;animation:glow-pulse 2s ease-in-out infinite">⚡</div><style>@keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 12px rgba(255,107,0,0.5))}50%{filter:drop-shadow(0 0 36px rgba(255,214,10,0.9))}}</style><div style="font-size:1.5rem;font-weight:900;letter-spacing:-1px;margin-bottom:8px;background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">¡Bienvenido al Den!</div><div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">Toca <b style="color:#FF6B00">⚙️ CONFIG</b> arriba · <b style="color:#FFD60A">🚀 Analizar</b></div><div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap"><div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.03));border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FF6B00">⚡ Monte Carlo</div><div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.03));border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FFD60A">🎯 EV+ Picks</div><div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.03));border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#00E676">🎰 Parlays</div></div></div>""", unsafe_allow_html=True)
     else:
         # ── Detectar picks terminados ─────────────────────────────────────────────
         pick_game_ids = {r.get("id","") for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0}
@@ -8485,30 +8550,3 @@ elif _active_page == "Config":
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.65rem;color:#333333;letter-spacing:2px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV — rendered LAST so CSS :last-of-type targets it correctly
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Visual bar (fixed, always visible)
-st.markdown("""
-<div class="den-nav-visual">
-  <div class="den-nav-line"></div>
-""" + "".join([
-    f'<div class="den-nav-item {"act" if ni["key"]==_active_page else ""}">' +
-    f'<span style="font-size:1.4rem;line-height:1">{ni["icon"]}</span>' +
-    f'<span style="font-size:0.46rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:{"#FF6B00" if ni["key"]==_active_page else "#404048"};margin-top:2px">{ni["label"]}</span>' +
-    '</div>'
-    for ni in _NAV_ITEMS
-]) + """
-</div>
-""", unsafe_allow_html=True)
-
-# Functional buttons — THIS IS THE LAST st.columns IN THE FILE
-# CSS targets it with section > div:last-child (no :has() needed)
-_nc = st.columns(len(_NAV_ITEMS))
-for _i, _item in enumerate(_NAV_ITEMS):
-    with _nc[_i]:
-        if st.button("­", key=f"_n{_i}", use_container_width=True):
-            st.session_state["active_page"] = _item["key"]
-            st.rerun()
