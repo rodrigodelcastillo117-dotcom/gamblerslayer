@@ -4987,15 +4987,23 @@ st.markdown("""
 <div class="den-header">
   <div class="den-logo">The Gamblers Den</div>
   <div class="den-subtitle">Monte Carlo · EV+ · Smart Picks</div>
-  <div style="margin-top:10px">
-    <span class="den-corner">♠</span>
-    <span class="den-corner">♣</span>
-    <span class="den-corner">♥</span>
-    <span class="den-corner">♦</span>
-  </div>
 </div>
-<div class="den-divider"></div>
 """, unsafe_allow_html=True)
+
+# ── NAV BUTTONS — debajo del logo ─────────────────────────────────────────────
+_nc = st.columns(len(_NAV_ITEMS), gap="small")
+for _i, _item in enumerate(_NAV_ITEMS):
+    with _nc[_i]:
+        if st.button(
+            f"{_item['icon']}\n{_item['label']}",
+            key=f"nav_{_item['key']}",
+            use_container_width=True,
+            type="primary" if _item["key"] == _active_page else "secondary",
+        ):
+            st.session_state["active_page"] = _item["key"]
+            st.rerun()
+_active_page = st.session_state["active_page"]
+st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
 if not sel_leagues:
     st.warning("Selecciona al menos una liga en el sidebar.")
