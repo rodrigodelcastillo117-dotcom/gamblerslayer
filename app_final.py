@@ -72,56 +72,6 @@ button[title="Manage app"],button[aria-label="Manage app"],
 .den-divider{width:100%;height:1px;margin:12px 0;background:linear-gradient(90deg,transparent,rgba(109,40,217,0.35) 30%,rgba(8,145,178,0.35) 70%,transparent);}
 .den-corner{display:none;}
 
-/* ── NAV BUTTONS — the key CSS ── */
-/* Container: sticky, dark bar */
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) {
-  position:sticky !important;top:0 !important;z-index:9999 !important;
-  background:rgba(5,5,8,0.97) !important;
-  backdrop-filter:blur(20px) !important;-webkit-backdrop-filter:blur(20px) !important;
-  padding:5px 4px !important;margin:0 -16px !important;
-  width:calc(100% + 32px) !important;
-  border-bottom:1px solid rgba(109,40,217,0.2) !important;
-  gap:2px !important;
-}
-@media(min-width:860px){
-  div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]){
-    margin:0 -40px !important;width:calc(100% + 80px) !important;padding:5px 20px !important;
-  }
-}
-/* Inactive button */
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) .stButton>button{
-  background:transparent !important;
-  border:1px solid transparent !important;
-  color:#6B6B90 !important;
-  font-size:0.78rem !important;
-  font-weight:700 !important;
-  padding:7px 4px !important;
-  border-radius:8px !important;
-  line-height:1.3 !important;
-  min-height:50px !important;
-  box-shadow:none !important;
-  transform:none !important;
-  white-space:pre-line !important;
-}
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) .stButton>button:hover{
-  background:rgba(109,40,217,0.1) !important;
-  border-color:rgba(109,40,217,0.3) !important;
-  color:#8B5CF6 !important;
-  transform:none !important;
-}
-/* Active button */
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) .stButton>button[kind="primary"]{
-  background:rgba(109,40,217,0.18) !important;
-  border:1px solid rgba(109,40,217,0.5) !important;
-  color:#FFFFFF !important;
-  box-shadow:0 0 14px rgba(109,40,217,0.2) !important;
-}
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) .stButton>button p{
-  white-space:pre-line !important;margin:0 !important;
-  color:inherit !important;font-weight:inherit !important;
-  text-align:center !important;
-}
-
 /* ── STAT TILES ── */
 .stat-grid{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
 .stat-tile{flex:1;min-width:60px;background:#0E0E16;border:1px solid rgba(255,255,255,0.05);border-top:1px solid rgba(109,40,217,0.3);border-radius:12px;padding:14px 6px;text-align:center;transition:all 0.25s;position:relative;animation:fade-up 0.4s ease both;}
