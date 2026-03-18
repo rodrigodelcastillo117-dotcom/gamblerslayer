@@ -254,6 +254,19 @@ div[data-testid="stMetricLabel"] { color:var(--text3) !important; font-family:'O
 div[data-testid="stStatusWidget"] { display:none !important; }
 .stApp [data-testid="stAppViewContainer"] > section, .stApp > div { opacity:1 !important; }
 
+/* ── ELIMINAR OPACIDAD EN RERUN ── */
+.stApp, .stApp * { transition: none !important; }
+.stApp { opacity: 1 !important; }
+.stApp > div { opacity: 1 !important; }
+[data-testid="stAppViewContainer"] { opacity: 1 !important; }
+[data-testid="stAppViewContainer"] > section { opacity: 1 !important; }
+.main > div { opacity: 1 !important; }
+/* Ocultar spinner de carga */
+div[data-testid="stStatusWidget"] { display: none !important; }
+.stSpinner { display: none !important; }
+/* Evitar flash blanco */
+html, body { background-color: #1C1C1E !important; }
+
 /* ── EMPTY STATE ── */
 .empty-state { text-align:center; padding:48px 24px; color:var(--text3); }
 .empty-icon { font-size:3rem; margin-bottom:12px; }
