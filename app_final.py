@@ -28,12 +28,12 @@ st.markdown("""
 :root {
   --bg:#08080A; --bg2:#111114; --bg3:#1A1A1E;
   --card:#111114; --card2:#161619; --border:rgba(255,255,255,0.06);
-  --orange:#FF6B00; --orange2:#FF8C00; --yellow:#FFD60A;
-  --green:#00E676; --blue:#448AFF; --red:#FF1744; --purple:#D500F9;
+  --orange:#FF6B00; --yellow:#FFD60A; --green:#00E676;
+  --blue:#448AFF; --red:#FF1744; --purple:#D500F9;
   --text:#FFFFFF; --text2:#B0B0B8; --text3:#404048; --white:#FFFFFF;
   --nav-h:64px;
   --gold:#FFD60A; --gold2:#FF8C00; --felt:#08080A; --dark:#08080A;
-  --muted:#404048; --cyan:#00E676;
+  --muted:#404048; --cyan:#00E676; --orange2:#FF8C00;
 }
 
 *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
@@ -43,35 +43,47 @@ html,body,.stApp,.main,.stMainBlockContainer{
   font-family:'Outfit',-apple-system,sans-serif !important;
 }
 
-/* ── HIDE STREAMLIT CHROME ── */
+/* HIDE ALL STREAMLIT CHROME */
 #MainMenu,footer,.stDeployButton{display:none !important;}
 header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebar"],[data-testid="collapsedControl"],
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
 
-/* ── FIX NAV BUTTONS — make columns fixed+transparent ── */
-div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) {
+/* NAV BUTTON ROW — target by ID we inject via markdown */
+#nav-click-layer {
   position:fixed !important; bottom:0 !important; left:0 !important; right:0 !important;
   z-index:999999 !important; height:var(--nav-h) !important;
-  display:flex !important; align-items:stretch !important;
-  background:transparent !important; margin:0 !important; padding:0 !important; gap:0 !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) > div {
-  flex:1 !important; min-width:0 !important; margin:0 !important; padding:0 !important;
+#nav-click-layer + div[data-testid="stHorizontalBlock"],
+div[data-testid="stHorizontalBlock"].nav-row {
+  position:fixed !important; bottom:0 !important; left:0 !important; right:0 !important;
+  z-index:999999 !important; height:var(--nav-h) !important;
+  display:flex !important; background:transparent !important;
+  margin:0 !important; padding:0 !important; gap:0 !important;
 }
-div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) button {
+div[data-testid="stHorizontalBlock"].nav-row > div,
+div[data-testid="stHorizontalBlock"].nav-row [data-testid="column"] {
+  flex:1 !important; margin:0 !important; padding:0 !important;
+}
+div[data-testid="stHorizontalBlock"].nav-row button,
+div[data-testid="stHorizontalBlock"].nav-row [data-testid="baseButton-secondary"] {
   width:100% !important; height:var(--nav-h) !important;
-  opacity:0 !important; background:transparent !important; border:none !important;
-  border-radius:0 !important; cursor:pointer !important;
-  position:relative !important; z-index:1000000 !important;
-  margin:0 !important; padding:0 !important;
+  opacity:0 !important; background:transparent !important;
+  border:none !important; border-radius:0 !important;
+  cursor:pointer !important; margin:0 !important; padding:0 !important;
+}
+
+/* HIDE ALL regular st.button gray appearance in nav area */
+.nav-row .stButton > button { 
+  all:unset !important;
+  width:100% !important; height:var(--nav-h) !important;
+  display:block !important; cursor:pointer !important; opacity:0 !important;
 }
 
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
 
-/* ── LAYOUT ── */
 .block-container{
   padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;
   max-width:620px !important; margin:0 auto !important;
@@ -79,23 +91,21 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 @media(min-width:820px){.block-container{max-width:920px !important;padding:24px 40px calc(var(--nav-h)+28px) !important;}}
 @media(min-width:1240px){.block-container{max-width:1180px !important;padding:28px 56px calc(var(--nav-h)+28px) !important;}}
 
-/* ── BOTTOM NAV ── */
+/* BOTTOM NAV */
 .den-nav{
   position:fixed;bottom:0;left:0;right:0;
   height:calc(var(--nav-h) + env(safe-area-inset-bottom));
   background:rgba(8,8,10,0.94);
-  backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);
-  border-top:1px solid rgba(255,255,255,0.06);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border-top:1px solid rgba(255,255,255,0.07);
   display:flex;z-index:99998;padding-bottom:env(safe-area-inset-bottom);
 }
 .den-nav::before{
   content:'';position:absolute;top:0;left:0;right:0;height:1px;
   background:linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
 }
-.den-nav-item{
-  flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:3px;padding:6px 2px;position:relative;
-}
+.den-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 2px;position:relative;}
 .den-nav-item.act::before{
   content:'';position:absolute;top:0;left:20%;right:20%;height:2px;
   background:linear-gradient(90deg,transparent,#FF6B00,#FFD60A,#FF6B00,transparent);
@@ -107,7 +117,7 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 .den-nav-label{font-size:0.47rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:#404048;transition:color 0.2s;}
 .den-nav-item.act .den-nav-label{color:#FF6B00;}
 
-/* ── HEADER ── */
+/* HEADER */
 .den-header{text-align:center;padding:20px 0 10px;}
 .den-logo{
   font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;letter-spacing:-1.5px;line-height:1;
@@ -119,7 +129,7 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 .den-divider{width:100%;height:1px;margin:10px 0;background:linear-gradient(90deg,transparent,rgba(255,107,0,0.35) 30%,rgba(255,214,10,0.5) 50%,rgba(255,107,0,0.35) 70%,transparent);}
 .den-corner{display:none;}
 
-/* ── STAT TILES ── */
+/* STAT TILES */
 .stat-grid{display:flex;gap:7px;margin:12px 0;flex-wrap:wrap;}
 .stat-tile{
   flex:1;min-width:68px;
@@ -133,7 +143,7 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 .stat-num{font-size:1.6rem;font-weight:900;line-height:1;letter-spacing:-1px;}
 .stat-label{font-size:0.52rem;color:#404048;letter-spacing:0.8px;text-transform:uppercase;margin-top:4px;}
 
-/* ── PICK CARD ── */
+/* PICK CARD */
 .pick-card{
   background:linear-gradient(145deg,#111114,#141418,#111114);
   border:1px solid rgba(255,255,255,0.07);
@@ -162,35 +172,35 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 }
 .pick-action-arrow{-webkit-text-fill-color:#00E676;font-size:1.3rem;}
 
-/* ── CHIPS ── */
+/* CHIPS */
 .market-chip{display:inline-block;font-size:0.60rem;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;padding:3px 9px;border-radius:8px;margin-right:4px;}
-.chip-ml    {background:rgba(255,107,0,0.12);color:#FF6B00;border:1px solid rgba(255,107,0,0.3);}
-.chip-btts  {background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
-.chip-ou    {background:rgba(255,214,10,0.10);color:#FFD60A;border:1px solid rgba(255,214,10,0.25);}
-.chip-ou-u  {background:rgba(68,138,255,0.10);color:#448AFF;border:1px solid rgba(68,138,255,0.25);}
-.chip-combo {background:rgba(255,107,0,0.10);color:#FF8C00;border:1px solid rgba(255,107,0,0.2);}
-.chip-dc    {background:rgba(68,138,255,0.10);color:#448AFF;border:1px solid rgba(68,138,255,0.25);}
+.chip-ml{background:rgba(255,107,0,0.12);color:#FF6B00;border:1px solid rgba(255,107,0,0.3);}
+.chip-btts{background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
+.chip-ou{background:rgba(255,214,10,0.10);color:#FFD60A;border:1px solid rgba(255,214,10,0.25);}
+.chip-ou-u{background:rgba(68,138,255,0.10);color:#448AFF;border:1px solid rgba(68,138,255,0.25);}
+.chip-combo{background:rgba(255,107,0,0.10);color:#FF8C00;border:1px solid rgba(255,107,0,0.2);}
+.chip-dc{background:rgba(68,138,255,0.10);color:#448AFF;border:1px solid rgba(68,138,255,0.25);}
 .chip-parlay{background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
-.chip-warn  {background:rgba(255,23,68,0.10);color:#FF1744;border:1px solid rgba(255,23,68,0.25);}
+.chip-warn{background:rgba(255,23,68,0.10);color:#FF1744;border:1px solid rgba(255,23,68,0.25);}
 
-/* ── STATS ROW ── */
+/* STATS ROW */
 .stats-row{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0;padding:10px 0;border-top:1px solid rgba(255,255,255,0.05);border-bottom:1px solid rgba(255,255,255,0.05);}
 .stat-item{text-align:center;min-width:56px;}
 .stat-item-val{font-size:1.15rem;font-weight:900;line-height:1;letter-spacing:-0.5px;}
 .stat-item-lbl{font-size:0.56rem;color:#404048;letter-spacing:0.4px;text-transform:uppercase;margin-top:2px;}
-.val-gold{color:#FFD60A;} .val-orange{color:#FF6B00;} .val-yellow{color:#FFD60A;}
-.val-green{color:#00E676;} .val-cyan{color:#00E676;} .val-blue{color:#448AFF;}
-.val-purple{color:#D500F9;} .val-red{color:#FF1744;} .val-muted{color:#404048;} .val-white{color:#fff;}
+.val-gold{color:#FFD60A;}.val-orange{color:#FF6B00;}.val-yellow{color:#FFD60A;}
+.val-green{color:#00E676;}.val-cyan{color:#00E676;}.val-blue{color:#448AFF;}
+.val-purple{color:#D500F9;}.val-red{color:#FF1744;}.val-muted{color:#404048;}.val-white{color:#fff;}
 
-/* ── CONF BADGE ── */
+/* CONF BADGE */
 .conf-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;font-weight:800;text-transform:uppercase;padding:3px 9px;border-radius:20px;}
-.conf-high  {background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
+.conf-high{background:rgba(0,230,118,0.10);color:#00E676;border:1px solid rgba(0,230,118,0.25);}
 .conf-medium{background:rgba(255,214,10,0.10);color:#FFD60A;border:1px solid rgba(255,214,10,0.25);}
-.conf-low   {background:rgba(255,23,68,0.10);color:#FF1744;border:1px solid rgba(255,23,68,0.25);}
+.conf-low{background:rgba(255,23,68,0.10);color:#FF1744;border:1px solid rgba(255,23,68,0.25);}
 .pick-rationale{font-size:0.82rem;color:#B0B0B8;line-height:1.7;margin-top:10px;}
 .pick-rationale b{color:#fff;}
 
-/* ── PARLAY CARD ── */
+/* PARLAY CARD */
 .parlay-card{
   background:linear-gradient(145deg,#081410,#0D1C18,#081410);
   border:1px solid rgba(0,230,118,0.2);
@@ -205,14 +215,14 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 .parlay-leg:last-child{border-bottom:none;}
 .parlay-connector{text-align:center;color:#FF6B00;font-size:0.63rem;letter-spacing:2px;padding:2px 0;}
 
-/* ── GAME ROW ── */
+/* GAME ROW */
 .game-row{background:linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:10px 13px;margin:5px 0;transition:all 0.25s;}
 .game-row:hover{border-color:rgba(255,107,0,0.35);transform:translateX(3px);background:rgba(255,107,0,0.03);}
 .game-row-ev{border-color:rgba(0,230,118,0.2);}
 .game-title{font-size:0.88rem;font-weight:700;color:#fff;}
 .game-meta{font-size:0.72rem;color:#404048;margin-top:2px;}
 
-/* ── BARS ── */
+/* BARS */
 .bar-wrap{margin:3px 0;}
 .bar-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
 .bar-team{font-size:0.72rem;color:#B0B0B8;}
@@ -220,15 +230,15 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 .bar-bg{background:rgba(255,255,255,0.05);border-radius:4px;height:4px;}
 .bar-fill{height:4px;border-radius:4px;}
 
-/* ── SECTION HEADING ── */
+/* SECTION HEADING */
 .section-heading{font-size:0.66rem;font-weight:800;color:#404048;letter-spacing:2.5px;text-transform:uppercase;margin:18px 0 10px;display:flex;align-items:center;gap:10px;}
 .section-heading::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,255,255,0.06),transparent);}
 
-/* ── BANNERS ── */
+/* BANNERS */
 .warn-banner{background:rgba(255,214,10,0.06);border:1px solid rgba(255,214,10,0.2);border-left:3px solid #FFD60A;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FFD60A;margin:8px 0;}
 .demo-banner{background:rgba(255,23,68,0.06);border:1px solid rgba(255,23,68,0.2);border-left:3px solid #FF1744;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FF1744;margin:8px 0;}
 
-/* ── BUTTONS ── */
+/* BUTTONS */
 .stButton > button{
   background:rgba(255,255,255,0.04) !important;color:#fff !important;
   font-family:'Outfit',sans-serif !important;font-size:0.82rem !important;
@@ -243,7 +253,7 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 .stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{
   background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;
   color:#000 !important;border:none !important;font-weight:900 !important;
-  box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;letter-spacing:0.3px !important;
+  box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;
 }
 .stButton > button[kind="primary"]:hover{
   background:linear-gradient(135deg,#FF8C00,#FFB300) !important;
@@ -251,7 +261,7 @@ div[data-testid="stHorizontalBlock"]:has(> div > div > button[key^="_nb_"]) butt
 }
 .stDownloadButton > button{background:rgba(255,255,255,0.04) !important;color:#FF6B00 !important;border:1px solid rgba(255,107,0,0.3) !important;border-radius:12px !important;}
 
-/* ── INPUTS ── */
+/* INPUTS */
 div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,
 div[data-testid="stTextArea"] textarea{
   background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;
@@ -274,7 +284,7 @@ div[data-testid="stMultiSelect"] > div > div{
   background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;
 }
 
-/* ── EXPANDERS ── */
+/* EXPANDERS */
 [data-testid="stExpander"] > details > summary{
   background:rgba(255,255,255,0.03) !important;color:#fff !important;
   border:1px solid rgba(255,255,255,0.07) !important;border-radius:12px !important;
@@ -287,7 +297,7 @@ div[data-testid="stMultiSelect"] > div > div{
 }
 [data-testid="stExpander"]{background:transparent !important;border:none !important;box-shadow:none !important;}
 
-/* ── MISC ── */
+/* MISC */
 .empty-state{text-align:center;padding:40px 20px;color:#404048;}
 .empty-icon{font-size:3rem;margin-bottom:12px;}
 .empty-title{font-size:1rem;font-weight:800;color:#fff;margin-bottom:6px;}
@@ -304,16 +314,11 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 .sidebar-logo{font-family:'Outfit',sans-serif;font-size:1.2rem;font-weight:800;color:#FF6B00;}
 .sidebar-sub{font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase;}
 
-/* ── RESPONSIVE ── */
 @media(max-width:768px){
   .block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}
   .den-logo{font-size:1.55rem !important;}
   .pick-action{font-size:1.05rem !important;}
-  .pick-matchup{font-size:0.88rem !important;}
   .stat-num{font-size:1.35rem !important;}
-  .stat-item-val{font-size:0.92rem !important;}
-  .market-chip{font-size:0.56rem !important;padding:2px 6px !important;}
-  .conf-badge{font-size:0.56rem !important;padding:2px 7px !important;}
   [data-testid="column"]{min-width:0 !important;overflow:hidden !important;}
   *{word-break:break-word !important;overflow-wrap:break-word !important;}
   div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}
@@ -326,7 +331,7 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV
+# BOTTOM NAV — JS-powered, no gray boxes
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
@@ -341,19 +346,57 @@ if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
 _active_page = st.session_state["active_page"]
 
-# Visual nav HTML
+# ── Visual nav (pure HTML) ─────────────────────────────────────────────────────
 _nh = '<div class="den-nav">'
 for _ni in _NAV_ITEMS:
     _a  = "act" if _ni["key"] == _active_page else ""
     _lc = "#FF6B00" if _a else "#404048"
-    _nh += (f'<div class="den-nav-item {_a}">'
+    _nh += (f'<div class="den-nav-item {_a}">' 
             f'<span class="den-nav-icon">{_ni["icon"]}</span>'
             f'<span class="den-nav-label" style="color:{_lc}">{_ni["label"]}</span>'
             f'</div>')
 _nh += '</div>'
 st.markdown(_nh, unsafe_allow_html=True)
 
-# Invisible click layer — st.columns fixed over nav by CSS
+# ── Invisible functional buttons — hidden via JavaScript ─────────────────────
+# JS finds the button row after render and hides it + positions it over nav
+st.markdown("""
+<script>
+(function() {
+  function fixNavButtons() {
+    // Find all stHorizontalBlock elements
+    var blocks = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
+    blocks.forEach(function(block) {
+      // Check if this block contains our nav buttons (buttons with single space text)
+      var btns = block.querySelectorAll('button');
+      if (btns.length === 6) {
+        var allNav = true;
+        btns.forEach(function(b) { if (b.textContent.trim() !== '') allNav = false; });
+        if (allNav) {
+          // This is our nav row — position it over the nav bar
+          block.style.cssText = 'position:fixed!important;bottom:0!important;left:0!important;right:0!important;z-index:999999!important;height:64px!important;display:flex!important;background:transparent!important;margin:0!important;padding:0!important;gap:0!important;';
+          var cols = block.querySelectorAll('[data-testid="column"]');
+          cols.forEach(function(col) {
+            col.style.cssText = 'flex:1!important;margin:0!important;padding:0!important;min-width:0!important;';
+          });
+          btns.forEach(function(btn) {
+            btn.style.cssText = 'width:100%!important;height:64px!important;opacity:0!important;background:transparent!important;border:none!important;border-radius:0!important;cursor:pointer!important;margin:0!important;padding:0!important;display:block!important;';
+          });
+        }
+      }
+    });
+  }
+  // Run on load and after each Streamlit rerender
+  setTimeout(fixNavButtons, 100);
+  setTimeout(fixNavButtons, 500);
+  setTimeout(fixNavButtons, 1000);
+  var observer = new MutationObserver(function() { fixNavButtons(); });
+  observer.observe(document.body, {childList: true, subtree: true});
+})();
+</script>
+""", unsafe_allow_html=True)
+
+# The actual nav buttons (6 columns, each with one invisible button)
 _nc = st.columns(len(_NAV_ITEMS))
 for _i, _nitem in enumerate(_NAV_ITEMS):
     with _nc[_i]:
@@ -5448,31 +5491,21 @@ if _active_page == "Rongol Picks":
     if not sr:
         st.markdown("""
         <div style="text-align:center;padding:44px 16px 28px">
-          <div style="font-size:3.8rem;margin-bottom:12px;display:inline-block;
-            animation:glow-pulse 2s ease-in-out infinite">⚡</div>
+          <div style="font-size:3.8rem;margin-bottom:12px;display:inline-block;animation:glow-pulse 2s ease-in-out infinite">⚡</div>
           <style>@keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 12px rgba(255,107,0,0.5))}50%{filter:drop-shadow(0 0 36px rgba(255,214,10,0.9))}}</style>
           <div style="font-size:1.5rem;font-weight:900;letter-spacing:-1px;margin-bottom:8px;
-            background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;
-            -webkit-text-fill-color:transparent;background-clip:text">¡Bienvenido al Den!</div>
+            background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">
+            ¡Bienvenido al Den!</div>
           <div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">
             Toca <b style="color:#FF6B00">⚙️ CONFIG</b> en la barra de abajo<br>
-            y presiona <b style="color:#FFD60A">🚀 Analizar ahora</b>
-          </div>
+            y presiona <b style="color:#FFD60A">🚀 Analizar ahora</b></div>
           <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:22px">
-            <div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.03));
-              border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;
-              font-size:0.74rem;font-weight:800;color:#FF6B00;letter-spacing:0.5px">⚡ Monte Carlo</div>
-            <div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.03));
-              border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;
-              font-size:0.74rem;font-weight:800;color:#FFD60A;letter-spacing:0.5px">🎯 EV+ Picks</div>
-            <div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.03));
-              border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;
-              font-size:0.74rem;font-weight:800;color:#00E676;letter-spacing:0.5px">🎰 Parlays</div>
+            <div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.03));border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FF6B00">⚡ Monte Carlo</div>
+            <div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.03));border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FFD60A">🎯 EV+ Picks</div>
+            <div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.03));border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#00E676">🎰 Parlays</div>
           </div>
-          <div style="font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase">
-            10,000 sims · ESPN Live · Monte Carlo</div>
-        </div>
-        """, unsafe_allow_html=True)
+          <div style="font-size:0.60rem;color:#404048;letter-spacing:2px;text-transform:uppercase">10,000 sims · ESPN Live · Monte Carlo</div>
+        </div>""", unsafe_allow_html=True)
     else:
         # ── Detectar picks terminados ─────────────────────────────────────────────
         pick_game_ids = {r.get("id","") for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0}
@@ -8577,11 +8610,9 @@ elif _active_page == "Config":
     <div style="text-align:center;padding:28px 0 16px">
       <div style="font-size:3rem;margin-bottom:8px;filter:drop-shadow(0 0 20px rgba(255,107,0,0.45))">⚙️</div>
       <div style="font-size:1.4rem;font-weight:900;letter-spacing:-1px;
-        background:linear-gradient(135deg,#FF6B00,#FFD60A);
-        -webkit-background-clip:text;-webkit-text-fill-color:transparent;">Configuración</div>
+        background:linear-gradient(135deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Configuración</div>
       <div style="font-size:0.57rem;color:#404048;letter-spacing:3px;text-transform:uppercase;margin-top:5px">ajusta · analiza · gana</div>
-    </div>
-    """, unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
 
     st.markdown('<div style="font-size:0.65rem;color:var(--orange);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔮 SIMULACIONES</div>', unsafe_allow_html=True)
     n_sims_cfg = st.select_slider(
