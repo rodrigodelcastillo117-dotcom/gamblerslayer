@@ -43,7 +43,7 @@ st.markdown("""
   --red:       #FF453A;
   --green:     #30D158;
   --blue:      #0A84FF;
-  --nav-h:     48px;
+  --nav-h:     44px;
   --radius:    16px;
   --radius-sm: 10px;
   --radius-lg: 22px;
@@ -77,7 +77,7 @@ header[data-testid="stHeader"] { display: none !important; }
 ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 4px; }
 
 .block-container {
-  padding: 16px 14px calc(var(--nav-h) + 60px) 14px !important;
+  padding: 16px 14px 130px 14px !important;
   max-width: 520px !important;
   margin: 0 auto !important;
 }
@@ -325,72 +325,72 @@ hr { border-color:var(--border) !important; }
 
 
 /* ═══ BOTTOM NAV — styled radio ═══ */
-/* Hide the standard radio container, rebuild as fixed bottom nav */
-div[data-testid="stRadio"][key="nav_radio_main"],
-div[data-testid="stRadio"] {
-  /* Will be overridden by specific selectors below */
+div[data-testid="stRadio"] > label:first-child {
+  display: none !important;
+  height: 0 !important;
 }
 
-/* The radio group that contains our nav */
+div[data-testid="stRadio"] input[type="radio"] {
+  display: none !important;
+}
+
 div[data-testid="stRadio"] > div[role="radiogroup"] {
   position: fixed !important;
-  bottom: 0 !important; left: 0 !important; right: 0 !important;
-  height: var(--nav-h) !important;
-  display: flex !important; flex-direction: row !important;
+  bottom: 70px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 96% !important;
+  max-width: 480px !important;
+  height: 44px !important;
+  display: flex !important;
+  flex-direction: row !important;
   background: rgba(28,28,30,0.97) !important;
   backdrop-filter: saturate(180%) blur(20px) !important;
   -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
-  border-top: 1px solid rgba(255,255,255,0.08) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 22px !important;
   z-index: 99999 !important;
-  gap: 0 !important; padding: 4px 2px 2px !important;
-  padding-bottom: max(2px, env(safe-area-inset-bottom)) !important;
+  gap: 0 !important;
+  padding: 3px !important;
   margin: 0 !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5) !important;
 }
 
-/* Each radio option = one nav item */
 div[data-testid="stRadio"] label[data-baseweb="radio"] {
   flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 1px !important;
+  gap: 0px !important;
   cursor: pointer !important;
-  padding: 2px 1px !important;
+  padding: 2px 0px !important;
   margin: 0 !important;
-  border-top: 2px solid transparent !important;
+  border-radius: 18px !important;
+  border-top: none !important;
+  transition: background 0.15s !important;
 }
 
-/* Selected nav item — orange top border */
 div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
-  border-top: 2px solid #FF6B00 !important;
+  background: rgba(255,107,0,0.20) !important;
+  border-top: none !important;
 }
 
-/* Hide the actual radio circle input */
-div[data-testid="stRadio"] input[type="radio"] {
-  display: none !important;
-}
-
-/* The text label of each option */
 div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p,
 div[data-testid="stRadio"] label[data-baseweb="radio"] span {
-  font-size: 0.44rem !important;
+  font-size: 0.52rem !important;
   font-weight: 700 !important;
-  letter-spacing: 0.5px !important;
+  letter-spacing: 0.3px !important;
   text-transform: uppercase !important;
   color: #636366 !important;
   font-family: 'Outfit', sans-serif !important;
+  line-height: 1 !important;
 }
 
-/* Selected item text — orange */
 div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
 div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
   color: #FF6B00 !important;
-}
-
-/* Hide the radio label (the "nav" text above the group) */
-div[data-testid="stRadio"] > label:first-child {
-  display: none !important;
+}  display: none !important;
 }
 
 </style>
