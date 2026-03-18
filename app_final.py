@@ -43,7 +43,7 @@ st.markdown("""
   --red:       #FF453A;
   --green:     #30D158;
   --blue:      #0A84FF;
-  --nav-h:     72px;
+  --nav-h:     48px;
   --radius:    16px;
   --radius-sm: 10px;
   --radius-lg: 22px;
@@ -77,7 +77,7 @@ header[data-testid="stHeader"] { display: none !important; }
 ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 4px; }
 
 .block-container {
-  padding: 16px 14px calc(var(--nav-h) + 20px) 14px !important;
+  padding: 16px 14px calc(var(--nav-h) + 60px) 14px !important;
   max-width: 520px !important;
   margin: 0 auto !important;
 }
@@ -342,7 +342,8 @@ div[data-testid="stRadio"] > div[role="radiogroup"] {
   -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
   border-top: 1px solid rgba(255,255,255,0.08) !important;
   z-index: 99999 !important;
-  gap: 0 !important; padding: 8px 4px 4px !important;
+  gap: 0 !important; padding: 4px 2px 2px !important;
+  padding-bottom: max(2px, env(safe-area-inset-bottom)) !important;
   margin: 0 !important;
 }
 
@@ -353,9 +354,9 @@ div[data-testid="stRadio"] label[data-baseweb="radio"] {
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 3px !important;
+  gap: 1px !important;
   cursor: pointer !important;
-  padding: 4px 2px !important;
+  padding: 2px 1px !important;
   margin: 0 !important;
   border-top: 2px solid transparent !important;
 }
@@ -373,7 +374,7 @@ div[data-testid="stRadio"] input[type="radio"] {
 /* The text label of each option */
 div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p,
 div[data-testid="stRadio"] label[data-baseweb="radio"] span {
-  font-size: 0.48rem !important;
+  font-size: 0.44rem !important;
   font-weight: 700 !important;
   letter-spacing: 0.5px !important;
   text-transform: uppercase !important;
