@@ -419,6 +419,7 @@ _NAV_ITEMS = [
     {"key": "Picks",        "icon": "🎯", "label": "Picks"},
     {"key": "Parlays",      "icon": "🎰", "label": "Parlays"},
     {"key": "En Vivo",      "icon": "🔴", "label": "Live"},
+    {"key": "Califica",     "icon": "🏆", "label": "Califica"},
     {"key": "Reto 13M",     "icon": "💰", "label": "Reto"},
     {"key": "Config",       "icon": "⚙️",  "label": "Config"},
 ]
@@ -8692,6 +8693,693 @@ elif _active_page == "Reto 13M":
             mime="text/csv",
             key="btn_export_reto"
         )
+
+
+elif _active_page == "Califica":
+    # ══════════════════════════════════════════════════════════════════════════
+    # CALIFICA TU PICK — Grade any pick A-F using full Monte Carlo engine
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # ── CSS específico para esta página ──────────────────────────────────────
+    st.markdown("""
+    <style>
+    .grade-card {
+        border-radius: 24px;
+        padding: 0;
+        margin: 12px 0;
+        overflow: hidden;
+        position: relative;
+    }
+    .grade-ring {
+        width: 110px; height: 110px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column;
+        margin: 0 auto;
+        position: relative;
+        box-shadow: 0 0 40px var(--ring-color);
+        border: 4px solid var(--ring-color);
+        background: radial-gradient(circle, var(--ring-bg) 0%, #0a0a0a 100%);
+    }
+    .grade-letter {
+        font-size: 3.2rem;
+        font-weight: 900;
+        line-height: 1;
+        font-family: 'Outfit', sans-serif;
+        color: var(--ring-color);
+        text-shadow: 0 0 20px var(--ring-color);
+    }
+    .grade-sub {
+        font-size: 0.55rem;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--ring-color);
+        margin-top: 2px;
+        opacity: 0.8;
+    }
+    .metric-box {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 14px;
+        padding: 12px 10px;
+        text-align: center;
+        flex: 1;
+    }
+    .metric-val {
+        font-size: 1.4rem;
+        font-weight: 800;
+        line-height: 1;
+        font-family: 'Outfit', sans-serif;
+    }
+    .metric-lbl {
+        font-size: 0.55rem;
+        color: #636366;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-top: 3px;
+    }
+    .signal-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .signal-icon { font-size: 1.1rem; width: 28px; text-align: center; }
+    .signal-name { font-size: 0.75rem; color: #AEAEB2; flex: 1; }
+    .signal-val { font-size: 0.82rem; font-weight: 700; }
+    .verdict-banner {
+        border-radius: 16px;
+        padding: 14px 18px;
+        margin: 10px 0;
+        border-left: 4px solid var(--ring-color);
+        background: linear-gradient(135deg, var(--ring-bg) 0%, rgba(0,0,0,0) 100%);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:2rem;margin-bottom:4px">🏆</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:1.4rem;font-weight:900;
+        background:linear-gradient(135deg,#FF6B00,#FFD60A);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+        background-clip:text;letter-spacing:-0.5px">CALIFICA TU PICK</div>
+      <div style="font-size:0.65rem;color:#636366;letter-spacing:3px;
+        text-transform:uppercase;margin-top:4px">
+        Motor Monte Carlo · Señales 1-6 · Análisis completo
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Formulario de entrada ─────────────────────────────────────────────────
+    sr_cal = st.session_state.get("sim_results", [])
+    
+    # Construir lista de partidos disponibles
+    _cal_games = []
+    for _r in sr_cal:
+        _label = f'{_r.get("away_team","?")} @ {_r.get("home_team","?")} · {_r.get("league","")}'
+        _cal_games.append((_label, _r))
+    
+    if not _cal_games:
+        st.markdown("""
+        <div style="text-align:center;padding:40px 20px">
+          <div style="font-size:2.5rem;margin-bottom:12px">📡</div>
+          <div style="font-size:0.95rem;font-weight:700;color:#E8E8E8;margin-bottom:8px">
+            Sin partidos cargados
+          </div>
+          <div style="font-size:0.82rem;color:#636366">
+            Ve a ⚡ Rongol o 🎯 Picks primero para cargar los partidos del día.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
+
+    st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">① SELECCIONA EL PARTIDO</div>', unsafe_allow_html=True)
+    
+    _cal_labels = [x[0] for x in _cal_games]
+    _cal_sel_idx = st.selectbox("Partido", range(len(_cal_labels)),
+                                 format_func=lambda i: _cal_labels[i],
+                                 key="cal_game_sel", label_visibility="collapsed")
+    _cal_r = _cal_games[_cal_sel_idx][1]
+    _cal_sim = _cal_r.get("sim", {})
+    _cal_league = _cal_r.get("league", "")
+    _cal_home = _cal_r.get("home_team", "Local")
+    _cal_away = _cal_r.get("away_team", "Visita")
+    _cal_sg = LEAGUES.get(_cal_league, {}).get("group", "Soccer")
+
+    # Mostrar matchup visual
+    _ht_id = _cal_r.get("home_team_id", "")
+    _at_id = _cal_r.get("away_team_id", "")
+    _hl = _logo_img(_ht_id, _cal_league, 36)
+    _al = _logo_img(_at_id, _cal_league, 36)
+    
+    st.markdown(
+        f'<div style="display:flex;align-items:center;justify-content:center;gap:12px;'
+        f'padding:12px;background:rgba(255,107,0,0.06);border-radius:16px;margin:8px 0 16px">'
+        f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+        f'{_al}<span style="font-size:0.75rem;font-weight:700;color:#E8E8E8">{_cal_away}</span></div>'
+        f'<span style="font-size:0.9rem;color:#636366;font-weight:700">VS</span>'
+        f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+        f'{_hl}<span style="font-size:0.75rem;font-weight:700;color:#E8E8E8">{_cal_home}</span></div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    # ── Tipo de mercado ───────────────────────────────────────────────────────
+    st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">② TU PICK</div>', unsafe_allow_html=True)
+
+    _cal_col1, _cal_col2 = st.columns(2)
+    with _cal_col1:
+        _cal_market = st.selectbox(
+            "Mercado", ["ML", "O/U Over", "O/U Under", "BTTS Sí", "BTTS No", "Over 2.5", "Over 3.5"],
+            key="cal_market", label_visibility="collapsed"
+        )
+    with _cal_col2:
+        if _cal_market == "ML":
+            _cal_side = st.selectbox("Equipo", [_cal_home, _cal_away], key="cal_side", label_visibility="collapsed")
+        elif _cal_market in ("O/U Over", "O/U Under"):
+            _ou_default = float(_cal_sim.get("over_under") or _cal_r.get("odds", {}).get("over_under") or 2.5)
+            _cal_line = st.number_input("Línea O/U", value=_ou_default, step=0.5, key="cal_line", label_visibility="collapsed")
+            _cal_side = None
+        else:
+            _cal_side = None
+            st.markdown('<div style="padding:8px 0;font-size:0.82rem;color:#AEAEB2">Seleccionado ✓</div>', unsafe_allow_html=True)
+
+    # Momio
+    st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:12px 0 6px">③ MOMIO (americano)</div>', unsafe_allow_html=True)
+    
+    # Sugerir momio automático si está disponible
+    _suggested_momio = None
+    if _cal_market == "ML":
+        if _cal_side == _cal_home:
+            _suggested_momio = _cal_sim.get("home_ml") or _cal_r.get("odds", {}).get("home_ml")
+        else:
+            _suggested_momio = _cal_sim.get("away_ml") or _cal_r.get("odds", {}).get("away_ml")
+    
+    _momio_default = int(_suggested_momio) if _suggested_momio else -110
+    _cal_momio = st.number_input("Momio americano", value=_momio_default, step=5, key="cal_momio", label_visibility="collapsed")
+
+    # ── Botón calificar ───────────────────────────────────────────────────────
+    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+    _btn_cal = st.button("🏆  CALIFICAR PICK", key="btn_calificar", use_container_width=True, type="primary")
+
+    if _btn_cal or st.session_state.get("_cal_result"):
+        if _btn_cal:
+            # ── Calcular todo ─────────────────────────────────────────────────
+            # 1. Probabilidad del modelo para este pick
+            _sim = _cal_sim
+            _model_prob = 0.5
+            _market_key = _cal_market
+
+            if _cal_market == "ML":
+                if _cal_side == _cal_home:
+                    _model_prob = (_sim.get("home_pct", 50) or 50) / 100
+                else:
+                    _model_prob = (_sim.get("away_pct", 50) or 50) / 100
+            elif _cal_market == "O/U Over":
+                _p_o = _sim.get("p_o_total") or _sim.get("p_o25")
+                _model_prob = (_p_o or 50) / 100
+            elif _cal_market == "O/U Under":
+                _p_u = _sim.get("p_u_total") or _sim.get("p_u25")
+                _model_prob = (_p_u or 50) / 100
+            elif _cal_market == "BTTS Sí":
+                _model_prob = (_sim.get("p_btts") or 50) / 100
+            elif _cal_market == "BTTS No":
+                _model_prob = 1 - (_sim.get("p_btts") or 50) / 100
+            elif _cal_market == "Over 2.5":
+                _model_prob = (_sim.get("p_o25") or 50) / 100
+            elif _cal_market == "Over 3.5":
+                _model_prob = (_sim.get("p_o35") or 50) / 100
+
+            # 2. Probabilidad implícita del momio
+            _impl_prob = ml_to_prob(_cal_momio)
+
+            # 3. EV
+            _ev = calc_ev(_model_prob, str(_cal_momio))
+
+            # 4. Edge
+            _edge = round((_model_prob - _impl_prob) * 100, 1)
+
+            # 5. Kelly
+            _kelly = quarter_kelly(_model_prob, str(_cal_momio))
+
+            # 6. Consenso
+            _consensus = _sim.get("consensus_label", "◈ NEUTRAL")
+            _consensus_score = _sim.get("consensus_score", 0)
+
+            # 7. DQ
+            _dq = _sim.get("data_quality", 0)
+
+            # 8. Fatiga / back2back
+            _fatigue = _sim.get("fatigue_note", "")
+            _injury = _sim.get("injury_note", "")
+
+            # 9. Scoring trend
+            _lam_rh = _sim.get("lam_real_h")
+            _lam_ra = _sim.get("lam_real_a")
+            _lam_lg = _sim.get("lam_league")
+
+            # ── CALIFICACIÓN A-F ──────────────────────────────────────────────
+            def _grade_pick(ev, edge_pp, model_prob, dq, consensus_score):
+                """Califica el pick de A a F con puntuación compuesta."""
+                score = 0
+
+                # EV (40% del peso)
+                if ev is None: ev = 0
+                if ev >= 20:    score += 40
+                elif ev >= 12:  score += 32
+                elif ev >= 6:   score += 22
+                elif ev >= 2:   score += 14
+                elif ev >= 0:   score += 6
+                else:           score += max(0, 6 + ev)  # penaliza EV negativo
+
+                # Edge vs mercado (25% del peso)
+                if edge_pp >= 12:   score += 25
+                elif edge_pp >= 7:  score += 20
+                elif edge_pp >= 4:  score += 14
+                elif edge_pp >= 1:  score += 8
+                elif edge_pp >= 0:  score += 3
+                else:               score += 0
+
+                # Probabilidad del modelo (20% del peso)
+                if model_prob >= 0.72:   score += 20
+                elif model_prob >= 0.62: score += 16
+                elif model_prob >= 0.54: score += 11
+                elif model_prob >= 0.50: score += 6
+                else:                    score += 2
+
+                # Consenso de señales (15% del peso)
+                if consensus_score >= 0.50:   score += 15
+                elif consensus_score >= 0.20: score += 11
+                elif consensus_score >= 0.0:  score += 7
+                elif consensus_score >= -0.3: score += 3
+                else:                         score += 0
+
+                # Penalizaciones
+                if dq < 25:    score -= 8   # sin datos reales
+                if dq < 10:    score -= 10  # sin absolutamente nada
+                if edge_pp < -5: score -= 10  # pick en contra del modelo
+
+                score = max(0, min(100, score))
+
+                if score >= 88:   return "A+", score
+                elif score >= 80: return "A",  score
+                elif score >= 72: return "B+", score
+                elif score >= 64: return "B",  score
+                elif score >= 56: return "C+", score
+                elif score >= 48: return "C",  score
+                elif score >= 38: return "D",  score
+                elif score >= 26: return "E",  score
+                else:             return "F",  score
+
+            _grade, _score = _grade_pick(
+                ev=_ev or 0,
+                edge_pp=_edge,
+                model_prob=_model_prob,
+                dq=_dq,
+                consensus_score=_consensus_score
+            )
+
+            # Guardar resultado en session_state
+            st.session_state["_cal_result"] = {
+                "grade": _grade, "score": _score,
+                "model_prob": _model_prob, "impl_prob": _impl_prob,
+                "ev": _ev, "edge": _edge, "kelly": _kelly,
+                "consensus": _consensus, "consensus_score": _consensus_score,
+                "dq": _dq, "fatigue": _fatigue, "injury": _injury,
+                "lam_rh": _lam_rh, "lam_ra": _lam_ra, "lam_lg": _lam_lg,
+                "market": _cal_market, "side": _cal_side,
+                "home": _cal_home, "away": _cal_away, "league": _cal_league,
+                "momio": _cal_momio,
+            }
+
+        # ── Mostrar resultado ─────────────────────────────────────────────────
+        _res = st.session_state.get("_cal_result", {})
+        if not _res:
+            st.stop()
+
+        _g     = _res["grade"]
+        _sc    = _res["score"]
+        _ev_r  = _res["ev"] or 0
+        _mp    = _res["model_prob"]
+        _ip    = _res["impl_prob"]
+        _edg   = _res["edge"]
+        _kl    = _res["kelly"] or 0
+        _cons  = _res["consensus"]
+        _dq_r  = _res["dq"]
+        _mom   = _res["momio"]
+
+        # Colores por grado
+        _GRADE_COLORS = {
+            "A+": ("#00C896", "rgba(0,200,150,0.15)", "APUESTA FUERTE 🔥"),
+            "A":  ("#00C896", "rgba(0,200,150,0.12)", "EXCELENTE ✅"),
+            "B+": ("#86efac", "rgba(134,239,172,0.12)", "MUY BUENA ⚡"),
+            "B":  ("#60a5fa", "rgba(96,165,250,0.12)", "BUENA 👍"),
+            "C+": ("#fbbf24", "rgba(251,191,36,0.12)", "ACEPTABLE 📊"),
+            "C":  ("#C9A84C", "rgba(201,168,76,0.10)", "MARGINAL ➡️"),
+            "D":  ("#f97316", "rgba(249,115,22,0.10)", "DÉBIL ⚠️"),
+            "E":  ("#ef4444", "rgba(239,68,68,0.10)", "EVITAR ❌"),
+            "F":  ("#7f1d1d", "rgba(127,29,29,0.15)", "TRAMPA 🚫"),
+        }
+        _gc, _gbg, _gverdict = _GRADE_COLORS.get(_g, ("#636366", "rgba(99,99,102,0.10)", "SIN DATOS"))
+
+        # ── TARJETA PRINCIPAL ─────────────────────────────────────────────────
+        st.markdown(
+            f'<div style="background:linear-gradient(135deg,{_gbg} 0%,#0a0a0a 100%);'
+            f'border:2px solid {_gc}44;border-radius:24px;padding:20px 16px;'
+            f'margin:8px 0;box-shadow:0 0 40px {_gc}22;text-align:center">'
+
+            # Ring con la nota
+            f'<div style="--ring-color:{_gc};--ring-bg:{_gbg};width:120px;height:120px;'
+            f'border-radius:50%;display:flex;align-items:center;justify-content:center;'
+            f'flex-direction:column;margin:0 auto 16px;'
+            f'border:4px solid {_gc};background:radial-gradient(circle,{_gbg} 0%,#0a0a0a 100%);'
+            f'box-shadow:0 0 40px {_gc}66,inset 0 0 20px {_gc}22">'
+            f'<span style="font-size:3rem;font-weight:900;color:{_gc};line-height:1;'
+            f'font-family:Outfit,sans-serif;text-shadow:0 0 20px {_gc}">{_g}</span>'
+            f'<span style="font-size:0.52rem;font-weight:700;letter-spacing:2px;'
+            f'text-transform:uppercase;color:{_gc};opacity:0.8">{_sc}/100</span>'
+            f'</div>'
+
+            # Veredicto
+            f'<div style="font-size:1.1rem;font-weight:800;color:{_gc};'
+            f'letter-spacing:1px;margin-bottom:8px">{_gverdict}</div>'
+
+            # Pick resumido
+            f'<div style="font-size:0.78rem;color:#AEAEB2;margin-bottom:4px">'
+            f'{_res["away"]} @ {_res["home"]}</div>'
+            f'<div style="font-size:0.92rem;font-weight:700;color:#E8E8E8">'
+            f'{_res["market"]} {_res["side"] or ""} @ {_mom:+d}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        # ── MÉTRICAS CLAVE ─────────────────────────────────────────────────────
+        st.markdown('<div style="display:flex;gap:8px;margin:12px 0">', unsafe_allow_html=True)
+        _metrics = [
+            ("Prob Modelo", f'{_mp*100:.1f}%', "#00C896" if _mp > _ip else "#ef4444"),
+            ("Prob Impl.", f'{_ip*100:.1f}%', "#AEAEB2"),
+            ("EV / $100", f'{_ev_r:+.1f}' if _ev_r else "N/A", "#00C896" if (_ev_r or 0) > 0 else "#ef4444"),
+            ("Edge", f'{_edg:+.1f}pp', "#00C896" if _edg > 0 else "#ef4444"),
+            ("Kelly 25%", f'{(_kl or 0)*100:.1f}%', "#60a5fa"),
+            ("DQ", f'{_dq_r:.0f}%', "#00C896" if _dq_r > 60 else "#C9A84C" if _dq_r > 30 else "#ef4444"),
+        ]
+        _m_cols = st.columns(3)
+        for _mi, (_lbl, _val, _clr) in enumerate(_metrics):
+            with _m_cols[_mi % 3]:
+                st.markdown(
+                    f'<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);'
+                    f'border-radius:14px;padding:10px 6px;text-align:center;margin-bottom:8px">'
+                    f'<div style="font-size:1.2rem;font-weight:800;color:{_clr};'
+                    f'font-family:Outfit,sans-serif">{_val}</div>'
+                    f'<div style="font-size:0.55rem;color:#636366;letter-spacing:1px;'
+                    f'text-transform:uppercase;margin-top:2px">{_lbl}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        # ── SEÑALES DETALLADAS ─────────────────────────────────────────────────
+        st.markdown(
+            '<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;'
+            'letter-spacing:2px;text-transform:uppercase;margin:16px 0 8px">📡 ANÁLISIS DE SEÑALES</div>',
+            unsafe_allow_html=True
+        )
+
+        _signals_data = []
+
+        # Señal 1: Momio/Mercado
+        _s1_ok = _edg > 0
+        _signals_data.append(("💰", "Valor vs Mercado",
+            f"Edge {_edg:+.1f}pp vs implícita {_ip*100:.1f}%",
+            "#00C896" if _s1_ok else "#ef4444", "✅" if _s1_ok else "❌"))
+
+        # Señal 2: Modelo Monte Carlo
+        _s2_ok = _mp > 0.52
+        _signals_data.append(("🎲", "Monte Carlo",
+            f"Probabilidad simulada: {_mp*100:.1f}%",
+            "#00C896" if _s2_ok else "#C9A84C", "✅" if _s2_ok else "◾"))
+
+        # Señal 3: Consenso
+        _cons_icon = "✅" if "CONSENSO" in _cons else ("⚡" if "APOYO" in _cons else ("⚠️" if "CONFLICTO" in _cons else "◾"))
+        _cons_color = "#00C896" if "CONSENSO" in _cons else ("#60a5fa" if "APOYO" in _cons else ("#f97316" if "CONFLICTO" in _cons else "#636366"))
+        _signals_data.append(("📊", "Consenso señales", _cons, _cons_color, _cons_icon))
+
+        # Señal 4: Scoring Trend
+        if _res.get("lam_rh") and _res.get("lam_lg"):
+            _lam_total = (_res["lam_rh"] or 0) + (_res.get("lam_ra") or 0)
+            _lam_lg = _res["lam_lg"]
+            _delta = _lam_total - _lam_lg
+            _s4_ok = abs(_delta) >= 0.3
+            _s4_icon = "📈" if _delta > 0 else "📉"
+            _signals_data.append((_s4_icon, "Scoring Trend",
+                f"λreal={_lam_total:.1f} vs liga={_lam_lg:.1f} ({_delta:+.1f})",
+                "#C9A84C" if _s4_ok else "#636366", "✅" if _s4_ok else "◾"))
+
+        # Señal 5: Lesiones
+        if _res.get("injury"):
+            _signals_data.append(("🏥", "Injury Report", _res["injury"][:60], "#ef4444", "⚠️"))
+        else:
+            _signals_data.append(("🏥", "Injury Report", "Sin bajas significativas", "#00C896", "✅"))
+
+        # Señal 6: Fatiga
+        if _res.get("fatigue"):
+            _signals_data.append(("🔋", "Fatiga / Descanso", _res["fatigue"][:60], "#f97316", "⚠️"))
+        else:
+            _signals_data.append(("🔋", "Fatiga / Descanso", "Sin back-to-back detectado", "#00C896", "✅"))
+
+        # DQ
+        _dq_label = "Alta — ML + ESPN + Récords" if _dq_r >= 60 else ("Media — sin cuotas ESPN" if _dq_r >= 30 else "Baja — solo récords de temporada")
+        _dq_color = "#00C896" if _dq_r >= 60 else ("#C9A84C" if _dq_r >= 30 else "#ef4444")
+        _signals_data.append(("🔍", f"Calidad de datos ({_dq_r:.0f}%)", _dq_label, _dq_color, "✅" if _dq_r >= 60 else ("◾" if _dq_r >= 30 else "❌")))
+
+        # Render señales
+        for _icon, _name, _detail, _clr, _status in _signals_data:
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;'
+                f'border-bottom:1px solid rgba(255,255,255,0.05)">'
+                f'<span style="font-size:1.1rem;width:28px;text-align:center">{_icon}</span>'
+                f'<div style="flex:1">'
+                f'<div style="font-size:0.78rem;font-weight:700;color:#E8E8E8">{_name}</div>'
+                f'<div style="font-size:0.68rem;color:#636366;margin-top:1px">{_detail}</div>'
+                f'</div>'
+                f'<span style="font-size:1rem">{_status}</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        # ── VEREDICTO FINAL ────────────────────────────────────────────────────
+        _verdicts = {
+            "A+": "🔥 Pick de élite. Todas las señales alineadas. Apuesta con confianza dentro de tu bankroll.",
+            "A":  "✅ Pick excelente. EV sólido y modelo confirma valor real vs mercado.",
+            "B+": "⚡ Pick muy bueno. EV positivo claro, la mayoría de señales a favor.",
+            "B":  "👍 Pick bueno. Valor real detectado. Apuesta normal dentro del Kelly.",
+            "C+": "📊 Pick aceptable. EV marginal pero positivo. Reduce el stake.",
+            "C":  "➡️ Pick marginal. Apenas positivo. Solo si tienes alta convicción propia.",
+            "D":  "⚠️ Pick débil. EV casi nulo o señales en conflicto. Mejor pasar.",
+            "E":  "❌ Evitar. El modelo ve valor en la dirección contraria.",
+            "F":  "🚫 Trampa de casa. El mercado tiene ventaja clara. No apostar.",
+        }
+        _verdict_text = _verdicts.get(_g, "Sin datos suficientes para calificar.")
+
+        st.markdown(
+            f'<div style="background:linear-gradient(135deg,{_gbg},rgba(0,0,0,0));'
+            f'border-left:4px solid {_gc};border-radius:0 16px 16px 0;'
+            f'padding:14px 18px;margin:16px 0">'
+            f'<div style="font-size:0.62rem;color:{_gc};font-weight:700;'
+            f'letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">VEREDICTO FINAL</div>'
+            f'<div style="font-size:0.88rem;color:#E8E8E8;line-height:1.6">{_verdict_text}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        # ── Barra de progreso de score ──────────────────────────────────────────
+        _bar_w = _sc
+        _bar_color = _gc
+        st.markdown(
+            f'<div style="margin:8px 0 20px">'
+            f'<div style="display:flex;justify-content:space-between;'
+            f'font-size:0.65rem;color:#636366;margin-bottom:4px">'
+            f'<span>F</span><span>E</span><span>D</span><span>C</span><span>B</span><span>A+</span></div>'
+            f'<div style="background:rgba(255,255,255,0.06);border-radius:12px;height:8px;overflow:hidden">'
+            f'<div style="width:{_bar_w}%;height:100%;border-radius:12px;'
+            f'background:linear-gradient(90deg,#ef4444,#f97316,#fbbf24,#00C896);'
+            f'box-shadow:0 0 12px {_bar_color}"></div>'
+            f'</div>'
+            f'<div style="text-align:right;font-size:0.65rem;color:{_gc};'
+            f'font-weight:700;margin-top:2px">{_sc}/100 pts</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        # ── MEJOR PICK RECOMENDADO ────────────────────────────────────────────
+        # Solo mostrar si el pick calificado es C o peor (score < 56)
+        if _sc < 56:
+            st.markdown(
+                '<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;'
+                'letter-spacing:2px;text-transform:uppercase;margin:20px 0 8px">'
+                '⚡ MEJOR PICK DISPONIBLE PARA ESTE PARTIDO</div>',
+                unsafe_allow_html=True
+            )
+
+            # Buscar el mejor pick disponible del mismo partido
+            _best_available = None
+            _best_ev = -999
+            _best_grade = "F"
+            _best_score = 0
+
+            # Evaluar todos los mercados posibles del partido
+            _candidates_rec = []
+
+            # ML Home
+            _hp = (_cal_sim.get("home_pct") or 0) / 100
+            _hml = _cal_sim.get("home_ml") or _cal_r.get("odds", {}).get("home_ml")
+            if _hml:
+                _hev = calc_ev(_hp, str(_hml))
+                _hedge = round((_hp - ml_to_prob(_hml)) * 100, 1)
+                _hg, _hs = _grade_pick(_hev or 0, _hedge, _hp, _dq_r, _consensus_score)
+                _candidates_rec.append({"label": f"{_cal_home} ML", "market": "ML",
+                    "prob": _hp, "ev": _hev, "edge": _hedge,
+                    "grade": _hg, "score": _hs, "momio": _hml})
+
+            # ML Away
+            _ap = (_cal_sim.get("away_pct") or 0) / 100
+            _aml = _cal_sim.get("away_ml") or _cal_r.get("odds", {}).get("away_ml")
+            if _aml:
+                _aev = calc_ev(_ap, str(_aml))
+                _aedge = round((_ap - ml_to_prob(_aml)) * 100, 1)
+                _ag, _as2 = _grade_pick(_aev or 0, _aedge, _ap, _dq_r, _consensus_score)
+                _candidates_rec.append({"label": f"{_cal_away} ML", "market": "ML",
+                    "prob": _ap, "ev": _aev, "edge": _aedge,
+                    "grade": _ag, "score": _as2, "momio": _aml})
+
+            # BTTS (soccer)
+            if _cal_sg == "Soccer":
+                _bp = (_cal_sim.get("p_btts") or 0) / 100
+                _bev = calc_ev(_bp, "-115")
+                _bedge = round((_bp - ml_to_prob(-115)) * 100, 1)
+                _bg, _bs = _grade_pick(_bev or 0, _bedge, _bp, _dq_r, _consensus_score)
+                _candidates_rec.append({"label": "BTTS Sí", "market": "BTTS",
+                    "prob": _bp, "ev": _bev, "edge": _bedge,
+                    "grade": _bg, "score": _bs, "momio": -115})
+
+                # Over 2.5
+                _o25p = (_cal_sim.get("p_o25") or 0) / 100
+                _o25ev = calc_ev(_o25p, "-110")
+                _o25edge = round((_o25p - ml_to_prob(-110)) * 100, 1)
+                _o25g, _o25s = _grade_pick(_o25ev or 0, _o25edge, _o25p, _dq_r, _consensus_score)
+                _candidates_rec.append({"label": "Over 2.5", "market": "O/U",
+                    "prob": _o25p, "ev": _o25ev, "edge": _o25edge,
+                    "grade": _o25g, "score": _o25s, "momio": -110})
+
+            # O/U total (no soccer)
+            if _cal_sg != "Soccer":
+                _op = (_cal_sim.get("p_o_total") or 0) / 100
+                _up = (_cal_sim.get("p_u_total") or 0) / 100
+                _ou_line_rec = _cal_sim.get("ou_line") or ""
+                if _ou_line_rec and _op > 0:
+                    _best_side_p = _op if _op >= _up else _up
+                    _best_side_lbl = f"Over {_ou_line_rec}" if _op >= _up else f"Under {_ou_line_rec}"
+                    _ouev = calc_ev(_best_side_p, "-110")
+                    _ouedge = round((_best_side_p - ml_to_prob(-110)) * 100, 1)
+                    _oug, _ous = _grade_pick(_ouev or 0, _ouedge, _best_side_p, _dq_r, _consensus_score)
+                    _candidates_rec.append({"label": _best_side_lbl, "market": "O/U",
+                        "prob": _best_side_p, "ev": _ouev, "edge": _ouedge,
+                        "grade": _oug, "score": _ous, "momio": -110})
+
+            # Ordenar por score desc
+            _candidates_rec.sort(key=lambda x: x["score"], reverse=True)
+            _best_rec = _candidates_rec[0] if _candidates_rec else None
+
+            # Solo mostrar si es mejor que el pick actual
+            if _best_rec and _best_rec["score"] > _sc:
+                _br_gc, _br_gbg, _br_verdict = {
+                    "A+": ("#00C896", "rgba(0,200,150,0.15)", "APUESTA FUERTE 🔥"),
+                    "A":  ("#00C896", "rgba(0,200,150,0.12)", "EXCELENTE ✅"),
+                    "B+": ("#86efac", "rgba(134,239,172,0.12)", "MUY BUENA ⚡"),
+                    "B":  ("#60a5fa", "rgba(96,165,250,0.12)", "BUENA 👍"),
+                    "C+": ("#fbbf24", "rgba(251,191,36,0.12)", "ACEPTABLE 📊"),
+                    "C":  ("#C9A84C", "rgba(201,168,76,0.10)", "MARGINAL ➡️"),
+                    "D":  ("#f97316", "rgba(249,115,22,0.10)", "DÉBIL ⚠️"),
+                    "E":  ("#ef4444", "rgba(239,68,68,0.10)", "EVITAR ❌"),
+                    "F":  ("#7f1d1d", "rgba(127,29,29,0.15)", "TRAMPA 🚫"),
+                }.get(_best_rec["grade"], ("#636366","rgba(99,99,102,0.10)","SIN DATOS"))
+
+                _diff = _best_rec["score"] - _sc
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,{_br_gbg},rgba(0,0,0,0));'
+                    f'border:1.5px solid {_br_gc}66;border-radius:20px;padding:16px;margin:8px 0">'
+                    # Header
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+                    f'<div style="font-size:0.65rem;color:{_br_gc};font-weight:700;letter-spacing:2px;text-transform:uppercase">'
+                    f'⚡ PICK RECOMENDADO</div>'
+                    f'<div style="display:flex;align-items:center;gap:6px">'
+                    f'<span style="font-size:0.65rem;color:#636366">Tu pick: <b style="color:#ef4444">{_g}</b></span>'
+                    f'<span style="font-size:0.75rem;color:#636366">→</span>'
+                    f'<span style="font-size:0.65rem;color:{_br_gc}">Recomendado: <b>{_best_rec["grade"]}</b></span>'
+                    f'</div></div>'
+                    # Pick principal
+                    f'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px">'
+                    f'<div>'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:{_br_gc};margin-bottom:2px">'
+                    f'{_best_rec["label"]}</div>'
+                    f'<div style="font-size:0.75rem;color:#AEAEB2">{_cal_away} @ {_cal_home}</div>'
+                    f'</div>'
+                    # Nota grande
+                    f'<div style="background:{_br_gc}22;border:2px solid {_br_gc}66;border-radius:14px;'
+                    f'width:56px;height:56px;display:flex;align-items:center;justify-content:center;'
+                    f'flex-direction:column;flex-shrink:0">'
+                    f'<span style="font-size:1.5rem;font-weight:900;color:{_br_gc};line-height:1">'
+                    f'{_best_rec["grade"]}</span>'
+                    f'<span style="font-size:0.45rem;color:{_br_gc};font-weight:700">+{_diff}pts</span>'
+                    f'</div></div>'
+                    # Métricas
+                    f'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'
+                    f'<span style="background:rgba(255,255,255,0.06);border-radius:8px;padding:4px 10px;'
+                    f'font-size:0.72rem;color:{_br_gc};font-weight:700">'
+                    f'EV {(_best_rec["ev"] or 0):+.1f}</span>'
+                    f'<span style="background:rgba(255,255,255,0.06);border-radius:8px;padding:4px 10px;'
+                    f'font-size:0.72rem;color:#60a5fa;font-weight:700">'
+                    f'Prob {_best_rec["prob"]*100:.1f}%</span>'
+                    f'<span style="background:rgba(255,255,255,0.06);border-radius:8px;padding:4px 10px;'
+                    f'font-size:0.72rem;color:#AEAEB2">'
+                    f'Edge {_best_rec["edge"]:+.1f}pp</span>'
+                    f'<span style="background:rgba(255,255,255,0.06);border-radius:8px;padding:4px 10px;'
+                    f'font-size:0.72rem;color:#AEAEB2">'
+                    f'@ {_best_rec["momio"]:+d}</span>'
+                    f'</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                # No hay nada mejor — el pick actual ya es lo mejor
+                st.markdown(
+                    f'<div style="background:rgba(255,107,0,0.06);border:1px solid rgba(255,107,0,0.2);'
+                    f'border-radius:16px;padding:12px 16px;text-align:center">'
+                    f'<div style="font-size:0.82rem;color:#AEAEB2">'
+                    f'No hay un pick significativamente mejor disponible para este partido.<br>'
+                    f'<span style="color:#FF6B00;font-weight:700">Tu pick actual es la mejor opción.</span>'
+                    f'</div></div>',
+                    unsafe_allow_html=True
+                )
+
+        elif _sc >= 56:
+            # Pick ya es bueno — no necesita recomendación
+            st.markdown(
+                f'<div style="background:rgba(0,200,150,0.06);border:1px solid rgba(0,200,150,0.2);'
+                f'border-radius:16px;padding:12px 16px;text-align:center;margin:12px 0">'
+                f'<div style="font-size:0.82rem;color:#00C896;font-weight:700">'
+                f'✅ Tu pick es sólido — no necesita mejora.</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        # Botón para calificar otro
+        if st.button("↩ Calificar otro pick", key="btn_cal_reset", use_container_width=True):
+            st.session_state.pop("_cal_result", None)
+            st.rerun()
 
 elif _active_page == "Config":
     st.markdown('<div class="section-heading">⚙️ Config</div>', unsafe_allow_html=True)
