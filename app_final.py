@@ -8794,59 +8794,33 @@ elif _active_page == "Califica":
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Modo de entrada — pill tabs estilizados ──────────────────────────────
-    _cal_modo = st.radio(
-        "Modo",
-        ["📸 Screenshot", "✏️ Manual"],
-        horizontal=True,
-        key="cal_modo",
-        label_visibility="collapsed"
+    # ── Selector de modo — botones simples, sin radio ───────────────────────
+    if "cal_modo" not in st.session_state:
+        st.session_state["cal_modo"] = "screenshot"
+    _cal_modo_key = st.session_state["cal_modo"]
+
+    _mc1, _mc2 = st.columns(2)
+    with _mc1:
+        _s1 = _cal_modo_key == "screenshot"
+        if st.button("📸  Screenshot", key="btn_modo_img", use_container_width=True,
+                     type="primary" if _s1 else "secondary"):
+            st.session_state["cal_modo"] = "screenshot"
+            st.rerun()
+    with _mc2:
+        _s2 = _cal_modo_key == "manual"
+        if st.button("✏️  Manual", key="btn_modo_man", use_container_width=True,
+                     type="primary" if _s2 else "secondary"):
+            st.session_state["cal_modo"] = "manual"
+            st.rerun()
+
+    st.markdown(
+        f'<div style="display:flex;gap:6px;margin:4px 0 16px">' +
+        f'<div style="flex:1;height:3px;border-radius:12px;background:{"#FF6B00" if _cal_modo_key=="screenshot" else "rgba(255,255,255,0.08)"}"></div>' +
+        f'<div style="flex:1;height:3px;border-radius:12px;background:{"#FF6B00" if _cal_modo_key=="manual" else "rgba(255,255,255,0.08)"}"></div>' +
+        f'</div>',
+        unsafe_allow_html=True
     )
-    # CSS para convertir el radio en pill tabs bonitos
-    st.markdown("""
-    <style>
-    /* Pill tabs para modo califica */
-    div[data-testid="stRadio"]:not([class*="nav"]) > div[role="radiogroup"] {
-      position: relative !important;
-      bottom: auto !important; left: auto !important;
-      transform: none !important; width: 100% !important;
-      height: auto !important; max-width: 100% !important;
-      background: rgba(255,255,255,0.05) !important;
-      border: 1px solid rgba(255,255,255,0.10) !important;
-      border-radius: 14px !important;
-      padding: 4px !important;
-      gap: 4px !important;
-      box-shadow: none !important;
-      display: flex !important;
-      flex-direction: row !important;
-      margin-bottom: 16px !important;
-    }
-    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"] {
-      flex: 1 !important;
-      border-radius: 10px !important;
-      padding: 8px 4px !important;
-      gap: 4px !important;
-      border-top: none !important;
-      background: transparent !important;
-    }
-    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"]:has(input:checked) {
-      background: rgba(255,107,0,0.18) !important;
-      border-top: none !important;
-    }
-    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"] span,
-    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"] p {
-      font-size: 0.82rem !important;
-      font-weight: 700 !important;
-      letter-spacing: 0.3px !important;
-      text-transform: none !important;
-      color: #636366 !important;
-    }
-    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"]:has(input:checked) span,
-    div[data-testid="stRadio"]:not([class*="nav"]) label[data-baseweb="radio"]:has(input:checked) p {
-      color: #FF6B00 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    _cal_modo = "📸 Screenshot" if _cal_modo_key == "screenshot" else "✏️ Manual"
 
     # ── MODO SCREENSHOT ───────────────────────────────────────────────────────
     if _cal_modo == "📸 Screenshot":
