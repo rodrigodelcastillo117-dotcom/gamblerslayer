@@ -101,9 +101,14 @@ div[data-testid="stHorizontalBlock"].nav-row [data-testid="baseButton-secondary"
   border-top:1px solid rgba(255,255,255,0.07);
   display:flex;z-index:99998;padding-bottom:env(safe-area-inset-bottom);
 }
+@media(min-width:768px){.den-nav{padding-right:96px !important;}}
 .den-nav::before{
   content:'';position:absolute;top:0;left:0;right:0;height:1px;
   background:linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);
+}
+/* Manage app button pushes items left on PC — compensate */
+@media(min-width:768px){
+  .den-nav { padding-right: 120px !important; }
 }
 .den-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 2px;position:relative;}
 .den-nav-item.act::before{
@@ -360,41 +365,39 @@ st.markdown(_nh, unsafe_allow_html=True)
 
 # ── Invisible functional buttons — hidden via JavaScript ─────────────────────
 # JS finds the button row after render and hides it + positions it over nav
-st.markdown("""
+components.html("""
 <script>
 (function() {
-  function fixNavButtons() {
-    // Find all stHorizontalBlock elements
-    var blocks = document.querySelectorAll('[data-testid="stHorizontalBlock"]');
-    blocks.forEach(function(block) {
-      // Check if this block contains our nav buttons (buttons with single space text)
-      var btns = block.querySelectorAll('button');
-      if (btns.length === 6) {
-        var allNav = true;
-        btns.forEach(function(b) { if (b.textContent.trim() !== '') allNav = false; });
-        if (allNav) {
-          // This is our nav row — position it over the nav bar
-          block.style.cssText = 'position:fixed!important;bottom:0!important;left:0!important;right:0!important;z-index:999999!important;height:64px!important;display:flex!important;background:transparent!important;margin:0!important;padding:0!important;gap:0!important;';
-          var cols = block.querySelectorAll('[data-testid="column"]');
-          cols.forEach(function(col) {
-            col.style.cssText = 'flex:1!important;margin:0!important;padding:0!important;min-width:0!important;';
-          });
-          btns.forEach(function(btn) {
-            btn.style.cssText = 'width:100%!important;height:64px!important;opacity:0!important;background:transparent!important;border:none!important;border-radius:0!important;cursor:pointer!important;margin:0!important;padding:0!important;display:block!important;';
-          });
+  function fixNav() {
+    try {
+      var parent = window.parent.document;
+      var blocks = parent.querySelectorAll('[data-testid="stHorizontalBlock"]');
+      blocks.forEach(function(block) {
+        var btns = block.querySelectorAll('button');
+        if (btns.length === 6) {
+          var isNav = true;
+          btns.forEach(function(b) { if (b.textContent.trim() !== '') isNav = false; });
+          if (isNav) {
+            block.style.cssText = 'position:fixed!important;bottom:0!important;left:0!important;right:0!important;z-index:999999!important;height:64px!important;display:flex!important;background:transparent!important;margin:0!important;padding:0!important;gap:0!important;pointer-events:auto!important;';
+            var cols = block.querySelectorAll('[data-testid="column"]');
+            cols.forEach(function(col) {
+              col.style.cssText = 'flex:1!important;margin:0!important;padding:0!important;min-width:0!important;';
+            });
+            btns.forEach(function(btn) {
+              btn.style.cssText = 'width:100%!important;height:64px!important;opacity:0!important;background:transparent!important;border:none!important;border-radius:0!important;cursor:pointer!important;margin:0!important;padding:0!important;display:block!important;position:relative!important;z-index:1!important;';
+            });
+          }
         }
-      }
-    });
+      });
+    } catch(e) {}
   }
-  // Run on load and after each Streamlit rerender
-  setTimeout(fixNavButtons, 100);
-  setTimeout(fixNavButtons, 500);
-  setTimeout(fixNavButtons, 1000);
-  var observer = new MutationObserver(function() { fixNavButtons(); });
-  observer.observe(document.body, {childList: true, subtree: true});
+  // Run multiple times to catch Streamlit rerenders
+  [100, 300, 600, 1000, 2000, 3000].forEach(function(t) { setTimeout(fixNav, t); });
+  var obs = new MutationObserver(fixNav);
+  obs.observe(document.body, {childList:true, subtree:true});
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 # The actual nav buttons (6 columns, each with one invisible button)
 _nc = st.columns(len(_NAV_ITEMS))
