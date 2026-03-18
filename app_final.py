@@ -26,30 +26,35 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --bg:#050508;--d1:#09090E;--d2:#0E0E16;--d3:#131320;
-  --v:#6D28D9;--v2:#7C3AED;--v3:#8B5CF6;
-  --blue:#2563EB;--cyan:#0891B2;--green:#10B981;
-  --orange:#EA580C;--red:#DC2626;--amber:#D97706;
-  --text:#E8E8F0;--text2:#6B6B90;--text3:#2A2A40;--white:#FFFFFF;
-  --bg2:#09090E;--bg3:#0E0E16;--card:#0E0E16;--card2:#131320;
-  --border:rgba(109,40,217,0.15);--muted:#2A2A40;
-  --gold:#D97706;--gold2:#EA580C;--felt:#050508;--dark:#050508;
-  --purple:#8B5CF6;--nav-h:64px;--orange2:#EA580C;--cyan2:#0891B2;
+  --bg:#06060A; --card:#0F0F18; --border:rgba(255,255,255,0.07);
+  --v:#6D28D9; --v2:#7C3AED; --v3:#8B5CF6;
+  --cyan:#0891B2; --green:#10B981; --orange:#EA580C;
+  --red:#DC2626; --amber:#D97706; --blue:#2563EB;
+  --text:#E8E8F0; --text2:#6B6B90; --text3:#2A2A40; --white:#FFF;
+  /* legacy compat */
+  --bg2:#0F0F18; --bg3:#141422; --card2:#141422;
+  --orange2:#EA580C; --yellow:#D97706; --gold:#D97706; --gold2:#EA580C;
+  --felt:#06060A; --dark:#06060A; --muted:#2A2A40;
+  --purple:#8B5CF6; --nav-h:52px;
+  --radius:16px; --radius-sm:10px; --radius-lg:20px;
 }
 
 @keyframes live-blink{0%,100%{opacity:1}50%{opacity:0.3}}
-@keyframes fade-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fade-up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
 *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
 html,body,.stApp,.main,.stMainBlockContainer{
-  background:#050508 !important;color:#E8E8F0 !important;
+  background:#06060A !important; color:#E8E8F0 !important;
   font-family:'Inter',sans-serif !important;
 }
 .stApp::before{
   content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:radial-gradient(ellipse 50% 35% at 5% 0%,rgba(109,40,217,0.07) 0%,transparent 70%),
-             radial-gradient(ellipse 40% 30% at 95% 100%,rgba(8,145,178,0.05) 0%,transparent 70%);
+  background:
+    radial-gradient(ellipse 55% 40% at 5% 0%,rgba(109,40,217,0.07) 0%,transparent 70%),
+    radial-gradient(ellipse 45% 35% at 95% 100%,rgba(8,145,178,0.05) 0%,transparent 70%);
 }
+
+/* HIDE CHROME */
 #MainMenu,footer,.stDeployButton{display:none !important;}
 header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebar"],[data-testid="collapsedControl"],
@@ -58,29 +63,42 @@ header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stToolbar"],[data-testid="stToolbarActions"],
 button[title="Manage app"],button[aria-label="Manage app"],
 [class*="ToolbarActions"],[class*="deployButton"]{display:none !important;}
+
 ::-webkit-scrollbar{width:2px;}
 ::-webkit-scrollbar-thumb{background:#6D28D9;border-radius:2px;}
 
-.block-container{padding:0 16px 48px !important;max-width:700px !important;margin:0 auto !important;position:relative;z-index:1;}
+.block-container{
+  padding:0 16px 48px !important;
+  max-width:700px !important; margin:0 auto !important;
+  position:relative; z-index:1;
+}
 @media(min-width:860px){.block-container{max-width:980px !important;padding:0 40px 48px !important;}}
 @media(min-width:1280px){.block-container{max-width:1260px !important;padding:0 64px 48px !important;}}
 
 /* ── HEADER ── */
-.den-header{text-align:center;padding:24px 0 0;}
-.den-logo{font-family:'Bebas Neue',sans-serif;font-size:3rem;letter-spacing:6px;line-height:1;color:#FFFFFF;text-shadow:0 0 40px rgba(109,40,217,0.3);}
-.den-subtitle{font-family:'JetBrains Mono',monospace;font-size:0.50rem;color:#2A2A40;letter-spacing:5px;text-transform:uppercase;margin-top:6px;}
-.den-divider{width:100%;height:1px;margin:12px 0;background:linear-gradient(90deg,transparent,rgba(109,40,217,0.35) 30%,rgba(8,145,178,0.35) 70%,transparent);}
+.den-header{text-align:center;padding:24px 0 4px;}
+.den-logo{
+  font-family:'Bebas Neue',sans-serif;
+  font-size:3rem;letter-spacing:6px;line-height:1;
+  color:#FFFFFF;text-shadow:0 0 40px rgba(109,40,217,0.3);
+}
+.den-subtitle{
+  font-family:'JetBrains Mono',monospace;
+  font-size:0.50rem;color:#2A2A40;letter-spacing:5px;text-transform:uppercase;margin-top:6px;
+}
+.den-divider{
+  width:100%;height:1px;margin:10px 0;
+  background:linear-gradient(90deg,transparent,rgba(109,40,217,0.4) 30%,rgba(8,145,178,0.4) 70%,transparent);
+}
 .den-corner{display:none;}
 
-/* ── STAT TILES ── */
-.stat-grid{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
-.stat-tile{flex:1;min-width:60px;background:#0E0E16;border:1px solid rgba(255,255,255,0.05);border-top:1px solid rgba(109,40,217,0.3);border-radius:12px;padding:14px 6px;text-align:center;transition:all 0.25s;position:relative;animation:fade-up 0.4s ease both;}
-.stat-tile:hover{border-color:rgba(109,40,217,0.4);transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}
-.stat-num{font-family:'Bebas Neue',sans-serif;font-size:2rem;line-height:1;letter-spacing:1px;}
-.stat-label{font-family:'JetBrains Mono',monospace;font-size:0.42rem;color:#2A2A40;letter-spacing:1.5px;text-transform:uppercase;margin-top:5px;}
-
 /* ── PICK CARD ── */
-.pick-card{background:#0E0E16;border:1px solid rgba(255,255,255,0.07);border-radius:18px;margin:10px 0;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,0.4);position:relative;transition:all 0.25s;animation:fade-up 0.35s ease both;}
+.pick-card{
+  background:#0F0F18;border:1px solid rgba(255,255,255,0.07);
+  border-radius:18px;margin:10px 0;overflow:hidden;
+  box-shadow:0 2px 20px rgba(0,0,0,0.4);
+  position:relative;transition:all 0.25s;animation:fade-up 0.3s ease both;
+}
 .pick-card:hover{border-color:rgba(109,40,217,0.3);transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,0.5);}
 .pick-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#6D28D9,#0891B2);}
 .pick-card::after{display:none;}
@@ -119,6 +137,13 @@ button[title="Manage app"],button[aria-label="Manage app"],
 .pick-rationale{font-size:0.83rem;color:#6B6B90;line-height:1.8;margin-top:10px;}
 .pick-rationale b{color:#E8E8F0;}
 
+/* STAT TILES */
+.stat-grid{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
+.stat-tile{flex:1;min-width:60px;background:#0F0F18;border:1px solid rgba(255,255,255,0.05);border-top:1px solid rgba(109,40,217,0.3);border-radius:12px;padding:14px 6px;text-align:center;transition:all 0.25s;position:relative;animation:fade-up 0.4s ease both;}
+.stat-tile:hover{border-color:rgba(109,40,217,0.4);transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.4);}
+.stat-num{font-family:'Bebas Neue',sans-serif;font-size:2rem;line-height:1;letter-spacing:1px;}
+.stat-label{font-family:'JetBrains Mono',monospace;font-size:0.42rem;color:#2A2A40;letter-spacing:1.5px;text-transform:uppercase;margin-top:5px;}
+
 /* PARLAY CARD */
 .parlay-card{background:#0A140E;border:1px solid rgba(16,185,129,0.15);border-radius:18px;margin:10px 0;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,0.4);position:relative;transition:all 0.25s;}
 .parlay-card:hover{border-color:rgba(16,185,129,0.3);}
@@ -130,7 +155,7 @@ button[title="Manage app"],button[aria-label="Manage app"],
 .parlay-connector{text-align:center;font-family:'JetBrains Mono',monospace;color:#6D28D9;font-size:0.58rem;letter-spacing:3px;padding:2px 0;}
 
 /* GAME ROW */
-.game-row{background:#0E0E16;border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:11px 14px;margin:5px 0;transition:all 0.2s;position:relative;overflow:hidden;}
+.game-row{background:#0F0F18;border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:11px 14px;margin:5px 0;transition:all 0.2s;position:relative;overflow:hidden;}
 .game-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:#6D28D9;opacity:0.2;transition:opacity 0.2s;}
 .game-row:hover{border-color:rgba(109,40,217,0.2);background:#111118;transform:translateX(3px);}
 .game-row:hover::before{opacity:1;}
@@ -149,12 +174,28 @@ button[title="Manage app"],button[aria-label="Manage app"],
 .warn-banner{background:rgba(217,119,6,0.05);border:1px solid rgba(217,119,6,0.15);border-left:2px solid #D97706;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#D97706;margin:8px 0;}
 .demo-banner{background:rgba(220,38,38,0.05);border:1px solid rgba(220,38,38,0.15);border-left:2px solid #DC2626;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#DC2626;margin:8px 0;}
 
-/* BUTTONS (non-nav) */
-.stButton>button{background:rgba(255,255,255,0.03) !important;color:#6B6B90 !important;font-family:'Inter',sans-serif !important;font-size:0.80rem !important;font-weight:600 !important;border:1px solid rgba(255,255,255,0.07) !important;padding:10px 16px !important;border-radius:10px !important;width:100% !important;transition:all 0.2s !important;}
-.stButton>button:hover{background:rgba(109,40,217,0.1) !important;border-color:rgba(109,40,217,0.35) !important;color:#8B5CF6 !important;}
-.stButton>button[kind="primary"],button[data-testid="baseButton-primary"]{background:linear-gradient(135deg,#5B21B6,#6D28D9) !important;color:#fff !important;border:none !important;font-weight:700 !important;box-shadow:0 4px 16px rgba(109,40,217,0.35) !important;border-radius:10px !important;}
-.stButton>button[kind="primary"]:hover{background:linear-gradient(135deg,#6D28D9,#7C3AED) !important;box-shadow:0 6px 24px rgba(109,40,217,0.5) !important;transform:translateY(-1px) !important;}
-.stDownloadButton>button{background:rgba(255,255,255,0.03) !important;color:#8B5CF6 !important;border:1px solid rgba(109,40,217,0.25) !important;border-radius:10px !important;}
+/* ── BUTTONS — normal st.button styling ── */
+.stButton>button{
+  background:rgba(255,255,255,0.04) !important;color:#6B6B90 !important;
+  font-family:'Inter',sans-serif !important;font-size:0.80rem !important;
+  font-weight:600 !important;border:1px solid rgba(255,255,255,0.08) !important;
+  padding:10px 16px !important;border-radius:10px !important;
+  width:100% !important;transition:all 0.2s !important;
+}
+.stButton>button:hover{
+  background:rgba(109,40,217,0.1) !important;
+  border-color:rgba(109,40,217,0.35) !important;color:#8B5CF6 !important;
+}
+.stButton>button[kind="primary"],button[data-testid="baseButton-primary"]{
+  background:linear-gradient(135deg,#5B21B6,#6D28D9) !important;
+  color:#fff !important;border:none !important;font-weight:700 !important;
+  box-shadow:0 4px 16px rgba(109,40,217,0.35) !important;border-radius:10px !important;
+}
+.stButton>button[kind="primary"]:hover{
+  background:linear-gradient(135deg,#6D28D9,#7C3AED) !important;
+  box-shadow:0 6px 24px rgba(109,40,217,0.5) !important;transform:translateY(-1px) !important;
+}
+.stDownloadButton>button{background:rgba(255,255,255,0.04) !important;color:#8B5CF6 !important;border:1px solid rgba(109,40,217,0.25) !important;border-radius:10px !important;}
 
 div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,div[data-testid="stTextArea"] textarea{background:#09090E !important;border:1px solid rgba(255,255,255,0.07) !important;border-radius:10px !important;color:#E8E8F0 !important;font-family:'Inter',sans-serif !important;font-size:16px !important;}
 div[data-testid="stTextInput"] input:focus,div[data-testid="stNumberInput"] input:focus{border-color:rgba(109,40,217,0.45) !important;box-shadow:0 0 0 2px rgba(109,40,217,0.1) !important;}
@@ -182,48 +223,15 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 .sidebar-logo{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:#8B5CF6;letter-spacing:3px;}
 .sidebar-sub{font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:#2A2A40;letter-spacing:3px;text-transform:uppercase;}
 
-@media(max-width:768px){.block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}.den-logo{font-size:2.4rem !important;letter-spacing:4px !important;}.pick-action{font-size:1.4rem !important;}.stat-num{font-size:1.7rem !important;}[data-testid="column"]{min-width:0 !important;overflow:hidden !important;}*{word-break:break-word !important;overflow-wrap:break-word !important;}div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}}
-@media(max-width:390px){.den-logo{font-size:2rem !important;}.stat-num{font-size:1.4rem !important;}}
+@media(max-width:768px){.block-container{padding-left:10px !important;padding-right:10px !important;max-width:100% !important;}.den-logo{font-size:2.2rem !important;letter-spacing:4px !important;}.pick-action{font-size:1.35rem !important;}.stat-num{font-size:1.7rem !important;}[data-testid="column"]{min-width:0 !important;overflow:hidden !important;}*{word-break:break-word !important;overflow-wrap:break-word !important;}div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input{font-size:16px !important;}}
+@media(max-width:390px){.den-logo{font-size:1.8rem !important;}.stat-num{font-size:1.4rem !important;}}
 @media(min-width:1280px){.den-logo{font-size:3.6rem !important;}.stat-num{font-size:2.2rem !important;}.pick-action{font-size:2rem !important;}}
-
-
-
-/* ── NAV TABS ── simple, works always ── */
-/* The nav is a row of 6 stButton columns */
-/* We style ALL stButton in the nav area using the wrapper */
-.nav-wrapper .stButton > button {
-  background: transparent !important;
-  border: none !important;
-  border-bottom: 2px solid transparent !important;
-  color: #6B6B90 !important;
-  border-radius: 0 !important;
-  padding: 10px 4px !important;
-  font-size: 0.75rem !important;
-  font-weight: 700 !important;
-  box-shadow: none !important;
-  white-space: pre-line !important;
-  min-height: 52px !important;
-  transform: none !important;
-}
-.nav-wrapper .stButton > button:hover {
-  color: #8B5CF6 !important;
-  background: rgba(109,40,217,0.06) !important;
-  border-bottom-color: rgba(109,40,217,0.4) !important;
-  transform: none !important;
-}
-.nav-wrapper .stButton > button[kind="primary"] {
-  color: #FFFFFF !important;
-  border-bottom: 2px solid #6D28D9 !important;
-  background: rgba(109,40,217,0.1) !important;
-  box-shadow: none !important;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
 
 
-# ── Nav state ──
+# ── Navigation state ──────────────────────────────────────────────────────────
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
     {"key": "Picks",        "icon": "🎯", "label": "PICKS"},
@@ -4378,51 +4386,41 @@ def bar(pct, color, label):
 
 def _espn_logo(team_id, league_name=""):
     if not team_id: return ""
-    info   = LEAGUES.get(league_name, {})
-    sport  = info.get("sport", "")
-    league = info.get("league", "")
-    if sport == "soccer":     return f"https://a.espncdn.com/i/teamlogos/soccer/500/{team_id}.png"
-    if sport == "basketball": return f"https://a.espncdn.com/i/teamlogos/nba/500/{team_id}.png"
-    if sport == "hockey":     return f"https://a.espncdn.com/i/teamlogos/nhl/500/{team_id}.png"
-    if sport == "baseball":   return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
-    if sport == "football":
+    info = LEAGUES.get(league_name, {})
+    sport = info.get("sport",""); league = info.get("league","")
+    if sport=="soccer":     return f"https://a.espncdn.com/i/teamlogos/soccer/500/{team_id}.png"
+    if sport=="basketball": return f"https://a.espncdn.com/i/teamlogos/nba/500/{team_id}.png"
+    if sport=="hockey":     return f"https://a.espncdn.com/i/teamlogos/nhl/500/{team_id}.png"
+    if sport=="baseball":   return f"https://a.espncdn.com/i/teamlogos/mlb/500/{team_id}.png"
+    if sport=="football":
         return f"https://a.espncdn.com/i/teamlogos/{'ncaa' if 'college' in league else 'nfl'}/500/{team_id}.png"
     return f"https://a.espncdn.com/i/teamlogos/soccer/500/{team_id}.png"
 
-def _logo_img(team_id, league_name, size=36):
+def _logo_img(team_id, league_name, size=34):
     url = _espn_logo(team_id, league_name)
-    if not url:
-        return f'<div style="width:{size}px;height:{size}px;border-radius:50%;background:rgba(255,255,255,0.06);flex-shrink:0"></div>'
+    if not url: return f'<div style="width:{size}px;height:{size}px;border-radius:50%;background:rgba(255,255,255,0.05);flex-shrink:0"></div>'
     return (f'<img src="{url}" width="{size}" height="{size}" '
             f'style="border-radius:50%;object-fit:contain;background:rgba(255,255,255,0.07);padding:2px;flex-shrink:0;" '
             f'onerror="this.style.display=\'none\'" />')
 
 def _matchup_with_logos(r, score_html=""):
-    away    = r.get("away_team","Visita")
-    home    = r.get("home_team","Local")
-    league  = r.get("league","")
-    is_live = r.get("state","") == "in"
-    al = _logo_img(r.get("away_team_id",""), league, 36)
-    hl = _logo_img(r.get("home_team_id",""), league, 36)
+    away=r.get("away_team","V"); home=r.get("home_team","L"); league=r.get("league","")
+    is_live=r.get("state","")=="in"
+    al=_logo_img(r.get("away_team_id",""),league,34); hl=_logo_img(r.get("home_team_id",""),league,34)
     if is_live and r.get("home_score") is not None:
-        sc = str(r["away_score"]) + " — " + str(r["home_score"])
-        return (
-            '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;gap:6px">' +
-            '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">' + al +
-            f'<span style="font-size:0.70rem;font-weight:700;color:#E0E0F0;text-align:center">{away}</span></div>' +
-            '<div style="display:flex;flex-direction:column;align-items:center;gap:2px">' +
-            f'<div style="font-family:Bebas Neue,sans-serif;font-size:2rem;color:#fff;letter-spacing:3px">{sc}</div>' +
+        sc=str(r["away_score"])+" — "+str(r["home_score"])
+        return ('<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;gap:6px">' +
+            '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">'+al+
+            f'<span style="font-size:0.70rem;font-weight:700;color:#E8E8F0;text-align:center">{away}</span></div>' +
+            '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
+            f'<div style="font-family:Bebas Neue,sans-serif;font-size:2.2rem;color:#fff;letter-spacing:3px">{sc}</div>' +
             '<div style="font-size:0.52rem;color:#DC2626;font-weight:700;letter-spacing:2px;animation:live-blink 1.5s infinite">● LIVE</div>' +
-            score_html + '</div>' +
-            '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">' + hl +
-            f'<span style="font-size:0.70rem;font-weight:700;color:#E0E0F0;text-align:center">{home}</span></div>' +
-            '</div>'
-        )
-    return (
-        '<div style="display:flex;align-items:center;gap:8px">' + al +
-        '<span class="pick-matchup">' + away + ' <span style="color:#2A2A40;font-weight:400">vs</span> ' + home + '</span>' +
-        hl + score_html + '</div>'
-    )
+            score_html+'</div>' +
+            '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">'+hl+
+            f'<span style="font-size:0.70rem;font-weight:700;color:#E8E8F0;text-align:center">{home}</span></div>' +
+            '</div>')
+    return ('<div style="display:flex;align-items:center;gap:8px">'+al+
+            '<span class="pick-matchup">'+away+' <span style="color:#2A2A40;font-weight:400">vs</span> '+home+'</span>'+hl+score_html+'</div>')
 
 def render_pick_card(r, rank=None):
     """Render pick card - all HTML built via string concat, no ternaries in f-strings."""
@@ -4806,25 +4804,45 @@ use_demo   = st.session_state.get("use_demo_val", False)
 
 
 
+# ── Header ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="den-header">
   <div class="den-logo">The Gamblers Den</div>
   <div class="den-subtitle">Monte Carlo · EV+ · Smart Picks</div>
 </div>
 """, unsafe_allow_html=True)
-st.markdown('<div class="nav-wrapper">', unsafe_allow_html=True)
-_nc = st.columns(len(_NAV_ITEMS), gap="small")
-for _i, _item in enumerate(_NAV_ITEMS):
-    with _nc[_i]:
-        if st.button(f"{_item['icon']}\n{_item['label']}",
-                     key=f"nav_{_item['key']}",
-                     use_container_width=True,
-                     type="primary" if _item["key"]==_active_page else "secondary"):
-            st.session_state["active_page"] = _item["key"]
+
+# ── Nav — simple st.columns + st.button, no CSS tricks ────────────────────────
+_nav_cols = st.columns(len(_NAV_ITEMS), gap="small")
+for _ni, _nitem in enumerate(_NAV_ITEMS):
+    with _nav_cols[_ni]:
+        _active_btn = _nitem["key"] == _active_page
+        if st.button(
+            f"{_nitem['icon']}",
+            key=f"nav_{_nitem['key']}",
+            use_container_width=True,
+            help=_nitem["label"],
+            type="primary" if _active_btn else "secondary",
+        ):
+            st.session_state["active_page"] = _nitem["key"]
             st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
-_active_page = st.session_state["active_page"]
+
+# Active page label
+st.markdown(
+    f'''<div style="text-align:center;font-family:JetBrains Mono,monospace;
+    font-size:0.65rem;color:#6D28D9;letter-spacing:3px;text-transform:uppercase;
+    padding:4px 0 2px;font-weight:700">
+    {"⚡ RONGOL" if _active_page=="Rongol Picks" else
+     "🎯 PICKS" if _active_page=="Picks" else
+     "🎰 PARLAYS" if _active_page=="Parlays" else
+     "🔴 LIVE" if _active_page=="En Vivo" else
+     "💰 RETO" if _active_page=="Reto 13M" else
+     "⚙️ CONFIG"}
+    </div>''',
+    unsafe_allow_html=True
+)
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
+_active_page = st.session_state["active_page"]
 
 if not sel_leagues:
     st.warning("Selecciona al menos una liga en el sidebar.")
@@ -4975,13 +4993,7 @@ odds_g=[g for g in games if g["odds"]]
 sr=st.session_state.get("sim_results",[])
 pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
 
-st.markdown(f"""<div class="stat-grid">
-  <div class="stat-tile"><div class="stat-num" style="color:#8B5CF6">{len(games)}</div><div class="stat-label">PARTIDOS</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#DC2626">{len(live_g)}</div><div class="stat-label">EN VIVO</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#0891B2">{len(pre_g)}</div><div class="stat-label">PRÓXIMOS</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#D97706">{pos_ev}</div><div class="stat-label">EV+ PICKS</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#10B981">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">PARLAYS</div></div>
-</div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="stat-grid"><div class="stat-tile"><div class="stat-num" style="color:#8B5CF6">{len(games)}</div><div class="stat-label">PARTIDOS</div></div><div class="stat-tile"><div class="stat-num" style="color:#DC2626">{len(live_g)}</div><div class="stat-label">EN VIVO</div></div><div class="stat-tile"><div class="stat-num" style="color:#0891B2">{len(pre_g)}</div><div class="stat-label">PRÓXIMOS</div></div><div class="stat-tile"><div class="stat-num" style="color:#D97706">{pos_ev}</div><div class="stat-label">EV+ PICKS</div></div><div class="stat-tile"><div class="stat-num" style="color:#10B981">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">PARLAYS</div></div></div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
@@ -5371,16 +5383,7 @@ def _list_reto_users():
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     if not sr:
-        st.markdown("""<div style="text-align:center;padding:52px 16px 36px">
-          <div style="font-size:3.5rem;margin-bottom:14px">🎰</div>
-          <div style="font-family:Bebas Neue,sans-serif;font-size:1.9rem;letter-spacing:4px;color:#fff;margin-bottom:8px">GAMBLERS DEN ONLINE</div>
-          <div style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#2A2A40;line-height:2.2;margin-bottom:24px">
-            ⚙️ CONFIG → LIGAS → ⚡ ANALIZAR</div>
-          <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
-            <div style="background:rgba(109,40,217,0.1);border:1px solid rgba(109,40,217,0.3);border-radius:20px;padding:10px 18px;font-size:0.60rem;color:#8B5CF6">⚡ MONTE CARLO</div>
-            <div style="background:rgba(8,145,178,0.08);border:1px solid rgba(8,145,178,0.2);border-radius:20px;padding:10px 18px;font-size:0.60rem;color:#0891B2">🎯 EV+ PICKS</div>
-            <div style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);border-radius:20px;padding:10px 18px;font-size:0.60rem;color:#10B981">🎰 PARLAYS</div>
-          </div></div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="text-align:center;padding:48px 16px"><div style="font-size:3rem;margin-bottom:12px">🎰</div><div style="font-family:Bebas Neue,sans-serif;font-size:1.8rem;letter-spacing:3px;color:#fff;margin-bottom:8px">GAMBLERS DEN ONLINE</div><div style="font-family:JetBrains Mono,monospace;font-size:0.70rem;color:#2A2A40;line-height:2.2">⚙️ CONFIG → LIGAS → ⚡ ANALIZAR</div></div>""", unsafe_allow_html=True)
     else:
         # ── Detectar picks terminados ─────────────────────────────────────────────
         pick_game_ids = {r.get("id","") for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0}
