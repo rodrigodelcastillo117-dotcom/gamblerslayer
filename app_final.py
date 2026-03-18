@@ -97,16 +97,7 @@ header[data-testid="stHeader"] { display: none !important; }
 .den-divider { width:100%; height:1px; background:var(--border); margin:10px 0; opacity:0.8; }
 .den-corner { display:none; }
 
-/* ── BOTTOM NAV ── */
-.ios-bottom-nav {
-  position:fixed; bottom:0; left:0; right:0; height:var(--nav-h);
-  background:rgba(28,28,30,0.94);
-  backdrop-filter:saturate(180%) blur(20px);
-  -webkit-backdrop-filter:saturate(180%) blur(20px);
-  border-top:1px solid var(--border);
-  display:flex; align-items:flex-start; justify-content:space-around;
-  padding:10px 4px 0; z-index:99999;
-}
+/* ios-bottom-nav replaced by radio nav */
 
 /* ── STAT TILES ── */
 .stat-grid { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
@@ -329,22 +320,76 @@ hr { border-color:var(--border) !important; }
 }
 
 
-/* ── Nav: invisible functional buttons fixed at bottom ── */
-div[data-testid="stHorizontalBlock"]:has(div[data-testid="column"]:first-child button[data-testid="baseButton-secondary"][key="nav_Rongol Picks"]),
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) {
-  position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important;
-  height: var(--nav-h) !important; z-index: 100001 !important;
-  display: flex !important; gap: 0 !important; padding: 0 !important; margin: 0 !important;
-  background: transparent !important;
+
+
+
+
+/* ═══ BOTTOM NAV — styled radio ═══ */
+/* Hide the standard radio container, rebuild as fixed bottom nav */
+div[data-testid="stRadio"][key="nav_radio_main"],
+div[data-testid="stRadio"] {
+  /* Will be overridden by specific selectors below */
 }
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) [data-testid="column"] {
-  flex: 1 !important; padding: 0 !important; min-width: 0 !important;
+
+/* The radio group that contains our nav */
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+  position: fixed !important;
+  bottom: 0 !important; left: 0 !important; right: 0 !important;
+  height: var(--nav-h) !important;
+  display: flex !important; flex-direction: row !important;
+  background: rgba(28,28,30,0.97) !important;
+  backdrop-filter: saturate(180%) blur(20px) !important;
+  -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+  z-index: 99999 !important;
+  gap: 0 !important; padding: 8px 4px 4px !important;
+  margin: 0 !important;
 }
-div[data-testid="stHorizontalBlock"]:has(button[key="nav_Rongol Picks"]) button {
-  opacity: 0 !important; height: var(--nav-h) !important; width: 100% !important;
-  background: transparent !important; border: none !important; box-shadow: none !important;
-  padding: 0 !important; margin: 0 !important; border-radius: 0 !important;
-  cursor: pointer !important; font-size: 0 !important;
+
+/* Each radio option = one nav item */
+div[data-testid="stRadio"] label[data-baseweb="radio"] {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  cursor: pointer !important;
+  padding: 4px 2px !important;
+  margin: 0 !important;
+  border-top: 2px solid transparent !important;
+}
+
+/* Selected nav item — orange top border */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+  border-top: 2px solid #FF6B00 !important;
+}
+
+/* Hide the actual radio circle input */
+div[data-testid="stRadio"] input[type="radio"] {
+  display: none !important;
+}
+
+/* The text label of each option */
+div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p,
+div[data-testid="stRadio"] label[data-baseweb="radio"] span {
+  font-size: 0.48rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  color: #636366 !important;
+  font-family: 'Outfit', sans-serif !important;
+}
+
+/* Selected item text — orange */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p {
+  color: #FF6B00 !important;
+}
+
+/* Hide the radio label (the "nav" text above the group) */
+div[data-testid="stRadio"] > label:first-child {
+  display: none !important;
 }
 
 </style>
@@ -368,35 +413,28 @@ if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
 _active_page = st.session_state["active_page"]
 
-# ── HTML visual nav bar (always looks right) ─────────────────────────────────
-_np = []
-for _ni in _NAV_ITEMS:
-    _a  = _ni["key"] == _active_page
-    _c  = "#FF6B00" if _a else "#636366"
-    _bb = "border-top:2px solid #FF6B00;" if _a else "border-top:2px solid transparent;"
-    _np.append(
-        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;'
-        'justify-content:center;gap:2px;padding:6px 2px;' + _bb + '">'
-        '<span style="font-size:1.25rem;line-height:1">' + _ni["icon"] + '</span>'
-        '<span style="font-size:0.50rem;font-weight:700;letter-spacing:0.5px;'
-        'text-transform:uppercase;color:' + _c + '">' + _ni["label"] + '</span>'
-        '</div>'
-    )
-st.markdown(
-    '<div class="ios-bottom-nav">' + ''.join(_np) + '</div>',
-    unsafe_allow_html=True
+# ── Navigation: styled radio as bottom nav ─────────────────────────────────
+# This renders ONE clean nav bar with no duplicate buttons
+_nav_keys   = [item["key"]  for item in _NAV_ITEMS]
+_nav_display = [item["icon"] + " " + item["label"] for item in _NAV_ITEMS]
+_nav_map     = dict(zip(_nav_display, _nav_keys))
+_nav_map_rev = dict(zip(_nav_keys, _nav_display))
+
+_cur_display = _nav_map_rev.get(_active_page, _nav_display[0])
+
+_selected_display = st.radio(
+    "nav",
+    _nav_display,
+    index=_nav_display.index(_cur_display),
+    horizontal=True,
+    key="nav_radio_main",
+    label_visibility="collapsed",
 )
-
-# ── Functional nav buttons hidden behind the visual nav ──────────────────────
-# CSS makes these 100% transparent and fixed at bottom
-_nc = st.columns(len(_NAV_ITEMS))
-for _i, _item in enumerate(_NAV_ITEMS):
-    with _nc[_i]:
-        if st.button("​", key="nav_" + _item["key"], use_container_width=True):
-            st.session_state["active_page"] = _item["key"]
-            st.rerun()
-
-_active_page = st.session_state["active_page"]
+_new_page = _nav_map.get(_selected_display, _active_page)
+if _new_page != _active_page:
+    st.session_state["active_page"] = _new_page
+    st.rerun()
+_active_page = _new_page
 
 
 LEAGUES = {
@@ -2109,7 +2147,7 @@ def get_all_games(leagues):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AI SPORT ANALYSTS — Claude specialist per sport
+# AI SPORT ANALYSTS — Grok specialist per sport
 # ═══════════════════════════════════════════════════════════════════════════════
 
 SPORT_SYSTEM_PROMPTS = {
@@ -4719,7 +4757,7 @@ def render_pick_card(r, rank=None):
             'border-radius:0 6px 6px 0">'
             '<div style="font-family:\'Inter\',sans-serif;font-size:0.728rem;'
             'color:rgba(201,168,76,0.6);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px">'
-            + sport_icon + ' Análisis ' + sport_group + ' · Claude</div>'
+            + sport_icon + ' Análisis ' + sport_group + ' · Grok</div>'
             '<div style="font-family:\'Inter\',sans-serif;font-size:0.918rem;'
             'color:#A0A0A0;line-height:1.65">' + ai_text + '</div>'
             '</div>'
