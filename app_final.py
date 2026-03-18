@@ -186,59 +186,36 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 @media(max-width:390px){.den-logo{font-size:2rem !important;}.stat-num{font-size:1.4rem !important;}}
 @media(min-width:1280px){.den-logo{font-size:3.6rem !important;}.stat-num{font-size:2.2rem !important;}.pick-action{font-size:2rem !important;}}
 
-/* ── NAV — first element, :first-child targets it ── */
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child [data-testid="stHorizontalBlock"] {
-  position: sticky !important;
-  top: 0 !important;
-  z-index: 9999 !important;
-  background: rgba(5,5,8,0.97) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-  padding: 5px 4px !important;
-  margin: 0 -16px !important;
-  width: calc(100% + 32px) !important;
-  border-bottom: 1px solid rgba(109,40,217,0.2) !important;
-  gap: 2px !important;
-}
-@media(min-width:860px) {
-  [data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child [data-testid="stHorizontalBlock"] {
-    margin: 0 -40px !important;
-    width: calc(100% + 80px) !important;
-    padding: 5px 20px !important;
-  }
-}
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child .stButton > button {
+
+
+/* ── NAV TABS ── simple, works always ── */
+/* The nav is a row of 6 stButton columns */
+/* We style ALL stButton in the nav area using the wrapper */
+.nav-wrapper .stButton > button {
   background: transparent !important;
-  border: 1px solid transparent !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
   color: #6B6B90 !important;
-  font-size: 0.78rem !important;
+  border-radius: 0 !important;
+  padding: 10px 4px !important;
+  font-size: 0.75rem !important;
   font-weight: 700 !important;
-  padding: 7px 4px !important;
-  border-radius: 8px !important;
-  line-height: 1.3 !important;
-  min-height: 50px !important;
   box-shadow: none !important;
-  transform: none !important;
   white-space: pre-line !important;
+  min-height: 52px !important;
+  transform: none !important;
 }
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child .stButton > button:hover {
-  background: rgba(109,40,217,0.1) !important;
-  border-color: rgba(109,40,217,0.3) !important;
+.nav-wrapper .stButton > button:hover {
   color: #8B5CF6 !important;
+  background: rgba(109,40,217,0.06) !important;
+  border-bottom-color: rgba(109,40,217,0.4) !important;
   transform: none !important;
 }
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child .stButton > button[kind="primary"] {
-  background: rgba(109,40,217,0.2) !important;
-  border: 1px solid rgba(109,40,217,0.5) !important;
+.nav-wrapper .stButton > button[kind="primary"] {
   color: #FFFFFF !important;
-  box-shadow: 0 0 14px rgba(109,40,217,0.2) !important;
-}
-[data-testid="stVerticalBlock"] > [data-testid="element-container"]:first-child .stButton > button p {
-  white-space: pre-line !important;
-  margin: 0 !important;
-  color: inherit !important;
-  font-weight: inherit !important;
-  text-align: center !important;
+  border-bottom: 2px solid #6D28D9 !important;
+  background: rgba(109,40,217,0.1) !important;
+  box-shadow: none !important;
 }
 
 </style>
@@ -4829,6 +4806,13 @@ use_demo   = st.session_state.get("use_demo_val", False)
 
 
 
+st.markdown("""
+<div class="den-header">
+  <div class="den-logo">The Gamblers Den</div>
+  <div class="den-subtitle">Monte Carlo · EV+ · Smart Picks</div>
+</div>
+""", unsafe_allow_html=True)
+st.markdown('<div class="nav-wrapper">', unsafe_allow_html=True)
 _nc = st.columns(len(_NAV_ITEMS), gap="small")
 for _i, _item in enumerate(_NAV_ITEMS):
     with _nc[_i]:
@@ -4838,14 +4822,9 @@ for _i, _item in enumerate(_NAV_ITEMS):
                      type="primary" if _item["key"]==_active_page else "secondary"):
             st.session_state["active_page"] = _item["key"]
             st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 _active_page = st.session_state["active_page"]
-st.markdown("""
-<div class="den-header">
-  <div class="den-logo">The Gamblers Den</div>
-  <div class="den-subtitle">Monte Carlo · EV+ · Smart Picks</div>
-</div>
-<div class="den-divider"></div>
-""", unsafe_allow_html=True)
+st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
 
 if not sel_leagues:
     st.warning("Selecciona al menos una liga en el sidebar.")
