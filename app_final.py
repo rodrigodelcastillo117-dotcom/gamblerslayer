@@ -31,7 +31,7 @@ st.markdown("""
   --orange:#FF6B00; --yellow:#FFD60A; --green:#00E676;
   --blue:#448AFF; --red:#FF1744; --purple:#D500F9;
   --text:#FFFFFF; --text2:#B0B0B8; --text3:#404048; --white:#FFFFFF;
-  --nav-h:64px;
+  --nav-h:68px;
   --gold:#FFD60A; --gold2:#FF8C00; --felt:#08080A; --dark:#08080A;
   --muted:#404048; --cyan:#00E676; --orange2:#FF8C00;
 }
@@ -46,12 +46,83 @@ header[data-testid="stHeader"]{display:none !important;}
 [data-testid="stSidebarCollapsedControl"]{display:none !important;}
 .stApp > header{display:none !important;}
 
-/* ══ HIDE RADIO NAV ══ */
-[data-testid="stRadio"] {
+
+/* ══════════════════════════════════════════════════
+   BOTTOM NAV — fixed background + styled buttons
+   ══════════════════════════════════════════════════ */
+
+/* Nav background bar */
+.den-nav-bg {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 68px;
+  background: rgba(8,8,10,0.97);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  z-index: 99997;
+}
+.den-nav-bg::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, #FF6B00 30%, #FFD60A 50%, #FF6B00 70%, transparent);
+}
+
+/* Fix the nav button columns to sit at the bottom */
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_btn_0"]) {
   position: fixed !important;
-  bottom: 0 !important; left: -9999px !important;
-  opacity: 0 !important; pointer-events: none !important;
-  width: 0 !important; height: 0 !important; overflow: hidden !important;
+  bottom: 0 !important; left: 0 !important; right: 0 !important;
+  z-index: 99999 !important;
+  height: 68px !important;
+  display: flex !important;
+  align-items: stretch !important;
+  margin: 0 !important; padding: 0 !important; gap: 0 !important;
+  background: transparent !important;
+}
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_btn_0"]) > div[data-testid="column"] {
+  flex: 1 !important;
+  padding: 0 !important; margin: 0 !important;
+  display: flex !important; align-items: stretch !important;
+}
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_btn_0"]) .stButton {
+  width: 100% !important; height: 68px !important;
+  display: flex !important;
+}
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_btn_0"]) button {
+  all: unset !important;
+  width: 100% !important; height: 68px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  cursor: pointer !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  white-space: pre-line !important;
+  font-family: 'Outfit', sans-serif !important;
+  font-size: 0.75rem !important;
+  color: #404048 !important;
+  letter-spacing: 0.5px !important;
+  padding: 6px 2px !important;
+  transition: all 0.15s !important;
+  -webkit-tap-highlight-color: rgba(255,107,0,0.15) !important;
+  line-height: 1.2 !important;
+}
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_btn_0"]) button:hover {
+  color: #FF6B00 !important;
+  background: rgba(255,107,0,0.06) !important;
+}
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_btn_0"]) button:active {
+  background: rgba(255,107,0,0.12) !important;
+}
+/* Active button (primary type = active page) */
+div[data-testid="stHorizontalBlock"]:has(button[key="nav_btn_0"]) button[data-testid="baseButton-primary"] {
+  color: #FF6B00 !important;
+  font-weight: 800 !important;
+  border-top: 2px solid #FF6B00 !important;
+  box-shadow: none !important;
 }
 
 /* ══ HIDE MANAGE APP ══ */
@@ -59,25 +130,19 @@ header[data-testid="stHeader"]{display:none !important;}
 [data-testid="manage-app-button"],[data-testid="stMainMenu"],
 button[title="Manage app"],button[aria-label="Manage app"],
 [class*="ToolbarActions"],[class*="deployButton"],[class*="AppToolbar"] {
-  display:none !important; visibility:hidden !important;
-  pointer-events:none !important; width:0 !important; height:0 !important;
+  display: none !important;
 }
+
 
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:linear-gradient(#FF6B00,#FFD60A);border-radius:3px;}
-.block-container{padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;max-width:620px !important;margin:0 auto !important;}
+
+.block-container{
+  padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;
+  max-width:620px !important; margin:0 auto !important;
+}
 @media(min-width:820px){.block-container{max-width:920px !important;padding:24px 40px calc(var(--nav-h)+28px) !important;}}
 @media(min-width:1240px){.block-container{max-width:1180px !important;padding:28px 56px calc(var(--nav-h)+28px) !important;}}
-
-.den-nav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + env(safe-area-inset-bottom));background:rgba(8,8,10,0.96);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border-top:1px solid rgba(255,255,255,0.08);display:flex;z-index:99999;padding-bottom:env(safe-area-inset-bottom);}
-.den-nav::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#FF6B00 30%,#FFD60A 50%,#FF6B00 70%,transparent);}
-.den-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 2px;position:relative;transition:all 0.15s;-webkit-tap-highlight-color:rgba(255,107,0,0.15);}
-.den-nav-item:active{background:rgba(255,107,0,0.08) !important;}
-.den-nav-item.act::before{content:'';position:absolute;top:0;left:20%;right:20%;height:2px;background:linear-gradient(90deg,transparent,#FF6B00,#FFD60A,#FF6B00,transparent);border-radius:0 0 4px 4px;}
-.den-nav-icon{font-size:1.3rem;line-height:1;transition:transform 0.2s;}
-.den-nav-item.act .den-nav-icon{transform:scale(1.15) translateY(-1px);}
-.den-nav-label{font-size:0.47rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:#404048;transition:color 0.2s;font-family:'Outfit',sans-serif;}
-.den-nav-item.act .den-nav-label{color:#FF6B00;}
 
 .den-header{text-align:center;padding:20px 0 10px;}
 .den-logo{font-family:'Outfit',sans-serif;font-size:2rem;font-weight:900;letter-spacing:-1.5px;line-height:1;background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 45%,#FF8C00 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 24px rgba(255,107,0,0.35));}
@@ -154,10 +219,12 @@ button[title="Manage app"],button[aria-label="Manage app"],
 .warn-banner{background:rgba(255,214,10,0.06);border:1px solid rgba(255,214,10,0.2);border-left:3px solid #FFD60A;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FFD60A;margin:8px 0;}
 .demo-banner{background:rgba(255,23,68,0.06);border:1px solid rgba(255,23,68,0.2);border-left:3px solid #FF1744;border-radius:12px;padding:10px 14px;font-size:0.82rem;color:#FF1744;margin:8px 0;}
 
+/* Regular buttons (not nav) */
 .stButton > button{background:rgba(255,255,255,0.04) !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:0.82rem !important;font-weight:600 !important;border:1px solid rgba(255,255,255,0.09) !important;padding:9px 16px !important;border-radius:12px !important;width:100% !important;transition:all 0.2s !important;}
-.stButton > button:hover{background:rgba(255,107,0,0.1) !important;border-color:rgba(255,107,0,0.45) !important;color:#FF6B00 !important;transform:translateY(-1px) !important;}
-.stButton > button[kind="primary"],button[data-testid="baseButton-primary"]{background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;color:#000 !important;border:none !important;font-weight:900 !important;box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;}
-.stButton > button[kind="primary"]:hover{background:linear-gradient(135deg,#FF8C00,#FFB300) !important;box-shadow:0 8px 32px rgba(255,107,0,0.55) !important;transform:translateY(-2px) !important;}
+.stButton > button:hover{background:rgba(255,107,0,0.1) !important;border-color:rgba(255,107,0,0.45) !important;color:#FF6B00 !important;}
+/* Primary buttons outside nav */
+.stButton > button[kind="primary"]{background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;color:#000 !important;border:none !important;font-weight:900 !important;box-shadow:0 4px 24px rgba(255,107,0,0.4) !important;}
+.stButton > button[kind="primary"]:hover{background:linear-gradient(135deg,#FF8C00,#FFB300) !important;box-shadow:0 8px 32px rgba(255,107,0,0.55) !important;}
 .stDownloadButton > button{background:rgba(255,255,255,0.04) !important;color:#FF6B00 !important;border:1px solid rgba(255,107,0,0.3) !important;border-radius:12px !important;}
 
 div[data-testid="stTextInput"] input,div[data-testid="stNumberInput"] input,div[data-testid="stTextArea"] textarea{background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,255,255,0.08) !important;border-radius:12px !important;color:#fff !important;font-family:'Outfit',sans-serif !important;font-size:16px !important;}
@@ -196,7 +263,7 @@ div[data-testid="stStatusWidget"]{display:none !important;}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV
+# BOTTOM NAV — st.button reales, estilizados como nav iOS
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "RONGOL"},
@@ -206,57 +273,30 @@ _NAV_ITEMS = [
     {"key": "Reto 13M",     "icon": "💰", "label": "RETO"},
     {"key": "Config",       "icon": "⚙️",  "label": "CONFIG"},
 ]
-_NAV_KEYS  = [n["key"]   for n in _NAV_ITEMS]
-_NAV_ICONS = [n["icon"]  for n in _NAV_ITEMS]
 
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Rongol Picks"
-
-# ── HIDDEN radio — this is what actually drives navigation ────────────────────
-# Streamlit radio always works. We hide it and drive it from the HTML nav.
-_nav_sel = st.radio(
-    "nav",
-    options=_NAV_KEYS,
-    format_func=lambda k: next(n["icon"] for n in _NAV_ITEMS if n["key"]==k),
-    index=_NAV_KEYS.index(st.session_state["active_page"]),
-    key="_nav_radio",
-    horizontal=True,
-    label_visibility="collapsed",
-)
-if _nav_sel != st.session_state["active_page"]:
-    st.session_state["active_page"] = _nav_sel
-    st.rerun()
-
 _active_page = st.session_state["active_page"]
 
-# ── Visual nav ────────────────────────────────────────────────────────────────
-_nh = '<div class="den-nav">'
-for _ni in _NAV_ITEMS:
-    _a   = "act" if _ni["key"] == _active_page else ""
-    _clr = "#FF6B00" if _a else "#404048"
-    _nh += (
-        f'<div class="den-nav-item {_a}" onclick="navClick(\'{_ni["key"]}\')" style="cursor:pointer">' +
-        f'<span class="den-nav-icon">{_ni["icon"]}</span>' +
-        f'<span class="den-nav-label" style="color:{_clr}">{_ni["label"]}</span>' +
-        f'</div>'
-    )
-_nh += '</div>'
+# Visual nav bar background (HTML)
+st.markdown('<div class="den-nav-bg"></div>', unsafe_allow_html=True)
 
-# JS: clicking a nav item clicks the corresponding hidden radio button
-_nav_js = """
-<script>
-function navClick(pageKey) {
-    // Find all radio buttons in the hidden nav radio
-    var labels = window.parent.document.querySelectorAll('[data-testid="stRadio"] label');
-    var keys = """ + str(_NAV_KEYS) + """;
-    var idx = keys.indexOf(pageKey);
-    if (idx >= 0 && labels[idx]) {
-        labels[idx].click();
-    }
-}
-</script>
-"""
-st.markdown(_nh + _nav_js, unsafe_allow_html=True)
+# Real nav buttons in columns — styled via CSS to look like nav items
+_nav_cols = st.columns(len(_NAV_ITEMS))
+for _i, _item in enumerate(_NAV_ITEMS):
+    _is_active = _item["key"] == _active_page
+    with _nav_cols[_i]:
+        _label = f"{_item['icon']}\n{_item['label']}"
+        if st.button(
+            _label,
+            key=f"nav_btn_{_i}",
+            use_container_width=True,
+            type="primary" if _is_active else "secondary",
+        ):
+            st.session_state["active_page"] = _item["key"]
+            st.rerun()
+
+_active_page = st.session_state["active_page"]
 
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
@@ -5345,8 +5385,8 @@ if _active_page == "Rongol Picks":
           <div style="font-size:3.8rem;margin-bottom:12px;display:inline-block;animation:glow-pulse 2s ease-in-out infinite">⚡</div>
           <style>@keyframes glow-pulse{0%,100%{filter:drop-shadow(0 0 12px rgba(255,107,0,0.5))}50%{filter:drop-shadow(0 0 36px rgba(255,214,10,0.9))}}</style>
           <div style="font-size:1.5rem;font-weight:900;letter-spacing:-1px;margin-bottom:8px;background:linear-gradient(90deg,#FF6B00,#FFD60A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">¡Bienvenido al Den!</div>
-          <div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">Toca <b style="color:#FF6B00">⚙️ CONFIG</b> en la barra de abajo<br>y presiona <b style="color:#FFD60A">🚀 Analizar ahora</b></div>
-          <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:22px">
+          <div style="font-size:0.90rem;color:#B0B0B8;line-height:1.9;margin-bottom:28px">Toca <b style="color:#FF6B00">⚙️ CONFIG</b> abajo · <b style="color:#FFD60A">🚀 Analizar</b></div>
+          <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">
             <div style="background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.03));border:1px solid rgba(255,107,0,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FF6B00">⚡ Monte Carlo</div>
             <div style="background:linear-gradient(135deg,rgba(255,214,10,0.15),rgba(255,214,10,0.03));border:1px solid rgba(255,214,10,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#FFD60A">🎯 EV+ Picks</div>
             <div style="background:linear-gradient(135deg,rgba(0,230,118,0.15),rgba(0,230,118,0.03));border:1px solid rgba(0,230,118,0.4);border-radius:16px;padding:14px 18px;font-size:0.74rem;font-weight:800;color:#00E676">🎰 Parlays</div>
