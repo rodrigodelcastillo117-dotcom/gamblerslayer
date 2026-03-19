@@ -435,39 +435,17 @@ _nav_map_rev = dict(zip(_nav_keys, _nav_display))
 
 _cur_display = _nav_map_rev.get(_active_page, _nav_display[0])
 
-# ── Nav: HTML visual abajo + botones REALES ocultos con CSS ──────────────────
+# ── NAV: st.radio estilizado como bottom nav ─────────────────────────────────
+_nav_display = [f'{i["icon"]} {i["label"]}' for i in _NAV_ITEMS]
+_nav_map     = {d: i["key"] for d, i in zip(_nav_display, _NAV_ITEMS)}
+_cur_display = next((f'{i["icon"]} {i["label"]}' for i in _NAV_ITEMS if i["key"] == _active_page), _nav_display[0])
 
-# 1. HTML visual del nav (solo decorativo)
-_nav_html_parts = []
-for _ni in _NAV_ITEMS:
-    _a  = _ni["key"] == _active_page
-    _c  = "#FF6B00" if _a else "#636366"
-    _bb = "border-top:2px solid #FF6B00;" if _a else "border-top:2px solid transparent;"
-    _nav_html_parts.append(
-        f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;' +
-        f'justify-content:center;gap:2px;padding:6px 2px;{_bb}">' +
-        f'<span style="font-size:1.2rem;line-height:1">{_ni["icon"]}</span>' +
-        f'<span style="font-size:0.44rem;font-weight:700;letter-spacing:0.5px;' +
-        f'text-transform:uppercase;color:{_c}">{_ni["label"]}</span>' +
-        '</div>'
-    )
-
-st.markdown(
-    '<div id="main-nav-visual" style="position:fixed;bottom:70px;left:50%;' +
-    'transform:translateX(-50%);width:96%;max-width:480px;height:52px;' +
-    'background:rgba(28,28,30,0.97);backdrop-filter:blur(20px);' +
-    '-webkit-backdrop-filter:blur(20px);' +
-    'border:1px solid rgba(255,255,255,0.12);border-radius:22px;' +
-    'z-index:9998;display:flex;align-items:stretch;' +
-    'box-shadow:0 4px 24px rgba(0,0,0,0.5);pointer-events:none">' +
-    ''.join(_nav_html_parts) + '</div>',
-    unsafe_allow_html=True
-)
-
-# 2. Botones funcionales fijos ENCIMA del visual (transparentes)
 st.markdown("""
 <style>
-div[data-testid="stHorizontalBlock"].nav-row {
+/* ═══ BOTTOM NAV ═══ */
+div[data-testid="stRadio"] { margin:0 !important; padding:0 !important; }
+div[data-testid="stRadio"] > label { display:none !important; }
+div[data-testid="stRadio"] > div[role="radiogroup"] {
   position: fixed !important;
   bottom: 70px !important;
   left: 50% !important;
@@ -475,40 +453,74 @@ div[data-testid="stHorizontalBlock"].nav-row {
   width: 96% !important;
   max-width: 480px !important;
   height: 52px !important;
-  z-index: 9999 !important;
-  background: transparent !important;
+  background: rgba(28,28,30,0.97) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 22px !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  padding: 3px !important;
   gap: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  flex-wrap: nowrap !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5) !important;
 }
-div[data-testid="stHorizontalBlock"].nav-row > div[data-testid="column"] {
-  padding: 0 2px !important;
-  min-width: 0 !important;
-}
-div[data-testid="stHorizontalBlock"].nav-row button {
-  opacity: 0 !important;
-  height: 52px !important;
-  width: 100% !important;
-  min-height: 52px !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
+div[data-testid="stRadio"] input[type="radio"] { display:none !important; }
+div[data-testid="stRadio"] label[data-baseweb="radio"] {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 1px !important;
   cursor: pointer !important;
-  padding: 0 !important;
+  padding: 3px 0 !important;
   margin: 0 !important;
+  border-radius: 18px !important;
+  border-top: none !important;
+  transition: background 0.15s !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+  background: rgba(255,107,0,0.18) !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"] span {
+  font-size: 0.42rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  color: #636366 !important;
+  line-height: 1 !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span {
+  color: #FF6B00 !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
+  font-size: 0.42rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  color: #636366 !important;
+  margin: 0 !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) div[data-testid="stMarkdownContainer"] p {
+  color: #FF6B00 !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div data-testid="stHorizontalBlock" class="nav-row">', unsafe_allow_html=True)
-_nav_cols = st.columns(len(_NAV_ITEMS))
-for _ni, _ncol in zip(_NAV_ITEMS, _nav_cols):
-    with _ncol:
-        if st.button(_ni["label"], key=f"nav_btn_{_ni['key']}", use_container_width=True):
-            st.session_state["active_page"] = _ni["key"]
-            st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
+_selected_display = st.radio(
+    "nav",
+    _nav_display,
+    index=_nav_display.index(_cur_display),
+    horizontal=True,
+    key="nav_radio_main",
+    label_visibility="collapsed",
+)
+_new_page = _nav_map.get(_selected_display, _active_page)
+if _new_page != _active_page:
+    st.session_state["active_page"] = _new_page
+    st.rerun()
 _active_page = st.session_state["active_page"]
 
 
