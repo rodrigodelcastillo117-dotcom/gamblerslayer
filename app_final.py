@@ -435,78 +435,59 @@ _nav_map_rev = dict(zip(_nav_keys, _nav_display))
 
 _cur_display = _nav_map_rev.get(_active_page, _nav_display[0])
 
-# ── Nav: HTML visual + st.columns buttons (zero radio, zero conflict) ────────
+# ── Nav: SOLO HTML + query_params (cero widgets Streamlit en el nav) ──────────
+# Lee la página desde query_params — se actualiza via JS onclick
+_qp_page = st.query_params.get("page", None)
+if _qp_page and _qp_page in [item["key"] for item in _NAV_ITEMS]:
+    if _qp_page != _active_page:
+        st.session_state["active_page"] = _qp_page
+        _active_page = _qp_page
+
+# Construir nav HTML con links que cambian query_params via JS
 _nav_html_parts = []
 for _ni in _NAV_ITEMS:
     _a  = _ni["key"] == _active_page
     _c  = "#FF6B00" if _a else "#636366"
     _bb = "border-top:2px solid #FF6B00;" if _a else "border-top:2px solid transparent;"
+    _page_encoded = _ni["key"].replace(" ", "+")
     _nav_html_parts.append(
-        f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;' +
-        f'justify-content:center;gap:2px;padding:6px 2px;{_bb}">' +
-        f'<span style="font-size:1.1rem;line-height:1">{_ni["icon"]}</span>' +
-        f'<span style="font-size:0.42rem;font-weight:700;letter-spacing:0.5px;' +
+        f'<div onclick="navigateTo(\'{_page_encoded}\')" ' +
+        f'style="flex:1;display:flex;flex-direction:column;align-items:center;' +
+        f'justify-content:center;gap:2px;padding:6px 2px;{_bb};cursor:pointer">' +
+        f'<span style="font-size:1.2rem;line-height:1">{_ni["icon"]}</span>' +
+        f'<span style="font-size:0.44rem;font-weight:700;letter-spacing:0.5px;' +
         f'text-transform:uppercase;color:{_c}">{_ni["label"]}</span>' +
         '</div>'
     )
 
 st.markdown(
-    '<div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);' +
+    '<div id="main-nav" style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);' +
     'width:96%;max-width:480px;height:52px;' +
     'background:rgba(28,28,30,0.97);backdrop-filter:blur(20px);' +
     '-webkit-backdrop-filter:blur(20px);' +
     'border:1px solid rgba(255,255,255,0.12);border-radius:22px;' +
-    'z-index:99998;display:flex;align-items:stretch;' +
+    'z-index:99999;display:flex;align-items:stretch;' +
     'box-shadow:0 4px 24px rgba(0,0,0,0.5)">' +
-    ''.join(_nav_html_parts) + '</div>',
+    ''.join(_nav_html_parts) + '</div>' +
+    """<script>
+    function navigateTo(page) {
+        // Update URL query param
+        const url = new URL(window.parent.location.href);
+        url.searchParams.set('page', page);
+        window.parent.history.pushState({}, '', url);
+        // Trigger Streamlit rerun via postMessage
+        window.parent.postMessage({
+            type: 'streamlit:setComponentValue',
+            value: page
+        }, '*');
+        // Fallback: reload with new query param after short delay
+        setTimeout(function() {
+            window.parent.location.href = url.toString();
+        }, 100);
+    }
+    </script>""",
     unsafe_allow_html=True
 )
-
-# Invisible functional buttons fixed on top of visual nav
-st.markdown("""
-<style>
-.nav-buttons-row {
-  position: fixed !important;
-  bottom: 70px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: 96% !important;
-  max-width: 480px !important;
-  height: 52px !important;
-  z-index: 99999 !important;
-  display: flex !important;
-  gap: 0 !important;
-  padding: 0 !important;
-  background: transparent !important;
-}
-.nav-buttons-row > div[data-testid="column"] {
-  padding: 0 !important;
-  min-width: 0 !important;
-}
-.nav-buttons-row button {
-  opacity: 0 !important;
-  height: 52px !important;
-  width: 100% !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  cursor: pointer !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 0 !important;
-  font-size: 0 !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="nav-buttons-row">', unsafe_allow_html=True)
-_nav_cols = st.columns(len(_NAV_ITEMS))
-for _i, _nitem in enumerate(_NAV_ITEMS):
-    with _nav_cols[_i]:
-        if st.button(_nitem["icon"], key=f"nav_{_nitem['key']}", use_container_width=True):
-            st.session_state["active_page"] = _nitem["key"]
-            st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
 _active_page = st.session_state["active_page"]
 
 
