@@ -435,25 +435,17 @@ _nav_map_rev = dict(zip(_nav_keys, _nav_display))
 
 _cur_display = _nav_map_rev.get(_active_page, _nav_display[0])
 
-# ── Nav: SOLO HTML + query_params (cero widgets Streamlit en el nav) ──────────
-# Lee la página desde query_params — se actualiza via JS onclick
-_qp_page = st.query_params.get("page", None)
-if _qp_page and _qp_page in [item["key"] for item in _NAV_ITEMS]:
-    if _qp_page != _active_page:
-        st.session_state["active_page"] = _qp_page
-        _active_page = _qp_page
+# ── Nav: HTML visual abajo + botones REALES ocultos con CSS ──────────────────
 
-# Construir nav HTML con links que cambian query_params via JS
+# 1. HTML visual del nav (solo decorativo)
 _nav_html_parts = []
 for _ni in _NAV_ITEMS:
     _a  = _ni["key"] == _active_page
     _c  = "#FF6B00" if _a else "#636366"
     _bb = "border-top:2px solid #FF6B00;" if _a else "border-top:2px solid transparent;"
-    _page_encoded = _ni["key"].replace(" ", "+")
     _nav_html_parts.append(
-        f'<div onclick="navigateTo(\'{_page_encoded}\')" ' +
-        f'style="flex:1;display:flex;flex-direction:column;align-items:center;' +
-        f'justify-content:center;gap:2px;padding:6px 2px;{_bb};cursor:pointer">' +
+        f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;' +
+        f'justify-content:center;gap:2px;padding:6px 2px;{_bb}">' +
         f'<span style="font-size:1.2rem;line-height:1">{_ni["icon"]}</span>' +
         f'<span style="font-size:0.44rem;font-weight:700;letter-spacing:0.5px;' +
         f'text-transform:uppercase;color:{_c}">{_ni["label"]}</span>' +
@@ -461,33 +453,62 @@ for _ni in _NAV_ITEMS:
     )
 
 st.markdown(
-    '<div id="main-nav" style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);' +
-    'width:96%;max-width:480px;height:52px;' +
+    '<div id="main-nav-visual" style="position:fixed;bottom:70px;left:50%;' +
+    'transform:translateX(-50%);width:96%;max-width:480px;height:52px;' +
     'background:rgba(28,28,30,0.97);backdrop-filter:blur(20px);' +
     '-webkit-backdrop-filter:blur(20px);' +
     'border:1px solid rgba(255,255,255,0.12);border-radius:22px;' +
-    'z-index:99999;display:flex;align-items:stretch;' +
-    'box-shadow:0 4px 24px rgba(0,0,0,0.5)">' +
-    ''.join(_nav_html_parts) + '</div>' +
-    """<script>
-    function navigateTo(page) {
-        // Update URL query param
-        const url = new URL(window.parent.location.href);
-        url.searchParams.set('page', page);
-        window.parent.history.pushState({}, '', url);
-        // Trigger Streamlit rerun via postMessage
-        window.parent.postMessage({
-            type: 'streamlit:setComponentValue',
-            value: page
-        }, '*');
-        // Fallback: reload with new query param after short delay
-        setTimeout(function() {
-            window.parent.location.href = url.toString();
-        }, 100);
-    }
-    </script>""",
+    'z-index:9998;display:flex;align-items:stretch;' +
+    'box-shadow:0 4px 24px rgba(0,0,0,0.5);pointer-events:none">' +
+    ''.join(_nav_html_parts) + '</div>',
     unsafe_allow_html=True
 )
+
+# 2. Botones funcionales fijos ENCIMA del visual (transparentes)
+st.markdown("""
+<style>
+div[data-testid="stHorizontalBlock"].nav-row {
+  position: fixed !important;
+  bottom: 70px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 96% !important;
+  max-width: 480px !important;
+  height: 52px !important;
+  z-index: 9999 !important;
+  background: transparent !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  flex-wrap: nowrap !important;
+}
+div[data-testid="stHorizontalBlock"].nav-row > div[data-testid="column"] {
+  padding: 0 2px !important;
+  min-width: 0 !important;
+}
+div[data-testid="stHorizontalBlock"].nav-row button {
+  opacity: 0 !important;
+  height: 52px !important;
+  width: 100% !important;
+  min-height: 52px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div data-testid="stHorizontalBlock" class="nav-row">', unsafe_allow_html=True)
+_nav_cols = st.columns(len(_NAV_ITEMS))
+for _ni, _ncol in zip(_NAV_ITEMS, _nav_cols):
+    with _ncol:
+        if st.button(_ni["label"], key=f"nav_btn_{_ni['key']}", use_container_width=True):
+            st.session_state["active_page"] = _ni["key"]
+            st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 _active_page = st.session_state["active_page"]
 
 
