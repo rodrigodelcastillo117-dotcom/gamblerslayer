@@ -97,16 +97,7 @@ header[data-testid="stHeader"] { display: none !important; }
 .den-divider { width:100%; height:1px; background:var(--border); margin:10px 0; opacity:0.8; }
 .den-corner { display:none; }
 
-/* ── BOTTOM NAV ── */
-.ios-bottom-nav {
-  position:fixed; bottom:0; left:0; right:0; height:var(--nav-h);
-  background:rgba(28,28,30,0.94);
-  backdrop-filter:saturate(180%) blur(20px);
-  -webkit-backdrop-filter:saturate(180%) blur(20px);
-  border-top:1px solid var(--border);
-  display:flex; align-items:flex-start; justify-content:space-around;
-  padding:10px 4px 0; z-index:99999;
-}
+/* ── BOTTOM NAV — see st.radio nav below ── */
 
 /* ── STAT TILES ── */
 .stat-grid { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
@@ -333,14 +324,14 @@ hr { border-color:var(--border) !important; }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BOTTOM NAV iOS — 6 secciones
+# BOTTOM NAV — st.radio con CSS puro (sin botones visibles, compacto en móvil)
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "Rongol"},
     {"key": "Picks",        "icon": "🎯", "label": "Picks"},
     {"key": "Parlays",      "icon": "🎰", "label": "Parlays"},
     {"key": "En Vivo",      "icon": "🔴", "label": "Live"},
-    {"key": "Califica",     "icon": "🏆", "label": "Califica"},
+    {"key": "Califica",     "icon": "🏆", "label": "Cal"},
     {"key": "Reto 13M",     "icon": "💰", "label": "Reto"},
     {"key": "Config",       "icon": "⚙️",  "label": "Config"},
 ]
@@ -350,55 +341,114 @@ if "active_page" not in st.session_state:
 
 _active_page = st.session_state["active_page"]
 
-# Bottom nav HTML
-_nav_html_parts = []
-for _ni in _NAV_ITEMS:
-    _is_a = _ni["key"] == _active_page
-    _clr  = "#FF6B00" if _is_a else "#636366"
-    _dot  = '<div style="width:4px;height:4px;background:#FF6B00;border-radius:50%;margin-top:1px"></div>' if _is_a else ''
-    _bb   = "border-bottom:2px solid #FF6B00;" if _is_a else ""
-    _nav_html_parts.append(
-        f'<div style="display:flex;flex-direction:column;align-items:center;gap:2px;'
-        f'padding:4px 8px;cursor:pointer;min-width:44px;{_bb}">'
-        f'<span style="font-size:1.18rem;line-height:1">{_ni["icon"]}</span>'
-        f'<span style="font-size:0.52rem;font-weight:700;letter-spacing:0.3px;'
-        f'text-transform:uppercase;font-family:Outfit,sans-serif;color:{_clr}">{_ni["label"]}</span>'
-        f'{_dot}</div>'
-    )
-
-st.markdown(
-    f'<div class="ios-bottom-nav">{"".join(_nav_html_parts)}</div>',
-    unsafe_allow_html=True
-)
-
-# Real (invisible) nav buttons — positioned over the HTML nav
-_ncols = st.columns(len(_NAV_ITEMS))
-for _ni2, _nitem in enumerate(_NAV_ITEMS):
-    with _ncols[_ni2]:
-        if st.button(_nitem["icon"], key=f"_nav_{_nitem['key']}", help=_nitem["key"]):
-            st.session_state["active_page"] = _nitem["key"]
-            st.rerun()
-
-# Overlay nav buttons on top of HTML nav
-st.markdown(f"""
+# CSS: transforma el radio en bottom nav compacto
+st.markdown("""
 <style>
-/* Stack real nav buttons over HTML nav */
-div[data-testid="stHorizontalBlock"]:has(button[key="_nav_Rongol Picks"]) {{
-  position:fixed !important; bottom:0 !important; left:0 !important; right:0 !important;
-  z-index:100000 !important; height:var(--nav-h) !important;
-  display:flex !important; align-items:stretch !important;
-  background:transparent !important; margin:0 !important; padding:0 !important;
-}}
-div[data-testid="stHorizontalBlock"]:has(button[key="_nav_Rongol Picks"]) > div {{
-  flex:1 !important;
-}}
-div[data-testid="stHorizontalBlock"]:has(button[key="_nav_Rongol Picks"]) button {{
-  opacity:0 !important; height:var(--nav-h) !important;
-  width:100% !important; border:none !important; background:transparent !important;
-  border-radius:0 !important;
-}}
+/* ── Ocultar label del radio ── */
+div[data-testid="stRadio"] > label { display:none !important; }
+
+/* ── Contenedor fixed bottom ── */
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+  position: fixed !important;
+  bottom: 8px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: min(98vw, 520px) !important;
+  height: 50px !important;
+  background: rgba(22,22,24,0.97) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  border-radius: 25px !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  padding: 4px !important;
+  gap: 0 !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6) !important;
+  overflow: hidden !important;
+}
+
+/* ── Ocultar input radio real ── */
+div[data-testid="stRadio"] input[type="radio"] { display:none !important; }
+
+/* ── Cada tab ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"] {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 1px !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 20px !important;
+  transition: background 0.15s !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ── Tab activo ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+  background: rgba(255,107,0,0.22) !important;
+}
+
+/* ── Texto del tab ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"] span,
+div[data-testid="stRadio"] label[data-baseweb="radio"] p,
+div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
+  font-size: 0.38rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.2px !important;
+  text-transform: uppercase !important;
+  color: #555555 !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  font-family: 'Outfit', sans-serif !important;
+  white-space: nowrap !important;
+}
+
+/* ── Texto activo ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p,
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) div[data-testid="stMarkdownContainer"] p {
+  color: #FF6B00 !important;
+}
+
+/* ── Separador vertical entre tabs ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:last-child) {
+  border-right: 1px solid rgba(255,255,255,0.05) !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked):not(:last-child),
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) + label {
+  border-right-color: transparent !important;
+}
 </style>
 """, unsafe_allow_html=True)
+
+# Construir opciones: emoji + newline + label (el CSS los separa visualmente)
+_nav_options = [f'{i["icon"]}\n{i["label"]}' for i in _NAV_ITEMS]
+_nav_key_map  = {f'{i["icon"]}\n{i["label"]}': i["key"] for i in _NAV_ITEMS}
+_nav_key_rev  = {i["key"]: f'{i["icon"]}\n{i["label"]}' for i in _NAV_ITEMS}
+
+_cur_option = _nav_key_rev.get(_active_page, _nav_options[0])
+
+_selected = st.radio(
+    "nav",
+    _nav_options,
+    index=_nav_options.index(_cur_option),
+    horizontal=True,
+    key="gamblers_nav_radio",
+    label_visibility="collapsed",
+)
+
+_new_page = _nav_key_map.get(_selected, _active_page)
+if _new_page != _active_page:
+    st.session_state["active_page"] = _new_page
+    st.rerun()
+_active_page = st.session_state["active_page"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATA
@@ -3571,6 +3621,14 @@ def run_monte_carlo(game, n=10_000):
     _h_prof_s = game.get("home_profile")
     _a_prof_s = game.get("away_profile")
 
+    # ── Señales disponibles — definidas aquí para uso en todo el bloque ────────
+    _has_ml      = bool(hml and aml)
+    _has_scoring = game.get("home_avg_scored") is not None
+    _has_form    = game.get("home_form") is not None or game.get("away_form") is not None
+    _has_profile = ((_h_prof_s and _h_prof_s.get("n_games", 0) >= 5) or
+                    (_a_prof_s and _a_prof_s.get("n_games", 0) >= 5))
+    _has_record  = bool(game.get("home_record", "") and game.get("away_record", ""))
+
     def _clamp01(x): return max(0.01, min(0.99, x))
 
     def _recent_form_factor(prof, is_home):
@@ -3952,14 +4010,7 @@ def run_monte_carlo(game, n=10_000):
     #   - ESPN moneyline present (market knows something we don't)
     #   - Scoring trend available (we have real recent data)
     #   - Form data available (we know recent results)
-    _has_ml        = bool(hml and aml)
-    _has_scoring   = game.get("home_avg_scored") is not None
-    _has_form      = game.get("home_form") is not None or game.get("away_form") is not None
     _has_real_signal = _has_ml or _has_scoring or _has_form
-
-    # ── Clasifica fuente de señal disponible ────────────────────────────────────
-    _has_profile   = (game.get("home_profile") and game.get("home_profile",{}).get("n_games",0) >= 5) or                      (game.get("away_profile") and game.get("away_profile",{}).get("n_games",0) >= 5)
-    _has_record    = (game.get("home_record","") and game.get("away_record",""))  # season W-L-D
 
     if is_soccer and not _has_real_signal:
         # Sin ML, sin forma reciente, sin scoring trend de ESPN.
