@@ -336,11 +336,12 @@ hr { border-color:var(--border) !important; }
 # BOTTOM NAV iOS — 6 secciones
 # ═══════════════════════════════════════════════════════════════════════════════
 _NAV_ITEMS = [
-    {"key": "Rongol Picks", "icon": "⚡", "label": "Rongol Picks"},
+    {"key": "Rongol Picks", "icon": "⚡", "label": "Rongol"},
     {"key": "Picks",        "icon": "🎯", "label": "Picks"},
     {"key": "Parlays",      "icon": "🎰", "label": "Parlays"},
-    {"key": "En Vivo",      "icon": "🔴", "label": "En Vivo"},
-    {"key": "Reto 13M",     "icon": "💰", "label": "Reto 13M"},
+    {"key": "En Vivo",      "icon": "🔴", "label": "Live"},
+    {"key": "Califica",     "icon": "🏆", "label": "Califica"},
+    {"key": "Reto 13M",     "icon": "💰", "label": "Reto"},
     {"key": "Config",       "icon": "⚙️",  "label": "Config"},
 ]
 
@@ -2801,7 +2802,7 @@ def get_lambda(game):
     if sport_grp_b in ("Basketball", "Football"):
         _avg_check = avg / 2.0
         if h_scored is not None and _avg_check > 0 and h_scored < _avg_check * 0.15:
-            _scale_ok = False  # datos en escala de soccer aplicados a basketball
+            _scale_ok = False
         if a_scored is not None and _avg_check > 0 and a_scored < _avg_check * 0.15:
             _scale_ok = False
 
@@ -3339,7 +3340,6 @@ def run_monte_carlo(game, n=10_000):
     _is_hock  = LEAGUES.get(game.get("league",""),{}).get("group","") == "Hockey"
     _is_foot  = LEAGUES.get(game.get("league",""),{}).get("group","") in ("Football",)
     # FIX-2: Basketball excluido de línea implícita — sin ESPN line no O/U para NBA
-    # NBA sin línea real genera tautología 50/50 → win rate ~35%. Solo ML para NBA sin odds.
     _nonsoccer_no_line = ou_val == 0.0 and _lg_avg > 0 and (_is_base or _is_hock or _is_foot)
     _bball_no_line = ou_val == 0.0 and _is_bball  # NBA sin línea ESPN → solo ML
     if _nonsoccer_no_line:
@@ -3934,7 +3934,7 @@ def run_monte_carlo(game, n=10_000):
                 ("BTTS","Ambos Anotan — SÍ", p_btts,   btts_ev,    str(BTTS_ML), quarter_kelly(p_btts,   BTTS_ML)),
                 ("BTTS","Ambos Anotan — NO", 1-p_btts, no_btts_ev, str(BTTS_ML), quarter_kelly(1-p_btts, BTTS_ML)),
             ]
-        # FIX-4: O/U solo cuando hay señal real (ESPN line, form scoring, o team profile)
+        # FIX-4: O/U solo cuando hay señal real
         _has_real_ou_signal2 = _has_ml or _has_scoring or _has_profile
         if _has_real_ou_signal2:
             if _edge2(p_o25, _pv2[4]):
@@ -3996,7 +3996,7 @@ def run_monte_carlo(game, n=10_000):
                             ("BTTS","Ambos Anotan — SÍ",p_btts,  _bev,  str(BTTS_ML),quarter_kelly(p_btts,  BTTS_ML)),
                             ("BTTS","Ambos Anotan — NO",1-p_btts,_nbev, str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
                         ]
-            # FIX-5: O/U low-confidence solo con señal real de scoring o profile
+            # FIX-5: O/U low-confidence solo con señal real
             _has_real_ou_signal_lc = _has_ml or _has_scoring or _has_profile
             if _has_real_ou_signal_lc and p_o25 is not None:
                 if abs(p_o25 - _pv[4]) >= _edge_low:
@@ -5224,7 +5224,144 @@ if st.session_state.pop("run_populate", False):
 
 # ── ROUTING ───────────────────────────────────────────────────────────────────
 
-# ── RETO 13M HELPERS (moved to module level) ─────────────────────────────
+# ── HELPER FUNCTIONS (module level) ─────────────────────────────────────
+def _normalize_team(name):
+    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
+    import unicodedata
+    name = name.lower().strip()
+    name = ''.join(c for c in unicodedata.normalize('NFD', name)
+                   if unicodedata.category(c) != 'Mn')
+    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
+        name = name.replace(suffix, "")
+    return name.strip()
+
+def _team_match(pick_team, game_home, game_away, threshold=0.70):
+    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
+    pt = _normalize_team(pick_team)
+    ht = _normalize_team(game_home)
+    at = _normalize_team(game_away)
+    # Exact substring match first
+    if pt in ht or ht in pt: return "home"
+    if pt in at or at in pt: return "away"
+    # Token overlap
+    pt_tok = set(pt.split())
+    ht_tok = set(ht.split())
+    at_tok = set(at.split())
+    def overlap(a, b):
+        if not a or not b: return 0
+        return len(a & b) / max(len(a), len(b))
+    h_sc = overlap(pt_tok, ht_tok)
+    a_sc = overlap(pt_tok, at_tok)
+    if h_sc >= threshold and h_sc > a_sc: return "home"
+    if a_sc >= threshold: return "away"
+    return None
+
+def _evaluate_pick(pick, game):
+    """
+    Given a finished game and a pick dict, return 'ganado'|'perdido'|'push'|None.
+    pick keys: partido, pick (team/label), mercado (ML|O/U|BTTS|DO), momio
+    game keys: home_team, away_team, home_score, away_score, state
+    """
+    if game.get("state") != "post":
+        return None
+    try:
+        hs = int(str(game.get("home_score","")).strip() or "x")
+        as_ = int(str(game.get("away_score","")).strip() or "x")
+    except:
+        return None  # no score yet
+
+    mercado  = (pick.get("mercado") or "ML").upper()
+    pick_lbl = pick.get("pick","").strip()
+    sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
+
+    # ── ML ────────────────────────────────────────────────────────────────────
+    if mercado == "ML":
+        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
+        if side is None: return None
+        if sg == "Soccer":
+            if hs == as_: return "push"  # draw = push on ML? no, it loses
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        else:
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        # Draw in soccer = ML loses (not a push)
+        if sg == "Soccer" and hs == as_:
+            return "perdido"
+        return "ganado" if won else "perdido"
+
+    # ── O/U ───────────────────────────────────────────────────────────────────
+    if mercado in ("O/U", "OU", "OVER/UNDER"):
+        total = hs + as_
+        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
+        import re
+        lbl_lower = pick_lbl.lower()
+        nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
+        if not nums: return None
+        line = float(nums[0])
+        if total == line: return "push"
+        if "over" in lbl_lower or "o/" in lbl_lower:
+            return "ganado" if total > line else "perdido"
+        if "under" in lbl_lower or "u/" in lbl_lower:
+            return "ganado" if total < line else "perdido"
+        return None
+
+    # ── BTTS ──────────────────────────────────────────────────────────────────
+    if mercado == "BTTS":
+        both_scored = hs > 0 and as_ > 0
+        lbl_lower = pick_lbl.lower()
+        if "no" in lbl_lower or "not" in lbl_lower:
+            return "ganado" if not both_scored else "perdido"
+        return "ganado" if both_scored else "perdido"
+
+    # ── DO (Doble Oportunidad) ─────────────────────────────────────────────────
+    if mercado == "DO":
+        # "Home o Empate (1X)", "Away o Empate (X2)", "Home o Away (12)"
+        lbl_lower = pick_lbl.lower()
+        home_w = hs > as_
+        away_w = as_ > hs
+        draw   = hs == as_
+        if "1x" in lbl_lower or ("empate" in lbl_lower and game["home_team"].lower() in lbl_lower):
+            return "ganado" if (home_w or draw) else "perdido"
+        if "x2" in lbl_lower or ("empate" in lbl_lower and game["away_team"].lower() in lbl_lower):
+            return "ganado" if (away_w or draw) else "perdido"
+        if "12" in lbl_lower or "sin empate" in lbl_lower:
+            return "ganado" if (home_w or away_w) else "perdido"
+        return None
+
+    return None
+
+@st.cache_data(ttl=300)
+def _fetch_finished_games():
+    """Fetch recently finished games across all leagues for auto-resolve."""
+    finished = []
+    for league_name, cfg in LEAGUES.items():
+        try:
+            data = fetch_scoreboard(cfg["sport"], cfg["league"],
+                                    tournament_id=cfg.get("tournament_id"))
+            for g in parse_games(data, league_name):
+                if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
+                    finished.append(g)
+        except:
+            pass
+    return finished
+
+
+# RETO 13M — Bitácora permanente de bankroll
+# Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
+# ══════════════════════════════════════════════════════════════════════════════
+import json, os as _os, re as _re
+
+# ── Google Sheets persistence ─────────────────────────────────────────────────
+# Requires st.secrets["gsheets"] with keys:
+#   type, project_id, private_key_id, private_key, client_email,
+#   client_id, auth_uri, token_uri, spreadsheet_id
+#
+# Each user = one sheet tab named after their apodo.
+# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
+# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
+# Row 3+ = picks
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TEAM PROFILES — Sistema de aprendizaje por equipo
 # Pestaña "team_profiles" en Google Sheets
 # Aprende de los últimos 10 partidos de cada equipo y usa ese historial
@@ -5368,147 +5505,6 @@ def _list_reto_users():
     return sorted(users)
 
 
-# ── ROUTING ─────────────────────────────────────────────────────────────
-
-# ── HELPER FUNCTIONS (moved to module level) ─────────────────────────────
-def _normalize_team(name):
-    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
-    import unicodedata
-    name = name.lower().strip()
-    name = ''.join(c for c in unicodedata.normalize('NFD', name)
-                   if unicodedata.category(c) != 'Mn')
-    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
-        name = name.replace(suffix, "")
-    return name.strip()
-
-def _team_match(pick_team, game_home, game_away, threshold=0.70):
-    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
-    pt = _normalize_team(pick_team)
-    ht = _normalize_team(game_home)
-    at = _normalize_team(game_away)
-    # Exact substring match first
-    if pt in ht or ht in pt: return "home"
-    if pt in at or at in pt: return "away"
-    # Token overlap
-    pt_tok = set(pt.split())
-    ht_tok = set(ht.split())
-    at_tok = set(at.split())
-    def overlap(a, b):
-        if not a or not b: return 0
-        return len(a & b) / max(len(a), len(b))
-    h_sc = overlap(pt_tok, ht_tok)
-    a_sc = overlap(pt_tok, at_tok)
-    if h_sc >= threshold and h_sc > a_sc: return "home"
-    if a_sc >= threshold: return "away"
-    return None
-
-def _evaluate_pick(pick, game):
-    """
-    Given a finished game and a pick dict, return 'ganado'|'perdido'|'push'|None.
-    pick keys: partido, pick (team/label), mercado (ML|O/U|BTTS|DO), momio
-    game keys: home_team, away_team, home_score, away_score, state
-    """
-    if game.get("state") != "post":
-        return None
-    try:
-        hs = int(str(game.get("home_score","")).strip() or "x")
-        as_ = int(str(game.get("away_score","")).strip() or "x")
-    except:
-        return None  # no score yet
-
-    mercado  = (pick.get("mercado") or "ML").upper()
-    pick_lbl = pick.get("pick","").strip()
-    sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
-
-    # ── ML ────────────────────────────────────────────────────────────────────
-    if mercado == "ML":
-        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
-        if side is None: return None
-        if sg == "Soccer":
-            if hs == as_: return "push"  # draw = push on ML? no, it loses
-            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
-        else:
-            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
-        # Draw in soccer = ML loses (not a push)
-        if sg == "Soccer" and hs == as_:
-            return "perdido"
-        return "ganado" if won else "perdido"
-
-    # ── O/U ───────────────────────────────────────────────────────────────────
-    if mercado in ("O/U", "OU", "OVER/UNDER"):
-        total = hs + as_
-        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
-        import re
-        lbl_lower = pick_lbl.lower()
-        nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
-        if not nums: return None
-        line = float(nums[0])
-        if total == line: return "push"
-        if "over" in lbl_lower or "o/" in lbl_lower:
-            return "ganado" if total > line else "perdido"
-        if "under" in lbl_lower or "u/" in lbl_lower:
-            return "ganado" if total < line else "perdido"
-        return None
-
-    # ── BTTS ──────────────────────────────────────────────────────────────────
-    if mercado == "BTTS":
-        both_scored = hs > 0 and as_ > 0
-        lbl_lower = pick_lbl.lower()
-        if "no" in lbl_lower or "not" in lbl_lower:
-            return "ganado" if not both_scored else "perdido"
-        return "ganado" if both_scored else "perdido"
-
-    # ── DO (Doble Oportunidad) ─────────────────────────────────────────────────
-    if mercado == "DO":
-        # "Home o Empate (1X)", "Away o Empate (X2)", "Home o Away (12)"
-        lbl_lower = pick_lbl.lower()
-        home_w = hs > as_
-        away_w = as_ > hs
-        draw   = hs == as_
-        if "1x" in lbl_lower or ("empate" in lbl_lower and game["home_team"].lower() in lbl_lower):
-            return "ganado" if (home_w or draw) else "perdido"
-        if "x2" in lbl_lower or ("empate" in lbl_lower and game["away_team"].lower() in lbl_lower):
-            return "ganado" if (away_w or draw) else "perdido"
-        if "12" in lbl_lower or "sin empate" in lbl_lower:
-            return "ganado" if (home_w or away_w) else "perdido"
-        return None
-
-    return None
-
-@st.cache_data(ttl=300)
-def _fetch_finished_games():
-    """Fetch recently finished games across all leagues for auto-resolve."""
-    finished = []
-    for league_name, cfg in LEAGUES.items():
-        try:
-            data = fetch_scoreboard(cfg["sport"], cfg["league"],
-                                    tournament_id=cfg.get("tournament_id"))
-            for g in parse_games(data, league_name):
-                if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
-                    finished.append(g)
-        except:
-            pass
-    return finished
-
-
-# RETO 13M — Bitácora permanente de bankroll
-# Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
-# ══════════════════════════════════════════════════════════════════════════════
-import json, os as _os, re as _re
-
-# ── Google Sheets persistence ─────────────────────────────────────────────────
-# Requires st.secrets["gsheets"] with keys:
-#   type, project_id, private_key_id, private_key, client_email,
-#   client_id, auth_uri, token_uri, spreadsheet_id
-#
-# Each user = one sheet tab named after their apodo.
-# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
-# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
-# Row 3+ = picks
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     if not sr:
@@ -5629,12 +5625,11 @@ if _active_page == "Rongol Picks":
                         cands.append({"market":"O/U","label":"Over 2.5 goles","prob":_o25_pb,"ev":_o25_ev,"kelly":0})
                 # Add ML (always, highest win%)
                 _ml = best_ml()
-                # FIX-6: ML con alta confianza (>=65%) toma prioridad directa sobre goles
+                # FIX-6: ML con alta confianza (>=65%) toma prioridad directa
                 if _ml:
                     if _ml["prob"] >= 65:
-                        return _ml  # equipo muy dominante → ML sin competencia
+                        return _ml
                     cands.append(_ml)
-                # Fallback final: si no hay candidatos, usar ML
                 if not cands and _ml:
                     return _ml
                 # Return best by probability
@@ -8622,6 +8617,332 @@ elif _active_page == "Reto 13M":
             mime="text/csv",
             key="btn_export_reto"
         )
+
+
+elif _active_page == "Califica":
+    # ══════════════════════════════════════════════════════════════════════════
+    # CALIFICA TU PICK — Grade any pick A-F using full Monte Carlo engine
+    # ══════════════════════════════════════════════════════════════════════════
+
+    st.markdown("""
+    <style>
+    .grade-ring {
+        width: 110px; height: 110px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column;
+        margin: 0 auto;
+        position: relative;
+        box-shadow: 0 0 40px var(--ring-color);
+        border: 4px solid var(--ring-color);
+        background: radial-gradient(circle, var(--ring-bg) 0%, #0a0a0a 100%);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:2rem;margin-bottom:4px">🏆</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:1.4rem;font-weight:900;
+        background:linear-gradient(135deg,#FF6B00,#FFD60A);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+        background-clip:text;letter-spacing:-0.5px">CALIFICA TU PICK</div>
+      <div style="font-size:0.65rem;color:#636366;letter-spacing:3px;
+        text-transform:uppercase;margin-top:4px">
+        Selecciona partido · Elige mercado · Ingresa momio
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    sr_cal = st.session_state.get("sim_results", [])
+
+    _cal_games = []
+    for _r in sr_cal:
+        _label = f'{_r.get("away_team","?")} @ {_r.get("home_team","?")} · {_r.get("league","")}'
+        _cal_games.append((_label, _r))
+
+    if not _cal_games:
+        st.markdown("""
+        <div style="text-align:center;padding:40px 20px">
+          <div style="font-size:2.5rem;margin-bottom:12px">📡</div>
+          <div style="font-size:0.95rem;font-weight:700;color:#E8E8E8;margin-bottom:8px">
+            Sin partidos cargados
+          </div>
+          <div style="font-size:0.82rem;color:#636366">
+            Ve a ⚡ Rongol o 🎯 Picks primero para cargar los partidos del día.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">① SELECCIONA EL PARTIDO</div>', unsafe_allow_html=True)
+
+        _cal_labels = [x[0] for x in _cal_games]
+        _cal_sel_idx = st.selectbox("Partido", range(len(_cal_labels)),
+                                     format_func=lambda i: _cal_labels[i],
+                                     key="cal_game_sel", label_visibility="collapsed")
+        _cal_r = _cal_games[_cal_sel_idx][1]
+        _cal_sim = _cal_r.get("sim", {})
+        _cal_league = _cal_r.get("league", "")
+        _cal_home = _cal_r.get("home_team", "Local")
+        _cal_away = _cal_r.get("away_team", "Visita")
+        _cal_sg = LEAGUES.get(_cal_league, {}).get("group", "Soccer")
+
+        _ht_id = _cal_r.get("home_team_id", "")
+        _at_id = _cal_r.get("away_team_id", "")
+        _hl = _logo_img(_ht_id, _cal_league, 36)
+        _al = _logo_img(_at_id, _cal_league, 36)
+
+        st.markdown(
+            f'<div style="display:flex;align-items:center;justify-content:center;gap:12px;'
+            f'padding:12px;background:rgba(255,107,0,0.06);border-radius:16px;margin:8px 0 16px">'
+            f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+            f'{_al}<span style="font-size:0.75rem;font-weight:700;color:#E8E8E8">{_cal_away}</span></div>'
+            f'<span style="font-size:0.9rem;color:#636366;font-weight:700">VS</span>'
+            f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+            f'{_hl}<span style="font-size:0.75rem;font-weight:700;color:#E8E8E8">{_cal_home}</span></div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">② TU PICK</div>', unsafe_allow_html=True)
+
+        _cal_col1, _cal_col2 = st.columns(2)
+        with _cal_col1:
+            _cal_market = st.selectbox(
+                "Mercado", ["ML", "O/U Over", "O/U Under", "BTTS Sí", "BTTS No", "Over 2.5", "Over 3.5"],
+                key="cal_market", label_visibility="collapsed"
+            )
+        with _cal_col2:
+            if _cal_market == "ML":
+                _cal_side = st.selectbox("Equipo", [_cal_home, _cal_away], key="cal_side", label_visibility="collapsed")
+            else:
+                _cal_side = None
+                st.markdown('<div style="padding:8px 0;font-size:0.82rem;color:#AEAEB2">Seleccionado ✓</div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="font-size:0.65rem;color:#FF6B00;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:12px 0 6px">③ MOMIO</div>', unsafe_allow_html=True)
+
+        _suggested_momio = None
+        if _cal_market == "ML":
+            if _cal_side == _cal_home:
+                _suggested_momio = _cal_sim.get("home_ml") or _cal_r.get("odds", {}).get("home_ml")
+            else:
+                _suggested_momio = _cal_sim.get("away_ml") or _cal_r.get("odds", {}).get("away_ml")
+        _momio_default = int(_suggested_momio) if _suggested_momio else -110
+
+        _mcol1, _mcol2 = st.columns(2)
+        with _mcol1:
+            _cal_momio = st.number_input("Americano", value=_momio_default, step=5,
+                                          key="cal_momio", label_visibility="visible")
+        with _mcol2:
+            try:
+                if _cal_momio > 0:
+                    _cal_momio_dec = round(_cal_momio / 100 + 1, 3)
+                else:
+                    _cal_momio_dec = round(100 / abs(_cal_momio) + 1, 3)
+            except:
+                _cal_momio_dec = 1.909
+            st.markdown(
+                f'<div style="background:rgba(96,165,250,0.08);border:1px solid rgba(96,165,250,0.2);'
+                f'border-radius:10px;padding:10px 12px;margin-top:4px">'
+                f'<div style="font-size:0.65rem;color:#6B7280;margin-bottom:2px">Decimal</div>'
+                f'<div style="font-size:1.3rem;font-weight:800;color:#60a5fa;'
+                f'font-family:Outfit,sans-serif">{_cal_momio_dec}</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+        _btn_cal = st.button("🏆  CALIFICAR PICK", key="btn_calificar", use_container_width=True, type="primary")
+
+        if _btn_cal or st.session_state.get("_cal_result"):
+            if _btn_cal:
+                _sim = _cal_sim
+                _model_prob = 0.5
+
+                if _cal_market == "ML":
+                    if _cal_side == _cal_home:
+                        _model_prob = (_sim.get("home_pct", 50) or 50) / 100
+                    else:
+                        _model_prob = (_sim.get("away_pct", 50) or 50) / 100
+                elif _cal_market == "O/U Over":
+                    _p_o = _sim.get("p_o_total") or _sim.get("p_o25")
+                    _model_prob = (_p_o or 50) / 100
+                elif _cal_market == "O/U Under":
+                    _p_u = _sim.get("p_u_total") or _sim.get("p_u25")
+                    _model_prob = (_p_u or 50) / 100
+                elif _cal_market == "BTTS Sí":
+                    _model_prob = (_sim.get("p_btts") or 50) / 100
+                elif _cal_market == "BTTS No":
+                    _model_prob = 1 - (_sim.get("p_btts") or 50) / 100
+                elif _cal_market == "Over 2.5":
+                    _model_prob = (_sim.get("p_o25") or 50) / 100
+                elif _cal_market == "Over 3.5":
+                    _model_prob = (_sim.get("p_o35") or 50) / 100
+
+                _impl_prob = ml_to_prob(_cal_momio)
+                _ev = calc_ev(_model_prob, str(_cal_momio))
+                _edge = round((_model_prob - _impl_prob) * 100, 1)
+                _kelly = quarter_kelly(_model_prob, str(_cal_momio))
+                _consensus_score = _cal_sim.get("consensus_score", 0)
+                _dq = _cal_sim.get("data_quality", 0)
+
+                def _grade_pick(ev, edge_pp, model_prob, dq, consensus_score):
+                    score = 0
+                    if ev is None: ev = 0
+                    if ev >= 20: score += 40
+                    elif ev >= 12: score += 32
+                    elif ev >= 6: score += 22
+                    elif ev >= 2: score += 14
+                    elif ev >= 0: score += 6
+                    else: score += max(0, 6 + ev)
+                    if edge_pp >= 12: score += 25
+                    elif edge_pp >= 7: score += 20
+                    elif edge_pp >= 4: score += 14
+                    elif edge_pp >= 1: score += 8
+                    elif edge_pp >= 0: score += 3
+                    if model_prob >= 0.72: score += 20
+                    elif model_prob >= 0.62: score += 16
+                    elif model_prob >= 0.54: score += 11
+                    elif model_prob >= 0.50: score += 6
+                    else: score += 2
+                    if consensus_score >= 0.50: score += 15
+                    elif consensus_score >= 0.20: score += 11
+                    elif consensus_score >= 0.0: score += 7
+                    elif consensus_score >= -0.3: score += 3
+                    if dq < 25: score -= 8
+                    if dq < 10: score -= 10
+                    if edge_pp < -5: score -= 10
+                    score = max(0, min(100, score))
+                    if score >= 88: return "A+", score
+                    elif score >= 80: return "A", score
+                    elif score >= 72: return "B+", score
+                    elif score >= 64: return "B", score
+                    elif score >= 56: return "C+", score
+                    elif score >= 48: return "C", score
+                    elif score >= 38: return "D", score
+                    elif score >= 26: return "E", score
+                    else: return "F", score
+
+                _grade, _score = _grade_pick(_ev or 0, _edge, _model_prob, _dq, _consensus_score)
+
+                st.session_state["_cal_result"] = {
+                    "grade": _grade, "score": _score,
+                    "model_prob": _model_prob, "impl_prob": _impl_prob,
+                    "ev": _ev, "edge": _edge, "kelly": _kelly,
+                    "consensus": _cal_sim.get("consensus_label", "◈ NEUTRAL"),
+                    "consensus_score": _consensus_score,
+                    "dq": _dq,
+                    "fatigue": _cal_sim.get("fatigue_note", ""),
+                    "injury": _cal_sim.get("injury_note", ""),
+                    "lam_rh": _cal_sim.get("lam_real_h"),
+                    "lam_ra": _cal_sim.get("lam_real_a"),
+                    "lam_lg": _cal_sim.get("lam_league"),
+                    "market": _cal_market, "side": _cal_side,
+                    "home": _cal_home, "away": _cal_away, "league": _cal_league,
+                    "momio": _cal_momio,
+                }
+
+            _res = st.session_state.get("_cal_result", {})
+            if _res:
+                _g = _res["grade"]
+                _sc = _res["score"]
+                _ev_r = _res["ev"] or 0
+                _mp = _res["model_prob"]
+                _ip = _res["impl_prob"]
+                _edg = _res["edge"]
+                _kl = _res["kelly"] or 0
+                _cons = _res["consensus"]
+                _dq_r = _res["dq"]
+                _mom = _res["momio"]
+
+                _GRADE_COLORS = {
+                    "A+": ("#00C896", "rgba(0,200,150,0.15)", "APUESTA FUERTE 🔥"),
+                    "A":  ("#00C896", "rgba(0,200,150,0.12)", "EXCELENTE ✅"),
+                    "B+": ("#86efac", "rgba(134,239,172,0.12)", "MUY BUENA ⚡"),
+                    "B":  ("#60a5fa", "rgba(96,165,250,0.12)", "BUENA 👍"),
+                    "C+": ("#fbbf24", "rgba(251,191,36,0.12)", "ACEPTABLE 📊"),
+                    "C":  ("#C9A84C", "rgba(201,168,76,0.10)", "MARGINAL ➡️"),
+                    "D":  ("#f97316", "rgba(249,115,22,0.10)", "DÉBIL ⚠️"),
+                    "E":  ("#ef4444", "rgba(239,68,68,0.10)", "EVITAR ❌"),
+                    "F":  ("#7f1d1d", "rgba(127,29,29,0.15)", "TRAMPA 🚫"),
+                }
+                _gc, _gbg, _gverdict = _GRADE_COLORS.get(_g, ("#636366", "rgba(99,99,102,0.10)", "SIN DATOS"))
+
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,{_gbg} 0%,#0a0a0a 100%);'
+                    f'border:2px solid {_gc}44;border-radius:24px;padding:20px 16px;'
+                    f'margin:8px 0;box-shadow:0 0 40px {_gc}22;text-align:center">'
+                    f'<div style="width:120px;height:120px;border-radius:50%;'
+                    f'display:flex;align-items:center;justify-content:center;flex-direction:column;'
+                    f'margin:0 auto 16px;border:4px solid {_gc};'
+                    f'background:radial-gradient(circle,{_gbg} 0%,#0a0a0a 100%);'
+                    f'box-shadow:0 0 40px {_gc}66">'
+                    f'<span style="font-size:3rem;font-weight:900;color:{_gc};line-height:1;'
+                    f'font-family:Outfit,sans-serif">{_g}</span>'
+                    f'<span style="font-size:0.52rem;font-weight:700;letter-spacing:2px;'
+                    f'text-transform:uppercase;color:{_gc};opacity:0.8">{_sc}/100</span>'
+                    f'</div>'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:{_gc};margin-bottom:8px">{_gverdict}</div>'
+                    f'<div style="font-size:0.78rem;color:#AEAEB2;margin-bottom:4px">{_res["away"]} @ {_res["home"]}</div>'
+                    f'<div style="font-size:0.92rem;font-weight:700;color:#E8E8E8">'
+                    f'{_res["market"]} {_res["side"] or ""} @ {_mom:+d}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+                _m_cols = st.columns(3)
+                for _mi, (_lbl, _val, _clr) in enumerate([
+                    ("Prob Modelo", f'{_mp*100:.1f}%', "#00C896" if _mp > _ip else "#ef4444"),
+                    ("Prob Impl.", f'{_ip*100:.1f}%', "#AEAEB2"),
+                    ("EV / $100", f'{_ev_r:+.1f}', "#00C896" if _ev_r > 0 else "#ef4444"),
+                    ("Edge", f'{_edg:+.1f}pp', "#00C896" if _edg > 0 else "#ef4444"),
+                    ("Kelly 25%", f'{_kl*100:.1f}%', "#60a5fa"),
+                    ("DQ", f'{_dq_r:.0f}%', "#00C896" if _dq_r > 60 else "#C9A84C"),
+                ]):
+                    with _m_cols[_mi % 3]:
+                        st.markdown(
+                            f'<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);'
+                            f'border-radius:14px;padding:10px 6px;text-align:center;margin-bottom:8px">'
+                            f'<div style="font-size:1.2rem;font-weight:800;color:{_clr}">{_val}</div>'
+                            f'<div style="font-size:0.55rem;color:#636366;letter-spacing:1px;text-transform:uppercase;margin-top:2px">{_lbl}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                _verdicts = {
+                    "A+": "🔥 Pick de élite. Todas las señales alineadas. Apuesta con confianza.",
+                    "A":  "✅ Pick excelente. EV sólido y modelo confirma valor real vs mercado.",
+                    "B+": "⚡ Pick muy bueno. EV positivo claro, la mayoría de señales a favor.",
+                    "B":  "👍 Pick bueno. Valor real detectado. Apuesta normal dentro del Kelly.",
+                    "C+": "📊 Pick aceptable. EV marginal pero positivo. Reduce el stake.",
+                    "C":  "➡️ Pick marginal. Apenas positivo. Solo si tienes alta convicción propia.",
+                    "D":  "⚠️ Pick débil. EV casi nulo o señales en conflicto. Mejor pasar.",
+                    "E":  "❌ Evitar. El modelo ve valor en la dirección contraria.",
+                    "F":  "🚫 Trampa de casa. El mercado tiene ventaja clara. No apostar.",
+                }
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,{_gbg},rgba(0,0,0,0));'
+                    f'border-left:4px solid {_gc};border-radius:0 16px 16px 0;padding:14px 18px;margin:16px 0">'
+                    f'<div style="font-size:0.62rem;color:{_gc};font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">VEREDICTO FINAL</div>'
+                    f'<div style="font-size:0.88rem;color:#E8E8E8;line-height:1.6">{_verdicts.get(_g, "Sin datos.")}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+                st.markdown(
+                    f'<div style="margin:8px 0 20px">'
+                    f'<div style="background:rgba(255,255,255,0.06);border-radius:12px;height:8px;overflow:hidden">'
+                    f'<div style="width:{_sc}%;height:100%;border-radius:12px;'
+                    f'background:linear-gradient(90deg,#ef4444,#f97316,#fbbf24,#00C896)"></div>'
+                    f'</div>'
+                    f'<div style="text-align:right;font-size:0.65rem;color:{_gc};font-weight:700;margin-top:2px">{_sc}/100 pts</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+                if st.button("↩ Calificar otro pick", key="btn_cal_reset", use_container_width=True):
+                    st.session_state.pop("_cal_result", None)
+                    st.rerun()
 
 elif _active_page == "Config":
     st.markdown('<div class="section-heading">⚙️ Config</div>', unsafe_allow_html=True)
