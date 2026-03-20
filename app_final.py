@@ -5223,6 +5223,292 @@ if st.session_state.pop("run_populate", False):
         st.cache_data.clear()
 
 # ── ROUTING ───────────────────────────────────────────────────────────────────
+
+# ── RETO 13M HELPERS (moved to module level) ─────────────────────────────
+# TEAM PROFILES — Sistema de aprendizaje por equipo
+# Pestaña "team_profiles" en Google Sheets
+# Aprende de los últimos 10 partidos de cada equipo y usa ese historial
+# para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# _TP constants moved to top
+
+
+# [_load_all_team_profiles moved to top]
+
+
+# _compute_profile_stats moved to top
+# populate_all_team_profiles defined above
+def _safe_apodo(apodo):
+    return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
+
+def _get_or_create_tab(gc, spreadsheet_id, apodo):
+    """Get or create a worksheet tab for this apodo."""
+    sh = gc.open_by_key(spreadsheet_id)
+    safe = _safe_apodo(apodo)
+    try:
+        ws = sh.worksheet(safe)
+    except:
+        ws = sh.add_worksheet(title=safe, rows=1000, cols=12)
+        # Write headers
+        ws.update("A1:J1", [["num","fecha","partido","pick","mercado",
+                              "momio","momio_fmt","monto","resultado","nota"]])
+        # Config row (bank_inicial, meta)
+        ws.update("A2:B2", [[2000.0, 13000000.0]])
+    return ws
+
+def _load_reto(apodo):
+    """Load reto data. Google Sheets if configured, else local JSON fallback."""
+    default = {"bank_inicial": 2000.0, "meta": 13_000_000.0, "picks": [], "apodo": apodo}
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            ws = _get_or_create_tab(gc, sid, apodo)
+            rows = ws.get_all_values()
+            if len(rows) < 2:
+                return default
+            # Row 2 = config
+            try:
+                bank_inicial = float(rows[1][0]) if rows[1][0] else 2000.0
+                meta         = float(rows[1][1]) if len(rows[1]) > 1 and rows[1][1] else 13_000_000.0
+            except:
+                bank_inicial, meta = 2000.0, 13_000_000.0
+            # Rows 3+ = picks (index 2+)
+            picks = []
+            for row in rows[2:]:
+                if not any(row):
+                    continue
+                def cell(i, default=""):
+                    return row[i] if i < len(row) else default
+                try:
+                    picks.append({
+                        "num":       int(cell(0, 0)) if cell(0) else len(picks)+1,
+                        "fecha":     cell(1),
+                        "partido":   cell(2),
+                        "pick":      cell(3),
+                        "mercado":   cell(4, "ML"),
+                        "momio":     float(cell(5, 1.909)),
+                        "momio_fmt": cell(6),
+                        "monto":     float(cell(7, 0)),
+                        "resultado": cell(8, "pendiente"),
+                        "nota":      cell(9),
+                    })
+                except:
+                    continue
+            return {"bank_inicial": bank_inicial, "meta": meta, "picks": picks, "apodo": apodo}
+        except Exception as e:
+            st.warning(f"⚠ Google Sheets no disponible: {e}. Usando almacenamiento local.")
+    # Fallback: local JSON
+    try:
+        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return default
+
+def _save_reto(data, apodo):
+    """Save reto data to Google Sheets (or local JSON fallback)."""
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            ws = _get_or_create_tab(gc, sid, apodo)
+            # Config row
+            ws.update("A2:B2", [[data.get("bank_inicial", 2000.0), data.get("meta", 13_000_000.0)]])
+            # Clear old pick rows and rewrite
+            picks = data.get("picks", [])
+            if picks:
+                rows = []
+                for p in picks:
+                    rows.append([
+                        p.get("num",""), p.get("fecha",""), p.get("partido",""),
+                        p.get("pick",""), p.get("mercado","ML"),
+                        p.get("momio",""), p.get("momio_fmt",""),
+                        p.get("monto",""), p.get("resultado","pendiente"),
+                        p.get("nota",""),
+                    ])
+                # Clear from row 3 down then write
+                last_row = len(picks) + 10
+                ws.batch_clear([f"A3:J{last_row}"])
+                ws.update(f"A3:J{len(picks)+2}", rows)
+            else:
+                ws.batch_clear(["A3:J1000"])
+            return True
+        except Exception as e:
+            st.warning(f"⚠ Error guardando en Sheets: {e}")
+    # Fallback: local JSON
+    try:
+        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
+        with open(path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except:
+        return False
+
+def _list_reto_users():
+    """List all users from Google Sheets tabs or local files."""
+    if _gsheets_available():
+        try:
+            gc = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            sh = gc.open_by_key(sid)
+            return sorted([ws.title for ws in sh.worksheets()])
+        except:
+            pass
+    # Fallback: local files
+    home = _os.path.expanduser("~")
+    users = []
+    try:
+        for fn in _os.listdir(home):
+            if fn.startswith(".gamblers_den_reto_") and fn.endswith(".json"):
+                users.append(fn.replace(".gamblers_den_reto_","").replace(".json",""))
+    except:
+        pass
+    return sorted(users)
+
+
+# ── ROUTING ─────────────────────────────────────────────────────────────
+
+# ── HELPER FUNCTIONS (moved to module level) ─────────────────────────────
+def _normalize_team(name):
+    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
+    import unicodedata
+    name = name.lower().strip()
+    name = ''.join(c for c in unicodedata.normalize('NFD', name)
+                   if unicodedata.category(c) != 'Mn')
+    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
+        name = name.replace(suffix, "")
+    return name.strip()
+
+def _team_match(pick_team, game_home, game_away, threshold=0.70):
+    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
+    pt = _normalize_team(pick_team)
+    ht = _normalize_team(game_home)
+    at = _normalize_team(game_away)
+    # Exact substring match first
+    if pt in ht or ht in pt: return "home"
+    if pt in at or at in pt: return "away"
+    # Token overlap
+    pt_tok = set(pt.split())
+    ht_tok = set(ht.split())
+    at_tok = set(at.split())
+    def overlap(a, b):
+        if not a or not b: return 0
+        return len(a & b) / max(len(a), len(b))
+    h_sc = overlap(pt_tok, ht_tok)
+    a_sc = overlap(pt_tok, at_tok)
+    if h_sc >= threshold and h_sc > a_sc: return "home"
+    if a_sc >= threshold: return "away"
+    return None
+
+def _evaluate_pick(pick, game):
+    """
+    Given a finished game and a pick dict, return 'ganado'|'perdido'|'push'|None.
+    pick keys: partido, pick (team/label), mercado (ML|O/U|BTTS|DO), momio
+    game keys: home_team, away_team, home_score, away_score, state
+    """
+    if game.get("state") != "post":
+        return None
+    try:
+        hs = int(str(game.get("home_score","")).strip() or "x")
+        as_ = int(str(game.get("away_score","")).strip() or "x")
+    except:
+        return None  # no score yet
+
+    mercado  = (pick.get("mercado") or "ML").upper()
+    pick_lbl = pick.get("pick","").strip()
+    sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
+
+    # ── ML ────────────────────────────────────────────────────────────────────
+    if mercado == "ML":
+        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
+        if side is None: return None
+        if sg == "Soccer":
+            if hs == as_: return "push"  # draw = push on ML? no, it loses
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        else:
+            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
+        # Draw in soccer = ML loses (not a push)
+        if sg == "Soccer" and hs == as_:
+            return "perdido"
+        return "ganado" if won else "perdido"
+
+    # ── O/U ───────────────────────────────────────────────────────────────────
+    if mercado in ("O/U", "OU", "OVER/UNDER"):
+        total = hs + as_
+        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
+        import re
+        lbl_lower = pick_lbl.lower()
+        nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
+        if not nums: return None
+        line = float(nums[0])
+        if total == line: return "push"
+        if "over" in lbl_lower or "o/" in lbl_lower:
+            return "ganado" if total > line else "perdido"
+        if "under" in lbl_lower or "u/" in lbl_lower:
+            return "ganado" if total < line else "perdido"
+        return None
+
+    # ── BTTS ──────────────────────────────────────────────────────────────────
+    if mercado == "BTTS":
+        both_scored = hs > 0 and as_ > 0
+        lbl_lower = pick_lbl.lower()
+        if "no" in lbl_lower or "not" in lbl_lower:
+            return "ganado" if not both_scored else "perdido"
+        return "ganado" if both_scored else "perdido"
+
+    # ── DO (Doble Oportunidad) ─────────────────────────────────────────────────
+    if mercado == "DO":
+        # "Home o Empate (1X)", "Away o Empate (X2)", "Home o Away (12)"
+        lbl_lower = pick_lbl.lower()
+        home_w = hs > as_
+        away_w = as_ > hs
+        draw   = hs == as_
+        if "1x" in lbl_lower or ("empate" in lbl_lower and game["home_team"].lower() in lbl_lower):
+            return "ganado" if (home_w or draw) else "perdido"
+        if "x2" in lbl_lower or ("empate" in lbl_lower and game["away_team"].lower() in lbl_lower):
+            return "ganado" if (away_w or draw) else "perdido"
+        if "12" in lbl_lower or "sin empate" in lbl_lower:
+            return "ganado" if (home_w or away_w) else "perdido"
+        return None
+
+    return None
+
+@st.cache_data(ttl=300)
+def _fetch_finished_games():
+    """Fetch recently finished games across all leagues for auto-resolve."""
+    finished = []
+    for league_name, cfg in LEAGUES.items():
+        try:
+            data = fetch_scoreboard(cfg["sport"], cfg["league"],
+                                    tournament_id=cfg.get("tournament_id"))
+            for g in parse_games(data, league_name):
+                if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
+                    finished.append(g)
+        except:
+            pass
+    return finished
+
+
+# RETO 13M — Bitácora permanente de bankroll
+# Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
+# ══════════════════════════════════════════════════════════════════════════════
+import json, os as _os, re as _re
+
+# ── Google Sheets persistence ─────────────────────────────────────────────────
+# Requires st.secrets["gsheets"] with keys:
+#   type, project_id, private_key_id, private_key, client_email,
+#   client_id, auth_uri, token_uri, spreadsheet_id
+#
+# Each user = one sheet tab named after their apodo.
+# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
+# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
+# Row 3+ = picks
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     if not sr:
@@ -7697,285 +7983,6 @@ elif _active_page == "En Vivo":
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTO-RESOLVE PICKS — compara picks pendientes contra resultados ESPN
 # ══════════════════════════════════════════════════════════════════════════════
-def _normalize_team(name):
-    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
-    import unicodedata
-    name = name.lower().strip()
-    name = ''.join(c for c in unicodedata.normalize('NFD', name)
-                   if unicodedata.category(c) != 'Mn')
-    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
-        name = name.replace(suffix, "")
-    return name.strip()
-
-def _team_match(pick_team, game_home, game_away, threshold=0.70):
-    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
-    pt = _normalize_team(pick_team)
-    ht = _normalize_team(game_home)
-    at = _normalize_team(game_away)
-    # Exact substring match first
-    if pt in ht or ht in pt: return "home"
-    if pt in at or at in pt: return "away"
-    # Token overlap
-    pt_tok = set(pt.split())
-    ht_tok = set(ht.split())
-    at_tok = set(at.split())
-    def overlap(a, b):
-        if not a or not b: return 0
-        return len(a & b) / max(len(a), len(b))
-    h_sc = overlap(pt_tok, ht_tok)
-    a_sc = overlap(pt_tok, at_tok)
-    if h_sc >= threshold and h_sc > a_sc: return "home"
-    if a_sc >= threshold: return "away"
-    return None
-
-def _evaluate_pick(pick, game):
-    """
-    Given a finished game and a pick dict, return 'ganado'|'perdido'|'push'|None.
-    pick keys: partido, pick (team/label), mercado (ML|O/U|BTTS|DO), momio
-    game keys: home_team, away_team, home_score, away_score, state
-    """
-    if game.get("state") != "post":
-        return None
-    try:
-        hs = int(str(game.get("home_score","")).strip() or "x")
-        as_ = int(str(game.get("away_score","")).strip() or "x")
-    except:
-        return None  # no score yet
-
-    mercado  = (pick.get("mercado") or "ML").upper()
-    pick_lbl = pick.get("pick","").strip()
-    sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
-
-    # ── ML ────────────────────────────────────────────────────────────────────
-    if mercado == "ML":
-        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
-        if side is None: return None
-        if sg == "Soccer":
-            if hs == as_: return "push"  # draw = push on ML? no, it loses
-            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
-        else:
-            won = (side == "home" and hs > as_) or (side == "away" and as_ > hs)
-        # Draw in soccer = ML loses (not a push)
-        if sg == "Soccer" and hs == as_:
-            return "perdido"
-        return "ganado" if won else "perdido"
-
-    # ── O/U ───────────────────────────────────────────────────────────────────
-    if mercado in ("O/U", "OU", "OVER/UNDER"):
-        total = hs + as_
-        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
-        import re
-        lbl_lower = pick_lbl.lower()
-        nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
-        if not nums: return None
-        line = float(nums[0])
-        if total == line: return "push"
-        if "over" in lbl_lower or "o/" in lbl_lower:
-            return "ganado" if total > line else "perdido"
-        if "under" in lbl_lower or "u/" in lbl_lower:
-            return "ganado" if total < line else "perdido"
-        return None
-
-    # ── BTTS ──────────────────────────────────────────────────────────────────
-    if mercado == "BTTS":
-        both_scored = hs > 0 and as_ > 0
-        lbl_lower = pick_lbl.lower()
-        if "no" in lbl_lower or "not" in lbl_lower:
-            return "ganado" if not both_scored else "perdido"
-        return "ganado" if both_scored else "perdido"
-
-    # ── DO (Doble Oportunidad) ─────────────────────────────────────────────────
-    if mercado == "DO":
-        # "Home o Empate (1X)", "Away o Empate (X2)", "Home o Away (12)"
-        lbl_lower = pick_lbl.lower()
-        home_w = hs > as_
-        away_w = as_ > hs
-        draw   = hs == as_
-        if "1x" in lbl_lower or ("empate" in lbl_lower and game["home_team"].lower() in lbl_lower):
-            return "ganado" if (home_w or draw) else "perdido"
-        if "x2" in lbl_lower or ("empate" in lbl_lower and game["away_team"].lower() in lbl_lower):
-            return "ganado" if (away_w or draw) else "perdido"
-        if "12" in lbl_lower or "sin empate" in lbl_lower:
-            return "ganado" if (home_w or away_w) else "perdido"
-        return None
-
-    return None
-
-@st.cache_data(ttl=300)
-def _fetch_finished_games():
-    """Fetch recently finished games across all leagues for auto-resolve."""
-    finished = []
-    for league_name, cfg in LEAGUES.items():
-        try:
-            data = fetch_scoreboard(cfg["sport"], cfg["league"],
-                                    tournament_id=cfg.get("tournament_id"))
-            for g in parse_games(data, league_name):
-                if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
-                    finished.append(g)
-        except:
-            pass
-    return finished
-
-
-# RETO 13M — Bitácora permanente de bankroll
-# Persistencia: JSON en disco por usuario (~/.gamblers_den_reto_APODO.json)
-# ══════════════════════════════════════════════════════════════════════════════
-import json, os as _os, re as _re
-
-# ── Google Sheets persistence ─────────────────────────────────────────────────
-# Requires st.secrets["gsheets"] with keys:
-#   type, project_id, private_key_id, private_key, client_email,
-#   client_id, auth_uri, token_uri, spreadsheet_id
-#
-# Each user = one sheet tab named after their apodo.
-# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
-# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
-# Row 3+ = picks
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TEAM PROFILES — Sistema de aprendizaje por equipo
-# Pestaña "team_profiles" en Google Sheets
-# Aprende de los últimos 10 partidos de cada equipo y usa ese historial
-# para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
-# ══════════════════════════════════════════════════════════════════════════════
-
-# _TP constants moved to top
-
-
-# [_load_all_team_profiles moved to top]
-
-
-# _compute_profile_stats moved to top
-# populate_all_team_profiles defined above
-def _safe_apodo(apodo):
-    return _re.sub(r"[^a-zA-Z0-9_]", "_", apodo.strip().lower())[:31]
-
-def _get_or_create_tab(gc, spreadsheet_id, apodo):
-    """Get or create a worksheet tab for this apodo."""
-    sh = gc.open_by_key(spreadsheet_id)
-    safe = _safe_apodo(apodo)
-    try:
-        ws = sh.worksheet(safe)
-    except:
-        ws = sh.add_worksheet(title=safe, rows=1000, cols=12)
-        # Write headers
-        ws.update("A1:J1", [["num","fecha","partido","pick","mercado",
-                              "momio","momio_fmt","monto","resultado","nota"]])
-        # Config row (bank_inicial, meta)
-        ws.update("A2:B2", [[2000.0, 13000000.0]])
-    return ws
-
-def _load_reto(apodo):
-    """Load reto data. Google Sheets if configured, else local JSON fallback."""
-    default = {"bank_inicial": 2000.0, "meta": 13_000_000.0, "picks": [], "apodo": apodo}
-    if _gsheets_available():
-        try:
-            gc = _get_gsheet_client()
-            sid = st.secrets["gsheets"]["spreadsheet_id"]
-            ws = _get_or_create_tab(gc, sid, apodo)
-            rows = ws.get_all_values()
-            if len(rows) < 2:
-                return default
-            # Row 2 = config
-            try:
-                bank_inicial = float(rows[1][0]) if rows[1][0] else 2000.0
-                meta         = float(rows[1][1]) if len(rows[1]) > 1 and rows[1][1] else 13_000_000.0
-            except:
-                bank_inicial, meta = 2000.0, 13_000_000.0
-            # Rows 3+ = picks (index 2+)
-            picks = []
-            for row in rows[2:]:
-                if not any(row):
-                    continue
-                def cell(i, default=""):
-                    return row[i] if i < len(row) else default
-                try:
-                    picks.append({
-                        "num":       int(cell(0, 0)) if cell(0) else len(picks)+1,
-                        "fecha":     cell(1),
-                        "partido":   cell(2),
-                        "pick":      cell(3),
-                        "mercado":   cell(4, "ML"),
-                        "momio":     float(cell(5, 1.909)),
-                        "momio_fmt": cell(6),
-                        "monto":     float(cell(7, 0)),
-                        "resultado": cell(8, "pendiente"),
-                        "nota":      cell(9),
-                    })
-                except:
-                    continue
-            return {"bank_inicial": bank_inicial, "meta": meta, "picks": picks, "apodo": apodo}
-        except Exception as e:
-            st.warning(f"⚠ Google Sheets no disponible: {e}. Usando almacenamiento local.")
-    # Fallback: local JSON
-    try:
-        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
-        with open(path, "r") as f:
-            return json.load(f)
-    except:
-        return default
-
-def _save_reto(data, apodo):
-    """Save reto data to Google Sheets (or local JSON fallback)."""
-    if _gsheets_available():
-        try:
-            gc = _get_gsheet_client()
-            sid = st.secrets["gsheets"]["spreadsheet_id"]
-            ws = _get_or_create_tab(gc, sid, apodo)
-            # Config row
-            ws.update("A2:B2", [[data.get("bank_inicial", 2000.0), data.get("meta", 13_000_000.0)]])
-            # Clear old pick rows and rewrite
-            picks = data.get("picks", [])
-            if picks:
-                rows = []
-                for p in picks:
-                    rows.append([
-                        p.get("num",""), p.get("fecha",""), p.get("partido",""),
-                        p.get("pick",""), p.get("mercado","ML"),
-                        p.get("momio",""), p.get("momio_fmt",""),
-                        p.get("monto",""), p.get("resultado","pendiente"),
-                        p.get("nota",""),
-                    ])
-                # Clear from row 3 down then write
-                last_row = len(picks) + 10
-                ws.batch_clear([f"A3:J{last_row}"])
-                ws.update(f"A3:J{len(picks)+2}", rows)
-            else:
-                ws.batch_clear(["A3:J1000"])
-            return True
-        except Exception as e:
-            st.warning(f"⚠ Error guardando en Sheets: {e}")
-    # Fallback: local JSON
-    try:
-        path = _os.path.expanduser(f"~/.gamblers_den_reto_{_safe_apodo(apodo)}.json")
-        with open(path, "w") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
-    except:
-        return False
-
-def _list_reto_users():
-    """List all users from Google Sheets tabs or local files."""
-    if _gsheets_available():
-        try:
-            gc = _get_gsheet_client()
-            sid = st.secrets["gsheets"]["spreadsheet_id"]
-            sh = gc.open_by_key(sid)
-            return sorted([ws.title for ws in sh.worksheets()])
-        except:
-            pass
-    # Fallback: local files
-    home = _os.path.expanduser("~")
-    users = []
-    try:
-        for fn in _os.listdir(home):
-            if fn.startswith(".gamblers_den_reto_") and fn.endswith(".json"):
-                users.append(fn.replace(".gamblers_den_reto_","").replace(".json",""))
-    except:
-        pass
-    return sorted(users)
-
 elif _active_page == "Reto 13M":
 
     # ── Login por apodo ───────────────────────────────────────────────────────
