@@ -3621,14 +3621,6 @@ def run_monte_carlo(game, n=10_000):
     _h_prof_s = game.get("home_profile")
     _a_prof_s = game.get("away_profile")
 
-    # ── Señales disponibles — definidas aquí para uso en todo el bloque ────────
-    _has_ml      = bool(hml and aml)
-    _has_scoring = game.get("home_avg_scored") is not None
-    _has_form    = game.get("home_form") is not None or game.get("away_form") is not None
-    _has_profile = ((_h_prof_s and _h_prof_s.get("n_games", 0) >= 5) or
-                    (_a_prof_s and _a_prof_s.get("n_games", 0) >= 5))
-    _has_record  = bool(game.get("home_record", "") and game.get("away_record", ""))
-
     def _clamp01(x): return max(0.01, min(0.99, x))
 
     def _recent_form_factor(prof, is_home):
@@ -3807,6 +3799,14 @@ def run_monte_carlo(game, n=10_000):
 
     hml=game["odds"].get("home_ml",""); aml=game["odds"].get("away_ml","")
     ou=game["odds"].get("over_under","") or (f"~{ou_val:.1f}" if _nonsoccer_no_line else "")
+
+    # ── Señales disponibles (hml/aml ya definidos) ───────────────────────────
+    _has_ml      = bool(hml and aml)
+    _has_scoring = game.get("home_avg_scored") is not None
+    _has_form    = game.get("home_form") is not None or game.get("away_form") is not None
+    _has_profile = ((_h_prof_s and _h_prof_s.get("n_games", 0) >= 5) or
+                    (_a_prof_s and _a_prof_s.get("n_games", 0) >= 5))
+    _has_record  = bool(game.get("home_record", "") and game.get("away_record", ""))
     home_ev=calc_ev(sh,hml) if hml else None
     away_ev=calc_ev(sa,aml) if aml else None
     hk=quarter_kelly(sh,hml) if hml else None
