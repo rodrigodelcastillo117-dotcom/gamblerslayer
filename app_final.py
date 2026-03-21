@@ -347,44 +347,56 @@ st.markdown("""
 /* ── Ocultar label del radio ── */
 div[data-testid="stRadio"] > label { display:none !important; }
 
-/* ── Contenedor fixed bottom ── */
+/* ── Contenedor fixed bottom — BASE (mobile first) ── */
 div[data-testid="stRadio"] > div[role="radiogroup"] {
   position: fixed !important;
   bottom: 8px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
-  width: min(98vw, 520px) !important;
-  height: 50px !important;
+  width: min(98vw, 480px) !important;
+  height: 54px !important;
   background: rgba(22,22,24,0.97) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
   border: 1px solid rgba(255,255,255,0.10) !important;
-  border-radius: 25px !important;
+  border-radius: 28px !important;
   z-index: 99999 !important;
   display: flex !important;
   flex-direction: row !important;
   align-items: stretch !important;
   padding: 4px !important;
   gap: 0 !important;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.6) !important;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.7) !important;
   overflow: hidden !important;
+}
+
+/* ── Desktop: nav más grande y legible ── */
+@media (min-width: 768px) {
+  div[data-testid="stRadio"] > div[role="radiogroup"] {
+    width: 780px !important;
+    height: 68px !important;
+    bottom: 16px !important;
+    border-radius: 34px !important;
+    padding: 6px !important;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6) !important;
+  }
 }
 
 /* ── Ocultar input radio real ── */
 div[data-testid="stRadio"] input[type="radio"] { display:none !important; }
 
-/* ── Cada tab ── */
+/* ── Cada tab — BASE (mobile) ── */
 div[data-testid="stRadio"] label[data-baseweb="radio"] {
   flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 1px !important;
+  gap: 2px !important;
   cursor: pointer !important;
   padding: 0 !important;
   margin: 0 !important;
-  border-radius: 20px !important;
+  border-radius: 22px !important;
   transition: background 0.15s !important;
   min-width: 0 !important;
   overflow: hidden !important;
@@ -395,19 +407,29 @@ div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
   background: rgba(255,107,0,0.22) !important;
 }
 
-/* ── Texto del tab ── */
+/* ── Texto del tab — BASE (mobile) ── */
 div[data-testid="stRadio"] label[data-baseweb="radio"] span,
 div[data-testid="stRadio"] label[data-baseweb="radio"] p,
 div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-  font-size: 0.38rem !important;
+  font-size: 0.42rem !important;
   font-weight: 700 !important;
-  letter-spacing: 0.2px !important;
+  letter-spacing: 0.3px !important;
   text-transform: uppercase !important;
   color: #555555 !important;
   line-height: 1 !important;
   margin: 0 !important;
   font-family: 'Outfit', sans-serif !important;
   white-space: nowrap !important;
+}
+
+/* ── Texto desktop más grande ── */
+@media (min-width: 768px) {
+  div[data-testid="stRadio"] label[data-baseweb="radio"] span,
+  div[data-testid="stRadio"] label[data-baseweb="radio"] p,
+  div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
+    font-size: 0.72rem !important;
+    letter-spacing: 0.8px !important;
+  }
 }
 
 /* ── Texto activo ── */
@@ -2821,6 +2843,37 @@ def pick_score_universal(cand, sim, r, sg):
         if not (sim.get("ou_line") or "").replace("~","").strip():
             score -= 12
 
+    # 14. Pesos adaptativos del historial real (pick_history)
+    # Si el modelo tiene historial resuelto para esta liga+mercado,
+    # ajusta el score según el win rate real observado.
+    # win_rate > 0.55 → boost (el modelo es bueno aquí)
+    # win_rate < 0.45 → penalización (el modelo falla aquí)
+    # Requiere mínimo 8 picks resueltos para activarse
+    try:
+        _league = r.get("league","") if isinstance(r, dict) else ""
+        _deporte = {
+            "Soccer":"Soccer","Basketball":"Basketball","Hockey":"Hockey",
+            "Baseball":"Baseball","Football":"Football"
+        }.get(sg, sg)
+        _aw = get_adaptive_weights()
+        # Buscar en orden: liga específica → deporte+mercado general
+        _key_specific = (_deporte, _league, mkt)
+        _key_general  = (_deporte, "", mkt)
+        _stat = _aw.get(_key_specific) or _aw.get(_key_general)
+        if _stat:
+            _wr = _stat["wr"]
+            _n  = _stat["n"]
+            # Confianza: más picks = más peso al ajuste (máx 20 pts con n>=30)
+            _conf = min(_n / 30.0, 1.0)
+            if _wr >= 0.60:    score += 15 * _conf  # modelo excelente aquí
+            elif _wr >= 0.55:  score += 8  * _conf  # modelo bueno
+            elif _wr >= 0.50:  score += 3  * _conf  # levemente positivo
+            elif _wr >= 0.45:  score -= 3  * _conf  # levemente negativo
+            elif _wr >= 0.40:  score -= 8  * _conf  # modelo malo aquí
+            else:              score -= 15 * _conf  # modelo muy malo → evitar
+    except:
+        pass
+
     return round(score, 3)
 
 
@@ -4528,6 +4581,59 @@ def run_all_simulations(games, n=10_000):
 #          prob_pct | resultado | home_score | away_score | fuente
 # ══════════════════════════════════════════════════════════════════════════════
 _PH_TAB     = "pick_history"
+
+def _compute_adaptive_weights(ph_rows, min_picks=8):
+    """
+    Lee el historial de picks resueltos y calcula win_rate real
+    por (deporte, liga, mercado). Retorna dict para ajustar pick_score_universal.
+
+    Estructura retornada:
+    {
+      ("Soccer", "Champions League", "BTTS"): {"wr": 0.62, "n": 14},
+      ("Basketball", "NBA", "ML"):            {"wr": 0.48, "n": 23},
+      ...
+    }
+    Solo incluye combinaciones con >= min_picks resueltos.
+    Combinaciones con < min_picks se ignoran (insuficiente muestra).
+    """
+    from collections import defaultdict
+    counts = defaultdict(lambda: {"g":0, "total":0})
+
+    for p in ph_rows:
+        res = p.get("resultado","")
+        if res not in ("ganado","perdido"): continue  # ignorar pendientes y push
+        deporte = p.get("deporte","")
+        liga    = p.get("liga","")
+        mercado = p.get("mercado","")
+        if not deporte or not mercado: continue
+        key = (deporte, liga, mercado)
+        counts[key]["total"] += 1
+        if res == "ganado":
+            counts[key]["g"] += 1
+
+    result = {}
+    for key, v in counts.items():
+        if v["total"] >= min_picks:
+            result[key] = {
+                "wr": round(v["g"] / v["total"], 3),
+                "n":  v["total"]
+            }
+    return result
+
+# Cache de pesos adaptativos — se recalcula cuando pick_history cambia
+_adaptive_weights_cache = {}
+
+def get_adaptive_weights():
+    """Retorna pesos adaptativos cacheados. Recalcula si el cache está vacío."""
+    global _adaptive_weights_cache
+    if not _adaptive_weights_cache:
+        try:
+            _rows = _ph_load()
+            _adaptive_weights_cache = _compute_adaptive_weights(_rows)
+        except:
+            _adaptive_weights_cache = {}
+    return _adaptive_weights_cache
+
 _PH_HEADERS = [
     "pick_id","fecha","partido","liga","deporte","mercado",
     "pick_label","prob_pct","resultado","home_score","away_score","fuente"
@@ -4628,6 +4734,7 @@ def _ph_update_results(updates):
         if batch:
             ws.batch_update(batch)
         _ph_load.clear()
+        _adaptive_weights_cache.clear()  # invalidar pesos adaptativos
         return len(batch)
     except Exception as e:
         return False
