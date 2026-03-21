@@ -363,7 +363,36 @@ div[data-testid="stMetricLabel"] { color:var(--text3) !important; font-family:'I
 .stCaption, div[data-testid="stCaptionContainer"] p { color:var(--text3) !important; font-family:'Inter',sans-serif !important; }
 
 /* -- SUPPRESS RERUN OVERLAY ------------------------------------------ */
+/* Eliminar el opacado/fade que aparece al recargar */
 div[data-testid="stStatusWidget"] { display:none !important; }
+
+/* El overlay que opaca toda la pantalla */
+div[data-testid="stAppViewContainer"] > section { opacity:1 !important; transition:none !important; }
+.stApp > div { opacity:1 !important; transition:none !important; }
+.stApp { opacity:1 !important; }
+
+/* Streamlit pone esto cuando está "running" */
+[data-stale="true"] { opacity:1 !important; transition:none !important; }
+[data-stale] { opacity:1 !important; }
+
+/* Overlay gris semi-transparente que aparece encima */
+.stApp::after { display:none !important; }
+div.stApp > div[style*="opacity"] { opacity:1 !important; }
+
+/* El fade más agresivo — apuntar todos los wrappers */
+*, *::before, *::after {
+  transition-property: none !important;
+}
+/* Excepto animaciones que sí queremos (blink, pulse) */
+.live-dot, .pick-action-arrow {
+  transition-property: opacity, transform !important;
+}
+
+/* Eliminar el blur/darken overlay de Streamlit al recargar */
+[data-testid="stAppViewBlockContainer"] { opacity:1 !important; }
+div[class*="withScreencast"] { opacity:1 !important; }
+section[data-testid="stMain"] { opacity:1 !important; }
+section[data-testid="stMain"] > div { opacity:1 !important; }
 
 /* -- EMPTY STATE ------------------------------------------------------ */
 .empty-state { text-align:center; padding:48px 24px; color:var(--text3); }
@@ -5238,15 +5267,15 @@ def render_pick_card(r, rank=None):
         + (f'<span style="font-size:9px;color:#555">{ml_display}</span>' if ml_display else "")
         + f'</div>'
         f'<div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:-0.3px">{lbl}</div>'
-        f'<div style="font-size:9px;color:#444">'
+        f'<div style="font-size:9px;color:#888">'
         f'Prob modelo: <span style="color:#00E5A0;font-weight:700">{prob_pct:.0f}%</span>'
         + (f'  Edge: <span style="color:{_e_col};font-weight:700">{_e_str}</span>' if _e_str else "")
         + f'</div>'
         f'</div>'
         f'<div style="text-align:right">'
         f'<div style="font-size:28px;font-weight:800;color:#FF5F1F;letter-spacing:-1.5px;line-height:1">{pick_dec}</div>'
-        f'<div style="font-size:9px;color:#444;margin-top:2px">decimal c/vig</div>'
-        + (f'<div style="font-size:9px;color:#2a2a2a;margin-top:1px">{pick_fair} justo</div>' if pick_fair else "")
+        f'<div style="font-size:9px;color:#666;margin-top:2px">decimal c/vig</div>'
+        + (f'<div style="font-size:9px;color:#555;margin-top:1px">{pick_fair} justo</div>' if pick_fair else "")
         + f'</div>'
         f'</div>'
     )
@@ -5259,17 +5288,17 @@ def render_pick_card(r, rank=None):
         f'margin:0 12px">'
         f'<div style="text-align:center;padding:10px 4px;border-right:1px solid rgba(255,255,255,0.04)">'
         f'<div style="font-size:15px;font-weight:800;color:#00E5A0;line-height:1">{prob_pct:.0f}%</div>'
-        f'<div style="font-size:8px;color:#444;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Prob MC</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Prob MC</div></div>'
         f'<div style="text-align:center;padding:10px 4px;border-right:1px solid rgba(255,255,255,0.04)">'
         f'<div style="font-size:15px;font-weight:800;color:{ev_col};line-height:1">'
         f'{"+" if ev_val>=0 else ""}{ev_val:.1f}</div>'
-        f'<div style="font-size:8px;color:#444;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">EV/$100</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">EV/$100</div></div>'
         f'<div style="text-align:center;padding:10px 4px;border-right:1px solid rgba(255,255,255,0.04)">'
         f'<div style="font-size:15px;font-weight:800;color:{_e_col};line-height:1">{_e_str or "—"}</div>'
-        f'<div style="font-size:8px;color:#444;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Edge</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Edge</div></div>'
         f'<div style="text-align:center;padding:10px 4px">'
         f'<div style="font-size:15px;font-weight:800;color:#9D7EFF;line-height:1">{kelly_pct*100:.1f}%</div>'
-        f'<div style="font-size:8px;color:#444;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Kelly 25%</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Kelly</div></div>'
         f'</div>'
     )
 
@@ -5363,12 +5392,12 @@ def render_pick_card(r, rank=None):
     if _rec_parts:
         c = "#00E5A0" if ev_val >= 5 else ("#FFD60A" if ev_val >= 0 else "#FF3B30")
         rec_html = (
-            f'<div style="margin:0 12px 10px;padding:10px 12px;border-radius:10px;'
-            f'background:rgba(0,229,160,0.04);border:1px solid rgba(0,229,160,0.12);'
-            f'border-left:2px solid {c}">'
+            f'<div style="margin:0 12px 10px;padding:12px 14px;border-radius:10px;'
+            f'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);'
+            f'border-left:3px solid {c}">'
             f'<div style="font-size:8px;font-weight:800;color:{c};letter-spacing:2px;'
-            f'text-transform:uppercase;margin-bottom:5px">Recomendacion del modelo</div>'
-            f'<div style="font-size:11px;color:#888;line-height:1.6">'
+            f'text-transform:uppercase;margin-bottom:7px">Recomendacion del modelo</div>'
+            f'<div style="font-size:12px;color:#C8C8C8;line-height:1.7;font-weight:500">'
             + " &middot; ".join(_rec_parts)
             + f'</div></div>'
         )
@@ -5469,9 +5498,9 @@ def render_pick_card(r, rank=None):
         f'</div>'
         + odds_html
         + pick_html
+        + rec_html
         + stats_html
         + mkts_html
-        + rec_html
         + form_html
         + trend_html
         + sigs_html
@@ -6952,20 +6981,17 @@ if _active_page == "Rongol Picks":
                                 _a_pill_rp + _ou_mid_rp + _h_pill_rp
                             )
                             + f'</div>'
-                            # Pick CTA — botón grande amarillo
-                            f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;'
-                            f'padding:10px 12px;display:flex;align-items:center;justify-content:space-between">'
-                            f'<div style="display:flex;align-items:center;gap:6px">'
-                            f'<span style="font-size:0.52rem;font-weight:900;color:#111;'
-                            f'letter-spacing:1.5px;text-transform:uppercase;background:rgba(0,0,0,0.12);'
-                            f'padding:2px 6px;border-radius:4px">{_mkt_rp}</span>'
-                            f'<span style="font-size:0.78rem;font-weight:800;color:#111;'
-                            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">{_lbl_rp}</span>'
+                            # Pick CTA — botón amarillo 2 filas
+                            f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;padding:9px 12px">'
+                            f'<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
+                            f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:1.5px;'
+                            f'text-transform:uppercase;background:rgba(0,0,0,0.12);padding:2px 6px;border-radius:4px">{_mkt_rp}</span>'
+                            f'<span style="font-size:0.72rem;font-weight:800;color:#111;'
+                            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl_rp}</span>'
                             f'</div>'
-                            f'<div style="display:flex;align-items:baseline;gap:4px">'
-                            f'<span style="font-size:1.2rem;font-weight:900;color:#111;'
-                            f'font-family:Syne,sans-serif;line-height:1">{_dec_rp}</span>'
-                            f'<span style="font-size:0.6rem;font-weight:700;color:rgba(0,0,0,0.45)">{_pick_pct_rp:.0f}%</span>'
+                            f'<div style="display:flex;align-items:baseline;gap:5px">'
+                            f'<span style="font-size:1.6rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_rp}</span>'
+                            f'<span style="font-size:0.65rem;font-weight:700;color:rgba(0,0,0,0.4)">{_pick_pct_rp:.0f}% prob</span>'
                             f'</div>'
                             f'</div>'
                             f'</div>'
@@ -7746,21 +7772,22 @@ elif _active_page == "Picks":
                                 _mkt_clr = {"ML":"#FF5F1F","BTTS":"#9D7EFF","O/U":"#4B8EFF"}.get(_mkt_gg,"#FF5F1F")
                                 # Compact card — estilo foto: blanca sobre negro
                                 _sg_gg   = LEAGUES.get(_gg_p.get("league",""),{}).get("group","Soccer")
-                                _h_pct_gg = _sim_gg.get("home_pct",0) or 0
-                                _a_pct_gg = _sim_gg.get("away_pct",0) or 0
-                                _d_pct_gg = _sim_gg.get("draw_pct",0) or 0
-                                _h_dec_gg = _sim_gg.get("model_home_dec","") or (prob_to_dec(_h_pct_gg/100) if _h_pct_gg else "-")
-                                _a_dec_gg = _sim_gg.get("model_away_dec","") or (prob_to_dec(_a_pct_gg/100) if _a_pct_gg else "-")
-                                _d_dec_gg = _sim_gg.get("model_draw_dec","") or (prob_to_dec(_d_pct_gg/100) if _d_pct_gg else "-")
+                                # Use _sim_d (correctly nested sim dict)
+                                _h_pct_gg = _sim_d.get("home_pct",0) or 0
+                                _a_pct_gg = _sim_d.get("away_pct",0) or 0
+                                _d_pct_gg = _sim_d.get("draw_pct",0) or 0
+                                _h_dec_gg = _sim_d.get("model_home_dec","") or (prob_to_dec(_h_pct_gg/100) if _h_pct_gg else "-")
+                                _a_dec_gg = _sim_d.get("model_away_dec","") or (prob_to_dec(_a_pct_gg/100) if _a_pct_gg else "-")
+                                _d_dec_gg = _sim_d.get("model_draw_dec","") or (prob_to_dec(_d_pct_gg/100) if _d_pct_gg else "-")
                                 _pick_is_h_gg = _home_gg in _lbl_gg
                                 _dec_gg   = _h_dec_gg if _pick_is_h_gg else _a_dec_gg
                                 _pick_pct_gg = _h_pct_gg if _pick_is_h_gg else _a_pct_gg
                                 _mkt_clr_gg = {"ML":"#FF5F1F","BTTS":"#9D7EFF","O/U":"#4B8EFF"}.get(_mkt_gg,"#FF5F1F")
                                 _lg_lbl_gg = league_label(_gg_p.get("league",""))
                                 # Soccer O/U pill
-                                _o25_pct_gg = _sim_gg.get("p_o25",0) or 0
+                                _o25_pct_gg = _sim_d.get("p_o25",0) or 0
                                 _o25_dec_gg = prob_to_dec(_o25_pct_gg/100) if _o25_pct_gg > 0 else "-"
-                                _ou_sc_gg   = _sim_gg.get("ou_line","") or ""
+                                _ou_sc_gg   = _sim_d.get("ou_line","") or ""
                                 try: _o25_lbl_gg = f"O{float(str(_ou_sc_gg).lstrip('~')):.1f}" if (_ou_sc_gg and not str(_ou_sc_gg).startswith("~")) else "O2.5"
                                 except: _o25_lbl_gg = "O2.5"
                                 # Soccer: clean 3 pills — 1x / x / 2x
@@ -7778,9 +7805,9 @@ elif _active_page == "Picks":
                                     f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">2x</span><span style="font-size:1.0rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_h_dec_gg}</span></div>'
                                 )
                                 # O/U pill for non-soccer
-                                _ou_val_gg  = _sim_gg.get("ou_line","") or ""
-                                _p_o_gg     = _sim_gg.get("p_o_total",0) or 0
-                                _p_u_gg     = _sim_gg.get("p_u_total",0) or 0
+                                _ou_val_gg  = _sim_d.get("ou_line","") or ""
+                                _p_o_gg     = _sim_d.get("p_o_total",0) or 0
+                                _p_u_gg     = _sim_d.get("p_u_total",0) or 0
                                 if _ou_val_gg and not str(_ou_val_gg).startswith("~"):
                                     _ou_side_gg = "O" if _p_o_gg >= _p_u_gg else "U"
                                     _ou_dec_gg  = prob_to_dec(max(_p_o_gg,_p_u_gg)/100) if max(_p_o_gg,_p_u_gg) > 0 else "-"
@@ -7823,17 +7850,14 @@ elif _active_page == "Picks":
                                     )
                                     + f'</div>'
                                     # Pick CTA
-                                    f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;padding:10px 12px;'
-                                    f'display:flex;align-items:center;justify-content:space-between">'
-                                    f'<div style="display:flex;align-items:center;gap:5px">'
-                                    f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:1.5px;'
-                                    f'text-transform:uppercase;background:rgba(0,0,0,0.12);padding:2px 5px;border-radius:4px">{_mkt_gg}</span>'
-                                    f'<span style="font-size:0.76rem;font-weight:800;color:#111;'
-                                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">{_lbl_gg}</span>'
+                                    f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;padding:9px 12px">'
+                                    f'<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
+                                    f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:1.5px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:2px 6px;border-radius:4px">{_mkt_gg}</span>'
+                                    f'<span style="font-size:0.72rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl_gg}</span>'
                                     f'</div>'
-                                    f'<div style="display:flex;align-items:baseline;gap:3px">'
-                                    f'<span style="font-size:1.15rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_gg}</span>'
-                                    f'<span style="font-size:0.58rem;font-weight:700;color:rgba(0,0,0,0.45)">{_pick_pct_gg:.0f}%</span>'
+                                    f'<div style="display:flex;align-items:baseline;gap:5px">'
+                                    f'<span style="font-size:1.6rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_gg}</span>'
+                                    f'<span style="font-size:0.65rem;font-weight:700;color:rgba(0,0,0,0.4)">{_pick_pct_gg:.0f}% prob</span>'
                                     f'</div>'
                                     f'</div>'
                                     f'</div>'
