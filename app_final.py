@@ -544,6 +544,8 @@ div[data-testid="stRadio"] > div[role="radiogroup"] {
   gap: 0 !important;
   box-shadow: 0 4px 32px rgba(0,0,0,0.7) !important;
   overflow: hidden !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
 }
 
 /* -- Desktop: nav más grande y legible -- */
@@ -570,12 +572,17 @@ div[data-testid="stRadio"] label[data-baseweb="radio"] {
   justify-content: center !important;
   gap: 2px !important;
   cursor: pointer !important;
+  pointer-events: auto !important;
   padding: 0 !important;
   margin: 0 !important;
   border-radius: 22px !important;
   transition: background 0.15s !important;
   min-width: 0 !important;
   overflow: hidden !important;
+  -webkit-tap-highlight-color: rgba(255,107,0,0.2) !important;
+  touch-action: manipulation !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 
 /* -- Tab activo -- */
@@ -633,6 +640,11 @@ _nav_key_rev  = {i["key"]: f'{i["icon"]}\n{i["label"]}' for i in _NAV_ITEMS}
 
 _cur_option = _nav_key_rev.get(_active_page, _nav_options[0])
 
+def _on_nav_change():
+    _sel = st.session_state.get("gamblers_nav_radio", _nav_options[0])
+    _pg  = _nav_key_map.get(_sel, "Rongol Picks")
+    st.session_state["active_page"] = _pg
+
 _selected = st.radio(
     "nav",
     _nav_options,
@@ -640,12 +652,9 @@ _selected = st.radio(
     horizontal=True,
     key="gamblers_nav_radio",
     label_visibility="collapsed",
+    on_change=_on_nav_change,
 )
 
-_new_page = _nav_key_map.get(_selected, _active_page)
-if _new_page != _active_page:
-    st.session_state["active_page"] = _new_page
-    st.rerun()
 _active_page = st.session_state["active_page"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
