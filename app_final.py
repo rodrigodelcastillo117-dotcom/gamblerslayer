@@ -6846,9 +6846,21 @@ if _active_page == "Rongol Picks":
                         _ev_rp    = _pk_rp.get("ev",0) or 0
                         _ev_clr   = "#00E5A0" if _ev_rp > 0 else "#ef4444" if _ev_rp < 0 else "#505050"
                         _pick_pct_rp = _h_pct_rp if _pick_is_h_rp else _a_pct_rp
-                        # ── Card estilo sportsbook: blanca/gris sobre fondo negro ──
+                        # ── Card estilo sportsbook ────────────────────────────
                         _fire_glow = "box-shadow:0 0 20px rgba(255,200,0,0.15);" if _is_fire else ""
                         _league_label_rp = league_label(_rp.get("league",""))
+                        # Cap decimals at reasonable range (1.01 - 20.0)
+                        def _safe_dec(d):
+                            try:
+                                v = float(d)
+                                if v < 1.02: return "1.02"
+                                if v > 15.0: return ">15"
+                                return f"{v:.2f}"
+                            except: return str(d) if d else "-"
+                        _h_dec_rp = _safe_dec(_h_dec_rp)
+                        _a_dec_rp = _safe_dec(_a_dec_rp)
+                        _d_dec_rp = _safe_dec(_d_dec_rp)
+                        _dec_rp   = _safe_dec(_dec_rp)
                         # Soccer O/U pill vars
                         _o25_pct_rp = _sim_rp.get("p_o25",0) or 0
                         _o25_dec_rp = prob_to_dec(_o25_pct_rp/100) if _o25_pct_rp > 0 else "-"
@@ -6856,11 +6868,11 @@ if _active_page == "Rongol Picks":
                         _has_ou_sc_rp = bool(_ou_sc_rp and not str(_ou_sc_rp).startswith("~"))
                         try: _o25_lbl_rp = f"O{float(str(_ou_sc_rp).lstrip('~')):.1f}" if _has_ou_sc_rp else "O2.5"
                         except: _o25_lbl_rp = "O2.5"
+                        # Soccer: always exactly 3 pills — 1x / x / 2x
                         _soccer_pills_rp = (
-                            f'<div style="flex:1;background:#1A1A1C;border-radius:10px;padding:6px 4px;text-align:center"><span style="font-size:0.45rem;color:#666;display:block;margin-bottom:1px">1x</span><span style="font-size:0.85rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_a_dec_rp}</span></div>'
-                            f'<div style="flex:1;background:#1A1A1C;border-radius:10px;padding:6px 4px;text-align:center"><span style="font-size:0.45rem;color:#666;display:block;margin-bottom:1px">x</span><span style="font-size:0.85rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_d_dec_rp}</span></div>'
-                            f'<div style="flex:1;background:#1A1A1C;border-radius:10px;padding:6px 4px;text-align:center"><span style="font-size:0.45rem;color:#666;display:block;margin-bottom:1px">2x</span><span style="font-size:0.85rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_h_dec_rp}</span></div>'
-                            + (f'<div style="flex:1;background:#1A1A1C;border-radius:10px;padding:6px 4px;text-align:center"><span style="font-size:0.45rem;color:#00E5A0;display:block;margin-bottom:1px">{_o25_lbl_rp}</span><span style="font-size:0.85rem;font-weight:800;color:#00E5A0;font-family:Syne,sans-serif">{_o25_dec_rp}</span></div>' if _o25_pct_rp > 0 else "")
+                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">1x</span><span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_a_dec_rp}</span></div>'
+                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">x</span><span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_d_dec_rp}</span></div>'
+                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">2x</span><span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_h_dec_rp}</span></div>'
                         )
                         # O/U pill for non-soccer
                         _ou_val_rp = _sim_rp.get("ou_line","") or ""
@@ -6880,18 +6892,24 @@ if _active_page == "Rongol Picks":
                             )
                         else:
                             _ou_line_rp = ""
+                        # Non-soccer: 3 pills — visitante / O/U (si existe) / local
                         _a_pill_rp = (
-                            f'<div style="flex:1;background:#1A1A1C;border-radius:10px;padding:6px 4px;text-align:center">'
-                            f'<span style="font-size:0.45rem;color:#666;display:block;margin-bottom:1px">{_away_rp[:6]}</span>'
-                            f'<span style="font-size:0.92rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_a_dec_rp}</span>'
+                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center">'
+                            f'<span style="font-size:0.42rem;color:#555;display:block;margin-bottom:2px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_rp[:7]}</span>'
+                            f'<span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_a_dec_rp}</span>'
                             f'</div>'
                         )
                         _h_pill_rp = (
-                            f'<div style="flex:1;background:#1A1A1C;border-radius:10px;padding:6px 4px;text-align:center">'
-                            f'<span style="font-size:0.45rem;color:#666;display:block;margin-bottom:1px">{_home_rp[:6]}</span>'
-                            f'<span style="font-size:0.92rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_h_dec_rp}</span>'
+                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center">'
+                            f'<span style="font-size:0.42rem;color:#555;display:block;margin-bottom:2px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_rp[:7]}</span>'
+                            f'<span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_h_dec_rp}</span>'
                             f'</div>'
                         )
+                        # Middle O/U pill for non-soccer
+                        if _ou_line_rp:
+                            _ou_mid_rp = _ou_line_rp
+                        else:
+                            _ou_mid_rp = ""
                         _mini_card = (
                             f'<div style="background:#F0F0F2;border-radius:18px;overflow:hidden;'
                             f'margin-bottom:6px;{_fire_glow}">'
@@ -6931,21 +6949,23 @@ if _active_page == "Rongol Picks":
                             + (
                                 _soccer_pills_rp if _sg_rp == "Soccer" else
                                 # Non-soccer: visitante / local + O/U si existe
-                                _ou_line_rp + _a_pill_rp + _h_pill_rp
+                                _a_pill_rp + _ou_mid_rp + _h_pill_rp
                             )
                             + f'</div>'
-                            # Pick CTA bar — negro con pick resaltado en amarillo
-                            f'<div style="background:#111113;padding:8px 12px;'
-                            f'display:flex;align-items:center;justify-content:space-between">'
+                            # Pick CTA — botón grande amarillo
+                            f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;'
+                            f'padding:10px 12px;display:flex;align-items:center;justify-content:space-between">'
                             f'<div style="display:flex;align-items:center;gap:6px">'
-                            f'<span style="font-size:0.55rem;font-weight:800;color:#FFD60A;'
-                            f'letter-spacing:1.5px;text-transform:uppercase">{_mkt_rp}</span>'
-                            f'<span style="font-size:0.75rem;font-weight:700;color:#ECECEC">{_lbl_rp[:13]}</span>'
+                            f'<span style="font-size:0.52rem;font-weight:900;color:#111;'
+                            f'letter-spacing:1.5px;text-transform:uppercase;background:rgba(0,0,0,0.12);'
+                            f'padding:2px 6px;border-radius:4px">{_mkt_rp}</span>'
+                            f'<span style="font-size:0.78rem;font-weight:800;color:#111;'
+                            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">{_lbl_rp}</span>'
                             f'</div>'
-                            f'<div style="text-align:right">'
-                            f'<span style="font-size:1.05rem;font-weight:900;color:#FFD60A;'
-                            f'font-family:Syne,sans-serif">{_dec_rp}</span>'
-                            f'<span style="font-size:0.55rem;color:#555;margin-left:4px">{_pick_pct_rp:.0f}%</span>'
+                            f'<div style="display:flex;align-items:baseline;gap:4px">'
+                            f'<span style="font-size:1.2rem;font-weight:900;color:#111;'
+                            f'font-family:Syne,sans-serif;line-height:1">{_dec_rp}</span>'
+                            f'<span style="font-size:0.6rem;font-weight:700;color:rgba(0,0,0,0.45)">{_pick_pct_rp:.0f}%</span>'
                             f'</div>'
                             f'</div>'
                             f'</div>'
@@ -7743,11 +7763,19 @@ elif _active_page == "Picks":
                                 _ou_sc_gg   = _sim_gg.get("ou_line","") or ""
                                 try: _o25_lbl_gg = f"O{float(str(_ou_sc_gg).lstrip('~')):.1f}" if (_ou_sc_gg and not str(_ou_sc_gg).startswith("~")) else "O2.5"
                                 except: _o25_lbl_gg = "O2.5"
+                                # Soccer: clean 3 pills — 1x / x / 2x
+                                def _sd_gg(d):
+                                    try:
+                                        v=float(d)
+                                        if v<1.02: return "1.02"
+                                        if v>15.0: return ">15"
+                                        return f"{v:.2f}"
+                                    except: return str(d) if d else "-"
+                                _h_dec_gg=_sd_gg(_h_dec_gg); _a_dec_gg=_sd_gg(_a_dec_gg); _d_dec_gg=_sd_gg(_d_dec_gg); _dec_gg=_sd_gg(_dec_gg)
                                 _soccer_pills_gg = (
-                                    f'<div style="flex:1;background:#1A1A1C;border-radius:8px;padding:5px 3px;text-align:center"><span style="font-size:0.42rem;color:#555;display:block">1x</span><span style="font-size:0.82rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_a_dec_gg}</span></div>'
-                                    f'<div style="flex:1;background:#1A1A1C;border-radius:8px;padding:5px 3px;text-align:center"><span style="font-size:0.42rem;color:#555;display:block">x</span><span style="font-size:0.82rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_d_dec_gg}</span></div>'
-                                    f'<div style="flex:1;background:#1A1A1C;border-radius:8px;padding:5px 3px;text-align:center"><span style="font-size:0.42rem;color:#555;display:block">2x</span><span style="font-size:0.82rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_h_dec_gg}</span></div>'
-                                    + (f'<div style="flex:1;background:#1A1A1C;border-radius:8px;padding:5px 3px;text-align:center"><span style="font-size:0.42rem;color:#00E5A0;display:block">{_o25_lbl_gg}</span><span style="font-size:0.82rem;font-weight:800;color:#00E5A0;font-family:Syne,sans-serif">{_o25_dec_gg}</span></div>' if _o25_pct_gg > 0 else "")
+                                    f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">1x</span><span style="font-size:1.0rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_a_dec_gg}</span></div>'
+                                    f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">x</span><span style="font-size:1.0rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_d_dec_gg}</span></div>'
+                                    f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">2x</span><span style="font-size:1.0rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_h_dec_gg}</span></div>'
                                 )
                                 # O/U pill for non-soccer
                                 _ou_val_gg  = _sim_gg.get("ou_line","") or ""
@@ -7761,8 +7789,12 @@ elif _active_page == "Picks":
                                     _ou_pill_gg = f'<div style="flex:1;background:#1A1A1C;border-radius:8px;padding:5px 3px;text-align:center"><span style="font-size:0.42rem;color:#4B8EFF;display:block">{_ou_side_gg}{_ou_num_gg}</span><span style="font-size:0.85rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_ou_dec_gg}</span></div>'
                                 else:
                                     _ou_pill_gg = ""
-                                _a_pill_gg = f'<div style="flex:1;background:#1A1A1C;border-radius:8px;padding:5px 3px;text-align:center"><span style="font-size:0.42rem;color:#555;display:block">{_away_gg[:5]}</span><span style="font-size:0.85rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_a_dec_gg}</span></div>'
-                                _h_pill_gg = f'<div style="flex:1;background:#1A1A1C;border-radius:8px;padding:5px 3px;text-align:center"><span style="font-size:0.42rem;color:#555;display:block">{_home_gg[:5]}</span><span style="font-size:0.85rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_h_dec_gg}</span></div>'  
+                                _a_pill_gg = f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.42rem;color:#555;display:block;margin-bottom:2px;font-weight:600">{_away_gg[:7]}</span><span style="font-size:1.0rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_a_dec_gg}</span></div>'
+                                _h_pill_gg = f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.42rem;color:#555;display:block;margin-bottom:2px;font-weight:600">{_home_gg[:7]}</span><span style="font-size:1.0rem;font-weight:800;color:#EEE;font-family:Syne,sans-serif">{_h_dec_gg}</span></div>'
+                                if _ou_pill_gg:
+                                    _mid_gg = _ou_pill_gg.replace("border-radius:8px","border-radius:10px").replace("5px 3px","8px 4px")
+                                else:
+                                    _mid_gg = ""  
                                 _card_html = (
                                     f'<div style="background:#EEEEF0;border-radius:16px;overflow:hidden;margin:2px 0">'
                                     # Header — liga
@@ -7787,15 +7819,22 @@ elif _active_page == "Picks":
                                     f'<div style="display:flex;gap:4px;padding:4px 8px 8px;background:#EEEEF0">'
                                     + (
                                         _soccer_pills_gg if _sg_gg == "Soccer" else
-                                        _ou_pill_gg + _a_pill_gg + _h_pill_gg
+                                        _a_pill_gg + _mid_gg + _h_pill_gg
                                     )
                                     + f'</div>'
                                     # Pick CTA
-                                    f'<div style="background:#111113;padding:7px 10px;display:flex;align-items:center;justify-content:space-between">'
-                                    f'<div><span style="font-size:0.5rem;font-weight:800;color:#FFD60A;letter-spacing:1.5px;text-transform:uppercase;margin-right:5px">{_mkt_gg}</span>'
-                                    f'<span style="font-size:0.72rem;font-weight:700;color:#EEE">{_lbl_gg[:12]}</span></div>'
-                                    f'<div><span style="font-size:0.95rem;font-weight:900;color:#FFD60A;font-family:Syne,sans-serif">{_dec_gg}</span>'
-                                    f'<span style="font-size:0.52rem;color:#555;margin-left:3px">{_pick_pct_gg:.0f}%</span></div>'
+                                    f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;padding:10px 12px;'
+                                    f'display:flex;align-items:center;justify-content:space-between">'
+                                    f'<div style="display:flex;align-items:center;gap:5px">'
+                                    f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:1.5px;'
+                                    f'text-transform:uppercase;background:rgba(0,0,0,0.12);padding:2px 5px;border-radius:4px">{_mkt_gg}</span>'
+                                    f'<span style="font-size:0.76rem;font-weight:800;color:#111;'
+                                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px">{_lbl_gg}</span>'
+                                    f'</div>'
+                                    f'<div style="display:flex;align-items:baseline;gap:3px">'
+                                    f'<span style="font-size:1.15rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_gg}</span>'
+                                    f'<span style="font-size:0.58rem;font-weight:700;color:rgba(0,0,0,0.45)">{_pick_pct_gg:.0f}%</span>'
+                                    f'</div>'
                                     f'</div>'
                                     f'</div>'
                                 )
