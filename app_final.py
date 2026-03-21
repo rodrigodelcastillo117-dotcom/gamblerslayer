@@ -6610,6 +6610,37 @@ if _active_page == "Rongol Picks":
                             unsafe_allow_html=True
                         )
                         st.markdown(_pick_diamante_card(_rp, _rp["_pick"], rank=_row_i+_ci, is_fire=_is_fire), unsafe_allow_html=True)
+                        # ── Botón "Al Reto" ──────────────────────────────
+                        _pk_rp   = _rp["_pick"]
+                        _mkt_rp  = _pk_rp.get("market","")
+                        _lbl_rp  = _pk_rp.get("label","")
+                        _ml_rp   = _pk_rp.get("ml","") or ""
+                        _prob_rp = _pk_rp.get("prob",0)
+                        _prob_rp = _prob_rp if _prob_rp <= 1 else _prob_rp/100
+                        _sim_rp  = _rp.get("sim",{})
+                        # Decimal del modelo
+                        _pick_is_home_rp = _rp.get("home_team","") in _lbl_rp
+                        _dec_key_rp = "model_home_dec" if _pick_is_home_rp else "model_away_dec"
+                        _dec_rp = _sim_rp.get(_dec_key_rp,"") or ""
+                        try:
+                            _dec_float_rp = float(_dec_rp) if _dec_rp else 0.0
+                        except:
+                            _dec_float_rp = 0.0
+                        _btn_key_rp = f"add_reto_{_row_i}_{_ci}"
+                        if st.button("➕ Agregar al Reto", key=_btn_key_rp, use_container_width=True):
+                            # Save pick data to session_state for Reto tab
+                            st.session_state["reto_prefill"] = {
+                                "partido":  f"{_rp.get('away_team','')} vs {_rp.get('home_team','')}",
+                                "pick":     _lbl_rp,
+                                "mercado":  _mkt_rp,
+                                "momio":    round(_dec_float_rp, 4) if _dec_float_rp > 1 else 0.0,
+                                "momio_fmt": _dec_rp or _ml_rp,
+                                "liga":     league_label(_rp.get("league","")),
+                                "prob_pct": round(_prob_rp * 100, 1),
+                            }
+                            st.session_state["active_page"] = "Reto 13M"
+                            st.toast(f"Pick agregado al Reto: {_lbl_rp}", icon="💰")
+                            st.rerun()
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
@@ -8769,14 +8800,50 @@ elif _active_page == "Reto 13M":
     """, unsafe_allow_html=True)
     st.markdown('<div class="section-heading">➕ Registrar Pick</div>', unsafe_allow_html=True)
 
+    # -- Cargar prefill desde Rongol/Picks (botón "Al Reto") ------------------
+    _prefill = st.session_state.pop("reto_prefill", None)
+
+    # -- Selector de picks del día --------------------------------------------
+    _picks_hoy_available = []
+    if "sim_results" in st.session_state:
+        for _sr in st.session_state["sim_results"]:
+            _bs = (_sr.get("sim",{}) or {}).get("best_single",{}) or {}
+            if _bs and _bs.get("prob",0) > 0.5:
+                _dec_k = "model_home_dec" if _sr.get("home_team","") in _bs.get("label","") else "model_away_dec"
+                _dec_v = (_sr.get("sim",{}) or {}).get(_dec_k,"") or ""
+                _picks_hoy_available.append({
+                    "label":   f"{_sr['away_team']} vs {_sr['home_team']}  |  {_bs['market']}: {_bs['label']}",
+                    "partido": f"{_sr['away_team']} vs {_sr['home_team']}",
+                    "pick":    _bs.get("label",""),
+                    "mercado": _bs.get("market",""),
+                    "momio":   float(_dec_v) if _dec_v else 0.0,
+                    "momio_fmt": _dec_v,
+                    "liga":    league_label(_sr.get("league","")),
+                    "prob_pct": round((_bs.get("prob",0) if _bs.get("prob",0)<=1 else _bs.get("prob",0)/100)*100, 1),
+                })
+
+    if _picks_hoy_available:
+        st.markdown('<div style="font-size:0.72rem;color:#C9A84C;font-weight:600;margin-bottom:4px">Picks analizados hoy (atajo)</div>', unsafe_allow_html=True)
+        _opciones = ["-- Selecciona un pick del día --"] + [p["label"] for p in _picks_hoy_available]
+        _sel_pick = st.selectbox("", _opciones, key="reto_sel_pick_hoy", label_visibility="collapsed")
+        if _sel_pick != "-- Selecciona un pick del día --":
+            _prefill = next((p for p in _picks_hoy_available if p["label"] == _sel_pick), None)
+            if _prefill:
+                st.toast(f"Pick cargado: {_prefill['pick']}", icon="✅")
+
     with st.container():
         fc1, fc2 = st.columns(2)
         with fc1:
-            reto_partido  = st.text_input("Partido / Evento", placeholder="ej: Real Madrid vs Bayern",
+            _partido_default = _prefill["partido"] if _prefill else ""
+            _pick_default    = _prefill["pick"]    if _prefill else ""
+            reto_partido  = st.text_input("Partido / Evento", value=_partido_default, placeholder="ej: Real Madrid vs Bayern",
                                           key="reto_partido")
-            reto_pick     = st.text_input("Pick", placeholder="ej: Real Madrid ML / Over 2.5 / BTTS Sí",
+            reto_pick     = st.text_input("Pick", value=_pick_default, placeholder="ej: Real Madrid ML / Over 2.5 / BTTS Sí",
                                           key="reto_pick")
-            reto_mercado  = st.selectbox("Mercado", ["ML","O/U","BTTS","DO","Spread","Otro"],
+            _mkt_options = ["ML","O/U","BTTS","DO","Spread","Otro"]
+            _mkt_default_idx = _mkt_options.index(_prefill["mercado"]) if (_prefill and _prefill.get("mercado") in _mkt_options) else 0
+            reto_mercado  = st.selectbox("Mercado", _mkt_options,
+                                         index=_mkt_default_idx,
                                          key="reto_mercado")
         with fc2:
             # Tipo de momio: americano o decimal
@@ -8786,6 +8853,7 @@ elif _active_page == "Reto 13M":
                 horizontal=True,
                 key="reto_tipo_momio"
             )
+            _momio_prefill = _prefill.get("momio",0) if _prefill else 0
             if reto_tipo_momio == "🇺🇸 Americano":
                 reto_momio_raw = st.number_input(
                     "Momio americano", value=-110, step=5,
@@ -8799,8 +8867,9 @@ elif _active_page == "Reto 13M":
                     reto_momio_dec = 100 / abs(reto_momio_raw) + 1
                 momio_display = f"+{reto_momio_raw}" if reto_momio_raw > 0 else str(reto_momio_raw)
             else:
+                _dec_default = round(_momio_prefill, 2) if _momio_prefill > 1.01 else 1.91
                 reto_momio_dec = st.number_input(
-                    "Momio decimal", value=1.91, step=0.01,
+                    "Momio decimal", value=_dec_default, step=0.01,
                     min_value=1.01, format="%.2f",
                     key="reto_momio_dec",
                     help="ej: 1.91 = -110 americano | 2.50 = +150 americano"
