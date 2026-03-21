@@ -6930,11 +6930,11 @@ if _active_page == "Rongol Picks":
                         _has_ou_sc_rp = bool(_ou_sc_rp and not str(_ou_sc_rp).startswith("~"))
                         try: _o25_lbl_rp = f"O{float(str(_ou_sc_rp).lstrip('~')):.1f}" if _has_ou_sc_rp else "O2.5"
                         except: _o25_lbl_rp = "O2.5"
-                        # Soccer: always exactly 3 pills — 1x / x / 2x
+                        # Soccer: 3 pills — 1x / x / 2x
                         _soccer_pills_rp = (
-                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">1x</span><span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_a_dec_rp}</span></div>'
-                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">x</span><span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_d_dec_rp}</span></div>'
-                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center"><span style="font-size:0.48rem;color:#555;display:block;margin-bottom:2px;font-weight:600">2x</span><span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_h_dec_rp}</span></div>'
+                            f'<div style="flex:1;background:#1A1A1C;border-radius:12px;padding:10px 4px;text-align:center"><span style="font-size:0.5rem;color:#666;display:block;margin-bottom:3px;font-weight:600;letter-spacing:0.5px">1x</span><span style="font-size:1.1rem;font-weight:800;color:#F0F0F0;font-family:Syne,sans-serif">{_a_dec_rp}</span></div>'
+                            f'<div style="flex:1;background:#1A1A1C;border-radius:12px;padding:10px 4px;text-align:center"><span style="font-size:0.5rem;color:#666;display:block;margin-bottom:3px;font-weight:600;letter-spacing:0.5px">x</span><span style="font-size:1.1rem;font-weight:800;color:#F0F0F0;font-family:Syne,sans-serif">{_d_dec_rp}</span></div>'
+                            f'<div style="flex:1;background:#1A1A1C;border-radius:12px;padding:10px 4px;text-align:center"><span style="font-size:0.5rem;color:#666;display:block;margin-bottom:3px;font-weight:600;letter-spacing:0.5px">2x</span><span style="font-size:1.1rem;font-weight:800;color:#F0F0F0;font-family:Syne,sans-serif">{_h_dec_rp}</span></div>'
                         )
                         # O/U pill for non-soccer
                         _ou_val_rp = _sim_rp.get("ou_line","") or ""
@@ -6956,15 +6956,15 @@ if _active_page == "Rongol Picks":
                             _ou_line_rp = ""
                         # Non-soccer: 3 pills — visitante / O/U (si existe) / local
                         _a_pill_rp = (
-                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center">'
-                            f'<span style="font-size:0.42rem;color:#555;display:block;margin-bottom:2px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_rp[:7]}</span>'
-                            f'<span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_a_dec_rp}</span>'
+                            f'<div style="flex:1;background:#1A1A1C;border-radius:12px;padding:10px 4px;text-align:center">'
+                            f'<span style="font-size:0.48rem;color:#666;display:block;margin-bottom:3px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_rp[:7]}</span>'
+                            f'<span style="font-size:1.1rem;font-weight:800;color:#F0F0F0;font-family:Syne,sans-serif">{_a_dec_rp}</span>'
                             f'</div>'
                         )
                         _h_pill_rp = (
-                            f'<div style="flex:1;background:#111113;border-radius:10px;padding:8px 4px;text-align:center">'
-                            f'<span style="font-size:0.42rem;color:#555;display:block;margin-bottom:2px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_rp[:7]}</span>'
-                            f'<span style="font-size:1.0rem;font-weight:800;color:#ECECEC;font-family:Syne,sans-serif">{_h_dec_rp}</span>'
+                            f'<div style="flex:1;background:#1A1A1C;border-radius:12px;padding:10px 4px;text-align:center">'
+                            f'<span style="font-size:0.48rem;color:#666;display:block;margin-bottom:3px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_rp[:7]}</span>'
+                            f'<span style="font-size:1.1rem;font-weight:800;color:#F0F0F0;font-family:Syne,sans-serif">{_h_dec_rp}</span>'
                             f'</div>'
                         )
                         # Middle O/U pill for non-soccer
@@ -6972,95 +6972,57 @@ if _active_page == "Rongol Picks":
                             _ou_mid_rp = _ou_line_rp
                         else:
                             _ou_mid_rp = ""
+                        _logo_away_rp = _logo_img(_at_id_rp, _rp.get("league",""), 48)
+                        _logo_home_rp  = _logo_img(_ht_id_rp, _rp.get("league",""), 48)
                         _mini_card = (
-                            f'<div style="background:#F0F0F2;border-radius:18px;overflow:hidden;'
-                            f'margin-bottom:6px;{_fire_glow}">'
-                            # Header — liga + fire badge
-                            f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                            f'padding:8px 12px 4px;background:#F0F0F2">'
-                            f'<span style="font-size:0.58rem;font-weight:700;color:#888;'
-                            f'letter-spacing:1px;text-transform:uppercase">{_league_label_rp}</span>'
+                            f'<div style="background:#F2F2F5;border-radius:22px;overflow:hidden;'
+                            f'margin-bottom:4px;{_fire_glow}">'
+                            # Liga header
+                            f'<div style="padding:10px 16px 5px;display:flex;justify-content:space-between;align-items:center">'
+                            f'<span style="font-size:0.6rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_league_label_rp}</span>'
                             f'<span style="font-size:0.7rem">{_fire_str}</span>'
                             f'</div>'
-                            # Matchup — logos grandes + VS central
-                            f'<div style="display:flex;align-items:center;justify-content:space-between;'
-                            f'padding:10px 14px 6px;background:#F0F0F2">'
-                            # Away
-                            f'<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">'
-                            + _logo_img(_at_id_rp, _rp.get("league",""), 38) +
-                            f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-align:center;'
-                            f'text-transform:uppercase;letter-spacing:0.5px;max-width:56px;'
-                            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_rp[:9]}</span>'
+                            # Teams
+                            f'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px 8px">'
+                            f'<div style="display:flex;flex-direction:column;align-items:center;gap:7px;flex:1">'
+                            + _logo_away_rp +
+                            f'<span style="font-size:0.65rem;font-weight:800;color:#111;text-transform:uppercase;'
+                            f'letter-spacing:0.3px;text-align:center;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_rp[:10]}</span>'
                             f'</div>'
-                            # Center — VS or score
-                            f'<div style="flex:1;text-align:center">'
-                            f'<div style="font-size:1.5rem;font-weight:900;color:#111;font-family:Syne,sans-serif;'
-                            f'letter-spacing:-1px;line-height:1">VS</div>'
-                            f'<div style="font-size:0.5rem;color:#AAA;margin-top:2px;text-transform:uppercase;letter-spacing:1px">{_sg_icon}</div>'
+                            f'<div style="flex:1.2;text-align:center">'
+                            f'<div style="font-size:1.8rem;font-weight:900;color:#111;font-family:Syne,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+                            f'<div style="font-size:0.52rem;color:#CCC;margin-top:4px;text-transform:uppercase;letter-spacing:1px">{_sg_icon}</div>'
                             f'</div>'
-                            # Home
-                            f'<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1">'
-                            + _logo_img(_ht_id_rp, _rp.get("league",""), 38) +
-                            f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-align:center;'
-                            f'text-transform:uppercase;letter-spacing:0.5px;max-width:56px;'
-                            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_rp[:9]}</span>'
+                            f'<div style="display:flex;flex-direction:column;align-items:center;gap:7px;flex:1">'
+                            + _logo_home_rp +
+                            f'<span style="font-size:0.65rem;font-weight:800;color:#111;text-transform:uppercase;'
+                            f'letter-spacing:0.3px;text-align:center;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_rp[:10]}</span>'
                             f'</div>'
                             f'</div>'
-                            # Odds pills — 3 cols (soccer) or 2 (others)
-                            f'<div style="display:flex;gap:5px;padding:6px 10px 10px;background:#F0F0F2">'
-                            + (
-                                _soccer_pills_rp if _sg_rp == "Soccer" else
-                                # Non-soccer: visitante / local + O/U si existe
-                                _a_pill_rp + _ou_mid_rp + _h_pill_rp
-                            )
+                            # Divider
+                            f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+                            # Pills
+                            f'<div style="display:flex;gap:6px;padding:10px 12px 10px">'
+                            + (_soccer_pills_rp if _sg_rp == "Soccer" else _a_pill_rp + _ou_mid_rp + _h_pill_rp)
                             + f'</div>'
-                            # Pick CTA — botón amarillo 2 filas
-                            f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;padding:9px 12px">'
-                            f'<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
-                            f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:1.5px;'
-                            f'text-transform:uppercase;background:rgba(0,0,0,0.12);padding:2px 6px;border-radius:4px">{_mkt_rp}</span>'
-                            f'<span style="font-size:0.72rem;font-weight:800;color:#111;'
-                            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl_rp}</span>'
+                            # Pick CTA
+                            f'<div style="margin:0 10px 10px;background:#FFD60A;border-radius:14px;padding:11px 16px">'
+                            f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:3px">'
+                            f'<span style="font-size:0.52rem;font-weight:900;color:#111;letter-spacing:2px;'
+                            f'text-transform:uppercase;background:rgba(0,0,0,0.1);padding:3px 8px;border-radius:5px">{_mkt_rp}</span>'
+                            f'<span style="font-size:0.8rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl_rp}</span>'
                             f'</div>'
-                            f'<div style="display:flex;align-items:baseline;gap:5px">'
-                            f'<span style="font-size:1.6rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_rp}</span>'
-                            f'<span style="font-size:0.65rem;font-weight:700;color:rgba(0,0,0,0.4)">{_pick_pct_rp:.0f}% prob</span>'
+                            f'<div style="display:flex;align-items:baseline;gap:8px">'
+                            f'<span style="font-size:1.8rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_rp}</span>'
+                            f'<span style="font-size:0.68rem;font-weight:700;color:rgba(0,0,0,0.35)">{_pick_pct_rp:.0f}% probabilidad</span>'
                             f'</div>'
                             f'</div>'
                             f'</div>'
                         )
-                        # Single unified card — expander with white card as summary
-                        _card_key = f"rp_{_row_i}_{_ci}"
-                        # CSS: make THIS expander's summary transparent and overlay mini_card
-                        st.markdown(f"""
-<style>
-details[data-card="{_card_key}"] > summary {{
-  padding: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  border-radius: 18px !important;
-  overflow: hidden !important;
-  display: block !important;
-  cursor: pointer !important;
-}}
-details[data-card="{_card_key}"] > summary > div {{
-  display: none !important;
-}}
-details[data-card="{_card_key}"][open] > summary {{
-  border-radius: 18px 18px 0 0 !important;
-}}
-details[data-card="{_card_key}"] > div {{
-  background: #141416 !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  border-top: none !important;
-  border-radius: 0 0 18px 18px !important;
-  padding: 0 !important;
-  margin-top: -2px !important;
-}}
-</style>""", unsafe_allow_html=True)
-                        _exp_lbl_rp = f"{_away_rp} vs {_home_rp}  |  {_mkt_rp}: {_lbl_rp}  {_dec_rp}"
-                        with st.expander(_exp_lbl_rp, expanded=False):
-                            st.markdown(_mini_card, unsafe_allow_html=True)
+                        # White card always visible
+                        st.markdown(_mini_card, unsafe_allow_html=True)
+                        # Small analysis expander below
+                        with st.expander("📊 Ver análisis completo", expanded=False):
                             st.markdown(render_pick_card(_rp, rank=_row_i+_ci), unsafe_allow_html=True)
 
             # -- DO PARLAY -----------------------------------------------------
@@ -7885,42 +7847,44 @@ elif _active_page == "Picks":
                                     _mid_gg = _ou_pill_gg.replace("border-radius:8px","border-radius:10px").replace("5px 3px","8px 4px")
                                 else:
                                     _mid_gg = ""  
+                                _logo_a_gg = _logo_img(_at_id_gg, _gg_p.get("league",""), 48)
+                                _logo_h_gg = _logo_img(_ht_id_gg, _gg_p.get("league",""), 48)
                                 _card_html = (
-                                    f'<div style="background:#EEEEF0;border-radius:16px;overflow:hidden;margin:2px 0">'
-                                    # Header — liga
-                                    f'<div style="padding:7px 11px 3px;background:#EEEEF0">'
-                                    f'<span style="font-size:0.55rem;font-weight:700;color:#888;letter-spacing:1px;text-transform:uppercase">{_lg_lbl_gg}</span>'
+                                    f'<div style="background:#F2F2F5;border-radius:22px;overflow:hidden;margin:2px 0">'
+                                    # Liga header
+                                    f'<div style="padding:10px 16px 5px;display:flex;justify-content:space-between;align-items:center">'
+                                    f'<span style="font-size:0.6rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl_gg}</span>'
                                     f'</div>'
-                                    # Logos + VS
-                                    f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px 5px;background:#EEEEF0">'
-                                    f'<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1">'
-                                    + _al_gg +
-                                    f'<span style="font-size:0.55rem;font-weight:800;color:#111;text-transform:uppercase;letter-spacing:0.3px;text-align:center;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_gg[:8]}</span>'
+                                    # Teams + logos
+                                    f'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px 8px">'
+                                    f'<div style="display:flex;flex-direction:column;align-items:center;gap:7px;flex:1">'
+                                    + _logo_a_gg +
+                                    f'<span style="font-size:0.65rem;font-weight:800;color:#111;text-transform:uppercase;letter-spacing:0.3px;text-align:center;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_gg[:10]}</span>'
                                     f'</div>'
-                                    f'<div style="flex:0.8;text-align:center">'
-                                    f'<div style="font-size:1.2rem;font-weight:900;color:#111;font-family:Syne,sans-serif;letter-spacing:-0.5px">VS</div>'
+                                    f'<div style="flex:1.2;text-align:center">'
+                                    f'<div style="font-size:1.8rem;font-weight:900;color:#111;font-family:Syne,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+                                    f'<div style="font-size:0.52rem;color:#CCC;margin-top:4px;text-transform:uppercase;letter-spacing:1px">{{"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}}.get(_sg_gg,"🎯")</div>'
                                     f'</div>'
-                                    f'<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1">'
-                                    + _hl_gg +
-                                    f'<span style="font-size:0.55rem;font-weight:800;color:#111;text-transform:uppercase;letter-spacing:0.3px;text-align:center;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_gg[:8]}</span>'
+                                    f'<div style="display:flex;flex-direction:column;align-items:center;gap:7px;flex:1">'
+                                    + _logo_h_gg +
+                                    f'<span style="font-size:0.65rem;font-weight:800;color:#111;text-transform:uppercase;letter-spacing:0.3px;text-align:center;max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_gg[:10]}</span>'
                                     f'</div>'
                                     f'</div>'
-                                    # Odds pills
-                                    f'<div style="display:flex;gap:4px;padding:4px 8px 8px;background:#EEEEF0">'
-                                    + (
-                                        _soccer_pills_gg if _sg_gg == "Soccer" else
-                                        _a_pill_gg + _mid_gg + _h_pill_gg
-                                    )
+                                    # Divider
+                                    f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+                                    # Pills
+                                    f'<div style="display:flex;gap:6px;padding:10px 12px 10px">'
+                                    + (_soccer_pills_gg if _sg_gg == "Soccer" else _a_pill_gg + _mid_gg + _h_pill_gg)
                                     + f'</div>'
                                     # Pick CTA
-                                    f'<div style="margin:0 8px 8px;background:#FFD60A;border-radius:10px;padding:9px 12px">'
-                                    f'<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
-                                    f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:1.5px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:2px 6px;border-radius:4px">{_mkt_gg}</span>'
-                                    f'<span style="font-size:0.72rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl_gg}</span>'
+                                    f'<div style="margin:0 10px 10px;background:#FFD60A;border-radius:14px;padding:11px 16px">'
+                                    f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:3px">'
+                                    f'<span style="font-size:0.52rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.1);padding:3px 8px;border-radius:5px">{_mkt_gg}</span>'
+                                    f'<span style="font-size:0.8rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl_gg}</span>'
                                     f'</div>'
-                                    f'<div style="display:flex;align-items:baseline;gap:5px">'
-                                    f'<span style="font-size:1.6rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_gg}</span>'
-                                    f'<span style="font-size:0.65rem;font-weight:700;color:rgba(0,0,0,0.4)">{_pick_pct_gg:.0f}% prob</span>'
+                                    f'<div style="display:flex;align-items:baseline;gap:8px">'
+                                    f'<span style="font-size:1.8rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_dec_gg}</span>'
+                                    f'<span style="font-size:0.68rem;font-weight:700;color:rgba(0,0,0,0.35)">{_pick_pct_gg:.0f}% probabilidad</span>'
                                     f'</div>'
                                     f'</div>'
                                     f'</div>'
@@ -7930,9 +7894,8 @@ elif _active_page == "Picks":
                                     f"  {_mkt_icon_gg} {_lbl_gg[:14]}"
                                     f" ({_pick_pct_gg:.0f}%)"
                                 )
-                                _exp_lbl_gg = f"{_away_gg} vs {_home_gg}  |  {_mkt_gg}: {_lbl_gg}  {_dec_gg}"
-                                with st.expander(_exp_lbl_gg, expanded=False):
-                                    st.markdown(_card_html, unsafe_allow_html=True)
+                                st.markdown(_card_html, unsafe_allow_html=True)
+                                with st.expander("📊 Análisis", expanded=False):
                                     st.markdown(render_pick_card(_gg_with_sim), unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
