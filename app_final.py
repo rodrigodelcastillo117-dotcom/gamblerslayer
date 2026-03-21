@@ -354,56 +354,6 @@ div[data-testid="stSlider"] label, div[data-testid="stRadio"] label {
   border-top:none !important; border-radius:0 0 var(--radius) var(--radius) !important; padding:0 !important;
 }
 
-/* -- PICK CARD EXPANDER — card blanca + analisis oscuro unificados --- */
-.pick-expander-wrap [data-testid="stExpander"] {
-  margin:0 0 6px 0 !important;
-}
-/* Summary = header transparente con flecha — sin fondo propio */
-.pick-expander-wrap [data-testid="stExpander"] > details > summary {
-  background:#F0F0F2 !important;
-  border:none !important;
-  border-radius:18px !important;
-  padding:0 !important;
-  min-height:0 !important;
-  overflow:hidden !important;
-  color:transparent !important;
-  font-size:0 !important;
-}
-/* Arrow indicator — pequeño, abajo de la card */
-.pick-expander-wrap [data-testid="stExpander"] > details > summary::after {
-  content:"Toca para ver el analisis" !important;
-  display:block !important;
-  text-align:center !important;
-  font-size:0.6rem !important;
-  font-weight:700 !important;
-  letter-spacing:1.5px !important;
-  text-transform:uppercase !important;
-  color:#888 !important;
-  padding:5px 0 8px !important;
-  background:#F0F0F2 !important;
-}
-.pick-expander-wrap [data-testid="stExpander"] > details[open] > summary {
-  border-radius:18px 18px 0 0 !important;
-}
-.pick-expander-wrap [data-testid="stExpander"] > details[open] > summary::after {
-  content:"Toca para cerrar" !important;
-  color:#FF5F1F !important;
-}
-/* SVG arrow hidden */
-.pick-expander-wrap [data-testid="stExpander"] summary svg {
-  display:none !important;
-}
-/* Content area = análisis oscuro, sin gap */
-.pick-expander-wrap [data-testid="stExpander"] > details > div,
-.pick-expander-wrap [data-testid="stExpander"] .streamlit-expanderContent {
-  background:#141416 !important;
-  border:1px solid rgba(255,255,255,0.07) !important;
-  border-top:none !important;
-  border-radius:0 0 18px 18px !important;
-  padding:0 !important;
-  margin-top:0 !important;
-}
-
 /* -- METRICS ---------------------------------------------------------- */
 div[data-testid="stMetric"] {
   background:var(--bg2) !important; border-radius:var(--radius) !important;
@@ -7080,11 +7030,10 @@ details[data-card="{_card_key}"] > div {{
   margin-top: -2px !important;
 }}
 </style>""", unsafe_allow_html=True)
-                        st.markdown('<div class="pick-expander-wrap">', unsafe_allow_html=True)
-                        with st.expander("", expanded=False):
+                        _exp_lbl_rp = f"{_away_rp} vs {_home_rp}  |  {_mkt_rp}: {_lbl_rp}  {_dec_rp}"
+                        with st.expander(_exp_lbl_rp, expanded=False):
                             st.markdown(_mini_card, unsafe_allow_html=True)
                             st.markdown(render_pick_card(_rp, rank=_row_i+_ci), unsafe_allow_html=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
 
             # -- DO PARLAY -----------------------------------------------------
             _do_parlays = []
@@ -7953,11 +7902,10 @@ elif _active_page == "Picks":
                                     f"  {_mkt_icon_gg} {_lbl_gg[:14]}"
                                     f" ({_pick_pct_gg:.0f}%)"
                                 )
-                                st.markdown('<div class="pick-expander-wrap">', unsafe_allow_html=True)
-                                with st.expander("", expanded=False):
+                                _exp_lbl_gg = f"{_away_gg} vs {_home_gg}  |  {_mkt_gg}: {_lbl_gg}  {_dec_gg}"
+                                with st.expander(_exp_lbl_gg, expanded=False):
                                     st.markdown(_card_html, unsafe_allow_html=True)
                                     st.markdown(render_pick_card(_gg_with_sim), unsafe_allow_html=True)
-                                st.markdown('</div>', unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
     # CSV export (collapsed)
@@ -9129,38 +9077,147 @@ elif _active_page == "Reto 13M":
     progreso_pct = min((bank_actual / meta) * 100, 100)
     multiplicador = bank_actual / bank_inicial if bank_inicial > 0 else 1
 
-    # -- KPIs ------------------------------------------------------------------
+    # -- KPIs avanzados --------------------------------------------------------
     n_gan = sum(1 for p in picks if p.get("resultado")=="ganado")
     n_per = sum(1 for p in picks if p.get("resultado")=="perdido")
     n_pen = sum(1 for p in picks if p.get("resultado")=="pendiente")
-    win_rate = (n_gan / (n_gan + n_per) * 100) if (n_gan + n_per) > 0 else 0
+    n_res = n_gan + n_per
+    win_rate = (n_gan / n_res * 100) if n_res > 0 else 0
 
-    st.markdown(f'''<div class="stat-grid" style="margin-bottom:16px">
+    # Racha activa
+    _racha = 0
+    _racha_tipo = ""
+    for _pp in reversed(picks):
+        _r = _pp.get("resultado","pendiente")
+        if _r == "pendiente": continue
+        if _racha == 0:
+            _racha = 1
+            _racha_tipo = _r
+        elif _r == _racha_tipo:
+            _racha += 1
+        else:
+            break
+
+    # Stop-loss diario — picks de hoy
+    from datetime import date as _date
+    _hoy = _date.today().isoformat()
+    _picks_hoy = [p for p in picks if (p.get("fecha","") or "")[:10] == _hoy]
+    _perdidas_hoy = sum(float(p.get("monto",0)) for p in _picks_hoy if p.get("resultado")=="perdido")
+    _stop_loss_pct = 0.15  # 15% del bank
+    _stop_loss_limit = bank_actual * _stop_loss_pct
+    _stop_loss_alert = _perdidas_hoy >= _stop_loss_limit and _perdidas_hoy > 0
+
+    # Proyección hacia la meta
+    if n_res >= 3 and win_rate > 0:
+        # Promedio de ganancia/perdida por pick resuelto
+        _ganancias = []
+        _running_p = bank_inicial
+        for _pp in picks:
+            _r = _pp.get("resultado","pendiente")
+            _st = float(_pp.get("monto",0))
+            _m  = float(_pp.get("momio",1.909))
+            if _r == "ganado":
+                _g = _st * (_m - 1) if (_m >= 1.01 and _m < 100) else _st * _m / 100
+                _running_p += _g; _ganancias.append(_g)
+            elif _r == "perdido":
+                _running_p -= _st; _ganancias.append(-_st)
+        _avg_delta = sum(_ganancias) / len(_ganancias) if _ganancias else 0
+        if _avg_delta > 0:
+            _picks_restantes = int((meta - bank_actual) / _avg_delta) + 1
+            _proyeccion_str = f"~{_picks_restantes:,} picks más"
+        else:
+            _proyeccion_str = "Ajusta tu estrategia"
+    else:
+        _proyeccion_str = "Registra más picks"
+
+    # KPI grid
+    _racha_clr = "#00E5A0" if _racha_tipo == "ganado" else ("#ef4444" if _racha_tipo == "perdido" else "#C9A84C")
+    _racha_icon = "🔥" if _racha_tipo == "ganado" else ("❄️" if _racha_tipo == "perdido" else "")
+    _racha_lbl = f"{_racha_icon} {_racha} {_racha_tipo}" if _racha_tipo else "—"
+
+    st.markdown(f'''<div class="stat-grid" style="margin-bottom:8px">
       <div class="stat-tile">
         <div class="stat-num" style="color:#C9A84C">${bank_actual:,.0f}</div>
         <div class="stat-label">Bank Actual</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" style="color:#00C896">{multiplicador:.1f}×</div>
+        <div class="stat-num" style="color:#00E5A0">{multiplicador:.2f}x</div>
         <div class="stat-label">Multiplicador</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" style="color:#60a5fa">{len(picks)}</div>
-        <div class="stat-label">Total Picks</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-num" style="color:#00C896">{win_rate:.0f}%</div>
+        <div class="stat-num" style="color:#00E5A0">{win_rate:.0f}%</div>
         <div class="stat-label">Win Rate</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" style="color:#00C896">{n_gan}</div>
+        <div class="stat-num" style="color:{_racha_clr};font-size:1rem">{_racha_lbl}</div>
+        <div class="stat-label">Racha Activa</div>
+      </div>
+    </div>''', unsafe_allow_html=True)
+
+    # Fila 2 KPIs
+    st.markdown(f'''<div class="stat-grid" style="margin-bottom:16px">
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#00E5A0">{n_gan}</div>
         <div class="stat-label">Ganados</div>
       </div>
       <div class="stat-tile">
         <div class="stat-num" style="color:#ef4444">{n_per}</div>
         <div class="stat-label">Perdidos</div>
       </div>
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#f59e0b">{n_pen}</div>
+        <div class="stat-label">Pendientes</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" style="color:#a78bfa;font-size:0.95rem">{_proyeccion_str}</div>
+        <div class="stat-label">Para la Meta</div>
+      </div>
     </div>''', unsafe_allow_html=True)
+
+    # Stop-loss alert
+    if _stop_loss_alert:
+        st.markdown(
+            f'<div class="demo-banner" style="border-left:3px solid #ef4444;font-size:0.85rem">'
+            f'🛑 <strong>STOP-LOSS ACTIVADO</strong> — Perdiste ${_perdidas_hoy:,.0f} hoy '
+            f'({(_perdidas_hoy/bank_actual*100):.1f}% del bank). '
+            f'Considera no apostar más hoy.</div>',
+            unsafe_allow_html=True
+        )
+    elif _picks_hoy:
+        _p_hoy_lost = sum(1 for p in _picks_hoy if p.get("resultado")=="perdido")
+        _pct_usado = _perdidas_hoy / bank_actual * 100 if bank_actual > 0 else 0
+        if _pct_usado > 5:
+            st.markdown(
+                f'<div class="warn-banner" style="font-size:0.82rem">'
+                f'⚠️ Llevas ${_perdidas_hoy:,.0f} en pérdidas hoy ({_pct_uso:.1f}% del bank). '
+                f'Límite de stop-loss: ${_stop_loss_limit:,.0f} (15%).</div>',
+                unsafe_allow_html=True
+            )
+
+    # -- Picks pendientes destacados ------------------------------------------
+    _picks_pendientes = [p for p in picks if p.get("resultado","pendiente") == "pendiente"]
+    if _picks_pendientes:
+        st.markdown('<div class="section-heading">⏳ Picks Pendientes</div>', unsafe_allow_html=True)
+        for _pp in reversed(_picks_pendientes):
+            _pm = float(_pp.get("momio",1.91))
+            _ps = float(_pp.get("monto",0))
+            _pg = _ps * (_pm - 1)
+            st.markdown(
+                f'<div style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.25);'
+                f'border-left:3px solid #f59e0b;border-radius:12px;padding:10px 14px;margin-bottom:6px;'
+                f'display:flex;justify-content:space-between;align-items:center">'
+                f'<div>'
+                f'<div style="font-size:0.85rem;font-weight:700;color:#E8E8E8">{_pp.get("partido","")}</div>'
+                f'<div style="font-size:0.72rem;color:#f59e0b;margin-top:2px">'
+                f'{_pp.get("pick","")} · {_pp.get("mercado","")} · {_pp.get("momio_fmt",str(round(_pm,2)))}</div>'
+                f'</div>'
+                f'<div style="text-align:right">'
+                f'<div style="font-size:1.0rem;font-weight:800;color:#f59e0b">${_ps:,.0f}</div>'
+                f'<div style="font-size:0.65rem;color:#666">gana ${_pg:,.0f}</div>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
     # -- Barra de progreso hacia meta ------------------------------------------
     falta = max(meta - bank_actual, 0)
@@ -9414,9 +9471,32 @@ elif _active_page == "Reto 13M":
                 )
                 momio_display = f"{reto_momio_dec:.2f}"
 
+            # Kelly automático desde el modelo
+            _kelly_auto = 0.0
+            _kelly_pct_display = ""
+            if "sim_results" in st.session_state:
+                _sr_reto = st.session_state["sim_results"]
+                _partido_lower = reto_partido.lower() if reto_partido else ""
+                for _sr_r in _sr_reto:
+                    _h = _sr_r.get("home_team","").lower()
+                    _a = _sr_r.get("away_team","").lower()
+                    if _h in _partido_lower or _a in _partido_lower:
+                        _sim_r = _sr_r.get("sim",{})
+                        _bs_r  = _sim_r.get("best_single",{}) or {}
+                        _k_r   = _bs_r.get("kelly",0) or 0
+                        if _k_r > 0:
+                            _kelly_auto = round(_k_r * bank_actual, 2)
+                            _kelly_pct_display = f" (Kelly 25%: {_k_r*100:.1f}% = ${_kelly_auto:,.0f})"
+                        break
+            _monto_default = float(_kelly_auto) if _kelly_auto > 0 else float(min(bank_actual * 0.03, bank_actual)) if bank_actual > 0 else 100.0
+            if _kelly_pct_display:
+                st.caption(f"🧮 El modelo sugiere apostar{_kelly_pct_display}")
             reto_monto    = st.number_input("Monto apostado ($)", min_value=1.0,
-                                            value=float(min(bank_actual * 0.05, bank_actual)) if bank_actual > 0 else 100.0,
+                                            value=_monto_default,
                                             step=10.0, key="reto_monto")
+            # Alerta si stake > 2x Kelly
+            if _kelly_auto > 0 and reto_monto > _kelly_auto * 2:
+                st.warning(f"⚠️ Estás apostando {reto_monto/_kelly_auto:.1f}x más de lo que recomienda Kelly.")
             reto_resultado = st.selectbox("Resultado", ["pendiente","ganado","perdido","push"],
                                           key="reto_resultado")
         reto_nota = st.text_input("Nota (opcional)", placeholder="ej: Liga MX - Jornada 12 - pick del oráculo",
@@ -9455,6 +9535,103 @@ elif _active_page == "Reto 13M":
                         st.error("Error guardando. Verifica permisos de escritura.")
                 else:
                     st.warning("Completa Partido y Pick antes de agregar.")
+
+    # -- Editar / Eliminar picks -----------------------------------------------
+    if picks:
+        with st.expander(f"✏️ Editar o eliminar picks ({len(picks)} registrados)", expanded=False):
+            # Filtros
+            _f1, _f2, _f3 = st.columns(3)
+            with _f1:
+                _fil_res = st.selectbox("Filtrar por resultado", ["todos","pendiente","ganado","perdido","push"], key="fil_res_edit")
+            with _f2:
+                _fil_mkt = st.selectbox("Filtrar por mercado", ["todos"] + list(dict.fromkeys(p.get("mercado","") for p in picks if p.get("mercado"))), key="fil_mkt_edit")
+            with _f3:
+                _fil_search = st.text_input("Buscar partido", placeholder="ej: Real Madrid", key="fil_search_edit")
+
+            _picks_filtered = picks
+            if _fil_res != "todos":
+                _picks_filtered = [p for p in _picks_filtered if p.get("resultado") == _fil_res]
+            if _fil_mkt != "todos":
+                _picks_filtered = [p for p in _picks_filtered if p.get("mercado") == _fil_mkt]
+            if _fil_search:
+                _picks_filtered = [p for p in _picks_filtered if _fil_search.lower() in (p.get("partido","") or "").lower()]
+
+            st.caption(f"Mostrando {len(_picks_filtered)} de {len(picks)} picks")
+
+            for _ep in reversed(_picks_filtered[-30:]):  # últimos 30
+                _ei = next((i for i,p in enumerate(picks) if p.get("num") == _ep.get("num")), None)
+                if _ei is None: continue
+                _ec1, _ec2, _ec3, _ec4 = st.columns([3,2,2,1])
+                with _ec1:
+                    st.markdown(f'<div style="font-size:0.78rem;color:#E8E8E8;padding:4px 0">#{_ep.get("num")} {_ep.get("partido","")[:28]}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="font-size:0.68rem;color:#888">{_ep.get("pick","")[:24]} · {_ep.get("momio_fmt","")}</div>', unsafe_allow_html=True)
+                with _ec2:
+                    _new_res = st.selectbox("", ["pendiente","ganado","perdido","push"],
+                        index=["pendiente","ganado","perdido","push"].index(_ep.get("resultado","pendiente")),
+                        key=f"edit_res_{_ep.get('num',_ei)}", label_visibility="collapsed")
+                with _ec3:
+                    _new_monto = st.number_input("", value=float(_ep.get("monto",0)),
+                        min_value=0.0, step=10.0,
+                        key=f"edit_monto_{_ep.get('num',_ei)}", label_visibility="collapsed")
+                with _ec4:
+                    if st.button("💾", key=f"save_{_ep.get('num',_ei)}", help="Guardar cambios"):
+                        picks[_ei]["resultado"] = _new_res
+                        picks[_ei]["monto"]     = _new_monto
+                        reto["picks"] = picks
+                        _save_reto(reto, apodo_activo)
+                        st.toast(f"✅ Pick #{_ep.get('num')} actualizado")
+                        st.rerun()
+                    if st.button("🗑️", key=f"del_{_ep.get('num',_ei)}", help="Eliminar pick"):
+                        picks.pop(_ei)
+                        reto["picks"] = picks
+                        _save_reto(reto, apodo_activo)
+                        st.toast(f"🗑️ Pick eliminado")
+                        st.rerun()
+                st.markdown('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.04);margin:2px 0">', unsafe_allow_html=True)
+
+    # -- Historial con filtros -------------------------------------------------
+    if picks:
+        with st.expander(f"📋 Historial completo ({len(picks)} picks)", expanded=False):
+            _hf1, _hf2, _hf3 = st.columns(3)
+            with _hf1:
+                _h_res = st.selectbox("Resultado", ["todos","ganado","perdido","pendiente","push"], key="h_fil_res")
+            with _hf2:
+                _h_mkt = st.selectbox("Mercado", ["todos"] + list(dict.fromkeys(p.get("mercado","") for p in picks if p.get("mercado"))), key="h_fil_mkt")
+            with _hf3:
+                _h_srch = st.text_input("Buscar", placeholder="partido, pick...", key="h_fil_srch")
+
+            _h_picks = picks
+            if _h_res != "todos": _h_picks = [p for p in _h_picks if p.get("resultado") == _h_res]
+            if _h_mkt != "todos": _h_picks = [p for p in _h_picks if p.get("mercado") == _h_mkt]
+            if _h_srch: _h_picks = [p for p in _h_picks if _h_srch.lower() in str(p).lower()]
+
+            _RES_CLR_H = {"ganado":"#00E5A0","perdido":"#ef4444","push":"#f59e0b","pendiente":"#888"}
+            _RES_ICO_H = {"ganado":"✅","perdido":"❌","push":"🔄","pendiente":"⏳"}
+            for _hp in reversed(_h_picks):
+                _hres = _hp.get("resultado","pendiente")
+                _hclr = _RES_CLR_H.get(_hres,"#888")
+                _hico = _RES_ICO_H.get(_hres,"⏳")
+                _hm = float(_hp.get("momio",1.91))
+                _hs = float(_hp.get("monto",0))
+                _hpnl = _hs*(_hm-1) if _hres=="ganado" else (-_hs if _hres=="perdido" else 0)
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                    f'padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.04);'
+                    f'border-left:2px solid {_hclr}">'
+                    f'<div>'
+                    f'<span style="font-size:0.7rem;color:#888">#{_hp.get("num")} {_hp.get("fecha","")[:10]}</span>'
+                    f'<div style="font-size:0.82rem;font-weight:600;color:#E8E8E8">{_hp.get("partido","")[:30]}</div>'
+                    f'<div style="font-size:0.7rem;color:#C9A84C">{_hp.get("pick","")[:24]} · {_hp.get("mercado","")} · {_hp.get("momio_fmt","")}</div>'
+                    f'</div>'
+                    f'<div style="text-align:right">'
+                    f'<div style="font-size:1.0rem">{_hico}</div>'
+                    f'<div style="font-size:0.82rem;font-weight:700;color:{_hclr}">'
+                    f'{"+" if _hpnl > 0 else ""}${_hpnl:,.0f}</div>'
+                    f'<div style="font-size:0.65rem;color:#555">${_hs:,.0f} apostado</div>'
+                    f'</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
 
     # -- Config: banco inicial y meta ------------------------------------------
     with st.expander("⚙️ Configurar Reto"):
