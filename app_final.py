@@ -13,7 +13,7 @@ import time
 import os
 import json
 from datetime import datetime, timezone
-
+_[ñ
 st.set_page_config(
     page_title="The Gamblers Den",
     page_icon="🎰",
@@ -23,37 +23,43 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg:        #1C1C1E;
-  --bg2:       #2C2C2E;
-  --bg3:       #3A3A3C;
-  --card:      #2C2C2E;
-  --card2:     #3A3A3C;
-  --border:    rgba(255,255,255,0.08);
+  /* ── Core palette — deep sports dark ── */
+  --bg:        #0D0D0F;
+  --bg2:       #141416;
+  --bg3:       #1E1E22;
+  --card:      #141416;
+  --card2:     #1E1E22;
+  --border:    rgba(255,255,255,0.07);
+  --border2:   rgba(255,255,255,0.12);
+
+  /* ── Brand colors ── */
   --orange:    #FF6B00;
   --orange2:   #FF8C00;
   --yellow:    #FFD60A;
   --yellow2:   #FFEC3D;
-  --text:      #F2F2F7;
-  --text2:     #AEAEB2;
-  --text3:     #636366;
+  --text:      #F0F0F5;
+  --text2:     #A0A0A8;
+  --text3:     #505058;
   --white:     #FFFFFF;
-  --red:       #FF453A;
-  --green:     #30D158;
-  --blue:      #0A84FF;
+  --red:       #FF3B30;
+  --green:     #00C896;
+  --blue:      #3B82F6;
+  --purple:    #A78BFA;
   --nav-h:     72px;
   --radius:    16px;
   --radius-sm: 10px;
   --radius-lg: 22px;
-  /* legacy compat */
+
+  /* ── Legacy compat ── */
   --gold:    #FFD60A;
   --gold2:   #FF8C00;
-  --felt:    #1C1C1E;
-  --dark:    #1C1C1E;
-  --muted:   #636366;
-  --cyan:    #30D158;
+  --felt:    #0D0D0F;
+  --dark:    #0D0D0F;
+  --muted:   #505058;
+  --cyan:    #00C896;
 }
 
 * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
@@ -86,24 +92,54 @@ header[data-testid="stHeader"] { display: none !important; }
 }
 
 /* ── HEADER ── */
-.den-header { text-align:center; padding:16px 0 8px; }
+.den-header {
+  text-align:center; padding:20px 0 10px;
+  position:relative;
+}
+.den-header::before {
+  content:'';
+  position:absolute; top:0; left:50%; transform:translateX(-50%);
+  width:200px; height:1px;
+  background:linear-gradient(90deg,transparent,var(--orange),transparent);
+}
 .den-logo {
-  font-family:'Outfit',sans-serif; font-size:1.8rem; font-weight:900; letter-spacing:-0.5px;
-  background:linear-gradient(135deg,var(--orange),var(--yellow));
+  font-family:'Outfit',sans-serif; font-size:2rem; font-weight:900; letter-spacing:-1px;
+  background:linear-gradient(135deg,#FF6B00 0%,#FFD60A 60%,#FF8C00 100%);
   -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
   line-height:1; margin:0;
+  filter:drop-shadow(0 0 20px rgba(255,107,0,0.3));
 }
-.den-subtitle { font-size:0.62rem; color:var(--text3); letter-spacing:3px; text-transform:uppercase; margin-top:4px; }
-.den-divider { width:100%; height:1px; background:var(--border); margin:10px 0; opacity:0.8; }
+.den-subtitle {
+  font-size:0.55rem; color:var(--text3); letter-spacing:4px;
+  text-transform:uppercase; margin-top:6px;
+  font-family:'Space Grotesk',sans-serif; font-weight:500;
+}
+.den-divider {
+  width:100%; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,107,0,0.3),transparent);
+  margin:12px 0;
+}
 .den-corner { display:none; }
 
 /* ── BOTTOM NAV — see st.radio nav below ── */
 
 /* ── STAT TILES ── */
 .stat-grid { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
-.stat-tile { flex:1; min-width:72px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:12px 8px; text-align:center; }
-.stat-num { font-size:1.6rem; font-weight:800; color:var(--white); line-height:1; }
-.stat-label { font-size:0.58rem; color:var(--text3); letter-spacing:0.8px; text-transform:uppercase; margin-top:3px; }
+.stat-tile {
+  flex:1; min-width:72px;
+  background:linear-gradient(135deg,var(--bg2),var(--bg3));
+  border:1px solid var(--border);
+  border-radius:var(--radius); padding:14px 8px; text-align:center;
+  position:relative; overflow:hidden;
+}
+.stat-tile::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,transparent,var(--orange),transparent);
+  opacity:0; transition:opacity 0.2s;
+}
+.stat-tile:hover::after { opacity:1; }
+.stat-num { font-size:1.6rem; font-weight:900; color:var(--white); line-height:1; font-family:'Outfit',sans-serif; }
+.stat-label { font-size:0.55rem; color:var(--text3); letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
 
 /* ── PICK CARD ── */
 .pick-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:0; margin:10px 0; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.3); position:relative; }
@@ -163,27 +199,57 @@ header[data-testid="stHeader"] { display: none !important; }
 .parlay-connector { text-align:center; color:var(--orange); font-size:0.65rem; letter-spacing:2px; padding:2px 0; }
 
 /* ── GAME ROW ── */
-.game-row { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:10px 13px; margin:5px 0; transition:border-color 0.2s; }
-.game-row:hover { border-color:rgba(255,107,0,0.35); }
-.game-row-ev { border-color:rgba(48,209,88,0.3); }
-.game-title { font-size:0.88rem; font-weight:700; color:var(--white); }
-.game-meta  { font-size:0.72rem; color:var(--text3); margin-top:2px; }
+.game-row {
+  background:linear-gradient(135deg,var(--bg2) 0%,var(--bg3) 100%);
+  border:1px solid var(--border);
+  border-radius:var(--radius); padding:12px 14px; margin:5px 0;
+  transition:all 0.2s; position:relative; overflow:hidden;
+}
+.game-row::before {
+  content:''; position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:var(--border2); border-radius:3px 0 0 3px;
+  transition:background 0.2s;
+}
+.game-row:hover { border-color:rgba(255,107,0,0.3); }
+.game-row:hover::before { background:var(--orange); }
+.game-row-ev { border-color:rgba(0,200,150,0.25); }
+.game-row-ev::before { background:var(--green); }
+.game-title { font-size:0.88rem; font-weight:700; color:var(--white); font-family:'Outfit',sans-serif; }
+.game-meta  { font-size:0.7rem; color:var(--text3); margin-top:2px; }
 
 /* ── PROB BARS ── */
-.bar-wrap { margin:4px 0; }
-.bar-row  { display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; }
-.bar-team { font-size:0.72rem; color:var(--text2); }
-.bar-pct  { font-size:0.72rem; font-weight:700; }
-.bar-bg   { background:rgba(255,255,255,0.06); border-radius:12px; height:5px; }
-.bar-fill { height:5px; border-radius:12px; }
+.bar-wrap { margin:6px 0; }
+.bar-row  { display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; }
+.bar-team { font-size:0.7rem; color:var(--text2); font-weight:500; }
+.bar-pct  { font-size:0.7rem; font-weight:800; font-family:'Outfit',sans-serif; }
+.bar-bg   { background:rgba(255,255,255,0.05); border-radius:12px; height:6px; overflow:hidden; }
+.bar-fill { height:6px; border-radius:12px; transition:width 0.4s ease; }
 
 /* ── SECTION HEADING ── */
-.section-heading { font-size:0.68rem; font-weight:800; color:var(--text3); letter-spacing:2px; text-transform:uppercase; margin:16px 0 8px; display:flex; align-items:center; gap:10px; }
-.section-heading::after { content:''; flex:1; height:1px; background:var(--border); }
+.section-heading {
+  font-size:0.6rem; font-weight:800; color:var(--orange);
+  letter-spacing:3px; text-transform:uppercase;
+  margin:18px 0 10px; display:flex; align-items:center; gap:10px;
+  font-family:'Space Grotesk',sans-serif;
+}
+.section-heading::before { content:''; width:3px; height:12px; background:var(--orange); border-radius:2px; flex-shrink:0; }
+.section-heading::after { content:''; flex:1; height:1px; background:linear-gradient(90deg,rgba(255,107,0,0.3),transparent); }
 
 /* ── BANNERS ── */
-.warn-banner { background:rgba(255,214,10,0.08); border:1px solid rgba(255,214,10,0.2); border-radius:var(--radius-sm); padding:10px 13px; font-size:0.8rem; color:var(--yellow); margin:8px 0; }
-.demo-banner { background:rgba(255,69,58,0.08); border:1px solid rgba(255,69,58,0.25); border-radius:var(--radius-sm); padding:10px 13px; font-size:0.8rem; color:var(--red); margin:8px 0; }
+.warn-banner {
+  background:linear-gradient(135deg,rgba(255,214,10,0.06),rgba(255,107,0,0.04));
+  border:1px solid rgba(255,214,10,0.2);
+  border-left:3px solid var(--yellow);
+  border-radius:var(--radius-sm); padding:10px 14px; font-size:0.78rem;
+  color:var(--yellow); margin:8px 0;
+}
+.demo-banner {
+  background:linear-gradient(135deg,rgba(255,59,48,0.06),rgba(255,59,48,0.02));
+  border:1px solid rgba(255,59,48,0.2);
+  border-left:3px solid var(--red);
+  border-radius:var(--radius-sm); padding:10px 14px; font-size:0.78rem;
+  color:var(--red); margin:8px 0;
+}
 
 /* ── SIDEBAR LEGACY (hidden) ── */
 .sidebar-logo, .sidebar-sub { display:none; }
@@ -197,18 +263,49 @@ header[data-testid="stHeader"] { display: none !important; }
 .stTabs [data-baseweb="tab-panel"] { background:transparent !important; padding-top:12px !important; }
 
 /* ── BUTTONS ── */
-.stButton > button, button[data-testid="baseButton-secondary"], button[data-testid="baseButton-secondaryFormSubmit"], button[kind="secondary"], [data-testid="stBaseButton-secondary"], div[data-testid="stButton"] > button {
-  background:var(--bg3) !important; color:var(--text) !important;
-  font-family:'Outfit',sans-serif !important; font-size:0.82rem !important; font-weight:600 !important;
-  letter-spacing:0.3px !important; border:1px solid var(--border) !important;
-  padding:9px 16px !important; border-radius:var(--radius-sm) !important;
-  width:100% !important; cursor:pointer !important; transition:all 0.15s !important; box-shadow:none !important;
+.stButton > button,
+button[data-testid="baseButton-secondary"],
+div[data-testid="stButton"] > button {
+  background:var(--bg3) !important;
+  color:var(--text) !important;
+  font-family:'Outfit',sans-serif !important;
+  font-size:0.82rem !important;
+  font-weight:700 !important;
+  letter-spacing:0.3px !important;
+  border:1px solid var(--border2) !important;
+  padding:10px 18px !important;
+  border-radius:var(--radius-sm) !important;
+  width:100% !important;
+  cursor:pointer !important;
+  transition:all 0.15s !important;
+  box-shadow:none !important;
+  position:relative !important;
+  overflow:hidden !important;
 }
-.stButton > button:hover, button[data-testid="baseButton-secondary"]:hover, div[data-testid="stButton"] > button:hover {
-  background:rgba(255,107,0,0.12) !important; border-color:rgba(255,107,0,0.45) !important; color:var(--orange) !important;
+.stButton > button::after,
+div[data-testid="stButton"] > button::after {
+  content:'' !important;
+  position:absolute !important;
+  bottom:0 !important; left:0 !important; right:0 !important;
+  height:1px !important;
+  background:linear-gradient(90deg,transparent,rgba(255,107,0,0.4),transparent) !important;
+  opacity:0 !important;
+  transition:opacity 0.15s !important;
 }
-.stButton > button[kind="primary"], button[data-testid="baseButton-primary"], div[data-testid="stButton"] > button[kind="primary"] {
-  background:linear-gradient(135deg,var(--orange),var(--orange2)) !important; color:#fff !important; border:none !important; font-weight:700 !important;
+.stButton > button:hover::after,
+div[data-testid="stButton"] > button:hover::after { opacity:1 !important; }
+.stButton > button:hover,
+div[data-testid="stButton"] > button:hover {
+  background:rgba(255,107,0,0.10) !important;
+  border-color:rgba(255,107,0,0.4) !important;
+  color:var(--orange) !important;
+}
+.stButton > button[kind="primary"],
+button[data-testid="baseButton-primary"],
+div[data-testid="stButton"] > button[kind="primary"] {
+  background:linear-gradient(135deg,#FF6B00,#FF8C00) !important;
+  color:#fff !important; border:none !important; font-weight:800 !important;
+  box-shadow:0 4px 16px rgba(255,107,0,0.3) !important;
 }
 .stDownloadButton > button { background:var(--bg3) !important; color:var(--orange) !important; border:1px solid rgba(255,107,0,0.3) !important; border-radius:var(--radius-sm) !important; }
 .stDownloadButton > button:hover { background:rgba(255,107,0,0.1) !important; border-color:rgba(255,107,0,0.6) !important; }
@@ -226,18 +323,49 @@ div[data-testid="stSelectbox"] label, div[data-testid="stTextInput"] label, div[
   color:var(--orange) !important; font-family:'Outfit',sans-serif !important; font-size:0.75rem !important; font-weight:600 !important; letter-spacing:0.3px !important;
 }
 
-/* ── EXPANDERS ── */
-[data-testid="stExpander"] > details > summary, .streamlit-expanderHeader, [data-testid="stExpander"] summary {
-  background:var(--card) !important; color:var(--text) !important; border:1px solid var(--border) !important;
-  border-radius:var(--radius) !important; padding:10px 16px !important; font-family:'Outfit',sans-serif !important; font-weight:600 !important;
+/* ── EXPANDERS — sportsbook card style ── */
+[data-testid="stExpander"] {
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+  margin:6px 0 !important;
 }
-[data-testid="stExpander"] > details[open] > summary { border-radius:var(--radius) var(--radius) 0 0 !important; background:var(--card2) !important; }
-[data-testid="stExpander"] summary:hover { background:var(--card2) !important; border-color:rgba(255,107,0,0.3) !important; }
-[data-testid="stExpander"] summary svg { fill:var(--text3) !important; color:var(--text3) !important; }
-[data-testid="stExpander"] > details > div, [data-testid="stExpander"] .streamlit-expanderContent {
-  background:var(--card) !important; border:1px solid var(--border) !important; border-top:none !important; border-radius:0 0 var(--radius) var(--radius) !important; padding:12px 10px !important;
+[data-testid="stExpander"] > details > summary,
+.streamlit-expanderHeader,
+[data-testid="stExpander"] summary {
+  background:linear-gradient(135deg,rgba(255,107,0,0.06) 0%,var(--bg2) 100%) !important;
+  color:var(--text) !important;
+  border:1px solid rgba(255,107,0,0.18) !important;
+  border-radius:var(--radius) !important;
+  padding:12px 16px !important;
+  font-family:'Outfit',sans-serif !important;
+  font-weight:700 !important;
+  font-size:0.85rem !important;
+  letter-spacing:-0.1px !important;
+  transition:all 0.15s !important;
 }
-[data-testid="stExpander"] { background:transparent !important; border:none !important; box-shadow:none !important; }
+[data-testid="stExpander"] > details[open] > summary {
+  border-radius:var(--radius) var(--radius) 0 0 !important;
+  background:linear-gradient(135deg,rgba(255,107,0,0.12) 0%,var(--bg2) 100%) !important;
+  border-color:rgba(255,107,0,0.35) !important;
+  border-bottom-color:transparent !important;
+}
+[data-testid="stExpander"] summary:hover {
+  background:linear-gradient(135deg,rgba(255,107,0,0.10) 0%,var(--bg3) 100%) !important;
+  border-color:rgba(255,107,0,0.4) !important;
+}
+[data-testid="stExpander"] summary svg {
+  fill:var(--orange) !important;
+  color:var(--orange) !important;
+}
+[data-testid="stExpander"] > details > div,
+[data-testid="stExpander"] .streamlit-expanderContent {
+  background:var(--bg2) !important;
+  border:1px solid rgba(255,107,0,0.18) !important;
+  border-top:none !important;
+  border-radius:0 0 var(--radius) var(--radius) !important;
+  padding:0 !important;
+}
 
 /* ── METRICS ── */
 div[data-testid="stMetric"] { background:var(--card) !important; border-radius:var(--radius) !important; padding:12px !important; border:1px solid var(--border) !important; }
@@ -4972,391 +5100,319 @@ def bar(pct, color, label):
       <div class="bar-bg"><div class="bar-fill" style="width:{min(pct,100):.1f}%;background:{color}"></div></div>
     </div>"""
 
+def _team_logo_url(team_id, league, size=40):
+    """Return ESPN CDN logo URL for a team. Falls back to empty string."""
+    if not team_id: return ""
+    try:
+        lg = LEAGUES.get(league, {})
+        sport  = lg.get("sport", "soccer")
+        slug   = lg.get("league","")
+        return (f"https://a.espncdn.com/i/teamlogos/{sport}/500/{team_id}.png")
+    except:
+        return ""
+
+def _logo_img(team_id, league, size=44):
+    url = _team_logo_url(team_id, league, size)
+    s = str(size)
+    if url:
+        onerr = "this.style.display='none'"
+        sty = "border-radius:50%;object-fit:cover;background:#1c1c1e;border:1.5px solid rgba(255,255,255,0.08)"
+        return '<img src="' + url + '" width="' + s + '" height="' + s + '" style="' + sty + '" onerror="' + onerr + '">'
+    return '<div style="width:' + s + 'px;height:' + s + 'px;border-radius:50%;background:rgba(255,255,255,0.06);border:1.5px solid rgba(255,255,255,0.1)"></div>'
+
 def render_pick_card(r, rank=None):
-    """Render pick card - all HTML built via string concat, no ternaries in f-strings."""
+    """Render pick card — diseño tipo sportsbook app con logos, matchup centrado y odds."""
     sim = r["sim"]
     bs  = sim.get("best_single")
     dq  = sim["data_quality"]
-    if not bs:
-        return ""
+    if not bs: return ""
 
-    prob_pct  = bs["prob"] * 100
-    ev_val    = bs["ev"]
-    kelly_pct = bs["kelly"]
+    # ── Datos base ────────────────────────────────────────────────────────────
+    prob_pct  = bs["prob"] * 100 if bs["prob"] <= 1 else bs["prob"]
+    ev_val    = bs["ev"]   or 0
+    kelly_pct = bs["kelly"] or 0
+    mkt       = bs["market"]
+    lbl       = bs["label"]
+    ml_str    = bs.get("ml","") or ""
+    sg        = LEAGUES.get(r.get("league",""), {}).get("group","Soccer")
 
-    impl = ml_to_prob(bs["ml"]) * 100 if bs["market"] == "ML" and bs["ml"] else 0
-    eg   = edge(bs["prob"], bs["ml"]) if bs["market"] == "ML" else 0
+    # ── IDs y logos ───────────────────────────────────────────────────────────
+    ht_id = r.get("home_team_id","")
+    at_id = r.get("away_team_id","")
+    league = r.get("league","")
+    hl = _logo_img(ht_id, league, 52)
+    al = _logo_img(at_id, league, 52)
 
-    impl_html = ""
-    if impl > 0:
-        impl_html = ('<div class="stat-item"><div class="stat-item-val val-muted">'
-                     + str(round(impl, 1)) + '%</div>'
-                     '<div class="stat-item-lbl">Impl. Casa</div></div>')
+    # ── Estado del partido ────────────────────────────────────────────────────
+    is_live   = r.get("state","") == "in"
+    h_score   = r.get("home_score","")
+    a_score   = r.get("away_score","")
+    has_score = is_live and h_score != "" and a_score != ""
+    score_mid = (f'<div style="font-size:2rem;font-weight:900;color:#fff;letter-spacing:-1px;'
+                 f'font-family:Outfit,sans-serif">{a_score}:{h_score}</div>'
+                 f'<div style="font-size:0.55rem;color:#FF4444;font-weight:700;'
+                 f'letter-spacing:2px;text-transform:uppercase;margin-top:2px">● EN VIVO</div>'
+                 if has_score else
+                 f'<div style="font-size:0.58rem;color:#6B7280;text-transform:uppercase;'
+                 f'letter-spacing:1.5px;font-weight:600">'
+                 f'{league_label(r.get("league",""))}</div>'
+                 f'<div style="font-size:0.52rem;color:#3a3a3c;margin-top:3px">'
+                 f'{r.get("date","")[:10] if r.get("date") else ""}</div>')
 
-    edge_html = ""
-    if eg > 0:
-        edge_html = ('<div class="stat-item"><div class="stat-item-val val-blue">+'
-                     + str(eg) + '%</div>'
-                     '<div class="stat-item-lbl">Edge</div></div>')
+    # ── Odds display ──────────────────────────────────────────────────────────
+    h_ml  = sim.get("home_ml","")  or ""
+    a_ml  = sim.get("away_ml","")  or ""
+    d_ml  = ""  # draw only for soccer
+    h_dec = sim.get("model_home_dec","") or (f"{(1/ml_to_prob(h_ml)):.2f}" if h_ml else "—")
+    a_dec = sim.get("model_away_dec","") or (f"{(1/ml_to_prob(a_ml)):.2f}" if a_ml else "—")
 
-    conf_html  = conf_badge(bs["ev"], dq)
-    ml_display = "@ " + str(bs["ml"]) if bs["ml"] else ""
+    # Determinar qué odds resaltar según el pick
+    _pick_is_home = r.get("home_team","") in lbl
+    _pick_is_away = r.get("away_team","") in lbl
+    _pick_is_draw = mkt == "DC" or "Empate" in lbl
 
-    # ── Momios del modelo vs casa ─────────────────────────────────────────────
-    _mh_ml   = sim.get("model_home_ml", "")
-    _ma_ml   = sim.get("model_away_ml", "")
-    _mh_fair = sim.get("model_home_fair", "")
-    _ma_fair = sim.get("model_away_fair", "")
-    _md_ml   = sim.get("model_draw_ml", "")
-    _e_home  = sim.get("edge_home_pp")
-    _e_away  = sim.get("edge_away_pp")
-    _m_ou    = sim.get("model_ou_total")
+    def _odds_cell(dec, label, is_pick):
+        bg   = "rgba(255,107,0,0.18)" if is_pick else "rgba(255,255,255,0.04)"
+        bdr  = "1.5px solid #FF6B00"  if is_pick else "1px solid rgba(255,255,255,0.07)"
+        clr  = "#FF6B00"              if is_pick else "#AEAEB2"
+        w    = "#fff"                 if is_pick else "#6B7280"
+        fw   = "900" if is_pick else "600"
+        return (f'<div style="flex:1;text-align:center;padding:8px 4px;background:{bg};'
+                f'border-radius:10px;border:{bdr}">'
+                f'<div style="font-size:0.55rem;color:{w};font-weight:600;'
+                f'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">{label}</div>'
+                f'<div style="font-size:1.15rem;font-weight:{fw};color:{clr};'
+                f'font-family:Outfit,sans-serif">{dec}</div>'
+                f'</div>')
 
-    # Línea del modelo para el pick específico
-    if bs["market"] == "ML":
-        _is_home_pick = r.get("home_team","") in bs.get("label","")
-        _model_line = _mh_ml if _is_home_pick else _ma_ml
-        _fair_line  = _mh_fair if _is_home_pick else _ma_fair
-        _pick_edge  = _e_home if _is_home_pick else _e_away
-    elif bs["market"] in ("O/U","BTTS"):
-        _model_line = f"O/U modelo: {_m_ou}" if _m_ou else ""
-        _fair_line  = ""
-        _pick_edge  = None
-    else:
-        _model_line = _mh_ml
-        _fair_line  = _mh_fair
-        _pick_edge  = _e_home
-
-    # HTML del bloque de momios del modelo
-    # Decimales del modelo para el pick
-    if bs["market"] == "ML":
-        _is_home_pick2 = r.get("home_team","") in bs.get("label","")
-        _model_dec  = sim.get("model_home_dec","")  if _is_home_pick2 else sim.get("model_away_dec","")
-        _fair_dec_v = sim.get("model_home_fdec","") if _is_home_pick2 else sim.get("model_away_fdec","")
-    else:
-        _model_dec  = ""
-        _fair_dec_v = ""
-
-    _model_lines_html = ""
-    if _model_line or _fair_line:
-        _edge_color = "#00C896" if (_pick_edge and _pick_edge > 0) else ("#ef4444" if (_pick_edge and _pick_edge < 0) else "#6B7280")
-        _edge_str = f"Edge: {_pick_edge:+.1f}pp" if _pick_edge is not None else ""
-        _model_lines_html = (
-            f'<div style="margin:6px 0;padding:8px 12px;'
-            f'background:rgba(255,214,10,0.06);border:1px solid rgba(255,214,10,0.15);'
-            f'border-radius:10px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">'
-            f'<div style="font-size:0.6rem;color:#6B7280;letter-spacing:1.5px;'
-            f'text-transform:uppercase;width:100%;margin-bottom:2px">🧮 Líneas del Modelo</div>'
+    if sg == "Soccer":
+        d_dec = sim.get("model_draw_dec","") or "—"
+        odds_row = (
+            _odds_cell(a_dec, r.get("away_team","V")[:8], _pick_is_away) +
+            _odds_cell(d_dec, "Empate", _pick_is_draw) +
+            _odds_cell(h_dec, r.get("home_team","L")[:8], _pick_is_home)
         )
-        if _model_dec:
-            _model_lines_html += (
-                f'<div><div style="font-size:1.3rem;font-weight:900;color:#FFD60A;'
-                f'font-family:Outfit,sans-serif">{_model_dec}</div>'
-                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Decimal c/vig</div></div>'
-            )
-        if _fair_dec_v:
-            _model_lines_html += (
-                f'<div><div style="font-size:1.1rem;font-weight:700;color:#86efac">{_fair_dec_v}</div>'
-                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Decimal justo</div></div>'
-            )
-        if _model_line:
-            _model_lines_html += (
-                f'<div><div style="font-size:0.85rem;font-weight:600;color:#AEAEB2">{_model_line}</div>'
-                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Americano c/vig</div></div>'
-            )
-        if bs["ml"]:
-            _model_lines_html += (
-                f'<div><div style="font-size:0.85rem;font-weight:600;color:#636366">{bs["ml"]}</div>'
-                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Casa (ESPN)</div></div>'
-            )
-        if _edge_str:
-            _model_lines_html += (
-                f'<div style="margin-left:auto"><div style="font-size:1.0rem;font-weight:800;'
-                f'color:{_edge_color}">{_edge_str}</div>'
-                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">vs Casa</div></div>'
-            )
-        # Soccer: agregar línea del empate si aplica
-        if sim.get("is_soccer") and _md_ml:
-            _md_fair = sim.get("model_draw_fair","")
-            _model_lines_html += (
-                f'<div style="width:100%;border-top:1px solid rgba(255,255,255,0.05);'
-                f'padding-top:4px;margin-top:2px;display:flex;gap:10px">'
-                f'<span style="font-size:0.65rem;color:#a78bfa">Empate modelo: <b>{_md_ml}</b></span>'
-                f'<span style="font-size:0.65rem;color:#6B7280">({sim.get("draw_pct",0):.1f}% prob · precio justo: {_md_fair})</span>'
-                f'</div>'
-            )
-        # O/U: mostrar línea del modelo vs ESPN
-        if _m_ou and sim.get("ou_line"):
-            _ou_espn = str(sim.get("ou_line","")).lstrip("~")
-            try:
-                _ou_diff = round(float(_m_ou) - float(_ou_espn), 1)
-                _ou_diff_str = f"{_ou_diff:+.1f} vs ESPN" if _ou_diff != 0 else "= ESPN"
-                _ou_color = "#00C896" if _ou_diff > 0.3 else ("#ef4444" if _ou_diff < -0.3 else "#6B7280")
-            except:
-                _ou_diff_str = ""; _ou_color = "#6B7280"
-            _model_lines_html += (
-                f'<div style="width:100%;border-top:1px solid rgba(255,255,255,0.05);'
-                f'padding-top:4px;margin-top:2px;display:flex;gap:10px">'
-                f'<span style="font-size:0.65rem;color:#ff6a00">O/U modelo: <b>{_m_ou}</b></span>'
-                f'<span style="font-size:0.65rem;color:{_ou_color}">{_ou_diff_str}</span>'
-                f'<span style="font-size:0.65rem;color:#6B7280">ESPN: {_ou_espn}</span>'
-                f'</div>'
-            )
-        _model_lines_html += '</div>'
-    # ─────────────────────────────────────────────────────────────────────────
-    is_live    = r.get("state", "") == "in"
-    live_html  = '<span class="market-chip chip-btts">🔴 EN VIVO</span>' if is_live else ""
-    rank_html  = ""
-    if rank:
-        rank_html = '<span style="font-family:Inter,sans-serif;color:#6B7280;font-size:0.896rem">#' + str(rank) + '</span> '
+    else:
+        odds_row = (
+            _odds_cell(a_dec, r.get("away_team","V")[:9], _pick_is_away) +
+            _odds_cell(h_dec, r.get("home_team","L")[:9], _pick_is_home)
+        )
 
-    score_html = ""
-    if is_live and r.get("home_score") and r.get("away_score"):
-        score_html = (' <span style="color:#00C896;font-weight:700">'
-                      + str(r["away_score"]) + " - " + str(r["home_score"]) + "</span>")
+    # ── Pick badge ────────────────────────────────────────────────────────────
+    mkt_colors = {"ML":"#FF6B00","BTTS":"#a78bfa","O/U":"#60a5fa","DC":"#34d399"}
+    mkt_color  = mkt_colors.get(mkt,"#FF6B00")
+    pick_badge = (f'<div style="display:inline-flex;align-items:center;gap:8px;'
+                  f'background:rgba(255,107,0,0.12);border:1.5px solid rgba(255,107,0,0.3);'
+                  f'border-radius:12px;padding:8px 14px;margin:10px 0">'
+                  f'<span style="font-size:0.6rem;font-weight:800;color:{mkt_color};'
+                  f'letter-spacing:1.5px;text-transform:uppercase">{mkt}</span>'
+                  f'<span style="width:1px;height:12px;background:rgba(255,255,255,0.12)"></span>'
+                  f'<span style="font-size:1rem;font-weight:800;color:#fff">{lbl}</span>'
+                  + (f'<span style="font-size:0.85rem;color:#6B7280">{ml_str}</span>' if ml_str else "")
+                  + f'</div>')
 
-    # Goals pills — bigger font, highlight best % with star
+    # ── Stats row ─────────────────────────────────────────────────────────────
+    impl      = ml_to_prob(ml_str)*100 if ml_str else 0
+    eg        = edge(bs["prob"] if bs["prob"]<=1 else bs["prob"]/100, ml_str) if ml_str else 0
+    _e_pp     = sim.get("edge_home_pp") if _pick_is_home else sim.get("edge_away_pp")
+    _e_color  = "#00C896" if (_e_pp and _e_pp > 0) else ("#ef4444" if (_e_pp and _e_pp < 0) else "#6B7280")
+
+    def _stat(val, lbl_s, color="#E8E8E8"):
+        return (f'<div style="text-align:center;padding:0 6px">'
+                f'<div style="font-size:1.05rem;font-weight:800;color:{color};'
+                f'font-family:Outfit,sans-serif;line-height:1">{val}</div>'
+                f'<div style="font-size:0.52rem;color:#555;text-transform:uppercase;'
+                f'letter-spacing:0.8px;margin-top:2px">{lbl_s}</div>'
+                f'</div>')
+
+    stats_html = (
+        '<div style="display:flex;justify-content:center;gap:0;'
+        'border-top:1px solid rgba(255,255,255,0.05);'
+        'border-bottom:1px solid rgba(255,255,255,0.05);'
+        'padding:10px 0;margin:6px 0">'
+        + _stat(f"{prob_pct:.1f}%", "Prob MC", "#00C896")
+        + '<div style="width:1px;background:rgba(255,255,255,0.06);margin:0 2px"></div>'
+        + _stat(f"+{ev_val:.1f}" if ev_val >= 0 else f"{ev_val:.1f}", "EV/$100",
+                "#00C896" if ev_val >= 0 else "#ef4444")
+        + '<div style="width:1px;background:rgba(255,255,255,0.06);margin:0 2px"></div>'
+        + (f'<div style="text-align:center;padding:0 6px">'
+           f'<div style="font-size:1.05rem;font-weight:800;color:{_e_color};'
+           f'font-family:Outfit,sans-serif;line-height:1">'
+           f'{f"{_e_pp:+.1f}pp" if _e_pp is not None else "—"}</div>'
+           f'<div style="font-size:0.52rem;color:#555;text-transform:uppercase;'
+           f'letter-spacing:0.8px;margin-top:2px">Edge</div>'
+           f'</div>')
+        + '<div style="width:1px;background:rgba(255,255,255,0.06);margin:0 2px"></div>'
+        + _stat(f"{kelly_pct*100:.1f}%", "Kelly 25%", "#a78bfa")
+        + '<div style="width:1px;background:rgba(255,255,255,0.06);margin:0 2px"></div>'
+        + _stat(f"{dq:.0f}%", "DQ", "#60a5fa")
+        + '</div>'
+    )
+
+    # ── Líneas del modelo ─────────────────────────────────────────────────────
+    _mdec  = sim.get("model_home_dec","") if _pick_is_home else sim.get("model_away_dec","")
+    _fdec  = sim.get("model_home_fdec","") if _pick_is_home else sim.get("model_away_fdec","")
+    lines_html = ""
+    if _mdec or _fdec:
+        lines_html = (
+            '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;'
+            'border-bottom:1px solid rgba(255,255,255,0.04)">'
+            '<span style="font-size:0.55rem;color:#555;letter-spacing:1px;'
+            'text-transform:uppercase;flex-shrink:0">🧮 Modelo</span>'
+            + (f'<span style="font-size:0.9rem;font-weight:800;color:#FFD60A;'
+               f'font-family:Outfit,sans-serif">{_mdec}</span>'
+               f'<span style="font-size:0.6rem;color:#555">c/vig</span>' if _mdec else "")
+            + (f'<span style="font-size:0.82rem;font-weight:600;color:#86efac">{_fdec}</span>'
+               f'<span style="font-size:0.6rem;color:#555">justo</span>' if _fdec else "")
+            + (f'<span style="font-size:0.78rem;color:#555">{ml_str}</span>'
+               f'<span style="font-size:0.6rem;color:#3a3a3c">ESPN</span>' if ml_str else "")
+            + '</div>'
+        )
+
+    # ── Señales extra: consenso, lesiones, fatiga ─────────────────────────────
+    consensus_score = sim.get("consensus_score", 0) or 0
+    consensus_label = sim.get("consensus_label","") or ""
+    signals_for     = sim.get("signals_for",[])
+    signals_against = sim.get("signals_against",[])
+    fatigue_note    = sim.get("fatigue_note","") or ""
+    injury_note     = sim.get("injury_note","") or ""
+
+    signals_html = ""
+    if consensus_label or signals_for or fatigue_note or injury_note:
+        _c_color = "#00C896" if consensus_score > 0.2 else ("#ef4444" if consensus_score < -0.2 else "#C9A84C")
+        parts = []
+        if consensus_label:
+            parts.append(f'<span style="color:{_c_color};font-weight:700">{consensus_label}</span>')
+        for s in (signals_for or [])[:2]:
+            parts.append(f'<span style="color:#86efac">✓ {s}</span>')
+        for s in (signals_against or [])[:1]:
+            parts.append(f'<span style="color:#ef4444">✗ {s}</span>')
+        if fatigue_note:
+            parts.append(f'<span style="color:#f97316">⚡ {fatigue_note}</span>')
+        if injury_note:
+            parts.append(f'<span style="color:#fbbf24">🏥 {injury_note[:40]}</span>')
+        signals_html = (
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;'
+            'border-bottom:1px solid rgba(255,255,255,0.04)">'
+            + "".join(f'<span style="font-size:0.6rem;padding:2px 7px;'
+                      f'background:rgba(255,255,255,0.04);border-radius:20px">{p}</span>'
+                      for p in parts)
+            + '</div>'
+        )
+
+    # ── Form, goals, scoring trend ────────────────────────────────────────────
+    form_html  = ""
+    hf = sim.get("home_form_str","") or r.get("home_form","")
+    af = sim.get("away_form_str","") or r.get("away_form","")
+    if hf or af:
+        def _form_dots(f_str):
+            if not f_str: return ""
+            dots = ""
+            for c in str(f_str)[:5]:
+                if c == "W":   dots += '<span style="color:#00C896;font-size:0.7rem">●</span>'
+                elif c == "L": dots += '<span style="color:#ef4444;font-size:0.7rem">●</span>'
+                elif c == "D": dots += '<span style="color:#C9A84C;font-size:0.7rem">●</span>'
+                else:          dots += '<span style="color:#3a3a3c;font-size:0.7rem">●</span>'
+            return dots
+        form_html = (
+            '<div style="display:flex;gap:12px;align-items:center;padding:4px 0">'
+            f'<span style="font-size:0.55rem;color:#555;text-transform:uppercase;'
+            f'letter-spacing:1px">Forma</span>'
+            f'<span style="font-size:0.6rem;color:#6B7280">{r.get("away_team","")[:10]}</span>'
+            f'<span style="display:flex;gap:2px">{_form_dots(af)}</span>'
+            f'<span style="color:#3a3a3c;font-size:0.6rem">·</span>'
+            f'<span style="font-size:0.6rem;color:#6B7280">{r.get("home_team","")[:10]}</span>'
+            f'<span style="display:flex;gap:2px">{_form_dots(hf)}</span>'
+            '</div>'
+        )
+
+    lam_rh = sim.get("lam_real_h"); lam_ra = sim.get("lam_real_a"); lam_lg = sim.get("lam_league")
+    trend_html = ""
+    if lam_rh and lam_ra and lam_lg:
+        total = lam_rh + lam_ra
+        delta = total - lam_lg
+        clr = "#00C896" if abs(delta)/max(0.1,lam_lg) < 0.05 else ("#f97316" if abs(delta)/max(0.1,lam_lg) > 0.15 else "#C9A84C")
+        unit = "pts" if sg in ("Basketball","Football") else ("runs" if sg=="Baseball" else "goles")
+        trend_html = (f'<div style="font-size:0.6rem;color:{clr};padding:3px 0">'
+                      f'📈 λ {total:.1f} vs liga {lam_lg:.1f} '
+                      f'({delta:+.1f} {unit})</div>')
+
     goals_html = ""
     if sim.get("use_goals") and sim.get("p_btts") is not None:
-        # Find best probability among all goal markets to highlight it
-        goal_entries = []
-        if sim.get("p_btts") is not None and sim.get("btts_ev") is not None:
-            goal_entries.append(("BTTS", sim["p_btts"], sim["btts_ev"]))
-        if sim.get("p_o25") is not None:
-            goal_entries.append(("O2.5", sim["p_o25"], sim.get("o25_ev") or 0))
-        if sim.get("p_u25") is not None:
-            goal_entries.append(("U2.5", sim["p_u25"], sim.get("u25_ev") or 0))
-        if sim.get("p_o35") is not None:
-            goal_entries.append(("O3.5", sim["p_o35"], sim.get("o35_ev") or 0))
-        # U3.5 not shown
-        # Best = highest probability (most likely outcome)
-        best_pct_label = max(goal_entries, key=lambda x: x[1])[0] if goal_entries else ""
-        pills = []
-        for lbl, pct, ev_v in goal_entries:
-            is_best = lbl == best_pct_label
-            if ev_v is not None:
-                ev_s = ("+" if ev_v >= 0 else "") + str(round(ev_v, 1))
-                c = "#00C896" if ev_v > 0 else ("#C9A84C" if lbl == "O2.5" else "#6B7E6E")
-                star = "⭐ " if is_best else ""
-                fw = "font-weight:700;" if is_best else ""
-                pills.append('<span style="color:' + c + ';font-size:0.986rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b> (EV ' + ev_s + ')</span>')
-            else:
-                c = "#8ab4a0" if is_best else "#6B7E6E"
-                star = "⭐ " if is_best else ""
-                fw = "font-weight:700;" if is_best else ""
-                pills.append('<span style="color:' + c + ';font-size:0.986rem;' + fw + '">' + star + lbl + ' <b>' + str(pct) + '%</b></span>')
-        if pills:
-            goals_html = ('<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;'
-                          'padding-top:6px;border-top:1px solid rgba(255,255,255,0.05)">'
-                          + " &nbsp;|&nbsp; ".join(pills) + "</div>")
-
-    dq_html   = dq_warn(dq)
-    chip_html = chip(bs["market"])
-    _status_raw = r.get("status_detail", "").replace("<","").replace(">","").replace("/","").strip()
-    # Si ESPN devuelve "Scheduled" o vacío, mostrar hora CDMX desde campo date
-    if not _status_raw or _status_raw.lower() in ("scheduled", "cancelado", "postponed"):
-        _raw_dt = r.get("date","")
-        if _raw_dt:
-            try:
-                from datetime import timezone as _tz_s, timedelta as _td_s
-                _u_s = datetime.strptime(_raw_dt[:19].replace("T"," "), "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_s.utc)
-                _status_raw = (_u_s - _td_s(hours=6)).strftime("%H:%M") + " CDMX"
-            except: pass
-    status = _status_raw
-
-    # Recent form badges
-    form_html = ""
-    hf = r.get("home_form"); af = r.get("away_form")
-    def form_badge(f, team):
-        if f is None: return ""
-        pct = int(f * 100)
-        c = "#00C896" if pct >= 60 else ("#C9A84C" if pct >= 40 else "#ef4444")
-        arrow = "▲" if pct >= 60 else ("▬" if pct >= 40 else "▼")
-        return f'<span style="font-size:0.806rem;color:{c};margin-right:8px">{arrow} {team} {pct}% forma</span>'
-    if hf is not None or af is not None:
-        form_html = ('<div style="margin-top:5px;opacity:0.85">' +
-                     form_badge(hf, r.get("home_team","Local")) +
-                     form_badge(af, r.get("away_team","Visita")) +
-                     '<span style="font-size:0.728rem;color:#444444">· últimos 5 juegos</span></div>')
-    elif r.get("_form_unavailable"):
-        form_html = '<div style="margin-top:5px;opacity:0.5;font-size:0.728rem;color:#444444">📡 Forma reciente no disponible (ESPN sin historial para esta liga)</div>' 
-
-    # ── AI Sport Analyst (only for top picks to save API calls) ──────────────
-    ai_html = ""
-    sport_group = LEAGUES.get(r["league"], {}).get("group", "Soccer")
-    ai_text = get_ai_analysis(
-        away_team=r["away_team"], home_team=r["home_team"],
-        league=r["league"], sport_group=sport_group,
-        away_rec=r.get("away_record",""), home_rec=r.get("home_record",""),
-        best_label=bs["label"], ev=ev_val, prob_pct=prob_pct,
-        home_pct=sim.get("home_pct", 50), away_pct=sim.get("away_pct", 50),
-        draw_pct=sim.get("draw_pct", 0), dq=dq,
-    )
-    if ai_text:
-        sport_icon = {"Basketball":"🏀","Soccer":"⚽","Football":"🏈","Hockey":"🏒","Baseball":"⚾"}.get(sport_group,"🎯")
-        ai_html = (
-            '<div style="margin-top:10px;padding:10px 14px;'
-            'background:rgba(201,168,76,0.06);border-left:3px solid rgba(201,168,76,0.5);'
-            'border-radius:0 6px 6px 0">'
-            '<div style="font-family:\'Inter\',sans-serif;font-size:0.728rem;'
-            'color:rgba(201,168,76,0.6);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px">'
-            + sport_icon + ' Análisis ' + sport_group + ' · Claude</div>'
-            '<div style="font-family:\'Inter\',sans-serif;font-size:0.918rem;'
-            'color:#A0A0A0;line-height:1.65">' + ai_text + '</div>'
+        btts = sim.get("p_btts") or 0
+        o25  = sim.get("p_o25") or 0
+        u25  = sim.get("p_u25") or 0
+        goals_html = (
+            '<div style="display:flex;gap:6px;padding:4px 0">'
+            f'<div style="flex:1;text-align:center;padding:5px 4px;'
+            f'background:rgba(167,139,250,0.08);border-radius:8px;'
+            f'border:1px solid rgba(167,139,250,0.15)">'
+            f'<div style="font-size:0.82rem;font-weight:700;color:#a78bfa">{btts:.0f}%</div>'
+            f'<div style="font-size:0.5rem;color:#555;text-transform:uppercase">BTTS</div></div>'
+            f'<div style="flex:1;text-align:center;padding:5px 4px;'
+            f'background:rgba(96,165,250,0.08);border-radius:8px;'
+            f'border:1px solid rgba(96,165,250,0.15)">'
+            f'<div style="font-size:0.82rem;font-weight:700;color:#60a5fa">{o25:.0f}%</div>'
+            f'<div style="font-size:0.5rem;color:#555;text-transform:uppercase">O2.5</div></div>'
+            f'<div style="flex:1;text-align:center;padding:5px 4px;'
+            f'background:rgba(96,165,250,0.05);border-radius:8px;'
+            f'border:1px solid rgba(96,165,250,0.10)">'
+            f'<div style="font-size:0.82rem;font-weight:700;color:#60a5fa">{u25:.0f}%</div>'
+            f'<div style="font-size:0.5rem;color:#555;text-transform:uppercase">U2.5</div></div>'
             '</div>'
         )
 
-    # ── Consensus badge (Signal D) ──────────────────────────────────────────────
-    consensus_html = ""
-    c_label       = sim.get("consensus_label","")
-    c_color       = sim.get("consensus_color","#9ca3af")
-    conflict_note = sim.get("conflict_note","")
-    fatigue_note  = sim.get("fatigue_note","")
-    injury_note   = sim.get("injury_note","")
-    votes_list    = sim.get("consensus_votes",[])
+    # ── Rank badge ────────────────────────────────────────────────────────────
+    rank_html = ""
+    if rank:
+        rank_html = (f'<div style="position:absolute;top:10px;left:12px;'
+                     f'background:rgba(255,107,0,0.15);border:1px solid rgba(255,107,0,0.3);'
+                     f'border-radius:20px;padding:2px 8px;'
+                     f'font-size:0.58rem;font-weight:800;color:#FF6B00"># {rank}</div>')
 
-    if c_label:
-        votes_html = ""
-        if votes_list:
-            vote_parts = []
-            for sig_name, v, detail in votes_list:
-                icon = "✅" if v > 0 else ("❌" if v < 0 else "◾")
-                vote_parts.append(f'<span style="font-size:0.762rem;color:#9ca3af">{icon} {sig_name}: {detail}</span>')
-            votes_html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">' + "".join(vote_parts) + '</div>'
+    live_badge = ""
+    if is_live:
+        live_badge = (f'<div style="position:absolute;top:10px;right:12px;'
+                      f'background:rgba(255,68,68,0.15);border:1px solid rgba(255,68,68,0.3);'
+                      f'border-radius:20px;padding:2px 8px;'
+                      f'font-size:0.58rem;font-weight:800;color:#FF4444">● LIVE</div>')
 
-        conflict_html = ""
-        if conflict_note:
-            conflict_html = (f'<div style="font-size:0.784rem;color:#f97316;margin-top:3px;font-style:italic">'
-                             f'⚠ {conflict_note}</div>')
-        elif fatigue_note:
-            conflict_html = (f'<div style="font-size:0.784rem;color:#60a5fa;margin-top:3px">'
-                             f'{fatigue_note}</div>')
+    conf_html = conf_badge(bs["ev"], dq)
 
-        consensus_html = (
-            f'<div style="margin-top:8px;padding:8px 12px;background:rgba(0,0,0,0.2);'
-            f'border-left:3px solid {c_color};border-radius:0 6px 6px 0">'
-            f'<span style="font-size:0.84rem;font-weight:700;color:{c_color};'
-            f'letter-spacing:1px">{c_label}</span>'
-            + votes_html + conflict_html +
-            '</div>'
-        )
-
-    # ── Injury Report block ──────────────────────────────────────────────────
-    injury_html = ""
-    h_inj = sim.get("home_injuries", [])
-    a_inj = sim.get("away_injuries", [])
-    h_f   = sim.get("home_injury_factor", 1.0)
-    a_f   = sim.get("away_injury_factor", 1.0)
-    _home = r.get("home_team", "Local")
-    _away = r.get("away_team", "Visita")
-
-    def _inj_color(factor):
-        if factor < 0.72: return "#ef4444"
-        if factor < 0.88: return "#f97316"
-        if factor < 0.97: return "#C9A84C"
-        return None
-
-    def _inj_label(factor):
-        if factor < 0.72: return "⛔ Bajas graves"
-        if factor < 0.88: return "⚠ Bajas moderadas"
-        return "ℹ Bajas menores"
-
-    inj_parts = []
-    for team_name, inj_list, factor in [(_home, h_inj, h_f), (_away, a_inj, a_f)]:
-        color = _inj_color(factor)
-        if color is None:
-            continue
-        top_inj = [i for i in inj_list if i.get("impact_score", 0) >= 0.05][:3]
-        if not top_inj:
-            continue
-        names_str = " · ".join(f'{i["name"]} ({i["status"]})' for i in top_inj)
-        sev_lbl   = _inj_label(factor)
-        inj_parts.append(
-            f'<div style="font-size:0.784rem;color:{color};margin-bottom:2px">'
-            f'{sev_lbl} <span style="color:#9ca3af">[{team_name}]</span> {names_str}</div>'
-        )
-
-    if inj_parts:
-        injury_html = (
-            '<div style="margin-top:7px;padding:7px 12px;background:rgba(239,68,68,0.06);'
-            'border-left:3px solid rgba(239,68,68,0.4);border-radius:0 6px 6px 0">'
-            '<div style="font-size:0.728rem;color:rgba(239,68,68,0.6);letter-spacing:2px;'
-            'text-transform:uppercase;margin-bottom:4px">🏥 Injury Report</div>'
-            + "".join(inj_parts) +
-            '</div>'
-        )
-
-    # ── Scoring Trend note (Signal B) ────────────────────────────────────────
-    scoring_trend_html = ""
-    lam_rh = sim.get("lam_real_h"); lam_ra = sim.get("lam_real_a"); lam_lg = sim.get("lam_league")
-    if lam_rh is not None and lam_ra is not None and lam_lg is not None:
-        lam_real_total = lam_rh + lam_ra
-        delta = lam_real_total - lam_lg
-        delta_str = f"+{delta:.1f}" if delta >= 0 else f"{delta:.1f}"
-        # Color thresholds relative to league avg (not absolute) so NBA/NHL/MLB
-        # and soccer all show green/amber/orange at meaningful deviation levels
-        _rel = abs(delta) / max(0.1, lam_lg)
-        color = "#00C896" if _rel < 0.05 else ("#f97316" if _rel > 0.15 else "#C9A84C")
-        # Sport-specific unit and caveat
-        sport_grp_d = LEAGUES.get(r.get("league",""), {}).get("group", "Soccer")
-        unit = "pts" if sport_grp_d in ("Basketball","Football") else ("runs" if sport_grp_d == "Baseball" else "goles")
-        caveat = " ⚠ sin pitcher" if sport_grp_d == "Baseball" else ""
-        scoring_trend_html = (
-            f'<div style="margin-top:5px;font-size:0.762rem;color:{color};opacity:0.85">'
-            f'📈 Scoring trend: λreal={lam_real_total:.1f} vs λliga={lam_lg:.1f} '
-            f'({delta_str} {unit} vs promedio{caveat})</div>'
-        )
-
-    return (
-        '<div class="pick-card">'
-          '<div class="pick-header">'
-            '<div>' + rank_html
-              + '<span class="pick-matchup">' + r["away_team"] + ' @ ' + r["home_team"] + score_html + '</span>'
-            '</div>'
-            '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
-              + live_html
-              + '<span class="pick-league-badge">' + league_label(r["league"]) + '</span>'
-              + dq_html
-            + '</div>'
-          '</div>'
-          '<div class="pick-body">'
-            '<div style="margin-bottom:4px">' + chip_html
-              + '<span style="color:#6B7280;font-size:0.806rem;margin-left:6px">' + status + '</span>'
-            '</div>'
-            '<div class="pick-action">'
-              '<span class="pick-action-arrow">&#9658;</span>'
-              ' <span>' + bs["label"] + '</span>'
-              ' <span style="font-size:1.12rem;color:#6B7280">' + ml_display + '</span>'
-            '</div>'
-            '<div class="stats-row">'
-              '<div class="stat-item">'
-                '<div class="stat-item-val val-green">' + str(round(prob_pct, 1)) + '%</div>'
-                '<div class="stat-item-lbl">Prob. Sim.</div>'
-              '</div>'
-              + impl_html + edge_html
-              + '<div class="stat-item">'
-                '<div class="stat-item-val val-gold">+' + str(round(ev_val, 1)) + '</div>'
-                '<div class="stat-item-lbl">EV / $100</div>'
-              '</div>'
-              '<div class="stat-item">'
-                '<div class="stat-item-val val-purple">' + str(round(kelly_pct * 100, 1)) + '%</div>'
-                '<div class="stat-item-lbl">Kelly 25%</div>'
-              '</div>'
-              '<div class="stat-item">'
-                '<div class="stat-item-val" style="font-size:1.008rem">' + conf_html + '</div>'
-                '<div class="stat-item-lbl">Confianza</div>'
-              '</div>'
-            '</div>'
-            + _model_lines_html
-            + form_html
-            + goals_html
-            + consensus_html
-            + scoring_trend_html
-            + injury_html
-            + ai_html
-          + '</div>'
-        '</div>'
-    )
+    out = ""
+    out += f'<div style="background:#141416;border:1px solid rgba(255,255,255,0.07);border-radius:20px;overflow:hidden;margin:10px 0;position:relative;box-shadow:0 4px 24px rgba(0,0,0,0.4)">'
+    out += f'<div style="height:3px;background:linear-gradient(90deg,{mkt_color},{mkt_color}44)"></div>'
+    out += rank_html + live_badge
+    out += f'<div style="padding:16px 14px 10px;display:flex;align-items:center;gap:0">'
+    out += f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px">'
+    out += al
+    out += f'<div style="font-size:0.65rem;font-weight:700;color:#E8E8E8;text-align:center;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{r.get("away_team","")}</div>'
+    out += f'</div>'
+    out += f'<div style="flex:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 4px;text-align:center">'
+    out += score_mid
+    out += f'</div>'
+    out += f'<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px">'
+    out += hl
+    out += f'<div style="font-size:0.65rem;font-weight:700;color:#E8E8E8;text-align:center;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{r.get("home_team","")}</div>'
+    out += f'</div>'
+    out += f'</div>'
+    out += f'<div style="display:flex;gap:6px;padding:0 14px 10px">'
+    out += odds_row
+    out += f'</div>'
+    out += f'<div style="padding:0 14px;text-align:center">'
+    out += pick_badge
+    out += f'</div>'
+    out += f'<div style="padding:0 14px">'
+    out += stats_html
+    out += f'</div>'
+    out += f'<div style="padding:0 14px">'
+    out += lines_html
+    out += f'</div>'
+    out += f'<div style="padding:0 14px 12px">'
+    out += goals_html + signals_html + form_html + trend_html
+    out += f'</div>'
+    out += f'</div>'
+    return out
 
 
 def render_parlay_card(r):
@@ -6708,12 +6764,30 @@ if _active_page == "Rongol Picks":
                             'padding:1px 7px;font-size:0.672rem;font-weight:900;margin-left:6px;'
                             'vertical-align:middle">🔥 TOP</span>'
                         ) if _is_fire else ""
+                        _sim_rp   = _rp.get("sim", {})
+                        _pk_rp    = _rp["_pick"]
+                        _away_rp  = _rp.get("away_team","")
+                        _home_rp  = _rp.get("home_team","")
+                        _prob_rp  = _pk_rp.get("prob", 0)
+                        _prob_rp  = _prob_rp if _prob_rp <= 1 else _prob_rp / 100
+                        _mkt_rp   = _pk_rp.get("market","")
+                        _lbl_rp   = _pk_rp.get("label","")
+                        _ml_rp    = _pk_rp.get("ml","") or ""
+                        _fire_icon = "🔥 " if _is_fire else ""
+                        _mkt_icon  = {"ML":"⚡","BTTS":"🎯","O/U":"📊"}.get(_mkt_rp,"📊")
+                        _exp_label = (
+                            f"{_fire_icon}{_away_rp[:12]} vs {_home_rp[:12]}  "
+                            f"·  {_mkt_icon} {_lbl_rp[:18]}"
+                            + (f"  {_ml_rp}" if _ml_rp else "")
+                            + f"  ({_prob_rp*100:.0f}%)"
+                        )
                         st.markdown(
                             f'<div style="font-size:0.672rem;color:#6B7280;letter-spacing:1.5px;'
                             f'text-transform:uppercase;margin-bottom:4px">{_sg_label}{_fire_badge}</div>',
                             unsafe_allow_html=True
                         )
-                        st.markdown(_pick_diamante_card(_rp, _rp["_pick"], rank=_row_i+_ci, is_fire=_is_fire), unsafe_allow_html=True)
+                        with st.expander(_exp_label, expanded=False):
+                            st.markdown(render_pick_card(_rp, rank=_row_i+_ci), unsafe_allow_html=True)
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
@@ -7454,7 +7528,24 @@ elif _active_page == "Picks":
                         _c3 = st.columns(len(_row3))
                         for _ci3, _gg_p in enumerate(_row3):
                             with _c3[_ci3]:
-                                st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                                _sim_gg  = _gg_p.get("sim", {})
+                                _bp_gg   = _oracle_pick(_gg_p)
+                                _away_gg = _gg_p.get("away_team","")
+                                _home_gg = _gg_p.get("home_team","")
+                                _mkt_gg  = _bp_gg.get("market","") if _bp_gg else ""
+                                _lbl_gg  = _bp_gg.get("label","")  if _bp_gg else ""
+                                _prob_gg = _bp_gg.get("prob", 0)   if _bp_gg else 0
+                                _prob_gg = _prob_gg if _prob_gg <= 1 else _prob_gg/100
+                                _ml_gg   = _bp_gg.get("ml","")     if _bp_gg else ""
+                                _mkt_icon_gg = {"ML":"⚡","BTTS":"🎯","O/U":"📊"}.get(_mkt_gg,"📊")
+                                _exp_lbl_gg  = (
+                                    f"{_away_gg[:11]} vs {_home_gg[:11]}"
+                                    f"  ·  {_mkt_icon_gg} {_lbl_gg[:16]}"
+                                    + (f" {_ml_gg}" if _ml_gg else "")
+                                    + f"  ({_prob_gg*100:.0f}%)"
+                                )
+                                with st.expander(_exp_lbl_gg, expanded=False):
+                                    st.markdown(render_pick_card(_gg_p), unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
     # CSV export (collapsed)
