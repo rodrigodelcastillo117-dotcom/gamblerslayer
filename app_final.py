@@ -4424,51 +4424,76 @@ def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
 
     # ── RONGOL picks (1 per sport, same logic as tab) ────────────────────────
     def _sport_best_ph(r):
+        """Mismos filtros de calidad que _sport_best_pick."""
         sim = r["sim"]
         sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
         h_prob = sim.get("home_pct",0) or 0
         a_prob = sim.get("away_pct",0) or 0
         h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
+        _has_espn_ml = bool(h_ml and a_ml)
+
+        # Sin ESPN ML en no-soccer = no guardar en historial
+        if not _has_espn_ml and sg in ("Basketball","Hockey","Baseball","Football"):
+            return None
 
         def best_ml():
             if h_prob >= a_prob:
                 t,p,ml = r["home_team"],h_prob,h_ml
             else:
                 t,p,ml = r["away_team"],a_prob,a_ml
-            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1)} if ml else None
+            if not ml or p < 52: return None
+            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1)}
+
+        _dom_prob = max(h_prob, a_prob)
 
         if sg == "Soccer":
-            cands = []
-            _btts_ev = sim.get("btts_ev") or 0
-            _btts_pb = sim.get("p_btts") or 0
-            if _btts_ev > 0 and _btts_pb > 0:
-                cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan","prob_pct":round(_btts_pb,1)})
-            _o25_ev = sim.get("o25_ev") or 0
-            _o25_pb = sim.get("p_o25") or 0
-            if _o25_ev > 0 and _o25_pb > 0:
-                cands.append({"mercado":"O/U","pick_label":"Over 2.5","prob_pct":round(_o25_pb,1)})
             _ml = best_ml()
+            # ML prioritario si equipo domina ≥60%
+            if _ml and _dom_prob >= 60:
+                return _ml
+            # "ou_line" es la clave correcta en el sim dict (no "over_under")
+            _ou_line_val = sim.get("ou_line") or ""
+            _has_ou_line = bool(_ou_line_val and not str(_ou_line_val).startswith("~"))
+            # Sin ESPN ML: solo ML si domina ≥55%
+            if not _has_espn_ml:
+                return _ml if (_ml and _dom_prob >= 55) else None
+            cands = []
+            if sim.get("use_goals") and _has_ou_line:
+                _btts_ev = sim.get("btts_ev") or 0
+                _btts_pb = sim.get("p_btts") or 0
+                if _btts_ev > 0 and _btts_pb >= 55:
+                    cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan","prob_pct":round(_btts_pb,1)})
+                _o25_ev = sim.get("o25_ev") or 0
+                _o25_pb = sim.get("p_o25") or 0
+                if _o25_ev > 0 and _o25_pb >= 55:
+                    cands.append({"mercado":"O/U","pick_label":"Over 2.5","prob_pct":round(_o25_pb,1)})
             if _ml: cands.append(_ml)
-            # FIX-1: ML fallback — soccer siempre guarda un pick aunque BTTS/O25 sean None
-            if not cands:
-                _ml_prob_fb = max(h_prob, a_prob)
-                _ml_team_fb = _r["home_team"] if h_prob >= a_prob else _r["away_team"]
-                cands.append({"mercado":"ML","pick_label":_ml_team_fb,"prob_pct":round(_ml_prob_fb,1)})
-            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
+            if not cands: return None
+            best = max(cands, key=lambda x: x["prob_pct"])
+            return best if best["prob_pct"] >= 52 else None
+
         elif sg in ("Basketball","Hockey"):
             cands = []
             _ml = best_ml()
             if _ml: cands.append(_ml)
             _ou_line = sim.get("ou_line") or ""
             _p_over  = sim.get("p_o_total") or 0
-            if _ou_line and _p_over > 45:
-                try: _line = float(_ou_line.lstrip("~"))
-                except: _line = None
-                if _line:
-                    cands.append({"mercado":"O/U","pick_label":f"Over {_line:.1f}","prob_pct":round(_p_over,1)})
-            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
+            _p_under = sim.get("p_u_total") or 0
+            if _ou_line and not _ou_line.startswith("~"):
+                _best_ou = max(_p_over, _p_under)
+                if _best_ou >= 55:
+                    try: _line = float(_ou_line.lstrip("~"))
+                    except: _line = None
+                    if _line:
+                        _lbl = f"Over {_line:.1f}" if _p_over >= _p_under else f"Under {_line:.1f}"
+                        cands.append({"mercado":"O/U","pick_label":_lbl,"prob_pct":round(_best_ou,1)})
+            if not cands: return None
+            best = max(cands, key=lambda x: x["prob_pct"])
+            return best if best["prob_pct"] >= 54 else None
+
         else:
-            return best_ml()
+            _ml = best_ml()
+            return _ml if (_ml and _ml["prob_pct"] >= 54) else None
 
     # Group by sport, take best per sport
     sport_pools = {}
@@ -5643,7 +5668,13 @@ if _active_page == "Rongol Picks":
         #   Football:   ML (highest win%) only
 
         def _sport_best_pick(r):
-            """Return the single best pick for a game, per sport rules."""
+            """Return the single best pick for a game, per sport rules.
+            Quality filters applied:
+              - DQ >= 50%: require ESPN moneyline (real market signal)
+              - Prob >= 54%: minimum model confidence
+              - ML priority if team prob >= 60% (more reliable than BTTS/O/U)
+              - No O/U soccer without ESPN line (pure Poisson = noise)
+            """
             sim = r["sim"]
             sg  = LEAGUES.get(r["league"], {}).get("group", "Soccer")
             h_prob = sim.get("home_pct", 0) or 0
@@ -5651,6 +5682,13 @@ if _active_page == "Rongol Picks":
             h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
             h_ev = sim.get("home_ev") or 0; a_ev = sim.get("away_ev") or 0
             h_k  = sim.get("home_kelly") or 0; a_k = sim.get("away_kelly") or 0
+            _dq  = sim.get("data_quality", 0) or 0
+
+            # FILTRO 1: DQ mínimo — sin cuotas ESPN reales, no hay pick confiable
+            # Excepción: soccer con team profiles puede tener picks útiles
+            _has_espn_ml = bool(h_ml and a_ml)
+            if not _has_espn_ml and sg in ("Basketball", "Hockey", "Baseball", "Football"):
+                return None  # sin línea ESPN en no-soccer = puro ruido
 
             def best_ml():
                 if h_prob >= a_prob:
@@ -5658,43 +5696,53 @@ if _active_page == "Rongol Picks":
                 else:
                     team, prob, ev, kelly, ml = r["away_team"], a_prob, a_ev, a_k, a_ml
                 if not ml: return None
+                # FILTRO 4: umbral mínimo de probabilidad
+                if prob < 54: return None
                 return {"market":"ML","label":team,"prob":prob,"ev":ev,"kelly":kelly}
 
             if sg == "Soccer":
-                # Candidates: BTTS and O2.5 only (no Under picks in RONGOL)
+                _ml = best_ml()
+                _dom_prob = max(h_prob, a_prob)
+
+                # FILTRO 2: ML prioritario cuando hay equipo claramente dominante
+                # Si el mejor equipo tiene ≥60% de prob, ML es más confiable que BTTS/O/U
+                if _ml and _dom_prob >= 60:
+                    return _ml
+
+                # Sin línea ESPN → solo ML (FILTRO 3: sin O/U Poisson puro)
+                _has_ou_line = bool((sim.get("ou_line") or "") and not str(sim.get("ou_line") or "").startswith("~"))
+                if not _has_espn_ml:
+                    # Sin cuotas: solo ML si prob ≥ 58% y hay team profiles
+                    if _ml and _dom_prob >= 58:
+                        return _ml
+                    return None  # sin señal suficiente
+
+                # Con ESPN ML pero partido parejo: buscar BTTS/O/U solo si hay línea ESPN
                 cands = []
-                if sim.get("use_goals"):
-                    # BTTS: only "Ambos Anotan SÍ" (never NO), only if EV+
+                if sim.get("use_goals") and _has_ou_line:
                     _btts_ev = sim.get("btts_ev") or 0
                     _btts_pb = sim.get("p_btts") or 0
-                    if _btts_ev > 0 and _btts_pb > 0:
+                    # BTTS solo si prob ≥ 57% (partidos donde ambos suelen anotar de verdad)
+                    if _btts_ev > 0 and _btts_pb >= 57:
                         cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev,"kelly":0})
-                    # O/U: only Over 2.5 (never Under anything), only if EV+
                     _o25_ev = sim.get("o25_ev") or 0
                     _o25_pb = sim.get("p_o25") or 0
-                    if _o25_ev > 0 and _o25_pb > 0:
+                    # O/U Over 2.5 solo si prob ≥ 57%
+                    if _o25_ev > 0 and _o25_pb >= 57:
                         cands.append({"market":"O/U","label":"Over 2.5 goles","prob":_o25_pb,"ev":_o25_ev,"kelly":0})
-                # Add ML (always, highest win%)
-                _ml = best_ml()
-                # FIX-6: ML con alta confianza (>=65%) toma prioridad directa
-                if _ml:
-                    if _ml["prob"] >= 65:
-                        return _ml
-                    cands.append(_ml)
-                if not cands and _ml:
-                    return _ml
-                # Return best by probability
-                return max(cands, key=lambda x: x["prob"]) if cands else None
+
+                if _ml: cands.append(_ml)
+                if not cands: return None
+
+                best = max(cands, key=lambda x: x["prob"])
+                # FILTRO 4: prob mínima final
+                return best if best["prob"] >= 54 else None
 
             elif sg in ("Basketball", "Hockey"):
-                # ML + O/U Over only (no Under in RONGOL for Hockey/Basketball)
-                # Hockey: ESPN line is 5.5 or 6.5 (comes from odds.over_under)
-                # Basketball: ESPN line typically 210-240
-                # If no line available, MLB-style: use ML only
                 cands = []
                 _ml = best_ml()
                 if _ml: cands.append(_ml)
-                # Sharp: use multi_lines to find best edge (Over OR Under)
+                # O/U solo con línea ESPN real (no implícita ~)
                 _ou_line = sim.get("ou_line") or ""
                 _implicit_r = _ou_line.startswith("~")
                 _multi_r = sim.get("multi_lines", {})
@@ -5706,16 +5754,18 @@ if _active_page == "Rongol Picks":
                             _best_p = _po_l; _best_lbl = f"Over {_l:.1f}"
                         elif _pu_l > _po_l and _pu_l > _best_p:
                             _best_p = _pu_l; _best_lbl = f"Under {_l:.1f}"
-                    if _best_lbl and _best_p >= 52:
+                    # Umbral más alto para O/U: 55% (línea real, no implícita)
+                    if _best_lbl and _best_p >= 55:
                         _ev_ou = round((_best_p/100*(100/110) - (1-_best_p/100))*100, 1)
                         cands.append({"market":"O/U","label":_best_lbl,"prob":_best_p,"ev":_ev_ou,"kelly":0})
-                # ML as fallback
-                if not cands and _ml:
-                    cands.append(_ml)
-                return max(cands, key=lambda x: x["prob"]) if cands else None
+                if not cands: return None
+                best = max(cands, key=lambda x: x["prob"])
+                return best if best["prob"] >= 54 else None
 
             else:  # Baseball, Football, NCAAF
-                return best_ml()
+                _ml = best_ml()
+                if not _ml: return None
+                return _ml if _ml["prob"] >= 54 else None
 
         # ── Build 1 pick per sport group — ventana ±1 día CDMX ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
