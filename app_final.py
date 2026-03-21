@@ -26,33 +26,33 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --bg:        #080809;
-  --bg2:       #0F0F11;
-  --bg3:       #161618;
-  --card:      #0F0F11;
-  --card2:     #161618;
-  --border:    rgba(255,255,255,0.06);
-  --border2:   rgba(255,255,255,0.10);
+  --bg:        #0A0A0C;
+  --bg2:       #141416;
+  --bg3:       #1C1C1F;
+  --card:      #141416;
+  --card2:     #1C1C1F;
+  --border:    rgba(255,255,255,0.09);
+  --border2:   rgba(255,255,255,0.14);
   --orange:    #FF5F1F;
   --orange2:   #FF7A40;
   --yellow:    #FFD60A;
-  --text:      #ECECEC;
-  --text2:     #8A8A8A;
-  --text3:     #444444;
+  --text:      #F0F0F0;
+  --text2:     #A8A8A8;
+  --text3:     #666666;
   --white:     #FFFFFF;
   --red:       #FF3B30;
   --green:     #00E5A0;
   --blue:      #4B8EFF;
   --purple:    #9D7EFF;
   --nav-h:     72px;
-  --radius:    14px;
-  --radius-sm: 10px;
-  --radius-lg: 20px;
+  --radius:    16px;
+  --radius-sm: 12px;
+  --radius-lg: 22px;
   --gold:    #FFD60A;
   --gold2:   #FF7A40;
-  --felt:    #080809;
-  --dark:    #080809;
-  --muted:   #444444;
+  --felt:    #0A0A0C;
+  --dark:    #0A0A0C;
+  --muted:   #666666;
   --cyan:    #00E5A0;
 }
 
@@ -77,12 +77,12 @@ header[data-testid="stHeader"] { display:none !important; }
 ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.08); border-radius:3px; }
 
 .block-container {
-  padding:16px 14px calc(var(--nav-h) + 24px) 14px !important;
-  max-width:520px !important;
+  padding:20px 16px calc(var(--nav-h) + 28px) 16px !important;
+  max-width:540px !important;
   margin:0 auto !important;
 }
 @media (min-width:768px) {
-  .block-container { max-width:740px !important; padding:20px 28px calc(var(--nav-h) + 28px) 28px !important; }
+  .block-container { max-width:780px !important; padding:24px 32px calc(var(--nav-h) + 32px) 32px !important; }
 }
 
 /* -- HEADER ----------------------------------------------------------- */
@@ -212,14 +212,19 @@ header[data-testid="stHeader"] { display:none !important; }
 /* -- GAME ROW --------------------------------------------------------- */
 .game-row {
   background:var(--bg2); border:1px solid var(--border);
+  border-radius:var(--radius); padding:13px 16px; margin:5px 0;
+  transition:background 0.15s; position:relative;
+  border-left:3px solid transparent;
+}
+  background:var(--bg2); border:1px solid var(--border);
   border-radius:var(--radius); padding:11px 14px; margin:4px 0;
   transition:border-color 0.15s; position:relative;
   border-left:2px solid transparent;
 }
 .game-row:hover { border-left-color:var(--orange); border-color:rgba(255,95,31,0.2); }
 .game-row-ev { border-left-color:var(--green) !important; }
-.game-title { font-size:0.86rem; font-weight:700; color:var(--white); }
-.game-meta  { font-size:0.68rem; color:var(--text3); margin-top:2px; }
+.game-title { font-size:0.9rem; font-weight:700; color:var(--white); }
+.game-meta  { font-size:0.72rem; color:var(--text2); margin-top:3px; }
 
 /* -- PROB BARS -------------------------------------------------------- */
 .bar-wrap { margin:4px 0; }
@@ -275,8 +280,8 @@ header[data-testid="stHeader"] { display:none !important; }
   background:var(--bg3) !important; color:var(--text) !important;
   font-family:'Inter',sans-serif !important; font-size:0.82rem !important; font-weight:600 !important;
   letter-spacing:0.3px !important; border:1px solid var(--border2) !important;
-  padding:10px 18px !important; border-radius:var(--radius-sm) !important;
-  width:100% !important; cursor:pointer !important; transition:all 0.15s !important; box-shadow:none !important;
+  padding:12px 20px !important; border-radius:var(--radius-sm) !important;
+  width:100% !important; cursor:pointer !important; transition:background 0.15s !important; box-shadow:none !important;
 }
 .stButton > button:hover, div[data-testid="stButton"] > button:hover {
   background:rgba(255,95,31,0.08) !important; border-color:rgba(255,95,31,0.35) !important; color:var(--orange) !important;
@@ -314,8 +319,8 @@ div[data-testid="stMultiSelect"] > div > div {
 div[data-testid="stSelectbox"] label, div[data-testid="stTextInput"] label,
 div[data-testid="stNumberInput"] label, div[data-testid="stTextArea"] label,
 div[data-testid="stSlider"] label, div[data-testid="stRadio"] label {
-  color:var(--text3) !important; font-family:'Inter',sans-serif !important;
-  font-size:0.72rem !important; font-weight:600 !important; letter-spacing:0.5px !important;
+  color:var(--text2) !important; font-family:'Inter',sans-serif !important;
+  font-size:0.76rem !important; font-weight:600 !important; letter-spacing:0.3px !important;
 }
 
 /* -- EXPANDERS -------------------------------------------------------- */
@@ -347,6 +352,56 @@ div[data-testid="stSlider"] label, div[data-testid="stRadio"] label {
 [data-testid="stExpander"] .streamlit-expanderContent {
   background:var(--bg2) !important; border:1px solid rgba(255,95,31,0.15) !important;
   border-top:none !important; border-radius:0 0 var(--radius) var(--radius) !important; padding:0 !important;
+}
+
+/* -- PICK CARD EXPANDER — card blanca + analisis oscuro unificados --- */
+.pick-expander-wrap [data-testid="stExpander"] {
+  margin:0 0 6px 0 !important;
+}
+/* Summary = header transparente con flecha — sin fondo propio */
+.pick-expander-wrap [data-testid="stExpander"] > details > summary {
+  background:#F0F0F2 !important;
+  border:none !important;
+  border-radius:18px !important;
+  padding:0 !important;
+  min-height:0 !important;
+  overflow:hidden !important;
+  color:transparent !important;
+  font-size:0 !important;
+}
+/* Arrow indicator — pequeño, abajo de la card */
+.pick-expander-wrap [data-testid="stExpander"] > details > summary::after {
+  content:"Toca para ver el analisis" !important;
+  display:block !important;
+  text-align:center !important;
+  font-size:0.6rem !important;
+  font-weight:700 !important;
+  letter-spacing:1.5px !important;
+  text-transform:uppercase !important;
+  color:#888 !important;
+  padding:5px 0 8px !important;
+  background:#F0F0F2 !important;
+}
+.pick-expander-wrap [data-testid="stExpander"] > details[open] > summary {
+  border-radius:18px 18px 0 0 !important;
+}
+.pick-expander-wrap [data-testid="stExpander"] > details[open] > summary::after {
+  content:"Toca para cerrar" !important;
+  color:#FF5F1F !important;
+}
+/* SVG arrow hidden */
+.pick-expander-wrap [data-testid="stExpander"] summary svg {
+  display:none !important;
+}
+/* Content area = análisis oscuro, sin gap */
+.pick-expander-wrap [data-testid="stExpander"] > details > div,
+.pick-expander-wrap [data-testid="stExpander"] .streamlit-expanderContent {
+  background:#141416 !important;
+  border:1px solid rgba(255,255,255,0.07) !important;
+  border-top:none !important;
+  border-radius:0 0 18px 18px !important;
+  padding:0 !important;
+  margin-top:0 !important;
 }
 
 /* -- METRICS ---------------------------------------------------------- */
@@ -473,8 +528,8 @@ _NAV_ITEMS = [
     {"key": "Rongol Picks", "icon": "⚡", "label": "Rongol"},
     {"key": "Picks",        "icon": "🎯", "label": "Picks"},
     {"key": "Parlays",      "icon": "🎰", "label": "Parlays"},
-    {"key": "En Vivo",      "icon": "🔴", "label": "Live"},
-    {"key": "Califica",     "icon": "🏆", "label": "Cal"},
+    {"key": "En Vivo",      "icon": "🔴", "label": "En Vivo"},
+    {"key": "Califica",     "icon": "🏆", "label": "Califica"},
     {"key": "Reto 13M",     "icon": "💰", "label": "Reto"},
     {"key": "Config",       "icon": "⚙️",  "label": "Config"},
 ]
@@ -570,7 +625,7 @@ div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdo
   div[data-testid="stRadio"] label[data-baseweb="radio"] span,
   div[data-testid="stRadio"] label[data-baseweb="radio"] p,
   div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-    font-size: 0.72rem !important;
+    font-size: 0.76rem !important;
     letter-spacing: 0.8px !important;
   }
 }
@@ -2405,8 +2460,8 @@ def get_ai_analysis(away_team, home_team, league, sport_group,
                 note = f"BTTS a {prob_pct:.0f}% con EV +{ev:.1f}. Considera que equipos defensivos pueden cambiar la dinámica si hay motivación táctica."
         elif "Over 2.5" in best_label:
             note = f"Modelo proyecta partido con >2.5 goles ({prob_pct:.0f}%). El encuentro {away_team} @ {home_team} favorece líneas ofensivas según simulación Poisson."
-        elif "Under 2.5" in best_label:
-            note = f"Under 2.5 a {prob_pct:.0f}% - el modelo Poisson espera menos de 3 goles totales. Con promedio de liga de {LEAGUE_AVG_GOALS.get(league, 2.7):.2f} goles, la línea O/U sugiere partido defensivo."
+        elif "Menos de 2.5" in best_label:
+            note = f"Menos de 2.5 a {prob_pct:.0f}% - el modelo Poisson espera menos de 3 goles totales. Con promedio de liga de {LEAGUE_AVG_GOALS.get(league, 2.7):.2f} goles, la línea O/U sugiere partido defensivo."
         elif draw_pct > 27 and not pick_is_home:
             note = f"Empate en {draw_pct:.0f}% - partidos con equipos tan parejos frecuentemente terminan igualados. Considera la doble oportunidad como cobertura."
         elif spread < 12:
@@ -3661,7 +3716,7 @@ def compute_consensus(game, sim):
         score_detail = f"λreal={lam_real_total:.1f} vs liga={lam_league:.1f}"
         if "Over 2.5" in label or "Over" in label:
             score_vote = +1 if lam_real_total > lam_league * 1.05 else (-1 if lam_real_total < lam_league * 0.95 else 0)
-        elif "Under 2.5" in label or "Under" in label:
+        elif "Menos de 2.5" in label or "Under" in label:
             score_vote = +1 if lam_real_total < lam_league * 0.95 else (-1 if lam_real_total > lam_league * 1.05 else 0)
         elif "BTTS" in label or "Ambos" in label:
             score_vote = +1 if (lam_real_h >= 0.9 and lam_real_a >= 0.9) else 0
@@ -4301,7 +4356,7 @@ def run_monte_carlo(game, n=10_000):
         if _ou_edge(p_o35, _po35_pr):
             candidates.append(("O/U","Over 3.5", p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35,OU_ML)))
         if _ou_edge(p_u25, _pu25_pr):
-            candidates.append(("O/U","Under 2.5",p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25,OU_ML)))
+            candidates.append(("O/U","Menos de 2.5",p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25,OU_ML)))
         # U3.5 eliminated - always wins by default %, useless noise
 
     # DC only meaningful for soccer WITH real ESPN moneyline (DC_ML is fictitious otherwise)
@@ -4390,7 +4445,7 @@ def run_monte_carlo(game, n=10_000):
             if _edge2(p_o35, _pv2[5]):
                 candidates.append(("O/U","Over 3.5",  p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35, OU_ML)))
             if _edge2(p_u25, _pv2[1]):
-                candidates.append(("O/U","Under 2.5", p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25, OU_ML)))
+                candidates.append(("O/U","Menos de 2.5", p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25, OU_ML)))
         # U3.5 eliminated - always wins by default %, useless noise (profile blend block)
 
     # -- No-signal guard: block O/U and BTTS when all signals are blind ----------
@@ -4447,9 +4502,9 @@ def run_monte_carlo(game, n=10_000):
                                            calc_ev(p_o25,OU_ML), str(OU_ML),
                                            quarter_kelly(p_o25,OU_ML)))
                 if abs(1-p_o25 - _pv[1]) >= _edge_low:
-                    _uu_in = any(mt=="O/U" and "Under 2.5" in lb for mt,lb,*_ in candidates)
+                    _uu_in = any(mt=="O/U" and "Menos de 2.5" in lb for mt,lb,*_ in candidates)
                     if not _uu_in:
-                        candidates.append(("O/U","Under 2.5", 1-p_o25,
+                        candidates.append(("O/U","Menos de 2.5", 1-p_o25,
                                            calc_ev(1-p_o25,OU_ML), str(OU_ML),
                                            quarter_kelly(1-p_o25,OU_ML)))
             # Marcar el partido con baja confianza para que el display lo indique
@@ -5274,7 +5329,7 @@ def render_pick_card(r, rank=None):
         f'</div>'
         f'<div style="text-align:right">'
         f'<div style="font-size:28px;font-weight:800;color:#FF5F1F;letter-spacing:-1.5px;line-height:1">{pick_dec}</div>'
-        f'<div style="font-size:9px;color:#666;margin-top:2px">decimal c/vig</div>'
+        f'<div style="font-size:9px;color:#666;margin-top:2px">Cuota del modelo</div>'
         + (f'<div style="font-size:9px;color:#555;margin-top:1px">{pick_fair} justo</div>' if pick_fair else "")
         + f'</div>'
         f'</div>'
@@ -5288,17 +5343,17 @@ def render_pick_card(r, rank=None):
         f'margin:0 12px">'
         f'<div style="text-align:center;padding:10px 4px;border-right:1px solid rgba(255,255,255,0.04)">'
         f'<div style="font-size:15px;font-weight:800;color:#00E5A0;line-height:1">{prob_pct:.0f}%</div>'
-        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Prob MC</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Probabilidad</div></div>'
         f'<div style="text-align:center;padding:10px 4px;border-right:1px solid rgba(255,255,255,0.04)">'
         f'<div style="font-size:15px;font-weight:800;color:{ev_col};line-height:1">'
         f'{"+" if ev_val>=0 else ""}{ev_val:.1f}</div>'
-        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">EV/$100</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Ganancia</div></div>'
         f'<div style="text-align:center;padding:10px 4px;border-right:1px solid rgba(255,255,255,0.04)">'
         f'<div style="font-size:15px;font-weight:800;color:{_e_col};line-height:1">{_e_str or "—"}</div>'
-        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Edge</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Ventaja</div></div>'
         f'<div style="text-align:center;padding:10px 4px">'
         f'<div style="font-size:15px;font-weight:800;color:#9D7EFF;line-height:1">{kelly_pct*100:.1f}%</div>'
-        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Kelly</div></div>'
+        f'<div style="font-size:8px;color:#777;text-transform:uppercase;letter-spacing:0.8px;margin-top:3px">Apostar</div></div>'
         f'</div>'
     )
 
@@ -5338,7 +5393,7 @@ def render_pick_card(r, rank=None):
             f'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:10px 12px">'
             + _mkt_cell("BTTS Si", f"{p_btts:.0f}%", f'{"+" if btts_ev>=0 else ""}{btts_ev:.1f} EV', btts_ev>0)
             + _mkt_cell("Over 2.5", f"{p_o25:.0f}%", f'{"+" if o25_ev>=0 else ""}{o25_ev:.1f} EV', o25_ev>0)
-            + _mkt_cell("Under 2.5", f"{p_u25:.0f}%", "-110", False)
+            + _mkt_cell("Menos de 2.5", f"{p_u25:.0f}%", "-110", False)
             + _mkt_cell("O/U modelo", str(ou_model) if ou_model else "—", ou_diff or f"ESPN: {ou_espn}", bool(ou_diff))
             + _mkt_cell("Over 3.5", f"{p_o35:.0f}%" if p_o35 else "—", "", False)
             + _mkt_cell("DQ datos", f"{dq:.0f}%", "ESPN+Rec" if dq>=50 else "Records", dq>=70)
@@ -5357,7 +5412,7 @@ def render_pick_card(r, rank=None):
             + '</div>'
         )
 
-    # ── Recomendacion del modelo ──────────────────────────────────────────
+    # ── Que apostar hoy ──────────────────────────────────────────
     consensus_score = sim.get("consensus_score", 0) or 0
     consensus_label = sim.get("consensus_label","") or ""
     signals_for     = sim.get("signals_for",[]) or []
@@ -5396,7 +5451,7 @@ def render_pick_card(r, rank=None):
             f'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);'
             f'border-left:3px solid {c}">'
             f'<div style="font-size:8px;font-weight:800;color:{c};letter-spacing:2px;'
-            f'text-transform:uppercase;margin-bottom:7px">Recomendacion del modelo</div>'
+            f'text-transform:uppercase;margin-bottom:7px">Que apostar hoy</div>'
             f'<div style="font-size:12px;color:#C8C8C8;line-height:1.7;font-weight:500">'
             + " &middot; ".join(_rec_parts)
             + f'</div></div>'
@@ -5630,7 +5685,7 @@ else:
     _leagues_key = tuple(sorted(sel_leagues))
     _already_cached = _leagues_key in st.session_state.get("_games_fetched", set())
     if not _already_cached:
-        with st.spinner("Consultando ESPN..."):
+        with st.spinner("Buscando los mejores picks del dia..."):
             games,fetch_errors=get_all_games(_leagues_key)
         _fetched = st.session_state.get("_games_fetched", set())
         _fetched.add(_leagues_key)
@@ -5948,7 +6003,7 @@ def _evaluate_pick(pick, game):
     # -- O/U -------------------------------------------------------------------
     if mercado in ("O/U", "OU", "OVER/UNDER"):
         total = hs + as_
-        # Parse line from pick label: "Over 2.5 goles" → 2.5, "Under 228.5" → 228.5
+        # Parse line from pick label: "Mas de 2.5 goles" → 2.5, "Under 228.5" → 228.5
         import re
         lbl_lower = pick_lbl.lower()
         nums = re.findall(r'[\d]+\.?[\d]*', lbl_lower)
@@ -6294,7 +6349,7 @@ if _active_page == "Rongol Picks":
                     _o25_ev = sim.get("o25_ev") or 0
                     _o25_pb = sim.get("p_o25") or 0
                     if _o25_pb > 0:
-                        cands.append({"market":"O/U","label":"Over 2.5 goles",
+                        cands.append({"market":"O/U","label":"Mas de 2.5 goles",
                                       "prob":_o25_pb,"ev":_o25_ev,"kelly":0})
 
             elif sg in ("Basketball", "Hockey"):
@@ -6393,7 +6448,7 @@ if _active_page == "Rongol Picks":
         allowed_bets = rongol_picks
 
         # -- STATS PANEL - accuracy from pick_history -------------------------
-        with st.expander("📊 Accuracy del Sistema", expanded=False):
+        with st.expander("📊 Mis Resultados", expanded=False):
             _ph_all = _ph_load()
             _ph_resolved = [p for p in _ph_all if p["resultado"] in ("ganado","perdido","push")]
             _ph_pending  = [p for p in _ph_all if p["resultado"] == "pendiente"]
@@ -6404,11 +6459,11 @@ if _active_page == "Rongol Picks":
                 # -- Auto-resolve button ---------------------------------------
                 col_ar, col_info = st.columns([1,2])
                 with col_ar:
-                    if st.button("🔍 Actualizar Resultados", key="btn_ph_resolve",
+                    if st.button("Actualizar mis picks", key="btn_ph_resolve",
                                  use_container_width=True,
                                  help="Busca resultados de picks pendientes en ESPN"):
                         if _ph_pending:
-                            with st.spinner("Consultando ESPN..."):
+                            with st.spinner("Buscando los mejores picks del dia..."):
                                 _ph_updates = _ph_auto_resolve(_ph_pending)
                             if _ph_updates:
                                 _ph_update_results(_ph_updates)
@@ -6590,12 +6645,12 @@ if _active_page == "Rongol Picks":
                     st.caption("Sin picks guardados aún.")
 
         if not rongol_picks:
-            st.markdown('<div class="warn-banner">No se encontraron picks. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="warn-banner">No hay picks disponibles. Intenta seleccionar mas ligas en Ajustes. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
         else:
             # -- helpers ------------------------------------------------------
             _MKT_COLOR = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#00C896","DO":"#a78bfa","COMBO":"#f59e0b"}
             _SPORT_ICON = {"Basketball":"🏀","Soccer":"⚽","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}
-            _CONF_LABEL = lambda p: ("🔥 ALTA" if p>=75 else ("⚡ MEDIA" if p>=55 else "🌡 BAJA"))
+            _CONF_LABEL = lambda p: ("🔥 Alta confianza" if p>=75 else ("⚡ Confianza media" if p>=55 else "🌡 Baja confianza"))
             _CONF_COLOR = lambda p: ("#00C896" if p>=75 else ("#C9A84C" if p>=55 else "#ef4444"))
 
             def _prob_bar_html(prob, color):
@@ -6826,7 +6881,7 @@ if _active_page == "Rongol Picks":
             _n_picks = len(rongol_picks)
             _sport_labels = {"Soccer":"⚽ Fútbol","Basketball":"🏀 Basketball",
                              "Hockey":"🏒 Hockey","Baseball":"⚾ Baseball","Football":"🏈 Football"}
-            st.markdown(f'<div class="section-heading">🃏 RONGOL PICKS - {_n_picks} deportes</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="section-heading">⚡ MEJORES PICKS DEL DIA - {_n_picks} deportes</div>', unsafe_allow_html=True)
 
             # Find top-2 picks by probability for 🔥 badge
             _all_probs_ranked = sorted(
@@ -6996,9 +7051,40 @@ if _active_page == "Rongol Picks":
                             f'</div>'
                             f'</div>'
                         )
-                        st.markdown(_mini_card, unsafe_allow_html=True)
-                        with st.expander("+ Análisis", expanded=False):
+                        # Single unified card — expander with white card as summary
+                        _card_key = f"rp_{_row_i}_{_ci}"
+                        # CSS: make THIS expander's summary transparent and overlay mini_card
+                        st.markdown(f"""
+<style>
+details[data-card="{_card_key}"] > summary {{
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  display: block !important;
+  cursor: pointer !important;
+}}
+details[data-card="{_card_key}"] > summary > div {{
+  display: none !important;
+}}
+details[data-card="{_card_key}"][open] > summary {{
+  border-radius: 18px 18px 0 0 !important;
+}}
+details[data-card="{_card_key}"] > div {{
+  background: #141416 !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-top: none !important;
+  border-radius: 0 0 18px 18px !important;
+  padding: 0 !important;
+  margin-top: -2px !important;
+}}
+</style>""", unsafe_allow_html=True)
+                        st.markdown('<div class="pick-expander-wrap">', unsafe_allow_html=True)
+                        with st.expander("", expanded=False):
+                            st.markdown(_mini_card, unsafe_allow_html=True)
                             st.markdown(render_pick_card(_rp, rank=_row_i+_ci), unsafe_allow_html=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
 
             # -- DO PARLAY -----------------------------------------------------
             _do_parlays = []
@@ -7719,7 +7805,7 @@ elif _active_page == "Picks":
                 _btn_k = f"btn_lg_{_lg_btn_counter}"
                 _lg_btn_counter += 1
                 if st.button(
-                    "▼ Cerrar" if _is_open else "▶ Ver partidos",
+                    "Cerrar" if _is_open else "Ver partidos",
                     key=_btn_k,
                     use_container_width=True,
                     help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"
@@ -7867,9 +7953,11 @@ elif _active_page == "Picks":
                                     f"  {_mkt_icon_gg} {_lbl_gg[:14]}"
                                     f" ({_pick_pct_gg:.0f}%)"
                                 )
-                                st.markdown(_card_html, unsafe_allow_html=True)
-                                with st.expander("+ Ver análisis completo", expanded=False):
+                                st.markdown('<div class="pick-expander-wrap">', unsafe_allow_html=True)
+                                with st.expander("", expanded=False):
+                                    st.markdown(_card_html, unsafe_allow_html=True)
                                     st.markdown(render_pick_card(_gg_with_sim), unsafe_allow_html=True)
+                                st.markdown('</div>', unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
     # CSV export (collapsed)
@@ -8465,7 +8553,7 @@ elif _active_page == "En Vivo":
         ou_line  = total + 1.5  # e.g. 1-1 → Over 2.5 | 2-0 → Over 2.5 | 2-1 → Over 3.5
         # Probability for that line from sim (only 2.5 and 3.5 tracked)
         if ou_line <= 2.5:
-            ou_label = "Over 2.5 goles"
+            ou_label = "Mas de 2.5 goles"
             ou_prob  = p_o25
         elif ou_line <= 3.5:
             ou_label = "Over 3.5 goles"
@@ -9465,7 +9553,7 @@ elif _active_page == "Reto 13M":
             with col_auto:
                 if st.button("🔍 Auto-Resolver con ESPN", use_container_width=True, key="btn_auto_resolve",
                              help="Busca los resultados de tus picks pendientes en ESPN automáticamente"):
-                    with st.spinner("Consultando ESPN..."):
+                    with st.spinner("Buscando los mejores picks del dia..."):
                         finished_games = _fetch_finished_games()
                     resolved = 0
                     not_found = []
@@ -9841,10 +9929,10 @@ elif _active_page == "Califica":
                 for _mi, (_lbl, _val, _clr) in enumerate([
                     ("Prob Modelo", f'{_mp*100:.1f}%', "#00C896" if _mp > _ip else "#ef4444"),
                     ("Prob Impl.", f'{_ip*100:.1f}%', "#AEAEB2"),
-                    ("EV / $100", f'{_ev_r:+.1f}', "#00C896" if _ev_r > 0 else "#ef4444"),
+                    ("Ganancia", f'{_ev_r:+.1f}', "#00C896" if _ev_r > 0 else "#ef4444"),
                     ("Edge", f'{_edg:+.1f}pp', "#00C896" if _edg > 0 else "#ef4444"),
-                    ("Kelly 25%", f'{_kl*100:.1f}%', "#60a5fa"),
-                    ("DQ", f'{_dq_r:.0f}%', "#00C896" if _dq_r > 60 else "#C9A84C"),
+                    ("Apostar", f'{_kl*100:.1f}%', "#60a5fa"),
+                    ("Calidad", f'{_dq_r:.0f}%', "#00C896" if _dq_r > 60 else "#C9A84C"),
                 ]):
                     with _m_cols[_mi % 3]:
                         st.markdown(
@@ -9894,7 +9982,7 @@ elif _active_page == "Califica":
 elif _active_page == "Config":
     st.markdown('<div class="section-heading">⚙️ Config</div>', unsafe_allow_html=True)
 
-    st.markdown('<div style="font-size:0.65rem;color:var(--orange);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔮 SIMULACIONES</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.65rem;color:var(--orange);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Precision del analisis</div>', unsafe_allow_html=True)
     n_sims_cfg = st.select_slider(
         "Iteraciones",
         options=[1_000, 2_500, 5_000, 10_000, 25_000],
