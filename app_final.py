@@ -128,7 +128,7 @@ iframe[title*="streamlit"] { display:none !important; visibility:hidden !importa
 
 /* ── Layout ───────────────────────────────────────────── */
 .block-container {
-  padding: 16px 14px calc(var(--nav-h) + 80px) 14px !important;
+  padding: 16px 14px 140px 14px !important;
   max-width: 520px !important;
   margin: 0 auto !important;
 }
@@ -209,6 +209,21 @@ iframe[title*="streamlit"] { display:none !important; visibility:hidden !importa
 }
 .section-heading::before { content: ''; width: 3px; height: 14px; background: var(--orange); border-radius: 2px; flex-shrink: 0; }
 .section-heading::after  { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,85,0,0.3), transparent); }
+
+/* ── Liga toggle buttons — invisible, just hitbox ─────────────────────── */
+.stButton > button[data-testid*="btn_lg_"],
+div[data-testid="stButton"]:has(button[key*="btn_lg_"]) > button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: transparent !important;
+  height: 0px !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  pointer-events: all !important;
+}
 
 /* ── Game rows ─────────────────────────────────────────── */
 .game-row {
@@ -469,11 +484,17 @@ div[data-testid="stRadio"] > div[role="radiogroup"] {
   overflow: hidden !important;
   pointer-events: auto !important;
   touch-action: manipulation !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  display: flex !important;
 }
 @media (min-width: 768px) {
   div[data-testid="stRadio"] > div[role="radiogroup"] {
     width: 720px !important; height: 68px !important;
     bottom: 20px !important; border-radius: 32px !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    display: flex !important;
   }
 }
 
@@ -564,7 +585,7 @@ div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:last-child) {
   div[data-testid="stRadio"] label[data-baseweb="radio"] span,
   div[data-testid="stRadio"] label[data-baseweb="radio"] p,
   div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-    font-size: 0.38rem !important;
+    font-size: 0.62rem !important;
   }
 }
 
@@ -596,95 +617,7 @@ if "active_page" not in st.session_state:
 _active_page = st.session_state["active_page"]
 
 # CSS: transforma el radio en bottom nav compacto
-st.markdown("""
-<style>
-/* ── Ocultar label del radio ── */
-div[data-testid="stRadio"] > label { display:none !important; }
 
-/* ── Contenedor fixed bottom ── */
-div[data-testid="stRadio"] > div[role="radiogroup"] {
-  position: fixed !important;
-  bottom: 52px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: min(98vw, 520px) !important;
-  height: 50px !important;
-  background: rgba(22,22,24,0.97) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-  border: 1px solid rgba(255,255,255,0.10) !important;
-  border-radius: 25px !important;
-  z-index: 99999 !important;
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: stretch !important;
-  padding: 4px !important;
-  gap: 0 !important;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.6) !important;
-  overflow: hidden !important;
-}
-
-/* ── Ocultar input radio real ── */
-div[data-testid="stRadio"] input[type="radio"] { display:none !important; }
-
-/* ── Cada tab ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"] {
-  flex: 1 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 1px !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
-  touch-action: manipulation !important;
-  -webkit-tap-highlight-color: rgba(255,107,0,0.2) !important;
-  user-select: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 20px !important;
-  transition: background 0.15s !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-}
-
-/* ── Tab activo ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
-  background: rgba(255,107,0,0.22) !important;
-}
-
-/* ── Texto del tab ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"] span,
-div[data-testid="stRadio"] label[data-baseweb="radio"] p,
-div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-  font-size: 0.38rem !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.2px !important;
-  text-transform: uppercase !important;
-  color: #555555 !important;
-  line-height: 1 !important;
-  margin: 0 !important;
-  font-family: 'Outfit', sans-serif !important;
-  white-space: nowrap !important;
-}
-
-/* ── Texto activo ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p,
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) div[data-testid="stMarkdownContainer"] p {
-  color: #FF6B00 !important;
-}
-
-/* ── Separador vertical entre tabs ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:last-child) {
-  border-right: 1px solid rgba(255,255,255,0.05) !important;
-}
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked):not(:last-child),
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) + label {
-  border-right-color: transparent !important;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # Construir opciones: emoji + newline + label (el CSS los separa visualmente)
 _nav_options = [f'{i["icon"]}\n{i["label"]}' for i in _NAV_ITEMS]
@@ -7105,7 +7038,7 @@ elif _active_page == "Picks":
         "Baseball":   {"emoji":"⚾","color":"#ef4444","accent":"rgba(239,68,68,0.10)"},
         "Football":   {"emoji":"🏈","color":"#a78bfa","accent":"rgba(167,139,250,0.10)"},
     }
-    _SPORTS_ORDER_P = ["Basketball","Soccer","Hockey","Baseball","Football"]
+    _SPORTS_ORDER_P = ["Soccer","Basketball","Hockey","Baseball","Football"]
 
     _today_mx_p    = _now_mx_pt.strftime("%Y-%m-%d")
     _tom_mx_p      = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
@@ -7231,22 +7164,33 @@ elif _active_page == "Picks":
             _bg     = _smp["color"] + "28" if _is_sel else _smp["accent"]
             _opacity = "1" if (_sel_sp is None or _is_sel) else "0.4"
             with _sp_cols_p[_ci_p]:
-                st.markdown(
-                    f'<div style="text-align:center;padding:10px 3px;border-radius:12px;'
-                    f'background:{_bg};border:{_border};margin-bottom:6px;opacity:{_opacity};'
-                    f'transition:all 0.2s">'
-                    f'<div style="font-size:1.6rem;line-height:1">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.65rem;font-weight:700;color:{_smp["color"]};'
-                    f'letter-spacing:0.5px;text-transform:uppercase;margin-top:3px">{_sp_p}</div>'
-                    f'<div style="font-size:0.6rem;color:#6B7280;margin-top:1px">{_n_p} juegos</div>'
-                    f'</div>',
-                    unsafe_allow_html=True
+                # 3D sport card button
+                _c_hex = _smp["color"]  # e.g. "#FF6B00"
+                _c_r = int(_c_hex[1:3],16); _c_g = int(_c_hex[3:5],16); _c_b = int(_c_hex[5:7],16)
+                _c_dark = f"rgb({max(0,_c_r-60)},{max(0,_c_g-60)},{max(0,_c_b-60)})"
+                _c_light = f"rgba({_c_r},{_c_g},{_c_b},0.15)"
+                _sel_ring = f"0 0 0 2.5px {_c_hex}, " if _is_sel else ""
+                _card_3d = (
+                    f'<div style="'
+                    f'text-align:center;padding:14px 4px 12px;border-radius:14px;'
+                    f'background:linear-gradient(160deg,{_c_light} 0%,rgba({_c_r},{_c_g},{_c_b},0.06) 100%);'
+                    f'border:1px solid rgba({_c_r},{_c_g},{_c_b},{"0.6" if _is_sel else "0.25"});'
+                    f'border-top:1px solid rgba({_c_r},{_c_g},{_c_b},{"0.9" if _is_sel else "0.4"});'
+                    f'box-shadow:{_sel_ring}0 6px 20px rgba({_c_r},{_c_g},{_c_b},{"0.25" if _is_sel else "0.12"}),0 2px 0 rgba(255,255,255,0.05) inset;'
+                    f'opacity:{_opacity};cursor:pointer;transition:all 0.15s;margin-bottom:4px">'
+                    f'<div style="font-size:2rem;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4))">{_smp["emoji"]}</div>'
+                    f'<div style="font-size:0.68rem;font-weight:800;color:{_c_hex};'
+                    f'letter-spacing:1px;text-transform:uppercase;margin-top:6px;'
+                    f'text-shadow:0 1px 4px rgba({_c_r},{_c_g},{_c_b},0.4)">{_sp_p}</div>'
+                    f'<div style="font-size:0.6rem;color:rgba(255,255,255,0.4);margin-top:2px;font-weight:500">{_n_p} juegos</div>'
+                    + (f'<div style="font-size:0.55rem;color:{_c_hex};margin-top:3px;font-weight:700">✓ ACTIVO</div>' if _is_sel else "")
+                    + f'</div>'
                 )
+                st.markdown(_card_3d, unsafe_allow_html=True)
                 if st.button(
-                    "✕" if _is_sel else "▶",
+                    "✕ Quitar" if _is_sel else "Ver",
                     key=f"btn_sp_{_sp_p}",
                     use_container_width=True,
-                    help=f"{'Quitar filtro' if _is_sel else 'Solo ' + _sp_p}"
                 ):
                     st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
                     st.rerun()
@@ -7805,27 +7749,40 @@ elif _active_page == "Picks":
                 _hdr_border = f"1.5px solid {_smp['color']}66" if _is_open else "1px solid #2A2A2A"
                 _arrow      = "▼" if _is_open else "▶"
 
+                # Single clickable row — no separate button
+                _btn_k = f"btn_lg_{_lg_btn_counter}"
+                _lg_btn_counter += 1
+                _c_r2 = int(_smp["color"][1:3],16); _c_g2 = int(_smp["color"][3:5],16); _c_b2 = int(_smp["color"][5:7],16)
+                if _is_open:
+                    _lg_hdr_style = (
+                        f'background:rgba({_c_r2},{_c_g2},{_c_b2},0.12);'
+                        f'border:1px solid rgba({_c_r2},{_c_g2},{_c_b2},0.4);'
+                        f'border-bottom:none;border-radius:12px 12px 0 0;'
+                    )
+                else:
+                    _lg_hdr_style = (
+                        f'background:linear-gradient(160deg,#1A1A1E 0%,#111114 100%);'
+                        f'border:1px solid rgba(255,255,255,0.07);'
+                        f'border-top:1px solid rgba(255,255,255,0.12);'
+                        f'border-radius:12px;'
+                        f'box-shadow:0 3px 8px rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.05) inset;'
+                    )
                 st.markdown(
-                    f'<div style="background:{_hdr_bg};border:{_hdr_border};'
-                    f'border-radius:{"12px 12px 0 0" if _is_open else "12px"};'
-                    f'padding:9px 14px;margin-top:5px;'
+                    f'<div style="{_lg_hdr_style}padding:10px 14px;margin-top:6px;'
                     f'display:flex;justify-content:space-between;align-items:center">'
-                    f'<div>'
-                    f'<span style="font-size:0.85rem">{_flag_p}</span> '
-                    f'<span style="font-size:0.78rem;font-weight:700;color:#E8E8E8">{_lg_p}</span>'
-                    f'<span style="font-size:0.68rem;color:#6B7280;margin-left:6px">{_n_lg} partidos{_ctry_str}{_ev_lg_badge}</span>'
+                    f'<div style="display:flex;align-items:center;gap:8px">'
+                    f'<span style="font-size:0.88rem">{_flag_p}</span>'
+                    f'<span style="font-size:0.8rem;font-weight:700;color:#E8E8E8">{_lg_p}</span>'
+                    f'<span style="font-size:0.65rem;color:#555;margin-left:2px">{_n_lg} partidos{_ev_lg_badge}</span>'
                     f'</div>'
-                    f'<span style="font-size:0.8rem;color:{_smp["color"]};font-weight:700">{_arrow}</span>'
+                    f'<span style="font-size:0.75rem;color:{_smp["color"]};font-weight:700">{"▼" if _is_open else "▶"}</span>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
-                _btn_k = f"btn_lg_{_lg_btn_counter}"
-                _lg_btn_counter += 1
                 if st.button(
-                    "▼ Cerrar" if _is_open else "▶ Ver partidos",
+                    "▼" if _is_open else "▶",
                     key=_btn_k,
                     use_container_width=True,
-                    help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"
                 ):
                     st.session_state[_exp_key] = not _is_open
                     st.rerun()
@@ -10099,15 +10056,10 @@ _components_hide.html("""
         el.style.pointerEvents = 'none';
       });
     });
-    // Hide fixed-position elements in bottom-right (manage app button)
-    document.querySelectorAll('div[style*="position: fixed"]').forEach(el => {
-      const rect = el.getBoundingClientRect();
-      if (rect.right > window.innerWidth * 0.7 && rect.bottom > window.innerHeight * 0.7) {
-        const text = el.innerText || '';
-        if (!text.includes('Rongol') && !text.includes('Picks')) {
-          el.style.display = 'none';
-        }
-      }
+    // Hide fixed-position elements that look like Streamlit badges (small, bottom-right)
+    document.querySelectorAll('a[href*="streamlit"], button[title*="Manage"], .viewerBadge_container__1QSob').forEach(el => {
+      el.style.display = 'none';
+      el.style.visibility = 'hidden';
     });
   }
   nuke();
