@@ -113,12 +113,20 @@ button[title="Manage app"],
 button[aria-label="Manage app"],
 button[data-testid*="manage"],
 a[href*="streamlit.io"],
+a[href*="streamlit.app"],
 div[class*="StatusWidget"],
 div[class*="ToolbarActions"],
 div[class*="deployButton"],
+/* Hosted by Streamlit footer + username */
+footer,
+footer *,
+[data-testid="stBottom"],
+div[class*="reportview-container"] footer,
+div[class*="footer"],
+section[data-testid="stBottom"],
 /* The red crown / manage app floating button */
 div[class*="streamlit-wide"] > div:last-child > div:last-child > div[style*="position: fixed"],
-iframe[title*="streamlit"] { display:none !important; visibility:hidden !important; }
+iframe[title*="streamlit"] { display:none !important; visibility:hidden !important; opacity:0 !important; height:0 !important; overflow:hidden !important; }
 [data-testid="stSidebar"], [data-testid="collapsedControl"] { display:none !important; }
 
 /* ── Scrollbar ────────────────────────────────────────── */
