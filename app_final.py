@@ -14,6 +14,12 @@ import os
 import json
 from datetime import datetime, timezone
 
+# Force dark background before any CSS loads (prevents white flash)
+st.markdown("""<style>
+html,body,.stApp{background-color:#0A0A0B!important;color:#F0F0F2!important}
+.stSpinner>div{border-top-color:#FF5500!important}
+</style>""", unsafe_allow_html=True)
+
 st.set_page_config(
     page_title="The Gamblers Den",
     page_icon="🎰",
@@ -21,9 +27,14 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-if "_css_done" not in st.session_state:
-    st.markdown("""
+# Load fonts (always inject - DOM resets on every rerun)
+st.markdown('''<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">''', unsafe_allow_html=True)
+
+st.markdown("""
 <style>
+/* Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap');
 
 /* ═══════════════════════════════════════════════════════
@@ -564,7 +575,6 @@ div[data-testid="stAppViewContainer"] > section { opacity: 1 !important; }
 
 </style>
 """, unsafe_allow_html=True)
-    st.session_state["_css_done"] = True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5632,8 +5642,8 @@ use_demo   = st.session_state.get("use_demo_val", False)
 
 
 st.markdown("""
-<div class="den-header">
-  <div class="den-logo">The <span>Gamblers</span> Den</div>
+<div class="den-header" style="text-align:center;padding:20px 0 10px">
+  <div class="den-logo" style="font-family:'Barlow Condensed','Impact',sans-serif;font-size:2.4rem;font-weight:900;color:#fff;text-transform:uppercase;letter-spacing:-1px">The <span style="color:#FF5500">Gamblers</span> Den</div>
   <div class="den-subtitle">Monte Carlo · Expected Value · Sports Intelligence</div>
   <div style="margin-top:10px">
     <span class="den-corner">♠</span>
@@ -5771,7 +5781,7 @@ if (not _already_simulated or _leagues_changed or run_sidebar) and games:
     if not is_demo and _gsheets_available():
         try:
             _post_games = [g for g in games if g.get("state") == "post"]
-            if _post_games:
+            if _post_games and not st.session_state.get("_ph_updated_today", False):
                 _all_ph = _ph_load()
                 _resolved = _ph_auto_resolve(_all_ph)
                 if _resolved:
@@ -6867,8 +6877,14 @@ if _active_page == "Rongol Picks":
             # ── Render picks: tarjetas blancas 3 por renglón ─────────────
             for _row_i in range(0, _n_picks, 3):
                 _row_picks = rongol_picks[_row_i:_row_i+3]
-                _cols = st.columns(len(_row_picks))
-                for _ci, _rp in enumerate(_row_picks):
+                # Always 3 columns - fill with empty if fewer picks
+                _cols = st.columns(3)
+                for _ci in range(3):
+                    if _ci >= len(_row_picks):
+                        with _cols[_ci]:
+                            st.empty()
+                        continue
+                    _rp = _row_picks[_ci]
                     _abs_idx  = _row_i + _ci
                     _is_fire  = _abs_idx in _fire_indices
                     _pk       = _rp["_pick"]
@@ -6965,13 +6981,29 @@ if _active_page == "Rongol Picks":
                         f'<span style="font-size:0.58rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px">{_mkt}</span>'
                         f'<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl}</span>'
                         f'</div>'
-                        f'<div style="display:flex;align-items:center;gap:10px;margin-top:2px">'
-                        f'<span style="font-size:2.0rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec}</span>'
-                        f'<div style="display:flex;flex-direction:column;gap:1px">'
-                        f'<span style="font-size:0.72rem;font-weight:700;color:rgba(0,0,0,0.5)">{_pick_pct:.0f}% prob</span>'
-                        f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.4)">Apostar este partido</span>'
-                        f'</div>'
-                        f'</div></div></div>'
+                        # Main decimal + prob
+                        + f'<div style="display:flex;align-items:center;gap:10px;margin-top:4px">'
+                        + f'<span style="font-size:2.2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec}</span>'
+                        + f'<div style="display:flex;flex-direction:column;gap:3px">'
+                        + f'<span style="font-size:0.78rem;font-weight:800;color:rgba(0,0,0,0.65)">{_pick_pct:.0f}% probabilidad</span>'
+                        + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">EV: <b>{(_pk.get("ev",0) or 0):+.1f}</b> por $100 apostado</span>' )
+                        + (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.45)">Kelly: apostar <b>{(_pk.get("kelly",0) or 0)*25:.1f}%</b> del bankroll</span>' if (_pk.get("kelly",0) or 0)>0 else "")
+                        + f'</div></div>'
+                        # Mini stats row
+                        + f'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">'
+                        + f'<div style="flex:1;text-align:center"><div style="font-size:0.6rem;color:rgba(0,0,0,0.4);font-weight:600;text-transform:uppercase">Prob MC</div>'
+                        + f'<div style="font-size:0.85rem;font-weight:800;color:#111">{_pick_pct:.0f}%</div></div>'
+                        + f'<div style="width:1px;background:rgba(0,0,0,0.12)"></div>'
+                        + f'<div style="flex:1;text-align:center"><div style="font-size:0.6rem;color:rgba(0,0,0,0.4);font-weight:600;text-transform:uppercase">Cuota</div>'
+                        + f'<div style="font-size:0.85rem;font-weight:800;color:#111">{_pick_dec}</div></div>'
+                        + f'<div style="width:1px;background:rgba(0,0,0,0.12)"></div>'
+                        + f'<div style="flex:1;text-align:center"><div style="font-size:0.6rem;color:rgba(0,0,0,0.4);font-weight:600;text-transform:uppercase">EV/100</div>'
+                        + f'<div style="font-size:0.85rem;font-weight:800;color:#111">{(_pk.get("ev",0) or 0):+.0f}</div></div>'
+                        + f'<div style="width:1px;background:rgba(0,0,0,0.12)"></div>'
+                        + f'<div style="flex:1;text-align:center"><div style="font-size:0.6rem;color:rgba(0,0,0,0.4);font-weight:600;text-transform:uppercase">DQ</div>'
+                        + f'<div style="font-size:0.85rem;font-weight:800;color:#111">{_sim.get("data_quality",0) or 0:.0f}%</div></div>'
+                        + f'</div>'
+                        + f'</div></div>'
                     )
                     with _cols[_ci]:
                         st.markdown(_card, unsafe_allow_html=True)
