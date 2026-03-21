@@ -397,45 +397,54 @@ div[data-testid="stMultiSelect"] label {
 /* ═══════════════════════════════════════════════════════
    EXPANDERS
    ═══════════════════════════════════════════════════════ */
+/* Expander base */
 [data-testid="stExpander"] {
-  background: transparent !important; border: none !important;
-  box-shadow: none !important; margin: 5px 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  margin: 4px 0 !important;
 }
+/* Summary header — dark 3D pill */
 [data-testid="stExpander"] summary {
-  background: linear-gradient(160deg, #1A1A20 0%, #111114 100%) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border2) !important;
-  border-top: 1px solid rgba(255,255,255,0.12) !important;
-  border-radius: var(--radius) !important;
+  background: linear-gradient(160deg, #1C1C22 0%, #111114 100%) !important;
+  color: #D0D0D8 !important;
+  border: 1px solid rgba(255,255,255,0.09) !important;
+  border-top: 1.5px solid rgba(255,255,255,0.16) !important;
+  border-bottom: 2px solid rgba(0,0,0,0.45) !important;
+  border-radius: 12px !important;
   padding: 12px 16px !important;
-  font-family: 'Barlow', sans-serif !important; font-weight: 700 !important; font-size: 0.86rem !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.06) inset !important;
-}
-[data-testid="stExpander"] > details[open] > summary {
-  border-radius: var(--radius) var(--radius) 0 0 !important;
-  border-color: rgba(255,85,0,0.35) !important;
-  border-bottom-color: transparent !important;
-  color: var(--orange) !important;
+  font-family: 'Barlow', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 0.85rem !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.07) inset !important;
 }
 [data-testid="stExpander"] summary:hover {
-  border-color: rgba(255,85,0,0.3) !important;
-  color: var(--orange) !important;
+  border-color: rgba(255,85,0,0.35) !important;
+  color: #FF5500 !important;
 }
-[data-testid="stExpander"] summary svg { fill: var(--orange) !important; }
-[data-testid="stExpander"] > details > div,
-[data-testid="stExpander"] .streamlit-expanderContent {
-  background: linear-gradient(160deg, #16161A 0%, #111114 100%) !important;
-  border: 1px solid rgba(255,85,0,0.15) !important;
+[data-testid="stExpander"] details[open] > summary {
+  border-radius: 12px 12px 0 0 !important;
+  border-bottom-color: transparent !important;
+  color: #FF5500 !important;
+  border-color: rgba(255,85,0,0.4) !important;
+}
+[data-testid="stExpander"] summary svg { fill: #FF5500 !important; }
+/* Open content */
+[data-testid="stExpander"] details[open] > div:last-child {
+  background: #0F0F12 !important;
+  border: 1px solid rgba(255,85,0,0.2) !important;
   border-top: none !important;
-  border-radius: 0 0 var(--radius) var(--radius) !important;
-  padding: 0 !important;
+  border-radius: 0 0 12px 12px !important;
+  padding: 8px !important;
 }
-/* Hide the expander content box when CLOSED — kills the white box */
-[data-testid="stExpander"] > details:not([open]) > div,
-[data-testid="stExpander"] > details:not([open]) .streamlit-expanderContent {
+/* KILL white box when closed — every possible selector */
+[data-testid="stExpander"] details:not([open]) > div,
+[data-testid="stExpander"] details:not([open]) > div:last-child,
+[data-testid="stExpander"] details:not([open]) > *:not(summary) {
   display: none !important;
   height: 0 !important;
   overflow: hidden !important;
+  visibility: hidden !important;
   border: none !important;
   padding: 0 !important;
   margin: 0 !important;
@@ -631,6 +640,29 @@ div[data-testid="column"] .liga-btn-wrap + div[data-testid="stButton"] > button 
 div[data-testid="column"] .liga-btn-wrap + div[data-testid="stButton"] {
   margin-top: -120px !important;
 }
+
+/* ── Sport selector: invisible button overlaid on card ────────────────── */
+/* The HTML card is rendered, then button sits on top of it */
+div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]) {
+  margin-top: -108px !important;
+  position: relative !important;
+  z-index: 5 !important;
+}
+div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]) > button {
+  height: 108px !important;
+  min-height: 108px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  opacity: 0 !important;
+  cursor: pointer !important;
+  border-radius: 16px !important;
+}
+
+/* Expander styles consolidated above */
+
 
 </style>
 """, unsafe_allow_html=True)
@@ -1225,7 +1257,7 @@ def get_team_profile(team_id):
 
 
 @st.cache_data(ttl=1800)  # Cache 30min — form doesn't change mid-day
-def fetch_recent_form(sport, league, team_id, n_games=5):
+def fetch_recent_form(sport, league, team_id, n_games=10):
     """
     Fetch last N results for a team from ESPN team events API.
     Returns dict with:
@@ -3051,6 +3083,23 @@ def pick_score_universal(cand, sim, r, sg):
         if not (sim.get("ou_line") or "").replace("~","").strip():
             score -= 12
 
+    # 14. H2H histórico — si el favorito del modelo coincide con el favorito H2H
+    _h2h_d = r.get("h2h", {}) if isinstance(r, dict) else {}
+    if _h2h_d and _h2h_d.get("count", 0) >= 3 and mkt == "ML":
+        _wh2h = _h2h_d.get("wins_home", 0)
+        _wa2h = _h2h_d.get("wins_away", 0)
+        _tot2h = _wh2h + _wa2h + _h2h_d.get("draws", 0)
+        if _tot2h >= 3:
+            _h2h_home_rate = _wh2h / _tot2h
+            _label_h2h = cand.get("label", cand.get("pick_label", ""))
+            _is_home_h2h = bool(r.get("home_team","")) and r.get("home_team","") in _label_h2h
+            _pick_h2h_rate = _h2h_home_rate if _is_home_h2h else (1 - _h2h_home_rate)
+            # Strong H2H alignment: pick dominates H2H history
+            if _pick_h2h_rate >= 0.6:
+                score += (_pick_h2h_rate - 0.5) * 20  # up to +10
+            elif _pick_h2h_rate <= 0.35:
+                score -= (0.5 - _pick_h2h_rate) * 14  # penalize H2H contradiction
+
     return round(score, 3)
 
 
@@ -3066,7 +3115,8 @@ def compute_base_prob(game):
       1. Moneyline (vig-adjusted)         weight 4.0  — best signal, market consensus
       2. ESPN win% (from odds block)      weight 3.0  — ESPN's own model
       3. Season record ratio (W-L-D)      weight 2.0  — full season performance
-      4. Recent form (last 5 games)       weight 2.5  — recency-weighted win rate
+      4. Recent form (last 10 games)      weight 3.0  — recency-weighted win rate (exp decay)
+      4b. H2H head-to-head history        weight 1.8  — direct matchup evidence (≥5 games)
       5. League home rate prior           weight 0.6  — anchor when data is thin
 
     DQ (data quality) = how much hard evidence we have, 0-100%.
@@ -3129,7 +3179,7 @@ def compute_base_prob(game):
             signals.append(home_form / total_form)
             # When no moneyline available, form carries more weight (up to 3.5)
             has_ml_signal = bool(hml and aml)
-            form_w = 2.5 if has_ml_signal else 3.5
+            form_w = 3.0 if has_ml_signal else 4.0  # Last 10 games → more reliable_signal else 3.5
             weights.append(form_w)
     elif home_form is not None:
         signals.append((home_form + 0.5) / (home_form + 1.0))
@@ -3137,6 +3187,24 @@ def compute_base_prob(game):
     elif away_form is not None:
         signals.append(1.0 - (away_form + 0.5) / (away_form + 1.0))
         weights.append(1.5)
+
+    # ── Signal 4b: H2H head-to-head win rate ────────────────────────────────
+    # Direct historical evidence between these two specific teams.
+    # Weight 1.8 (between form 2.5 and season record 2.0) when ≥5 H2H games.
+    # When only 3-4 H2H games, use weight 1.0 (smaller sample).
+    _h2h_sig = game.get("h2h", {})
+    if _h2h_sig and isinstance(_h2h_sig, dict):
+        _h2h_count = _h2h_sig.get("count", 0) or 0
+        _wh2h = _h2h_sig.get("wins_home", 0) or 0
+        _wa2h = _h2h_sig.get("wins_away", 0) or 0
+        _dr2h = _h2h_sig.get("draws", 0) or 0
+        _tot2h = _wh2h + _wa2h + _dr2h
+        if _tot2h >= 3:
+            # Home win rate in H2H (draws count as 0.5)
+            _h2h_home_rate = (_wh2h + 0.5 * _dr2h) / _tot2h
+            signals.append(_h2h_home_rate)
+            _h2h_w = 1.8 if _h2h_count >= 5 else 1.0
+            weights.append(_h2h_w)
 
     # ── Signal 5: League historical home rate (prior / fallback) ─────────────
     # Always add as a weak anchor — prevents wild swings when data is thin
@@ -7207,44 +7275,49 @@ elif _active_page == "Picks":
             st.session_state["_picks_sel_sport"] = None
 
         _sp_cols_p = st.columns(len(_sports_p))
+        # Inject 3D card style for sport buttons — scoped to this section
+        _sp_styles = ""
+        for _ci_tmp, _sp_tmp in enumerate(_sports_p):
+            _c_tmp = _SPORT_META_P[_sp_tmp]["color"]
+            _cr_t,_cg_t,_cb_t = int(_c_tmp[1:3],16),int(_c_tmp[3:5],16),int(_c_tmp[5:7],16)
+            _is_s_tmp = (_sel_sp == _sp_tmp)
+            _ring_tmp = f"0 0 0 3px {_c_tmp}," if _is_s_tmp else ""
+            _op_tmp   = "1" if (_sel_sp is None or _is_s_tmp) else "0.45"
+            _sp_styles += f"""
+div[data-testid="stButton"]:has(> button[data-testid="stBaseButton-secondary"][key="btn_sp_{_sp_tmp}"]) button,
+div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
+  background: linear-gradient(170deg,rgba({_cr_t},{_cg_t},{_cb_t},0.25) 0%,rgba({_cr_t},{_cg_t},{_cb_t},0.07) 100%) !important;
+  border: 1px solid rgba({_cr_t},{_cg_t},{_cb_t},{"0.75" if _is_s_tmp else "0.28"}) !important;
+  border-top: 1.5px solid rgba({_cr_t},{_cg_t},{_cb_t},{"1.0" if _is_s_tmp else "0.5"}) !important;
+  border-bottom: 2px solid rgba(0,0,0,0.5) !important;
+  box-shadow: {_ring_tmp}0 6px 20px rgba({_cr_t},{_cg_t},{_cb_t},{"0.3" if _is_s_tmp else "0.12"}),
+              0 1px 0 rgba(255,255,255,0.1) inset !important;
+  color: {_c_tmp} !important;
+  font-size: 0.68rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 1.2px !important;
+  text-transform: uppercase !important;
+  padding: 18px 4px 14px !important;
+  min-height: 96px !important;
+  height: auto !important;
+  border-radius: 16px !important;
+  white-space: pre-line !important;
+  line-height: 1.7 !important;
+  opacity: {_op_tmp} !important;
+  font-family: 'Barlow',sans-serif !important;
+  text-shadow: 0 1px 6px rgba({_cr_t},{_cg_t},{_cb_t},0.5) !important;
+}}"""
+        st.markdown(f"<style>{_sp_styles}</style>", unsafe_allow_html=True)
+
         for _ci_p, _sp_p in enumerate(_sports_p):
             _smp = _SPORT_META_P[_sp_p]
             _n_p = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
             _is_sel = (_sel_sp == _sp_p)
-            _border = f'2.5px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}44'
-            _bg     = _smp["color"] + "28" if _is_sel else _smp["accent"]
-            _opacity = "1" if (_sel_sp is None or _is_sel) else "0.4"
+            _check = " ✓" if _is_sel else ""
             with _sp_cols_p[_ci_p]:
-                # 3D sport card — button IS the card via CSS
-                _c_hex = _smp["color"]
-                _c_r = int(_c_hex[1:3],16); _c_g = int(_c_hex[3:5],16); _c_b = int(_c_hex[5:7],16)
-                _sel_ring = f"0 0 0 2.5px {_c_hex}," if _is_sel else ""
-                _btn_lbl = f"{_smp['emoji']}\n{_sp_p}\n{_n_p} juegos" + ("\n✓" if _is_sel else "")
-                st.markdown(f"""<style>
-button[data-testid="baseButton-secondary"][kind="secondary"]:nth-of-type({_ci_p+1}),
-div[data-testid="stButton"]:nth-of-type({_ci_p+1}) > button {{
-  background: linear-gradient(160deg,rgba({_c_r},{_c_g},{_c_b},0.18) 0%,rgba({_c_r},{_c_g},{_c_b},0.06) 100%) !important;
-  border: 1px solid rgba({_c_r},{_c_g},{_c_b},{"0.7" if _is_sel else "0.3"}) !important;
-  border-top: 1px solid rgba({_c_r},{_c_g},{_c_b},{"1.0" if _is_sel else "0.5"}) !important;
-  border-bottom: 1px solid rgba(0,0,0,0.4) !important;
-  box-shadow: {_sel_ring} 0 6px 20px rgba({_c_r},{_c_g},{_c_b},{"0.3" if _is_sel else "0.12"}),0 2px 0 rgba(255,255,255,0.06) inset !important;
-  color: {_c_hex} !important;
-  font-size: 0.7rem !important;
-  font-weight: 800 !important;
-  font-family: 'Barlow', sans-serif !important;
-  letter-spacing: 1px !important;
-  text-transform: uppercase !important;
-  padding: 14px 4px 10px !important;
-  height: auto !important;
-  min-height: 90px !important;
-  border-radius: 14px !important;
-  white-space: pre-line !important;
-  line-height: 1.6 !important;
-  opacity: {_opacity} !important;
-}}
-</style>""", unsafe_allow_html=True)
+                _btn_txt = _smp["emoji"] + "\n" + _sp_p + "\n" + str(_n_p) + " juegos" + _check
                 if st.button(
-                    f"{_smp['emoji']}  {_sp_p}\n{_n_p} juegos" + (" ✓" if _is_sel else ""),
+                    _btn_txt,
                     key=f"btn_sp_{_sp_p}",
                     use_container_width=True,
                 ):
@@ -7697,52 +7770,114 @@ div[data-testid="stButton"]:nth-of-type({_ci_p+1}) > button {{
             else:
                 _pills_p = _ppill(_away_p[:8],_a_dec_p)+_ppill(_home_p[:8],_h_dec_p)
 
-        # ── White card shell ───────────────────────────────────────────────
+        # ── Pick explanation + white card ──────────────────────────────────
+        _ev_val = bp.get("ev", 0) or 0
+        _kelly  = (bp.get("kelly", 0) or 0) * 25
+        _dq     = sim.get("data_quality", 0) or 0
+        _conf_c = "#007744" if _bp_prob >= 0.65 else ("#996600" if _bp_prob >= 0.50 else "#880000")
+        _conf_l = "ALTA" if _bp_prob >= 0.65 else ("MEDIA" if _bp_prob >= 0.50 else "BAJA")
+        _nsim   = sim.get("n_simulations", 0) or 0
+        _fav_p  = max(_h_pct_p or 0, _a_pct_p or 0)
+        # Build signal breakdown
+        _h_form = g.get("home_form") if g else None
+        _a_form = g.get("away_form") if g else None
+        _h_rec  = g.get("home_record","") if g else ""
+        _a_rec  = g.get("away_record","") if g else ""
+        _h2h_g  = g.get("h2h", {}) if g else {}
+        _h2h_cnt = _h2h_g.get("count", 0) if _h2h_g else 0
+
+        # Form summary
+        _form_str = ""
+        if _h_form is not None and _a_form is not None:
+            _form_str = f"Forma: {_home_p[:6]} {_h_form*100:.0f}% vs {_away_p[:6]} {_a_form*100:.0f}% (últ.10)"
+
+        # H2H summary
+        _h2h_str = ""
+        if _h2h_cnt >= 3:
+            _wh = _h2h_g.get("wins_home", 0)
+            _wa = _h2h_g.get("wins_away", 0)
+            _dr = _h2h_g.get("draws", 0)
+            _h2h_avg = _h2h_g.get("avg_total", 0)
+            _h2h_str = f"H2H {_h2h_cnt}ptdos: {_home_p[:7]} {_wh}V–{_dr}E–{_wa}V {_away_p[:7]}"
+            if _h2h_avg: _h2h_str += f" · {_h2h_avg:.1f}gls"
+
+        _why = f"MC {_nsim:,} sims · {_fav_p:.0f}% al favorito · DQ {_dq:.0f}%"
+
+        _cta = (
+            '<div style="margin:0 10px 10px;'
+            'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+            'border-radius:14px;padding:12px 14px;'
+            'border-top:2px solid rgba(255,255,255,0.5);'
+            'box-shadow:0 4px 16px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">'
+            f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">'
+            '<span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:2px">APOSTAR →</span>'
+            f'<span style="font-size:0.62rem;font-weight:900;color:#000;background:rgba(0,0,0,0.1);'
+            f'padding:2px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_bp_mkt}</span>'
+            f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;'
+            f'text-overflow:ellipsis;white-space:nowrap">{_bp_lbl}</span>'
+            '</div>'
+            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+            f'<span style="font-size:2.6rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec_p}</span>'
+            f'<div style="display:flex;flex-direction:column;gap:2px">'
+            f'<span style="font-size:0.82rem;font-weight:800;color:rgba(0,0,0,0.65)">{_bp_prob*100:.0f}% probabilidad</span>'
+            f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>'
+            + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b> del bankroll</span>' if _kelly > 0 else '')
+            + '</div></div>'
+            '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;'
+            'padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">'
+            + ''.join([
+                f'<div style="text-align:center">'
+                f'<div style="font-size:0.5rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">{lbl}</div>'
+                f'<div style="font-size:0.9rem;font-weight:900;color:{clr}">{val}</div>'
+                f'</div>'
+                for lbl, val, clr in [
+                    ("Prob.", f"{_bp_prob*100:.0f}%", "#000"),
+                    ("EV/100", f"{_ev_val:+.0f}", "#006600" if _ev_val>0 else "#880000"),
+                    ("DQ", f"{_dq:.0f}%", "#000"),
+                    ("Kelly", f"{_kelly:.1f}%", "#000"),
+                ]
+            ])
+            + '</div>'
+            f'<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.08)">'
+            f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">📊 {_why}</span>'
+            '</div>'
+            + (
+                f'<div style="margin-top:4px;padding:4px 8px;background:rgba(0,0,0,0.08);border-radius:7px">'
+                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.6)">⚔️ {_h2h_str}</span>'
+                '</div>' if _h2h_str else ''
+            )
+            + (
+                f'<div style="margin-top:3px;padding:4px 8px;background:rgba(0,0,0,0.06);border-radius:7px">'
+                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">📈 {_form_str}</span>'
+                '</div>' if _form_str else ''
+            )
+            + '</div>'
+        )
         _html = (
-            f'<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
-            f'border-radius:20px;overflow:hidden;margin-bottom:3px;'
-            f'border:1px solid rgba(0,0,0,0.07);'
-            f'box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset">'
-            # Liga header
-            f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
-            f'<span style="font-size:0.6rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl_p}</span>'
-            f'<span style="font-size:0.65rem;color:#C9A84C">{f"EV +{bp.get('ev',0):.1f}" if (bp.get('ev',0) or 0)>3 else ""}</span>'
+            '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#EAEAEF 100%);'
+            'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+            'border:1px solid rgba(0,0,0,0.07);border-top:1.5px solid rgba(255,255,255,0.9);'
+            'box-shadow:0 8px 28px rgba(0,0,0,0.25),0 2px 0 rgba(255,255,255,0.8) inset">'
+            f'<div style="padding:8px 14px 3px;display:flex;justify-content:space-between">'
+            f'<span style="font-size:0.58rem;font-weight:700;color:#888;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl_p}</span>'
+            f'<span style="font-size:0.62rem;color:#C9A84C;font-weight:700">'
+            + (f"EV +{_ev_val:.1f}" if _ev_val > 2 else "")
+            + f'</span></div>'
+            f'<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 14px 4px">'
+            f'<div style="text-align:center;flex:1">' + _logo_a_p
+            + f'<div style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">{_away_p[:10]}</div>'
             f'</div>'
-            # Teams + logos
-            f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
-            f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
-            + _logo_a_p +
-            f'<span style="font-size:0.62rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_p[:10]}</span>'
+            f'<div style="flex:1;text-align:center">'
+            f'<div style="font-size:1.5rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+            f'<div style="font-size:0.5rem;color:#CCC;margin-top:2px">{_sg_icon_p}</div>'
             f'</div>'
-            f'<div style="flex:1.2;text-align:center">'
-            f'<div style="font-size:1.6rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
-            f'<div style="font-size:0.5rem;color:#BBB;margin-top:3px">{_sg_icon_p}</div>'
-            f'</div>'
-            f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
-            + _logo_h_p +
-            f'<span style="font-size:0.62rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_p[:10]}</span>'
-            f'</div>'
-            f'</div>'
-            # Divider
-            f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
-            # Pills
-            f'<div style="display:flex;gap:6px;padding:10px 12px">' + _pills_p + f'</div>'
-            # CTA
-            f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
-            f'border-radius:12px;padding:11px 14px;'
-            f'border:1px solid rgba(255,255,255,0.35);'
-            f'box-shadow:0 4px 14px rgba(255,185,0,0.3),0 1px 0 rgba(255,255,255,0.45) inset">'
-            f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:3px">'
-            f'<span style="font-size:0.58rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px">{_bp_mkt}</span>'
-            f'<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_bp_lbl}</span>'
-            f'</div>'
-            f'<div style="display:flex;align-items:center;gap:10px">'
-            f'<span style="font-size:2.0rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec_p}</span>'
-            f'<div>'
-            f'<div style="font-size:0.72rem;font-weight:700;color:rgba(0,0,0,0.5)">{_pick_pct_p:.0f}% prob</div>'
-            f'<div style="font-size:0.6rem;color:rgba(0,0,0,0.35)">Apuesta sugerida</div>'
-            f'</div></div></div>'
-            f'</div>'
+            f'<div style="text-align:center;flex:1">' + _logo_h_p
+            + f'<div style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">{_home_p[:10]}</div>'
+            f'</div></div>'
+            f'<div style="height:1px;background:rgba(0,0,0,0.07);margin:0 12px"></div>'
+            f'<div style="display:flex;gap:5px;padding:8px 10px">' + _pills_p + '</div>'
+            + _cta
+            + '</div>'
         )
         return _html
 
