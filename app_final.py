@@ -2579,6 +2579,50 @@ def ml_to_prob(ml):
         return 100/(ml+100) if ml>0 else abs(ml)/(abs(ml)+100)
     except: return 0.5
 
+def prob_to_ml(prob: float, vig: float = 0.045) -> str:
+    """Prob → momio americano con vig. ej: 0.62 → '-163'"""
+    try:
+        p = max(0.01, min(0.99, float(prob)))
+        p_vig = min(0.98, p * (1 + vig))
+        if p_vig >= 0.5:
+            return str(round(-(p_vig / (1 - p_vig)) * 100))
+        else:
+            return f"+{round(((1 - p_vig) / p_vig) * 100)}"
+    except:
+        return ""
+
+def prob_to_dec(prob: float, vig: float = 0.045) -> str:
+    """Prob → momio decimal con vig. ej: 0.62 → '1.61'
+    Decimal = 1 / prob_con_vig  (incluye la ganancia + la apuesta)
+    Una cuota de 1.61 significa: apuestas $100, recibes $161 si ganas.
+    """
+    try:
+        p = max(0.01, min(0.99, float(prob)))
+        p_vig = min(0.98, p * (1 + vig))
+        dec = 1.0 / p_vig
+        return f"{dec:.2f}"   # ej: "1.61"
+    except:
+        return ""
+
+def fair_ml(prob: float) -> str:
+    """Momio americano justo SIN vig."""
+    try:
+        p = max(0.01, min(0.99, float(prob)))
+        if p >= 0.5:
+            return str(round(-(p / (1-p)) * 100))
+        else:
+            return f"+{round(((1-p)/p) * 100)}"
+    except:
+        return ""
+
+def fair_dec(prob: float) -> str:
+    """Momio decimal justo SIN vig. ej: 0.62 → '1.61'"""
+    try:
+        p = max(0.01, min(0.99, float(prob)))
+        return f"{(1.0/p):.2f}"
+    except:
+        return ""
+
 def win_pct(rec):
     """Parse W-L or W-L-D record, return win% or None if insufficient data."""
     try:
@@ -2629,6 +2673,156 @@ def quarter_kelly(prob, ml):
         k=(b*prob-(1-prob))/b
         return max(0.0,round(k*0.25,4))
     except: return None
+
+def pick_score_universal(cand, sim, r, sg):
+    """
+    Score compuesto universal — usado por Rongol, Picks tab e historial.
+    Toma en cuenta TODAS las señales disponibles de la simulación:
+    1. Prob Monte Carlo  2. EV vs casa  3. Edge pp  4. Consenso señales
+    5. DQ               6. Kelly       7. Líneas modelo vs casa
+    8. Lesiones         9. Fatiga B2B  10. Scoring trend λ
+    11. O/U modelo vs ESPN  12. Mercado  13. Soccer sin línea ESPN
+    """
+    prob  = cand.get("prob", 0) or 0
+    ev    = cand.get("ev",   0) or 0
+    mkt   = cand.get("market", cand.get("mercado", ""))
+    kelly = cand.get("kelly", 0) or 0
+    dq    = sim.get("data_quality", 0) or 0
+    consensus = sim.get("consensus_score", 0) or 0
+
+    # 1. Probabilidad Monte Carlo
+    score = prob * 0.45
+
+    # 2. EV vs momio de la casa
+    if ev > 0:   score += min(ev, 30) * 0.9
+    elif ev < 0: score += max(ev, -15) * 0.25
+
+    # 3. Edge modelo vs implícita ESPN
+    if mkt == "ML":
+        _label = cand.get("label", cand.get("pick_label", ""))
+        _home_name = r.get("home_team","") if isinstance(r, dict) else ""
+        _is_h = bool(_home_name) and _home_name in _label
+        _edge_pp = sim.get("edge_home_pp") if _is_h else sim.get("edge_away_pp")
+        if _edge_pp is not None:
+            score += _edge_pp * 1.5
+
+    # 4. Consenso señales (MC + Forma + ScoringTrend + Fatiga)
+    score += consensus * 18
+
+    # 5. Calidad de datos
+    score += (dq / 100) * 10
+
+    # 6. Kelly 25%
+    if kelly > 0:
+        score += min(kelly * 120, 12)
+
+    # 7. Líneas del modelo vs casa (decimal propio vs ESPN)
+    if mkt == "ML":
+        try:
+            _label2 = cand.get("label", cand.get("pick_label", ""))
+            _is_h2  = bool(r.get("home_team","")) and r.get("home_team","") in _label2
+            _mdec   = float(sim.get("model_home_dec" if _is_h2 else "model_away_dec") or 0)
+            _casa_ml = sim.get("home_ml" if _is_h2 else "away_ml")
+            if _casa_ml and _mdec > 0:
+                _casa_prob = ml_to_prob(_casa_ml)
+                _casa_dec  = 1 / _casa_prob if _casa_prob > 0 else 0
+                score += (_casa_dec - _mdec) * 10
+        except:
+            pass
+
+    # 8. Lesiones
+    _h_inj = sim.get("home_injury_factor", 1.0) or 1.0
+    _a_inj = sim.get("away_injury_factor", 1.0) or 1.0
+    if mkt == "ML":
+        _label3 = cand.get("label", cand.get("pick_label", ""))
+        _is_h3  = bool(r.get("home_team","")) and r.get("home_team","") in _label3
+        _pick_inj  = _h_inj if _is_h3 else _a_inj
+        _rival_inj = _a_inj if _is_h3 else _h_inj
+        if _pick_inj < 0.90:  score -= (1.0 - _pick_inj) * 20
+        if _rival_inj < 0.90: score += (1.0 - _rival_inj) * 12
+
+    # 9. Fatiga back-to-back
+    _h_b2b = sim.get("home_back2back", False)
+    _a_b2b = sim.get("away_back2back", False)
+    if mkt == "ML":
+        _label4 = cand.get("label", cand.get("pick_label", ""))
+        _is_h4  = bool(r.get("home_team","")) and r.get("home_team","") in _label4
+        if _is_h4 and _h_b2b and not _a_b2b:  score -= 8
+        elif not _is_h4 and _a_b2b and not _h_b2b: score -= 8
+        elif _is_h4 and _a_b2b and not _h_b2b: score += 5
+        elif not _is_h4 and _h_b2b and not _a_b2b: score += 5
+
+    # 10. Scoring trend λ_real vs λ_liga
+    _lam_h  = sim.get("lam_real_h") or 0
+    _lam_a  = sim.get("lam_real_a") or 0
+    _lam_lg = sim.get("lam_league") or 0
+    if _lam_h and _lam_a and _lam_lg:
+        _lam_total = _lam_h + _lam_a
+        _trend = _lam_total - _lam_lg
+        _label5 = cand.get("label", cand.get("pick_label", ""))
+        if mkt == "O/U":
+            if "Over" in _label5 and _trend > 0.3:   score += min(_trend * 4, 8)
+            elif "Under" in _label5 and _trend < -0.3: score += min(abs(_trend)*4, 8)
+            elif "Over" in _label5 and _trend < -0.3:  score -= 6
+        if mkt == "BTTS":
+            if _lam_h >= _lam_lg*0.45 and _lam_a >= _lam_lg*0.45: score += 5
+
+    # 11. O/U modelo vs ESPN
+    if mkt == "O/U":
+        _model_ou = sim.get("model_ou_total") or 0
+        try:
+            _ou_espn = float((sim.get("ou_line") or "").lstrip("~"))
+            if _model_ou and _ou_espn:
+                _gap = _model_ou - _ou_espn
+                _label6 = cand.get("label", cand.get("pick_label", ""))
+                if "Over"  in _label6 and _gap  > 0.3: score += min(_gap  * 5, 12)
+                elif "Under" in _label6 and _gap < -0.3: score += min(abs(_gap)*5, 12)
+                elif "Over"  in _label6 and _gap < -0.3: score -= 8
+                elif "Under" in _label6 and _gap  > 0.3: score -= 8
+        except: pass
+
+    # 12. Modelo Elo implícito (W-L records → rating relativo)
+    # Si la ventaja de Elo va en la misma dirección que el pick → confirmar
+    # Elo implícito: win_rate → rating via logit scale
+    if mkt == "ML":
+        try:
+            import math as _math
+            _hrec = r.get("home_record","") or ""
+            _arec = r.get("away_record","") or ""
+            def _wp(rec):
+                try:
+                    p = rec.strip().split("-")
+                    w,l = int(p[0]),int(p[1])
+                    d = int(p[2]) if len(p)>=3 else 0
+                    t = w+l+d
+                    return (w+d*0.5)/t if t>=5 else None
+                except: return None
+            _hwp = _wp(_hrec); _awp = _wp(_arec)
+            if _hwp and _awp and _hwp > 0 and _awp > 0:
+                # Elo implícito = 400 * log10(wp/(1-wp))
+                _h_elo = 400 * _math.log10(_hwp / (1-_hwp))
+                _a_elo = 400 * _math.log10(_awp / (1-_awp))
+                _elo_gap = _h_elo - _a_elo  # positivo = home mejor
+                _label_elo = cand.get("label", cand.get("pick_label",""))
+                _is_home_elo = bool(r.get("home_team","")) and r.get("home_team","") in _label_elo
+                _elo_alignment = _elo_gap if _is_home_elo else -_elo_gap
+                if _elo_alignment > 50:   score += 4   # Elo confirma fuertemente
+                elif _elo_alignment > 20: score += 2
+                elif _elo_alignment < -50: score -= 4  # Elo contradice
+                elif _elo_alignment < -20: score -= 2
+        except: pass
+
+    # 12b. Mercado: predecibilidad histórica
+    if mkt == "ML":     score += 3
+    elif mkt == "BTTS": score += 1
+
+    # 13. Soccer sin línea ESPN → penalizar BTTS/O/U
+    if sg == "Soccer" and mkt in ("BTTS", "O/U"):
+        if not (sim.get("ou_line") or "").replace("~","").strip():
+            score -= 12
+
+    return round(score, 3)
+
 
 def poisson_sample(lam, rng):
     if lam<=0: return 0
@@ -4111,11 +4305,39 @@ def run_monte_carlo(game, n=10_000):
               if prob is not None and ev is not None and ev>0 and mtype not in ("DO",)]
     pos_legs.sort(key=lambda x:x[3],reverse=True)
 
+    # ── Momios del modelo (calculados desde la simulación, no de ESPN) ────────
+    _model_home_ml   = prob_to_ml(sh)
+    _model_away_ml   = prob_to_ml(sa)
+    _model_home_dec  = prob_to_dec(sh)       # decimal con vig
+    _model_away_dec  = prob_to_dec(sa)
+    _model_home_fair = fair_ml(sh)
+    _model_away_fair = fair_ml(sa)
+    _model_home_fdec = fair_dec(sh)          # decimal sin vig
+    _model_away_fdec = fair_dec(sa)
+    _edge_home = round((sh - ml_to_prob(hml)) * 100, 1) if hml else None
+    _edge_away = round((sa - ml_to_prob(aml)) * 100, 1) if aml else None
+    # Soccer: empate
+    _model_draw_ml   = prob_to_ml(sd)  if is_soccer and sd > 0 else None
+    _model_draw_dec  = prob_to_dec(sd) if is_soccer and sd > 0 else None
+    _model_draw_fair = fair_ml(sd)     if is_soccer and sd > 0 else None
+    _model_draw_fdec = fair_dec(sd)    if is_soccer and sd > 0 else None
+    # O/U: línea del modelo vs línea ESPN
+    _model_ou_total = round((lam_h + lam_a), 1) if (lam_h and lam_a) else None
+
     sim = {
         "home_pct":round(sh*100,1),"away_pct":round(sa*100,1),"draw_pct":round(sd*100,1),
         "data_quality":round(dq*100,0),
         "home_ev":home_ev,"away_ev":away_ev,
         "home_ml":hml,"away_ml":aml,"over_under":ou,
+        # Momios calculados por el modelo (americano + decimal, con vig y sin vig)
+        "model_home_ml":_model_home_ml,"model_away_ml":_model_away_ml,
+        "model_home_dec":_model_home_dec,"model_away_dec":_model_away_dec,
+        "model_draw_ml":_model_draw_ml,"model_draw_dec":_model_draw_dec,
+        "model_home_fair":_model_home_fair,"model_away_fair":_model_away_fair,
+        "model_home_fdec":_model_home_fdec,"model_away_fdec":_model_away_fdec,
+        "model_draw_fair":_model_draw_fair,"model_draw_fdec":_model_draw_fdec,
+        "edge_home_pp":_edge_home,"edge_away_pp":_edge_away,
+        "model_ou_total":_model_ou_total,
         "home_kelly":hk,"away_kelly":ak,
         "p_btts":round(p_btts*100,1) if p_btts is not None else None,
         "btts_ev":btts_ev,"no_btts_ev":no_btts_ev,
@@ -4423,77 +4645,81 @@ def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
     _SPORT_ORDER_PH = ["Soccer","Basketball","Hockey","Baseball","Football"]
 
     # ── RONGOL picks (1 per sport, same logic as tab) ────────────────────────
+    def _pick_score_ph(mkt, prob, ev, sim, sg, r=None, cand=None):
+        """Delegado a pick_score_universal para consistencia total."""
+        if cand is None:
+            cand = {"market": mkt, "prob": prob, "ev": ev or 0, "kelly": 0}
+        if r is None:
+            r = {}
+        return pick_score_universal(cand, sim, r, sg)
+
     def _sport_best_ph(r):
-        """Mismos filtros de calidad que _sport_best_pick."""
+        """Mismo score compuesto que _sport_best_pick para consistencia."""
         sim = r["sim"]
         sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
         h_prob = sim.get("home_pct",0) or 0
         a_prob = sim.get("away_pct",0) or 0
         h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
-        _has_espn_ml = bool(h_ml and a_ml)
-
-        # Sin ESPN ML en no-soccer = no guardar en historial
-        if not _has_espn_ml and sg in ("Basketball","Hockey","Baseball","Football"):
-            return None
 
         def best_ml():
             if h_prob >= a_prob:
                 t,p,ml = r["home_team"],h_prob,h_ml
             else:
                 t,p,ml = r["away_team"],a_prob,a_ml
-            if not ml or p < 52: return None
-            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1)}
+            if not ml:
+                _mk = "model_home_dec" if h_prob>=a_prob else "model_away_dec"
+                ml = sim.get(_mk) or ""
+            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1),"ev":0}
 
-        _dom_prob = max(h_prob, a_prob)
-
+        cands = []
         if sg == "Soccer":
             _ml = best_ml()
-            # ML prioritario si equipo domina ≥60%
-            if _ml and _dom_prob >= 60:
-                return _ml
-            # "ou_line" es la clave correcta en el sim dict (no "over_under")
-            _ou_line_val = sim.get("ou_line") or ""
-            _has_ou_line = bool(_ou_line_val and not str(_ou_line_val).startswith("~"))
-            # Sin ESPN ML: solo ML si domina ≥55%
-            if not _has_espn_ml:
-                return _ml if (_ml and _dom_prob >= 55) else None
-            cands = []
-            if sim.get("use_goals") and _has_ou_line:
+            if _ml: cands.append(_ml)
+            if sim.get("use_goals"):
                 _btts_ev = sim.get("btts_ev") or 0
                 _btts_pb = sim.get("p_btts") or 0
-                if _btts_ev > 0 and _btts_pb >= 55:
-                    cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan","prob_pct":round(_btts_pb,1)})
+                if _btts_pb > 0:
+                    cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan",
+                                  "prob_pct":round(_btts_pb,1),"ev":_btts_ev})
                 _o25_ev = sim.get("o25_ev") or 0
                 _o25_pb = sim.get("p_o25") or 0
-                if _o25_ev > 0 and _o25_pb >= 55:
-                    cands.append({"mercado":"O/U","pick_label":"Over 2.5","prob_pct":round(_o25_pb,1)})
-            if _ml: cands.append(_ml)
-            if not cands: return None
-            best = max(cands, key=lambda x: x["prob_pct"])
-            return best if best["prob_pct"] >= 52 else None
-
+                if _o25_pb > 0:
+                    cands.append({"mercado":"O/U","pick_label":"Over 2.5",
+                                  "prob_pct":round(_o25_pb,1),"ev":_o25_ev})
         elif sg in ("Basketball","Hockey"):
-            cands = []
             _ml = best_ml()
             if _ml: cands.append(_ml)
             _ou_line = sim.get("ou_line") or ""
             _p_over  = sim.get("p_o_total") or 0
             _p_under = sim.get("p_u_total") or 0
             if _ou_line and not _ou_line.startswith("~"):
-                _best_ou = max(_p_over, _p_under)
-                if _best_ou >= 55:
+                _best_p = max(_p_over, _p_under)
+                if _best_p > 0:
                     try: _line = float(_ou_line.lstrip("~"))
                     except: _line = None
                     if _line:
-                        _lbl = f"Over {_line:.1f}" if _p_over >= _p_under else f"Under {_line:.1f}"
-                        cands.append({"mercado":"O/U","pick_label":_lbl,"prob_pct":round(_best_ou,1)})
-            if not cands: return None
-            best = max(cands, key=lambda x: x["prob_pct"])
-            return best if best["prob_pct"] >= 54 else None
-
+                        _lbl = f"Over {_line:.1f}" if _p_over>=_p_under else f"Under {_line:.1f}"
+                        cands.append({"mercado":"O/U","pick_label":_lbl,
+                                      "prob_pct":round(_best_p,1),"ev":0})
         else:
             _ml = best_ml()
-            return _ml if (_ml and _ml["prob_pct"] >= 54) else None
+            if _ml: cands.append(_ml)
+
+        if not cands:
+            # Fallback absoluto: ML con momio del modelo
+            _dom = max(h_prob, a_prob)
+            _team = r["home_team"] if h_prob>=a_prob else r["away_team"]
+            _mk = "model_home_dec" if h_prob>=a_prob else "model_away_dec"
+            _ml_fb = sim.get(_mk) or ""
+            return {"mercado":"ML","pick_label":_team,"prob_pct":round(_dom,1),"ev":0}
+
+        # Seleccionar por score compuesto universal
+        scored = [(c, _pick_score_ph(c["mercado"], c["prob_pct"], c.get("ev",0), sim, sg, r=r, cand={
+            "market": c["mercado"], "prob": c["prob_pct"], "ev": c.get("ev",0),
+            "kelly": 0, "label": c.get("pick_label","")
+        })) for c in cands]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[0][0]
 
     # Group by sport, take best per sport
     sport_pools = {}
@@ -4668,6 +4894,109 @@ def render_pick_card(r, rank=None):
 
     conf_html  = conf_badge(bs["ev"], dq)
     ml_display = "@ " + str(bs["ml"]) if bs["ml"] else ""
+
+    # ── Momios del modelo vs casa ─────────────────────────────────────────────
+    _mh_ml   = sim.get("model_home_ml", "")
+    _ma_ml   = sim.get("model_away_ml", "")
+    _mh_fair = sim.get("model_home_fair", "")
+    _ma_fair = sim.get("model_away_fair", "")
+    _md_ml   = sim.get("model_draw_ml", "")
+    _e_home  = sim.get("edge_home_pp")
+    _e_away  = sim.get("edge_away_pp")
+    _m_ou    = sim.get("model_ou_total")
+
+    # Línea del modelo para el pick específico
+    if bs["market"] == "ML":
+        _is_home_pick = r.get("home_team","") in bs.get("label","")
+        _model_line = _mh_ml if _is_home_pick else _ma_ml
+        _fair_line  = _mh_fair if _is_home_pick else _ma_fair
+        _pick_edge  = _e_home if _is_home_pick else _e_away
+    elif bs["market"] in ("O/U","BTTS"):
+        _model_line = f"O/U modelo: {_m_ou}" if _m_ou else ""
+        _fair_line  = ""
+        _pick_edge  = None
+    else:
+        _model_line = _mh_ml
+        _fair_line  = _mh_fair
+        _pick_edge  = _e_home
+
+    # HTML del bloque de momios del modelo
+    # Decimales del modelo para el pick
+    if bs["market"] == "ML":
+        _is_home_pick2 = r.get("home_team","") in bs.get("label","")
+        _model_dec  = sim.get("model_home_dec","")  if _is_home_pick2 else sim.get("model_away_dec","")
+        _fair_dec_v = sim.get("model_home_fdec","") if _is_home_pick2 else sim.get("model_away_fdec","")
+    else:
+        _model_dec  = ""
+        _fair_dec_v = ""
+
+    _model_lines_html = ""
+    if _model_line or _fair_line:
+        _edge_color = "#00C896" if (_pick_edge and _pick_edge > 0) else ("#ef4444" if (_pick_edge and _pick_edge < 0) else "#6B7280")
+        _edge_str = f"Edge: {_pick_edge:+.1f}pp" if _pick_edge is not None else ""
+        _model_lines_html = (
+            f'<div style="margin:6px 0;padding:8px 12px;'
+            f'background:rgba(255,214,10,0.06);border:1px solid rgba(255,214,10,0.15);'
+            f'border-radius:10px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">'
+            f'<div style="font-size:0.6rem;color:#6B7280;letter-spacing:1.5px;'
+            f'text-transform:uppercase;width:100%;margin-bottom:2px">🧮 Líneas del Modelo</div>'
+        )
+        if _model_dec:
+            _model_lines_html += (
+                f'<div><div style="font-size:1.3rem;font-weight:900;color:#FFD60A;'
+                f'font-family:Outfit,sans-serif">{_model_dec}</div>'
+                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Decimal c/vig</div></div>'
+            )
+        if _fair_dec_v:
+            _model_lines_html += (
+                f'<div><div style="font-size:1.1rem;font-weight:700;color:#86efac">{_fair_dec_v}</div>'
+                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Decimal justo</div></div>'
+            )
+        if _model_line:
+            _model_lines_html += (
+                f'<div><div style="font-size:0.85rem;font-weight:600;color:#AEAEB2">{_model_line}</div>'
+                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Americano c/vig</div></div>'
+            )
+        if bs["ml"]:
+            _model_lines_html += (
+                f'<div><div style="font-size:0.85rem;font-weight:600;color:#636366">{bs["ml"]}</div>'
+                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">Casa (ESPN)</div></div>'
+            )
+        if _edge_str:
+            _model_lines_html += (
+                f'<div style="margin-left:auto"><div style="font-size:1.0rem;font-weight:800;'
+                f'color:{_edge_color}">{_edge_str}</div>'
+                f'<div style="font-size:0.55rem;color:#6B7280;text-transform:uppercase">vs Casa</div></div>'
+            )
+        # Soccer: agregar línea del empate si aplica
+        if sim.get("is_soccer") and _md_ml:
+            _md_fair = sim.get("model_draw_fair","")
+            _model_lines_html += (
+                f'<div style="width:100%;border-top:1px solid rgba(255,255,255,0.05);'
+                f'padding-top:4px;margin-top:2px;display:flex;gap:10px">'
+                f'<span style="font-size:0.65rem;color:#a78bfa">Empate modelo: <b>{_md_ml}</b></span>'
+                f'<span style="font-size:0.65rem;color:#6B7280">({sim.get("draw_pct",0):.1f}% prob · precio justo: {_md_fair})</span>'
+                f'</div>'
+            )
+        # O/U: mostrar línea del modelo vs ESPN
+        if _m_ou and sim.get("ou_line"):
+            _ou_espn = str(sim.get("ou_line","")).lstrip("~")
+            try:
+                _ou_diff = round(float(_m_ou) - float(_ou_espn), 1)
+                _ou_diff_str = f"{_ou_diff:+.1f} vs ESPN" if _ou_diff != 0 else "= ESPN"
+                _ou_color = "#00C896" if _ou_diff > 0.3 else ("#ef4444" if _ou_diff < -0.3 else "#6B7280")
+            except:
+                _ou_diff_str = ""; _ou_color = "#6B7280"
+            _model_lines_html += (
+                f'<div style="width:100%;border-top:1px solid rgba(255,255,255,0.05);'
+                f'padding-top:4px;margin-top:2px;display:flex;gap:10px">'
+                f'<span style="font-size:0.65rem;color:#ff6a00">O/U modelo: <b>{_m_ou}</b></span>'
+                f'<span style="font-size:0.65rem;color:{_ou_color}">{_ou_diff_str}</span>'
+                f'<span style="font-size:0.65rem;color:#6B7280">ESPN: {_ou_espn}</span>'
+                f'</div>'
+            )
+        _model_lines_html += '</div>'
+    # ─────────────────────────────────────────────────────────────────────────
     is_live    = r.get("state", "") == "in"
     live_html  = '<span class="market-chip chip-btts">🔴 EN VIVO</span>' if is_live else ""
     rank_html  = ""
@@ -4911,6 +5240,7 @@ def render_pick_card(r, rank=None):
                 '<div class="stat-item-lbl">Confianza</div>'
               '</div>'
             '</div>'
+            + _model_lines_html
             + form_html
             + goals_html
             + consensus_html
@@ -5667,8 +5997,16 @@ if _active_page == "Rongol Picks":
         #   Baseball:   ML (highest win%) only
         #   Football:   ML (highest win%) only
 
+        def _pick_score(cand, sim, sg):
+            """Delegado a pick_score_universal (módulo) para consistencia total."""
+            return pick_score_universal(cand, sim, r, sg)
+
         def _sport_best_pick(r):
-            """Pick de mayor calidad por deporte. Filtros balanceados."""
+            """
+            Selecciona el mejor pick usando score compuesto.
+            TODOS los deportes generan pick (sin filtro de ESPN ML).
+            El score_compuesto decide: EV + edge + consenso + DQ + kelly + líneas modelo.
+            """
             sim = r["sim"]
             sg  = LEAGUES.get(r["league"], {}).get("group", "Soccer")
             h_prob = sim.get("home_pct", 0) or 0
@@ -5677,54 +6015,41 @@ if _active_page == "Rongol Picks":
             h_ev = sim.get("home_ev") or 0; a_ev = sim.get("away_ev") or 0
             h_k  = sim.get("home_kelly") or 0; a_k = sim.get("away_kelly") or 0
 
-            _has_espn_ml = bool(h_ml and a_ml)
-
-            # No-soccer sin ESPN moneyline = sin O/U confiable → sin pick
-            if not _has_espn_ml and sg in ("Basketball", "Hockey", "Baseball", "Football"):
-                return None
-
             def best_ml():
                 if h_prob >= a_prob:
                     team, prob, ev, kelly, ml = r["home_team"], h_prob, h_ev, h_k, h_ml
                 else:
                     team, prob, ev, kelly, ml = r["away_team"], a_prob, a_ev, a_k, a_ml
-                if not ml: return None
-                return {"market":"ML","label":team,"prob":prob,"ev":ev,"kelly":kelly}
+                # Sin ML de ESPN: usar probabilidad del modelo con momio del modelo
+                if not ml:
+                    _mdec_key = "model_home_dec" if h_prob >= a_prob else "model_away_dec"
+                    _mdec = sim.get(_mdec_key) or ""
+                    ml = _mdec  # usar momio calculado por el modelo
+                return {"market":"ML","label":team,"prob":prob,"ev":ev or 0,"kelly":kelly or 0,"ml":ml}
+
+            cands = []
 
             if sg == "Soccer":
-                _dom_prob = max(h_prob, a_prob)
                 _ml = best_ml()
+                # ML siempre entra como candidato
+                if _ml: cands.append(_ml)
 
-                # ML directo si equipo claramente dominante ≥62%
-                if _ml and _dom_prob >= 62:
-                    return _ml
-
-                # Sin ESPN ML: ML si hay señal razonable ≥52%
-                if not _has_espn_ml:
-                    return _ml if (_ml and _dom_prob >= 52) else None
-
-                # Con ESPN ML: agregar BTTS/Over si hay línea O/U real y EV+
-                _ou_line_v = sim.get("ou_line") or ""
-                _has_ou_line = bool(_ou_line_v and not str(_ou_line_v).startswith("~"))
-                cands = []
-                if sim.get("use_goals") and _has_ou_line:
+                if sim.get("use_goals"):
                     _btts_ev = sim.get("btts_ev") or 0
                     _btts_pb = sim.get("p_btts") or 0
-                    if _btts_ev > 0 and _btts_pb >= 54:
-                        cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev,"kelly":0})
+                    if _btts_pb > 0:
+                        cands.append({"market":"BTTS","label":"Ambos Anotan",
+                                      "prob":_btts_pb,"ev":_btts_ev,"kelly":0})
                     _o25_ev = sim.get("o25_ev") or 0
                     _o25_pb = sim.get("p_o25") or 0
-                    if _o25_ev > 0 and _o25_pb >= 54:
-                        cands.append({"market":"O/U","label":"Over 2.5 goles","prob":_o25_pb,"ev":_o25_ev,"kelly":0})
-                if _ml: cands.append(_ml)
-                if not cands: return None
-                return max(cands, key=lambda x: x["prob"])
+                    if _o25_pb > 0:
+                        cands.append({"market":"O/U","label":"Over 2.5 goles",
+                                      "prob":_o25_pb,"ev":_o25_ev,"kelly":0})
 
             elif sg in ("Basketball", "Hockey"):
-                cands = []
                 _ml = best_ml()
                 if _ml: cands.append(_ml)
-                # O/U solo con línea ESPN real — FIX-2 (no implícita ~)
+                # O/U: solo con línea ESPN real (FIX-2 — no implícita)
                 _ou_line = sim.get("ou_line") or ""
                 _multi_r = sim.get("multi_lines", {})
                 if _ou_line and not _ou_line.startswith("~") and _multi_r:
@@ -5735,15 +6060,28 @@ if _active_page == "Rongol Picks":
                             _best_p = _po_l; _best_lbl = f"Over {_l:.1f}"
                         elif _pu_l > _po_l and _pu_l > _best_p:
                             _best_p = _pu_l; _best_lbl = f"Under {_l:.1f}"
-                    if _best_lbl and _best_p >= 54:
-                        _ev_ou = round((_best_p/100*(100/110) - (1-_best_p/100))*100, 1)
-                        cands.append({"market":"O/U","label":_best_lbl,"prob":_best_p,"ev":_ev_ou,"kelly":0})
-                if not cands: return None
-                return max(cands, key=lambda x: x["prob"])
+                    if _best_lbl and _best_p > 0:
+                        _ev_ou = round((_best_p/100*(100/110)-(1-_best_p/100))*100, 1)
+                        cands.append({"market":"O/U","label":_best_lbl,
+                                      "prob":_best_p,"ev":_ev_ou,"kelly":0})
 
-            else:  # Baseball, Football
-                return best_ml()
+            else:  # Baseball, Football, NCAAF
+                _ml = best_ml()
+                if _ml: cands.append(_ml)
 
+            if not cands:
+                # Fallback: ML con momio calculado por el modelo
+                _dom_p = max(h_prob, a_prob)
+                _dom_t = r["home_team"] if h_prob >= a_prob else r["away_team"]
+                _mk_key = "model_home_dec" if h_prob >= a_prob else "model_away_dec"
+                _mdec_fb = sim.get(_mk_key) or ""
+                cands.append({"market":"ML","label":_dom_t,
+                               "prob":_dom_p,"ev":0,"kelly":0,"ml":_mdec_fb})
+
+            # Seleccionar por score compuesto — toma TODO en cuenta
+            scored = [(c, _pick_score(c, sim, sg)) for c in cands]
+            scored.sort(key=lambda x: x[1], reverse=True)
+            return scored[0][0]
 
         # ── Build 1 pick per sport group — ventana ±1 día CDMX ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
@@ -5787,13 +6125,18 @@ if _active_page == "Rongol Picks":
 
         rongol_picks = []
         for _sg in _SPORT_ORDER_R:
-            # Si hay filtro activo, solo mostrar ese deporte
             if _sel_sport_filter and _sg != _sel_sport_filter:
                 continue
             pool = _sport_pools.get(_sg, [])
-            if pool:
-                pool.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
-                rongol_picks.append(pool[0])
+            if not pool:
+                continue
+            # Ordenar por score compuesto universal (no solo probabilidad)
+            for _item in pool:
+                _item["_score"] = pick_score_universal(
+                    _item["_pick"], _item["sim"], _item, _sg
+                )
+            pool.sort(key=lambda x: x["_score"], reverse=True)
+            rongol_picks.append(pool[0])
 
         # Legacy: keep allowed_bets for DO parlay logic below
         allowed_bets = rongol_picks
@@ -6571,7 +6914,10 @@ elif _active_page == "Picks":
                     elif _p_under > _p_over and _p_under >= 52:
                         cands.append({"market":"O/U","label":f"Under {_line:.1f} (avg)","prob":_p_under,"ev":0})
 
-        return max(cands, key=lambda x: x["prob"])
+        # Score compuesto universal — misma lógica que Rongol y historial
+        scored = [(c, pick_score_universal(c, sim, r, sg)) for c in cands]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[0][0]
 
     def _build_extra_panels(g, sim, bp):
         """
