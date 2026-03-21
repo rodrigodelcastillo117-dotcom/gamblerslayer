@@ -430,6 +430,16 @@ div[data-testid="stMultiSelect"] label {
   border-radius: 0 0 var(--radius) var(--radius) !important;
   padding: 0 !important;
 }
+/* Hide the expander content box when CLOSED — kills the white box */
+[data-testid="stExpander"] > details:not([open]) > div,
+[data-testid="stExpander"] > details:not([open]) .streamlit-expanderContent {
+  display: none !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
 
 /* ── Metrics ─────────────────────────────────────────── */
 div[data-testid="stMetric"] {
@@ -6835,6 +6845,19 @@ if _active_page == "Rongol Picks":
             )
             _fire_indices = {idx for idx, _ in _all_probs_ranked[:2]}
 
+            # ── Banner explicativo ─────────────────────────────────────────
+            st.markdown(
+                '<div style="background:rgba(255,85,0,0.08);border:1px solid rgba(255,85,0,0.25);'
+                'border-left:3px solid #FF5500;border-radius:10px;padding:10px 14px;margin-bottom:12px">'
+                '<span style="font-size:0.72rem;font-weight:800;color:#FF5500">⚡ CÓMO LEER LOS PICKS: </span>'
+                '<span style="font-size:0.75rem;color:#B0B0B8">El botón </span>'
+                '<span style="font-size:0.75rem;font-weight:800;color:#FFD600">AMARILLO</span>'
+                '<span style="font-size:0.75rem;color:#B0B0B8"> = qué apostar. La cuota decimal = lo que paga tu casa de apuestas. </span>'
+                '<span style="font-size:0.75rem;font-weight:700;color:#B0B0B8">Toca ''Ver análisis'' para ver por qué.</span>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
             # ── Render picks: tarjetas blancas 3 por renglón ─────────────
             for _row_i in range(0, _n_picks, 3):
                 _row_picks = rongol_picks[_row_i:_row_i+3]
@@ -6939,16 +6962,16 @@ if _active_page == "Rongol Picks":
                         f'border:1px solid rgba(255,255,255,0.35);'
                         f'box-shadow:0 4px 14px rgba(255,185,0,0.3),0 1px 0 rgba(255,255,255,0.45) inset">'
                         f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'
-                        f'<span style="font-size:0.58rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px">{_mkt}</span>'
-                        f'<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl}</span>'
+                        f'<span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.5);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
+                        f'<span style="font-size:0.6rem;font-weight:900;color:#111;letter-spacing:1.5px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px">{_mkt}</span>'
+                        f'<span style="font-size:0.92rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl}</span>'
                         f'</div>'
-                        # Main decimal + prob
-                        + f'<div style="display:flex;align-items:center;gap:10px;margin-top:4px">'
-                        + f'<span style="font-size:2.2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec}</span>'
+                        + f'<div style="display:flex;align-items:center;gap:10px;margin-top:5px">'
+                        + f'<span style="font-size:2.4rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec}</span>'
                         + f'<div style="display:flex;flex-direction:column;gap:3px">'
-                        + f'<span style="font-size:0.78rem;font-weight:800;color:rgba(0,0,0,0.65)">{_pick_pct:.0f}% probabilidad</span>'
-                        + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">EV: <b>{(_pk.get("ev",0) or 0):+.1f}</b> por $100 apostado</span>' )
-                        + (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.45)">Kelly: apostar <b>{(_pk.get("kelly",0) or 0)*25:.1f}%</b> del bankroll</span>' if (_pk.get("kelly",0) or 0)>0 else "")
+                        + f'<span style="font-size:0.82rem;font-weight:800;color:rgba(0,0,0,0.7)">{_pick_pct:.0f}% de probabilidad</span>'
+                        + (f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.55)">Ganancia esperada: <b>${(_pk.get("ev",0) or 0)*100/100:+.0f}</b> por $100</span>' )
+                        + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">Apuesta Kelly: <b>{(_pk.get("kelly",0) or 0)*25:.1f}%</b> del bankroll</span>' if (_pk.get("kelly",0) or 0)>0 else "")
                         + f'</div></div>'
                         # Mini stats row
                         + f'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">'
