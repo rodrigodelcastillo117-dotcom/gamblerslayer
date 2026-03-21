@@ -252,6 +252,15 @@ div[data-testid="stMetricLabel"] { color:var(--text3) !important; font-family:'O
 /* ── SUPPRESS RERUN OVERLAY ── */
 .stApp.running .main, .stApp.running section, .stApp.running [data-testid="stAppViewContainer"] { opacity:1 !important; transition:none !important; }
 div[data-testid="stStatusWidget"] { display:none !important; }
+/* Hide ALL Streamlit Cloud UI (manage app button, green badge, toolbar) */
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+.viewerBadge_container__1QSob,
+.viewerBadge_link__1S137,
+button[title="Manage app"],
+button[aria-label="Manage app"],
+div[class*="StatusWidget"],
+div[class*="deployButton"] { display:none !important; }
 .stApp [data-testid="stAppViewContainer"] > section, .stApp > div { opacity:1 !important; }
 
 /* ── EMPTY STATE ── */
@@ -319,78 +328,6 @@ hr { border-color:var(--border) !important; }
   .stat-num { font-size:1.1rem !important; }
 }
 
-
-/* -- NAV BOTTOM: botones fixed ────────────────────────────────────── */
-div[data-testid="stHorizontalBlock"]:has(button[data-testid^="nav_btn_"]) {
-  position: fixed !important;
-  bottom: 52px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: min(98vw, 480px) !important;
-  height: 60px !important;
-  background: rgba(18,18,20,0.97) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-  border: 1px solid rgba(255,255,255,0.10) !important;
-  border-radius: 30px !important;
-  z-index: 99999 !important;
-  display: flex !important;
-  padding: 5px 6px !important;
-  gap: 2px !important;
-  box-shadow: 0 4px 32px rgba(0,0,0,0.7) !important;
-  overflow: hidden !important;
-  pointer-events: auto !important;
-  touch-action: manipulation !important;
-}
-@media (min-width: 768px) {
-  div[data-testid="stHorizontalBlock"]:has(button[data-testid^="nav_btn_"]) {
-    width: 780px !important; height: 68px !important;
-    bottom: 16px !important; border-radius: 34px !important;
-  }
-}
-div[data-testid="stHorizontalBlock"]:has(button[data-testid^="nav_btn_"]) > div[data-testid="column"] {
-  padding: 0 !important; flex: 1 !important; min-width: 0 !important;
-}
-button[data-testid^="nav_btn_"] {
-  background: transparent !important;
-  border: none !important;
-  border-radius: 22px !important;
-  color: #666 !important;
-  font-size: 0.42rem !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.5px !important;
-  text-transform: uppercase !important;
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 50px !important;
-  padding: 4px 2px !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
-  touch-action: manipulation !important;
-  -webkit-tap-highlight-color: rgba(255,95,31,0.2) !important;
-  transition: background 0.15s !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 3px !important;
-  white-space: pre-line !important;
-  line-height: 1.2 !important;
-  box-shadow: none !important;
-}
-button[data-testid^="nav_btn_"]:hover,
-button[data-testid^="nav_btn_"]:focus {
-  background: rgba(255,95,31,0.12) !important;
-  color: #FF5F1F !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-div[data-testid="stHorizontalBlock"]:has(button[data-testid^="nav_btn_"]) div[data-testid="stButton"] {
-  width: 100% !important; height: 100% !important; padding: 0 !important;
-}
-@media (min-width: 768px) {
-  button[data-testid^="nav_btn_"] { font-size: 0.72rem !important; gap: 4px !important; }
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -413,18 +350,117 @@ if "active_page" not in st.session_state:
 
 _active_page = st.session_state["active_page"]
 
+# CSS: transforma el radio en bottom nav compacto
+st.markdown("""
+<style>
+/* ── Ocultar label del radio ── */
+div[data-testid="stRadio"] > label { display:none !important; }
 
-# ── Nav: st.columns + buttons (always works on mobile) ───────────────────
-_nav_cols = st.columns(len(_NAV_ITEMS))
-for _ni, _nitem in enumerate(_NAV_ITEMS):
-    with _nav_cols[_ni]:
-        if st.button(
-            f"{_nitem['icon']}\n{_nitem['label']}",
-            key=f"nav_btn_{_nitem['key']}",
-            use_container_width=True,
-        ):
-            st.session_state["active_page"] = _nitem["key"]
-            st.rerun()
+/* ── Contenedor fixed bottom ── */
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+  position: fixed !important;
+  bottom: 52px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: min(98vw, 520px) !important;
+  height: 50px !important;
+  background: rgba(22,22,24,0.97) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  border-radius: 25px !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  padding: 4px !important;
+  gap: 0 !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6) !important;
+  overflow: hidden !important;
+}
+
+/* ── Ocultar input radio real ── */
+div[data-testid="stRadio"] input[type="radio"] { display:none !important; }
+
+/* ── Cada tab ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"] {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 1px !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  -webkit-tap-highlight-color: rgba(255,107,0,0.2) !important;
+  user-select: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 20px !important;
+  transition: background 0.15s !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ── Tab activo ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+  background: rgba(255,107,0,0.22) !important;
+}
+
+/* ── Texto del tab ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"] span,
+div[data-testid="stRadio"] label[data-baseweb="radio"] p,
+div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
+  font-size: 0.38rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.2px !important;
+  text-transform: uppercase !important;
+  color: #555555 !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  font-family: 'Outfit', sans-serif !important;
+  white-space: nowrap !important;
+}
+
+/* ── Texto activo ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p,
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) div[data-testid="stMarkdownContainer"] p {
+  color: #FF6B00 !important;
+}
+
+/* ── Separador vertical entre tabs ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:last-child) {
+  border-right: 1px solid rgba(255,255,255,0.05) !important;
+}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked):not(:last-child),
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) + label {
+  border-right-color: transparent !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Construir opciones: emoji + newline + label (el CSS los separa visualmente)
+_nav_options = [f'{i["icon"]}\n{i["label"]}' for i in _NAV_ITEMS]
+_nav_key_map  = {f'{i["icon"]}\n{i["label"]}': i["key"] for i in _NAV_ITEMS}
+_nav_key_rev  = {i["key"]: f'{i["icon"]}\n{i["label"]}' for i in _NAV_ITEMS}
+
+_cur_option = _nav_key_rev.get(_active_page, _nav_options[0])
+
+def _on_nav_change():
+    _sel = st.session_state.get("gamblers_nav_radio", _nav_options[0])
+    st.session_state["active_page"] = _nav_key_map.get(_sel, "Rongol Picks")
+
+_selected = st.radio(
+    "nav",
+    _nav_options,
+    index=_nav_options.index(_cur_option),
+    horizontal=True,
+    key="gamblers_nav_radio",
+    label_visibility="collapsed",
+    on_change=_on_nav_change,
+)
 _active_page = st.session_state["active_page"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4843,30 +4879,33 @@ def bar(pct, color, label):
     </div>"""
 
 def _team_logo_url(team_id, league):
-    """Return ESPN CDN logo URL. Uses league slug (nba/nhl/mlb) not sport."""
+    """ESPN CDN logo URL — uses league slug (nba/nhl/mlb), not sport."""
     if not team_id: return ""
     try:
         lg    = LEAGUES.get(league, {})
-        slug  = lg.get("league","")
-        sport = lg.get("sport","soccer")
+        slug  = lg.get("league", "")
+        sport = lg.get("sport", "soccer")
         if sport == "soccer":
             return f"https://a.espncdn.com/i/teamlogos/soccer/500/{team_id}.png"
         else:
+            # NBA→nba, NHL→nhl, MLB→mlb, NFL→nfl
             return f"https://a.espncdn.com/i/teamlogos/{slug}/500/{team_id}.png"
     except:
         return ""
 
 def _logo_img(team_id, league, size=44, dark_bg=False):
-    """Return <img> tag for team logo. White bg for light cards."""
+    """<img> tag for team logo. White bg on light cards, dark bg on dark cards."""
     url = _team_logo_url(team_id, league)
     s   = str(size)
     if url:
         bg  = "#1c1c1e" if dark_bg else "rgba(255,255,255,0.95)"
         bdr = "1.5px solid rgba(255,255,255,0.08)" if dark_bg else "1.5px solid rgba(0,0,0,0.08)"
         sty = f"border-radius:50%;object-fit:contain;background:{bg};border:{bdr};padding:3px"
-        onerr = "this.style.opacity='0.15'"
-        return '<img src="' + url + '" width="' + s + '" height="' + s + '" style="' + sty + '" onerror="' + onerr + '">' 
-    return '<div style="width:' + s + 'px;height:' + s + 'px;border-radius:50%;background:rgba(0,0,0,0.06);border:1.5px solid rgba(0,0,0,0.1)"></div>'
+        return ('<img src="' + url + '" width="' + s + '" height="' + s +
+                '" style="' + sty + '" onerror="this.style.opacity=\'0.15\'">')
+    return ('<div style="width:' + s + 'px;height:' + s +
+            'px;border-radius:50%;background:rgba(0,0,0,0.06);'
+            'border:1.5px solid rgba(0,0,0,0.1)"></div>')
 
 def render_pick_card(r, rank=None):
     """Render pick card - all HTML built via string concat, no ternaries in f-strings."""
@@ -6589,58 +6628,104 @@ if _active_page == "Rongol Picks":
             )
             _fire_indices = {idx for idx, _ in _all_probs_ranked[:2]}
 
-            # Render in rows of 2
-            for _row_i in range(0, _n_picks, 2):
-                _row_picks = rongol_picks[_row_i:_row_i+2]
+            # ── Render picks: tarjetas blancas 3 por renglón ─────────────
+            for _row_i in range(0, _n_picks, 3):
+                _row_picks = rongol_picks[_row_i:_row_i+3]
                 _cols = st.columns(len(_row_picks))
                 for _ci, _rp in enumerate(_row_picks):
-                    _abs_idx = _row_i + _ci
-                    _is_fire = _abs_idx in _fire_indices
-                    with _cols[_ci]:
-                        _sg_label = _sport_labels.get(LEAGUES.get(_rp["league"],{}).get("group","Soccer"), "")
-                        _fire_badge = (
-                            '<span style="display:inline-block;background:rgba(255,100,0,0.18);'
-                            'color:#ff6a00;border:1px solid rgba(255,106,0,0.5);border-radius:12px;'
-                            'padding:1px 7px;font-size:0.672rem;font-weight:900;margin-left:6px;'
-                            'vertical-align:middle">🔥 TOP</span>'
-                        ) if _is_fire else ""
-                        st.markdown(
-                            f'<div style="font-size:0.672rem;color:#6B7280;letter-spacing:1.5px;'
-                            f'text-transform:uppercase;margin-bottom:4px">{_sg_label}{_fire_badge}</div>',
-                            unsafe_allow_html=True
-                        )
-                        st.markdown(_pick_diamante_card(_rp, _rp["_pick"], rank=_row_i+_ci, is_fire=_is_fire), unsafe_allow_html=True)
-                        # ── Botón "Al Reto" ──────────────────────────────
-                        _pk_rp   = _rp["_pick"]
-                        _mkt_rp  = _pk_rp.get("market","")
-                        _lbl_rp  = _pk_rp.get("label","")
-                        _ml_rp   = _pk_rp.get("ml","") or ""
-                        _prob_rp = _pk_rp.get("prob",0)
-                        _prob_rp = _prob_rp if _prob_rp <= 1 else _prob_rp/100
-                        _sim_rp  = _rp.get("sim",{})
-                        # Decimal del modelo
-                        _pick_is_home_rp = _rp.get("home_team","") in _lbl_rp
-                        _dec_key_rp = "model_home_dec" if _pick_is_home_rp else "model_away_dec"
-                        _dec_rp = _sim_rp.get(_dec_key_rp,"") or ""
+                    _abs_idx  = _row_i + _ci
+                    _is_fire  = _abs_idx in _fire_indices
+                    _pk       = _rp["_pick"]
+                    _mkt      = _pk.get("market","")
+                    _lbl      = _pk.get("label","")
+                    _prob     = _pk.get("prob",0)
+                    _prob     = _prob if _prob<=1 else _prob/100
+                    _sim      = _rp.get("sim",{})
+                    _sg       = LEAGUES.get(_rp.get("league",""),{}).get("group","Soccer")
+                    _sg_icon  = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(_sg,"🎯")
+                    _ht_id    = _rp.get("home_team_id","")
+                    _at_id    = _rp.get("away_team_id","")
+                    _league   = _rp.get("league","")
+                    _away     = _rp.get("away_team","")
+                    _home     = _rp.get("home_team","")
+                    _lg_lbl   = league_label(_league)
+                    _pick_h   = _home in _lbl
+                    _h_pct    = _sim.get("home_pct",0) or 0
+                    _a_pct    = _sim.get("away_pct",0) or 0
+                    _d_pct    = _sim.get("draw_pct",0) or 0
+                    _h_dec    = _sim.get("model_home_dec","") or (prob_to_dec(_h_pct/100) if _h_pct else "-")
+                    _a_dec    = _sim.get("model_away_dec","") or (prob_to_dec(_a_pct/100) if _a_pct else "-")
+                    _d_dec    = _sim.get("model_draw_dec","") or (prob_to_dec(_d_pct/100) if _d_pct else "-")
+                    _pick_dec = _h_dec if _pick_h else _a_dec
+                    _pick_pct = _h_pct if _pick_h else _a_pct
+                    # Cap decimals
+                    def _cap(d):
                         try:
-                            _dec_float_rp = float(_dec_rp) if _dec_rp else 0.0
-                        except:
-                            _dec_float_rp = 0.0
-                        _btn_key_rp = f"add_reto_{_row_i}_{_ci}"
-                        if st.button("➕ Agregar al Reto", key=_btn_key_rp, use_container_width=True):
-                            # Save pick data to session_state for Reto tab
-                            st.session_state["reto_prefill"] = {
-                                "partido":  f"{_rp.get('away_team','')} vs {_rp.get('home_team','')}",
-                                "pick":     _lbl_rp,
-                                "mercado":  _mkt_rp,
-                                "momio":    round(_dec_float_rp, 4) if _dec_float_rp > 1 else 0.0,
-                                "momio_fmt": _dec_rp or _ml_rp,
-                                "liga":     league_label(_rp.get("league","")),
-                                "prob_pct": round(_prob_rp * 100, 1),
-                            }
-                            st.session_state["active_page"] = "Reto 13M"
-                            st.toast(f"Pick agregado al Reto: {_lbl_rp}", icon="💰")
-                            st.rerun()
+                            v=float(d)
+                            return "1.02" if v<1.02 else (">15" if v>15 else f"{v:.2f}")
+                        except: return str(d) if d else "-"
+                    _h_dec=_cap(_h_dec);_a_dec=_cap(_a_dec);_d_dec=_cap(_d_dec);_pick_dec=_cap(_pick_dec)
+                    # Logos
+                    _logo_a = _logo_img(_at_id, _league, 44)
+                    _logo_h = _logo_img(_ht_id, _league, 44)
+                    # Pills
+                    def _pill(lbl, dec, highlight=False):
+                        bg  = "#1A1A1C" if not highlight else "#1A1A1C"
+                        lc  = "#4B8EFF" if lbl in ("U","O") else "#888"
+                        return (f'<div style="flex:1;background:#1A1A1C;border-radius:10px;padding:9px 3px;text-align:center">'
+                                f'<span style="font-size:0.48rem;color:{lc};display:block;margin-bottom:2px;font-weight:600">{lbl}</span>'
+                                f'<span style="font-size:1.0rem;font-weight:800;color:#F0F0F0;font-family:Syne,sans-serif">{dec}</span>'
+                                f'</div>')
+                    if _sg == "Soccer":
+                        _pills = _pill("1x",_a_dec) + _pill("x",_d_dec) + _pill("2x",_h_dec)
+                    else:
+                        _ou_v = _sim.get("ou_line","") or ""
+                        _p_o  = _sim.get("p_o_total",0) or 0
+                        _p_u  = _sim.get("p_u_total",0) or 0
+                        if _ou_v and not str(_ou_v).startswith("~"):
+                            try: _ou_lbl = f"{'O' if _p_o>=_p_u else 'U'}{float(str(_ou_v).lstrip('~')):.1f}"
+                            except: _ou_lbl = "O/U"
+                            _ou_dec = _cap(prob_to_dec(max(_p_o,_p_u)/100)) if max(_p_o,_p_u)>0 else "-"
+                            _pills  = _pill(_away[:6],_a_dec) + _pill(_ou_lbl,_ou_dec) + _pill(_home[:6],_h_dec)
+                        else:
+                            _pills = _pill(_away[:7],_a_dec) + _pill(_home[:7],_h_dec)
+                    _fire_glow = "box-shadow:0 0 18px rgba(255,200,0,0.18);" if _is_fire else ""
+                    # White card
+                    _card = (
+                        f'<div style="background:#F2F2F5;border-radius:20px;overflow:hidden;margin-bottom:3px;{_fire_glow}">'
+                        f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
+                        f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl}</span>'
+                        f'<span style="font-size:0.65rem">{"🔥" if _is_fire else ""}</span>'
+                        f'</div>'
+                        f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
+                        f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                        + _logo_a +
+                        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away[:9]}</span>'
+                        f'</div>'
+                        f'<div style="flex:1.2;text-align:center">'
+                        f'<div style="font-size:1.6rem;font-weight:900;color:#111;font-family:Syne,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+                        f'<div style="font-size:0.5rem;color:#CCC;margin-top:3px">{_sg_icon}</div>'
+                        f'</div>'
+                        f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                        + _logo_h +
+                        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home[:9]}</span>'
+                        f'</div></div>'
+                        f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+                        f'<div style="display:flex;gap:5px;padding:9px 10px 9px">' + _pills + f'</div>'
+                        f'<div style="margin:0 10px 10px;background:#FFD60A;border-radius:12px;padding:10px 14px">'
+                        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'
+                        f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.1);padding:2px 7px;border-radius:4px">{_mkt}</span>'
+                        f'<span style="font-size:0.76rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl}</span>'
+                        f'</div>'
+                        f'<div style="display:flex;align-items:baseline;gap:6px">'
+                        f'<span style="font-size:1.7rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_pick_dec}</span>'
+                        f'<span style="font-size:0.62rem;font-weight:700;color:rgba(0,0,0,0.4)">{_pick_pct:.0f}% prob</span>'
+                        f'</div></div></div>'
+                    )
+                    with _cols[_ci]:
+                        st.markdown(_card, unsafe_allow_html=True)
+                        with st.expander("📊 Ver análisis", expanded=False):
+                            st.markdown(_pick_diamante_card(_rp, _pk, rank=_row_i+_ci, is_fire=_is_fire), unsafe_allow_html=True)
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
@@ -8772,6 +8857,141 @@ elif _active_page == "Reto 13M":
 
     st.markdown('<div class="den-divider" style="margin:20px 0"></div>', unsafe_allow_html=True)
 
+    # ── ANALYTICS (solo si hay picks resueltos) ───────────────────────────────
+    _picks_res = [p for p in picks if p.get("resultado") in ("ganado","perdido")]
+    if _picks_res:
+        st.markdown('<div class="section-heading">📊 Análisis de Rendimiento</div>', unsafe_allow_html=True)
+
+        # ROI real
+        _tot_ap = sum(float(p.get("monto",0)) for p in _picks_res)
+        _net = 0.0
+        for _pr in _picks_res:
+            _mm = float(_pr.get("momio",1.9)); _ss = float(_pr.get("monto",0))
+            if _pr.get("resultado")=="ganado":
+                _net += _ss*(_mm-1) if _mm>=1.01 else _ss*_mm/100
+            else: _net -= _ss
+        _roi = (_net/_tot_ap*100) if _tot_ap>0 else 0
+        _roi_clr = "#00E5A0" if _roi>=0 else "#ef4444"
+
+        # Racha / tilt
+        _rn,_rt = 0,""
+        for _pp in reversed(picks):
+            _r = _pp.get("resultado","pendiente")
+            if _r=="pendiente": continue
+            if _rn==0: _rn,_rt=1,_r
+            elif _r==_rt: _rn+=1
+            else: break
+        if _rt=="perdido" and _rn>=3:
+            st.markdown(f'<div class="demo-banner" style="font-size:0.85rem;border-left:3px solid #ef4444">🧠 <strong>Alerta de Tilt</strong> — Llevas {_rn} perdidas seguidas. Considera pausar.</div>', unsafe_allow_html=True)
+
+        # Hitos
+        _hitos = [(1.5,"🥉","1.5x"),(2,"🥈","2x"),(5,"🥇","5x"),(10,"💎","10x"),(50,"🚀","50x"),(100,"👑","100x")]
+        _earned = [h for h in _hitos if multiplicador>=h[0]]
+        _next_h = next((h for h in _hitos if multiplicador<h[0]),None)
+        _badges = " ".join(f'<span title="{h[2]}" style="font-size:1.3rem">{h[1]}</span>' for h in _earned) or '<span style="color:#444;font-size:0.72rem">Sin hitos aún</span>'
+        _next_s = f'Próximo: {_next_h[1]} {_next_h[2]} → ${bank_inicial*_next_h[0]:,.0f}' if _next_h else "🏆 ¡Meta cumplida!"
+
+        # Semanal
+        from datetime import date as _date, timedelta as _td
+        _hoy_d=_date.today(); _lun=_hoy_d-_td(days=_hoy_d.weekday()); _lun_p=_lun-_td(weeks=1); _dom_p=_lun-_td(days=1)
+        def _wsem(desde,hasta):
+            _w=[p for p in picks if p.get("resultado") in ("ganado","perdido") and desde.isoformat()<=(p.get("fecha","") or "")[:10]<=hasta.isoformat()]
+            _g=sum(1 for p in _w if p.get("resultado")=="ganado"); _p=len(_w)-_g
+            _n=0.0
+            for p in _w:
+                _mm=float(p.get("momio",1.9)); _ss=float(p.get("monto",0))
+                if p.get("resultado")=="ganado": _n+=_ss*(_mm-1) if _mm>=1.01 else _ss*_mm/100
+                else: _n-=_ss
+            _wr=_g/(_g+_p)*100 if (_g+_p)>0 else 0
+            return _g,_p,round(_n,2),_wr
+        _g1,_p1,_n1,_wr1=_wsem(_lun,_hoy_d); _g2,_p2,_n2,_wr2=_wsem(_lun_p,_dom_p)
+
+        # ROI + badges
+        st.markdown(f'''<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div style="background:#141416;border-radius:16px;padding:14px 16px;border:1px solid rgba(255,255,255,0.07)">
+            <div style="font-size:0.55rem;color:#666;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px">ROI Real</div>
+            <div style="font-size:2rem;font-weight:900;color:{_roi_clr};font-family:Syne,sans-serif;line-height:1">{"+" if _roi>=0 else ""}{_roi:.1f}%</div>
+            <div style="font-size:0.65rem;color:#555;margin-top:4px">${_net:+,.0f} sobre ${_tot_ap:,.0f} apostados</div>
+          </div>
+          <div style="background:#141416;border-radius:16px;padding:14px 16px;border:1px solid rgba(255,255,255,0.07)">
+            <div style="font-size:0.55rem;color:#666;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px">Logros</div>
+            <div>{_badges}</div>
+            <div style="font-size:0.62rem;color:#888;margin-top:5px">{_next_s}</div>
+          </div>
+        </div>''', unsafe_allow_html=True)
+
+        # Semanas
+        _c1,_c2=st.columns(2)
+        def _sem_card(g,p,n,wr,lbl):
+            _c="#00E5A0" if n>=0 else "#ef4444"
+            return (f'<div style="background:#141416;border-radius:14px;padding:12px 14px;border:1px solid rgba(255,255,255,0.07)">'
+                    f'<div style="font-size:0.55rem;color:#666;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:7px">{lbl}</div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                    f'<div><span style="color:#00E5A0;font-weight:700">{g}G</span> <span style="color:#555">·</span> <span style="color:#ef4444;font-weight:700">{p}P</span> <span style="font-size:0.62rem;color:#666">({wr:.0f}%)</span></div>'
+                    f'<div style="font-size:1.1rem;font-weight:800;color:{_c};font-family:Syne,sans-serif">{"+" if n>=0 else ""}${n:,.0f}</div>'
+                    f'</div></div>')
+        with _c1: st.markdown(_sem_card(_g1,_p1,_n1,_wr1,"Esta semana"), unsafe_allow_html=True)
+        with _c2: st.markdown(_sem_card(_g2,_p2,_n2,_wr2,"Semana pasada"), unsafe_allow_html=True)
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+        # Mercado
+        _mkt_s={}
+        for _pr in _picks_res:
+            _mk=_pr.get("mercado","Otro") or "Otro"
+            if _mk not in _mkt_s: _mkt_s[_mk]={"g":0,"p":0,"ap":0.0,"net":0.0}
+            _ss=float(_pr.get("monto",0)); _mm=float(_pr.get("momio",1.9))
+            _mkt_s[_mk]["ap"]+=_ss
+            if _pr.get("resultado")=="ganado": _mkt_s[_mk]["g"]+=1; _mkt_s[_mk]["net"]+=_ss*(_mm-1) if _mm>=1.01 else _ss*_mm/100
+            else: _mkt_s[_mk]["p"]+=1; _mkt_s[_mk]["net"]-=_ss
+        if _mkt_s:
+            st.markdown('<div style="font-size:0.6rem;font-weight:700;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin:12px 0 7px">Por Mercado</div>', unsafe_allow_html=True)
+            _rows=""
+            for _mk,_ms in sorted(_mkt_s.items(), key=lambda x: x[1]["net"], reverse=True):
+                _wr=_ms["g"]/(_ms["g"]+_ms["p"])*100 if (_ms["g"]+_ms["p"])>0 else 0
+                _roi2=(_ms["net"]/_ms["ap"]*100) if _ms["ap"]>0 else 0
+                _c1c="#00E5A0" if _ms["net"]>=0 else "#ef4444"
+                _c2c="#00E5A0" if _roi2>=0 else "#ef4444"
+                _rows+=f'<div style="display:grid;grid-template-columns:55px 35px 35px 1fr 65px 65px;gap:4px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center"><span style="font-size:0.72rem;font-weight:700;color:#E8E8E8">{_mk}</span><span style="font-size:0.68rem;color:#00E5A0;text-align:center">{_ms["g"]}G</span><span style="font-size:0.68rem;color:#ef4444;text-align:center">{_ms["p"]}P</span><span style="font-size:0.65rem;color:#888">{_wr:.0f}%WR</span><span style="font-size:0.68rem;font-weight:700;color:{_c2c}">ROI {_roi2:+.0f}%</span><span style="font-size:0.68rem;font-weight:700;color:{_c1c}">{"+" if _ms["net"]>=0 else ""}${_ms["net"]:,.0f}</span></div>'
+            st.markdown(f'<div style="background:#0F0F11;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)"><div style="display:grid;grid-template-columns:55px 35px 35px 1fr 65px 65px;gap:4px;padding:7px 12px;background:rgba(255,255,255,0.03);font-size:0.52rem;color:#555;letter-spacing:1px;text-transform:uppercase"><span>Mkt</span><span style="text-align:center">G</span><span style="text-align:center">P</span><span>WR%</span><span>ROI</span><span>Neto</span></div>{_rows}</div>', unsafe_allow_html=True)
+
+        # Tabla momios por rango
+        _ranges=[(1.01,1.20,"1.01–1.20"),(1.21,1.50,"1.21–1.50"),(1.51,2.00,"1.51–2.00"),(2.01,2.50,"2.01–2.50"),(2.51,3.50,"2.51–3.50"),(3.51,99.0,"3.51+")]
+        _tbl=[]; 
+        for _lo,_hi,_rl in _ranges:
+            _rng=[p for p in _picks_res if _lo<=float(p.get("momio",0))<=_hi]
+            if not _rng: continue
+            _rg=sum(1 for p in _rng if p.get("resultado")=="ganado"); _rp2=len(_rng)-_rg
+            _rwr=_rg/len(_rng)*100; _rnet=0.0
+            for p in _rng:
+                _ss=float(p.get("monto",0)); _mm=float(p.get("momio",1.9))
+                if p.get("resultado")=="ganado": _rnet+=_ss*(_mm-1) if _mm>=1.01 else _ss*_mm/100
+                else: _rnet-=_ss
+            _rap=sum(float(p.get("monto",0)) for p in _rng)
+            _rroi=(_rnet/_rap*100) if _rap>0 else 0
+            _tbl.append((_rl,len(_rng),_rg,_rp2,_rwr,_rroi,_rnet))
+        if _tbl:
+            st.markdown('<div style="font-size:0.6rem;font-weight:700;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin:12px 0 7px">Win% por Rango de Cuota</div>', unsafe_allow_html=True)
+            _tbl_html=""
+            for _rl,_rt,_rg,_rp2,_rwr,_rroi,_rnet in _tbl:
+                _bc="#00E5A0" if _rwr>=55 else ("#f59e0b" if _rwr>=45 else "#ef4444")
+                _rc="#00E5A0" if _rroi>=0 else "#ef4444"
+                _tbl_html+=(
+                    f'<div style="padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.04)">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'
+                    f'<span style="font-size:0.8rem;font-weight:800;color:#E8E8E8;font-family:Syne,sans-serif">{_rl}</span>'
+                    f'<div style="display:flex;gap:10px">'
+                    f'<span style="font-size:0.65rem;color:#888">{_rg}G/{_rp2}P ({_rt})</span>'
+                    f'<span style="font-size:0.75rem;font-weight:800;color:{_bc}">{_rwr:.0f}%</span>'
+                    f'<span style="font-size:0.68rem;color:{_rc}">ROI {_rroi:+.0f}%</span>'
+                    f'</div></div>'
+                    f'<div style="background:rgba(255,255,255,0.06);border-radius:20px;height:6px;overflow:hidden">'
+                    f'<div style="height:6px;width:{min(int(_rwr),100)}%;background:{_bc};border-radius:20px"></div>'
+                    f'</div></div>'
+                )
+            st.markdown(f'<div style="background:#0F0F11;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)">{_tbl_html}</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="den-divider" style="margin:18px 0"></div>', unsafe_allow_html=True)
+
     # ── Formulario: agregar pick ──────────────────────────────────────────────
     # Gold labels for all form elements in this tab
     st.markdown("""
@@ -8800,50 +9020,14 @@ elif _active_page == "Reto 13M":
     """, unsafe_allow_html=True)
     st.markdown('<div class="section-heading">➕ Registrar Pick</div>', unsafe_allow_html=True)
 
-    # -- Cargar prefill desde Rongol/Picks (botón "Al Reto") ------------------
-    _prefill = st.session_state.pop("reto_prefill", None)
-
-    # -- Selector de picks del día --------------------------------------------
-    _picks_hoy_available = []
-    if "sim_results" in st.session_state:
-        for _sr in st.session_state["sim_results"]:
-            _bs = (_sr.get("sim",{}) or {}).get("best_single",{}) or {}
-            if _bs and _bs.get("prob",0) > 0.5:
-                _dec_k = "model_home_dec" if _sr.get("home_team","") in _bs.get("label","") else "model_away_dec"
-                _dec_v = (_sr.get("sim",{}) or {}).get(_dec_k,"") or ""
-                _picks_hoy_available.append({
-                    "label":   f"{_sr['away_team']} vs {_sr['home_team']}  |  {_bs['market']}: {_bs['label']}",
-                    "partido": f"{_sr['away_team']} vs {_sr['home_team']}",
-                    "pick":    _bs.get("label",""),
-                    "mercado": _bs.get("market",""),
-                    "momio":   float(_dec_v) if _dec_v else 0.0,
-                    "momio_fmt": _dec_v,
-                    "liga":    league_label(_sr.get("league","")),
-                    "prob_pct": round((_bs.get("prob",0) if _bs.get("prob",0)<=1 else _bs.get("prob",0)/100)*100, 1),
-                })
-
-    if _picks_hoy_available:
-        st.markdown('<div style="font-size:0.72rem;color:#C9A84C;font-weight:600;margin-bottom:4px">Picks analizados hoy (atajo)</div>', unsafe_allow_html=True)
-        _opciones = ["-- Selecciona un pick del día --"] + [p["label"] for p in _picks_hoy_available]
-        _sel_pick = st.selectbox("", _opciones, key="reto_sel_pick_hoy", label_visibility="collapsed")
-        if _sel_pick != "-- Selecciona un pick del día --":
-            _prefill = next((p for p in _picks_hoy_available if p["label"] == _sel_pick), None)
-            if _prefill:
-                st.toast(f"Pick cargado: {_prefill['pick']}", icon="✅")
-
     with st.container():
         fc1, fc2 = st.columns(2)
         with fc1:
-            _partido_default = _prefill["partido"] if _prefill else ""
-            _pick_default    = _prefill["pick"]    if _prefill else ""
-            reto_partido  = st.text_input("Partido / Evento", value=_partido_default, placeholder="ej: Real Madrid vs Bayern",
+            reto_partido  = st.text_input("Partido / Evento", placeholder="ej: Real Madrid vs Bayern",
                                           key="reto_partido")
-            reto_pick     = st.text_input("Pick", value=_pick_default, placeholder="ej: Real Madrid ML / Over 2.5 / BTTS Sí",
+            reto_pick     = st.text_input("Pick", placeholder="ej: Real Madrid ML / Over 2.5 / BTTS Sí",
                                           key="reto_pick")
-            _mkt_options = ["ML","O/U","BTTS","DO","Spread","Otro"]
-            _mkt_default_idx = _mkt_options.index(_prefill["mercado"]) if (_prefill and _prefill.get("mercado") in _mkt_options) else 0
-            reto_mercado  = st.selectbox("Mercado", _mkt_options,
-                                         index=_mkt_default_idx,
+            reto_mercado  = st.selectbox("Mercado", ["ML","O/U","BTTS","DO","Spread","Otro"],
                                          key="reto_mercado")
         with fc2:
             # Tipo de momio: americano o decimal
@@ -8853,7 +9037,6 @@ elif _active_page == "Reto 13M":
                 horizontal=True,
                 key="reto_tipo_momio"
             )
-            _momio_prefill = _prefill.get("momio",0) if _prefill else 0
             if reto_tipo_momio == "🇺🇸 Americano":
                 reto_momio_raw = st.number_input(
                     "Momio americano", value=-110, step=5,
@@ -8867,9 +9050,8 @@ elif _active_page == "Reto 13M":
                     reto_momio_dec = 100 / abs(reto_momio_raw) + 1
                 momio_display = f"+{reto_momio_raw}" if reto_momio_raw > 0 else str(reto_momio_raw)
             else:
-                _dec_default = round(_momio_prefill, 2) if _momio_prefill > 1.01 else 1.91
                 reto_momio_dec = st.number_input(
-                    "Momio decimal", value=_dec_default, step=0.01,
+                    "Momio decimal", value=1.91, step=0.01,
                     min_value=1.01, format="%.2f",
                     key="reto_momio_dec",
                     help="ej: 1.91 = -110 americano | 2.50 = +150 americano"
