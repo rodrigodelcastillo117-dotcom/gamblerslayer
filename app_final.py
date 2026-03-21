@@ -218,19 +218,20 @@ iframe[title*="streamlit"] { display:none !important; visibility:hidden !importa
 .section-heading::before { content: ''; width: 3px; height: 14px; background: var(--orange); border-radius: 2px; flex-shrink: 0; }
 .section-heading::after  { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,85,0,0.3), transparent); }
 
-/* ── Liga toggle buttons — invisible, just hitbox ─────────────────────── */
-.stButton > button[data-testid*="btn_lg_"],
-div[data-testid="stButton"]:has(button[key*="btn_lg_"]) > button {
+/* ── Liga + Sport toggle buttons — invisible hitbox only ─────────────── */
+/* We inject a wrapper div.liga-btn-wrap around each button via markdown */
+.liga-btn-wrap + div[data-testid="stButton"] > button,
+.liga-btn-wrap ~ div[data-testid="stButton"] > button {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   color: transparent !important;
-  height: 0px !important;
+  font-size: 0 !important;
+  height: 4px !important;
   padding: 0 !important;
   min-height: 0 !important;
-  margin: 0 !important;
+  margin: -2px 0 0 0 !important;
   overflow: hidden !important;
-  pointer-events: all !important;
 }
 
 /* ── Game rows ─────────────────────────────────────────── */
@@ -601,6 +602,25 @@ div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:last-child) {
 *, *::before, *::after { transition-property: background, color, border-color, box-shadow, opacity, transform !important; }
 div[data-testid="stAppViewContainer"] > section { opacity: 1 !important; }
 [data-stale="true"] { opacity: 1 !important; }
+
+/* ── Sport selector buttons — overlay the card above, fully transparent ── */
+div[data-testid="column"] .liga-btn-wrap + div[data-testid="stButton"] > button {
+  position: relative !important;
+  margin-top: -120px !important;
+  height: 120px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  z-index: 10 !important;
+  border-radius: 14px !important;
+  cursor: pointer !important;
+  opacity: 0 !important;
+}
+div[data-testid="column"] .liga-btn-wrap + div[data-testid="stButton"] {
+  margin-top: -120px !important;
+}
 
 </style>
 """, unsafe_allow_html=True)
@@ -7172,31 +7192,36 @@ elif _active_page == "Picks":
             _bg     = _smp["color"] + "28" if _is_sel else _smp["accent"]
             _opacity = "1" if (_sel_sp is None or _is_sel) else "0.4"
             with _sp_cols_p[_ci_p]:
-                # 3D sport card button
-                _c_hex = _smp["color"]  # e.g. "#FF6B00"
+                # 3D sport card — button IS the card via CSS
+                _c_hex = _smp["color"]
                 _c_r = int(_c_hex[1:3],16); _c_g = int(_c_hex[3:5],16); _c_b = int(_c_hex[5:7],16)
-                _c_dark = f"rgb({max(0,_c_r-60)},{max(0,_c_g-60)},{max(0,_c_b-60)})"
-                _c_light = f"rgba({_c_r},{_c_g},{_c_b},0.15)"
-                _sel_ring = f"0 0 0 2.5px {_c_hex}, " if _is_sel else ""
-                _card_3d = (
-                    f'<div style="'
-                    f'text-align:center;padding:14px 4px 12px;border-radius:14px;'
-                    f'background:linear-gradient(160deg,{_c_light} 0%,rgba({_c_r},{_c_g},{_c_b},0.06) 100%);'
-                    f'border:1px solid rgba({_c_r},{_c_g},{_c_b},{"0.6" if _is_sel else "0.25"});'
-                    f'border-top:1px solid rgba({_c_r},{_c_g},{_c_b},{"0.9" if _is_sel else "0.4"});'
-                    f'box-shadow:{_sel_ring}0 6px 20px rgba({_c_r},{_c_g},{_c_b},{"0.25" if _is_sel else "0.12"}),0 2px 0 rgba(255,255,255,0.05) inset;'
-                    f'opacity:{_opacity};cursor:pointer;transition:all 0.15s;margin-bottom:4px">'
-                    f'<div style="font-size:2rem;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4))">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.68rem;font-weight:800;color:{_c_hex};'
-                    f'letter-spacing:1px;text-transform:uppercase;margin-top:6px;'
-                    f'text-shadow:0 1px 4px rgba({_c_r},{_c_g},{_c_b},0.4)">{_sp_p}</div>'
-                    f'<div style="font-size:0.6rem;color:rgba(255,255,255,0.4);margin-top:2px;font-weight:500">{_n_p} juegos</div>'
-                    + (f'<div style="font-size:0.55rem;color:{_c_hex};margin-top:3px;font-weight:700">✓ ACTIVO</div>' if _is_sel else "")
-                    + f'</div>'
-                )
-                st.markdown(_card_3d, unsafe_allow_html=True)
+                _sel_ring = f"0 0 0 2.5px {_c_hex}," if _is_sel else ""
+                _btn_lbl = f"{_smp['emoji']}\n{_sp_p}\n{_n_p} juegos" + ("\n✓" if _is_sel else "")
+                st.markdown(f"""<style>
+button[data-testid="baseButton-secondary"][kind="secondary"]:nth-of-type({_ci_p+1}),
+div[data-testid="stButton"]:nth-of-type({_ci_p+1}) > button {{
+  background: linear-gradient(160deg,rgba({_c_r},{_c_g},{_c_b},0.18) 0%,rgba({_c_r},{_c_g},{_c_b},0.06) 100%) !important;
+  border: 1px solid rgba({_c_r},{_c_g},{_c_b},{"0.7" if _is_sel else "0.3"}) !important;
+  border-top: 1px solid rgba({_c_r},{_c_g},{_c_b},{"1.0" if _is_sel else "0.5"}) !important;
+  border-bottom: 1px solid rgba(0,0,0,0.4) !important;
+  box-shadow: {_sel_ring} 0 6px 20px rgba({_c_r},{_c_g},{_c_b},{"0.3" if _is_sel else "0.12"}),0 2px 0 rgba(255,255,255,0.06) inset !important;
+  color: {_c_hex} !important;
+  font-size: 0.7rem !important;
+  font-weight: 800 !important;
+  font-family: 'Barlow', sans-serif !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase !important;
+  padding: 14px 4px 10px !important;
+  height: auto !important;
+  min-height: 90px !important;
+  border-radius: 14px !important;
+  white-space: pre-line !important;
+  line-height: 1.6 !important;
+  opacity: {_opacity} !important;
+}}
+</style>""", unsafe_allow_html=True)
                 if st.button(
-                    "✕ Quitar" if _is_sel else "Ver",
+                    f"{_smp['emoji']}  {_sp_p}\n{_n_p} juegos" + (" ✓" if _is_sel else ""),
                     key=f"btn_sp_{_sp_p}",
                     use_container_width=True,
                 ):
@@ -7757,58 +7782,16 @@ elif _active_page == "Picks":
                 _hdr_border = f"1.5px solid {_smp['color']}66" if _is_open else "1px solid #2A2A2A"
                 _arrow      = "▼" if _is_open else "▶"
 
-                # Single clickable row — no separate button
-                _btn_k = f"btn_lg_{_lg_btn_counter}"
-                _lg_btn_counter += 1
-                _c_r2 = int(_smp["color"][1:3],16); _c_g2 = int(_smp["color"][3:5],16); _c_b2 = int(_smp["color"][5:7],16)
-                if _is_open:
-                    _lg_hdr_style = (
-                        f'background:rgba({_c_r2},{_c_g2},{_c_b2},0.12);'
-                        f'border:1px solid rgba({_c_r2},{_c_g2},{_c_b2},0.4);'
-                        f'border-bottom:none;border-radius:12px 12px 0 0;'
-                    )
-                else:
-                    _lg_hdr_style = (
-                        f'background:linear-gradient(160deg,#1A1A1E 0%,#111114 100%);'
-                        f'border:1px solid rgba(255,255,255,0.07);'
-                        f'border-top:1px solid rgba(255,255,255,0.12);'
-                        f'border-radius:12px;'
-                        f'box-shadow:0 3px 8px rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.05) inset;'
-                    )
-                st.markdown(
-                    f'<div style="{_lg_hdr_style}padding:10px 14px;margin-top:6px;'
-                    f'display:flex;justify-content:space-between;align-items:center">'
-                    f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="font-size:0.88rem">{_flag_p}</span>'
-                    f'<span style="font-size:0.8rem;font-weight:700;color:#E8E8E8">{_lg_p}</span>'
-                    f'<span style="font-size:0.65rem;color:#555;margin-left:2px">{_n_lg} partidos{_ev_lg_badge}</span>'
-                    f'</div>'
-                    f'<span style="font-size:0.75rem;color:{_smp["color"]};font-weight:700">{"▼" if _is_open else "▶"}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-                if st.button(
-                    "▼" if _is_open else "▶",
-                    key=_btn_k,
-                    use_container_width=True,
-                ):
-                    st.session_state[_exp_key] = not _is_open
-                    st.rerun()
-
-                if _is_open:
-                    st.markdown(
-                        f'<div style="background:#111111;border:1px solid {_smp["color"]}33;'
-                        f'border-top:none;border-radius:0 0 12px 12px;padding:8px 6px 10px 6px;'
-                        f'margin-bottom:2px">',
-                        unsafe_allow_html=True
-                    )
+                # Liga row as native st.expander — clean, no white button
+                _exp_label = f"{_flag_p} {_lg_p}  {_n_lg} partidos{_ev_lg_badge}"
+                with st.expander(_exp_label, expanded=False):
                     for _gi3 in range(0, len(_lg_games_p), 3):
                         _row3 = _lg_games_p[_gi3:_gi3+3]
-                        _c3 = st.columns(len(_row3))
+                        _ncols = len(_row3)
+                        _c3 = st.columns(_ncols) if _ncols > 1 else st.columns(1)
                         for _ci3, _gg_p in enumerate(_row3):
                             with _c3[_ci3]:
                                 st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
