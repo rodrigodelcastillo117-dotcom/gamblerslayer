@@ -77,7 +77,7 @@ header[data-testid="stHeader"] { display:none !important; }
 ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.08); border-radius:3px; }
 
 .block-container {
-  padding:20px 16px calc(var(--nav-h) + 28px) 16px !important;
+  padding:20px 16px calc(var(--nav-h) + 80px) 16px !important;
   max-width:540px !important;
   margin:0 auto !important;
 }
@@ -370,6 +370,34 @@ div[data-testid="stMetricLabel"] { color:var(--text3) !important; font-family:'I
 /* -- SUPPRESS RERUN OVERLAY ------------------------------------------ */
 /* Eliminar el opacado/fade que aparece al recargar */
 div[data-testid="stStatusWidget"] { display:none !important; }
+/* Ocultar TODOS los elementos de Streamlit Cloud */
+[data-testid="manage-app-button"],
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stMainMenuPopover"],
+.stActionButtonIcon,
+.stActionButton,
+div[class*="toolbar"],
+div[class*="Toolbar"],
+div[class*="ToolbarActions"],
+iframe[title*="streamlit"],
+iframe[title*="Streamlit"],
+/* Logo verde / viewer badge */
+.viewerBadge_container__1QSob,
+.viewerBadge_link__1S137,
+.viewerBadge_text__1JaDK,
+/* Botón rojo manage app (corona) */
+[data-testid="baseButton-manage"],
+button[title="Manage app"],
+button[aria-label="Manage app"],
+/* Cualquier botón flotante bottom-right */
+div[class*="StatusWidget"],
+div[class*="deployButton"],
+div[class*="reportview-container"] .toolbar,
+/* Menu hamburguesa */
+#MainMenu,
+header[data-testid="stHeader"],
+footer { display:none !important; visibility:hidden !important; }
 
 /* El overlay que opaca toda la pantalla */
 div[data-testid="stAppViewContainer"] > section { opacity:1 !important; transition:none !important; }
@@ -498,7 +526,7 @@ div[data-testid="stRadio"] > label { display:none !important; }
 /* -- Contenedor fixed bottom - BASE (mobile first) -- */
 div[data-testid="stRadio"] > div[role="radiogroup"] {
   position: fixed !important;
-  bottom: 8px !important;
+  bottom: 52px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   width: min(98vw, 480px) !important;
