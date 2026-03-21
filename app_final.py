@@ -21,7 +21,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-st.markdown("""
+if "_css_done" not in st.session_state:
+    st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap');
 
@@ -563,6 +564,7 @@ div[data-testid="stAppViewContainer"] > section { opacity: 1 !important; }
 
 </style>
 """, unsafe_allow_html=True)
+    st.session_state["_css_done"] = True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5653,15 +5655,15 @@ if use_demo:
     games=get_demo_games(); is_demo=True
 else:
     _leagues_key = tuple(sorted(sel_leagues))
-    _already_cached = _leagues_key in st.session_state.get("_games_fetched", set())
-    if not _already_cached:
-        with st.spinner("Consultando ESPN..."):
-            games,fetch_errors=get_all_games(_leagues_key)
-        _fetched = st.session_state.get("_games_fetched", set())
-        _fetched.add(_leagues_key)
-        st.session_state["_games_fetched"] = _fetched
+    _cached_games = st.session_state.get("_games_cache", {})
+    if _leagues_key in _cached_games:
+        # Use cached games — no ESPN call needed
+        games, fetch_errors = _cached_games[_leagues_key]
     else:
-        games,fetch_errors=get_all_games(_leagues_key)
+        with st.spinner("Buscando los mejores picks del día..."):
+            games, fetch_errors = get_all_games(_leagues_key)
+        _cached_games[_leagues_key] = (games, fetch_errors)
+        st.session_state["_games_cache"] = _cached_games
 
     # ── Persist pre-game soccer matches across refreshes ─────────────────────
     # ESPN soccer API often only returns active games. We cache pre-game soccer
@@ -6904,15 +6906,15 @@ if _active_page == "Rongol Picks":
                     _logo_h = _logo_img(_ht_id, _league, 44)
                     # Pills
                     def _pill(lbl, dec, highlight=False):
-                        lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else "#707078"
+                        lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else "#A0A0A8"
                         return (
                             f'<div style="flex:1;background:linear-gradient(160deg,#1E1E24 0%,#141418 100%);'
                             f'border-radius:10px;border:1px solid rgba(255,255,255,0.1);'
-                            f'border-top:1px solid rgba(255,255,255,0.16);'
+                            f'border-top:1px solid rgba(255,255,255,0.18);'
                             f'box-shadow:0 3px 8px rgba(0,0,0,0.4),0 1px 0 rgba(255,255,255,0.06) inset;'
-                            f'padding:9px 3px;text-align:center">'
-                            f'<span style="font-size:0.48rem;color:{lc};display:block;margin-bottom:2px;font-weight:700;letter-spacing:0.5px">{lbl}</span>'
-                            f'<span style="font-size:1.05rem;font-weight:800;color:#F0F0F2;font-family:Barlow Condensed,sans-serif">{dec}</span>'
+                            f'padding:10px 4px;text-align:center">'
+                            f'<span style="font-size:0.65rem;color:{lc};display:block;margin-bottom:3px;font-weight:700;letter-spacing:0.3px">{lbl}</span>'
+                            f'<span style="font-size:1.2rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif;line-height:1">{dec}</span>'
                             f'</div>'
                         )
                     if _sg == "Soccer":
@@ -6960,12 +6962,15 @@ if _active_page == "Rongol Picks":
                         f'border:1px solid rgba(255,255,255,0.35);'
                         f'box-shadow:0 4px 14px rgba(255,185,0,0.3),0 1px 0 rgba(255,255,255,0.45) inset">'
                         f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'
-                        f'<span style="font-size:0.5rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.1);padding:2px 7px;border-radius:4px">{_mkt}</span>'
-                        f'<span style="font-size:0.76rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl}</span>'
+                        f'<span style="font-size:0.58rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px">{_mkt}</span>'
+                        f'<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl}</span>'
                         f'</div>'
-                        f'<div style="display:flex;align-items:baseline;gap:6px">'
-                        f'<span style="font-size:1.7rem;font-weight:900;color:#111;font-family:Syne,sans-serif;line-height:1">{_pick_dec}</span>'
-                        f'<span style="font-size:0.62rem;font-weight:700;color:rgba(0,0,0,0.4)">{_pick_pct:.0f}% prob</span>'
+                        f'<div style="display:flex;align-items:center;gap:10px;margin-top:2px">'
+                        f'<span style="font-size:2.0rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec}</span>'
+                        f'<div style="display:flex;flex-direction:column;gap:1px">'
+                        f'<span style="font-size:0.72rem;font-weight:700;color:rgba(0,0,0,0.5)">{_pick_pct:.0f}% prob</span>'
+                        f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.4)">Apostar este partido</span>'
+                        f'</div>'
                         f'</div></div></div>'
                     )
                     with _cols[_ci]:
@@ -7439,7 +7444,7 @@ elif _active_page == "Picks":
         dq  = sim["data_quality"]
         dqc = "#00C896" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
 
-        # ── Pick badge — always one pick, no EV+ required ────────────────────
+        # ── Build white sportsbook card (same as Rongol) ─────────────────────
         bp  = _oracle_pick(_r)
         _bpc, _bac, _, _bdl = _pick_clr(bp["market"], bp.get("label",""))
         _ev = bp.get("ev",0) or 0
@@ -7453,14 +7458,12 @@ elif _active_page == "Picks":
             f'<span style="color:#6B7280;font-size:0.694rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
         )
 
-        # ── Build outer card with full pick-color background/border ────────
-        _card_bg     = f"background:linear-gradient(135deg,{_bpc}18 0%,#141414 70%,{_bpc}0a 100%)"
-        _card_border = f"border:1px solid {_bpc}55"
-        _card_shadow = f"box-shadow:0 0 16px {_bpc}18"
-        _top_stripe  = (
-            f'<div style="height:2px;border-radius:12px 6px 0 0;margin:-10px -12px 8px -12px;'
-            f'background:linear-gradient(90deg,transparent,{_bac},{_bac}88,transparent)"></div>'
-        )
+        # ── Build white sportsbook card ─────────────────────────────────────
+        _bpc2 = _bpc; _bac2 = _bac  # keep for badge coloring
+        _card_bg     = "background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%)"
+        _card_border = "border:1px solid rgba(0,0,0,0.07);border-top:1px solid rgba(255,255,255,0.9)"
+        _card_shadow = "box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset"
+        _top_stripe  = ""  # no stripe on white card
 
         # Only show ML odds if at least one side has a value
         _has_ml = bool(sim.get("home_ml") or sim.get("away_ml"))
@@ -7605,14 +7608,109 @@ elif _active_page == "Picks":
                 _sf2_html += '</div></div>'
                 _footer += _sf2_html
 
+        # ── Get logos ────────────────────────────────────────────────────────
+        _ht_id_p  = g.get("home_team_id","")
+        _at_id_p  = g.get("away_team_id","")
+        _league_p = g.get("league","")
+        _sg_p     = LEAGUES.get(_league_p,{}).get("group","Soccer")
+        _sg_icon_p = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(_sg_p,"🎯")
+        _logo_a_p = _logo_img(_at_id_p, _league_p, 44)
+        _logo_h_p = _logo_img(_ht_id_p, _league_p, 44)
+        _away_p   = g.get("away_team","")
+        _home_p   = g.get("home_team","")
+        _lg_lbl_p = league_label(_league_p)
+
+        # ── Decimals for pills ─────────────────────────────────────────────
+        _h_pct_p  = sim.get("home_pct",0) or 0
+        _a_pct_p  = sim.get("away_pct",0) or 0
+        _d_pct_p  = sim.get("draw_pct",0) or 0
+        def _get_dec(key, pct):
+            d = sim.get(key,"")
+            if d:
+                try:
+                    v=float(d); return "1.02" if v<1.02 else (">15" if v>15 else f"{v:.2f}")
+                except: pass
+            return prob_to_dec(pct/100) if pct>0 else "-"
+        _h_dec_p  = _get_dec("model_home_dec", _h_pct_p)
+        _a_dec_p  = _get_dec("model_away_dec", _a_pct_p)
+        _d_dec_p  = _get_dec("model_draw_dec", _d_pct_p)
+        _bp_mkt   = bp.get("market","")
+        _bp_lbl   = bp.get("label","")
+        _bp_prob  = bp.get("prob",0); _bp_prob = _bp_prob if _bp_prob<=1 else _bp_prob/100
+        _pick_h_p = _home_p in _bp_lbl
+        _pick_dec_p = _h_dec_p if _pick_h_p else _a_dec_p
+        _pick_pct_p = _h_pct_p if _pick_h_p else _a_pct_p
+
+        # ── Pills ──────────────────────────────────────────────────────────
+        def _ppill(lbl, dec):
+            lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else "#A0A0A8"
+            return (f'<div style="flex:1;background:linear-gradient(160deg,#1E1E24 0%,#141418 100%);'
+                    f'border-radius:10px;border:1px solid rgba(255,255,255,0.1);'
+                    f'border-top:1px solid rgba(255,255,255,0.18);'
+                    f'box-shadow:0 3px 8px rgba(0,0,0,0.4),0 1px 0 rgba(255,255,255,0.06) inset;'
+                    f'padding:10px 4px;text-align:center">'
+                    f'<span style="font-size:0.65rem;color:{lc};display:block;margin-bottom:3px;font-weight:700;letter-spacing:0.3px">{lbl}</span>'
+                    f'<span style="font-size:1.2rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif;line-height:1">{dec}</span>'
+                    f'</div>')
+        if _sg_p == "Soccer":
+            _pills_p = _ppill("1x",_a_dec_p)+_ppill("x",_d_dec_p)+_ppill("2x",_h_dec_p)
+        else:
+            _ou_v_p = sim.get("ou_line","") or ""
+            _po_p = sim.get("p_o_total",0) or 0; _pu_p = sim.get("p_u_total",0) or 0
+            if _ou_v_p and not str(_ou_v_p).startswith("~"):
+                try: _ou_lbl_p = f"{'O' if _po_p>=_pu_p else 'U'}{float(str(_ou_v_p).lstrip('~')):.1f}"
+                except: _ou_lbl_p = "O/U"
+                _ou_dec_p = _get_dec("", max(_po_p,_pu_p))
+                _pills_p = _ppill(_away_p[:7],_a_dec_p)+_ppill(_ou_lbl_p,_ou_dec_p)+_ppill(_home_p[:7],_h_dec_p)
+            else:
+                _pills_p = _ppill(_away_p[:8],_a_dec_p)+_ppill(_home_p[:8],_h_dec_p)
+
+        # ── White card shell ───────────────────────────────────────────────
         _html = (
-            f'<div style="border-radius:12px;padding:10px 12px;margin:4px 0;'
-            f'{_card_bg};{_card_border};{_card_shadow}">'
-            + _top_stripe
-            + _html_header
-            + _body + _bars + _footer
-            + _build_extra_panels(g, sim, bp)
-            + '</div>'
+            f'<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
+            f'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+            f'border:1px solid rgba(0,0,0,0.07);'
+            f'box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset">'
+            # Liga header
+            f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
+            f'<span style="font-size:0.6rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl_p}</span>'
+            f'<span style="font-size:0.65rem;color:#C9A84C">{f"EV +{bp.get('ev',0):.1f}" if (bp.get('ev',0) or 0)>3 else ""}</span>'
+            f'</div>'
+            # Teams + logos
+            f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
+            f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+            + _logo_a_p +
+            f'<span style="font-size:0.62rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away_p[:10]}</span>'
+            f'</div>'
+            f'<div style="flex:1.2;text-align:center">'
+            f'<div style="font-size:1.6rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+            f'<div style="font-size:0.5rem;color:#BBB;margin-top:3px">{_sg_icon_p}</div>'
+            f'</div>'
+            f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+            + _logo_h_p +
+            f'<span style="font-size:0.62rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home_p[:10]}</span>'
+            f'</div>'
+            f'</div>'
+            # Divider
+            f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+            # Pills
+            f'<div style="display:flex;gap:6px;padding:10px 12px">' + _pills_p + f'</div>'
+            # CTA
+            f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+            f'border-radius:12px;padding:11px 14px;'
+            f'border:1px solid rgba(255,255,255,0.35);'
+            f'box-shadow:0 4px 14px rgba(255,185,0,0.3),0 1px 0 rgba(255,255,255,0.45) inset">'
+            f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:3px">'
+            f'<span style="font-size:0.58rem;font-weight:900;color:#111;letter-spacing:2px;text-transform:uppercase;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px">{_bp_mkt}</span>'
+            f'<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_bp_lbl}</span>'
+            f'</div>'
+            f'<div style="display:flex;align-items:center;gap:10px">'
+            f'<span style="font-size:2.0rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec_p}</span>'
+            f'<div>'
+            f'<div style="font-size:0.72rem;font-weight:700;color:rgba(0,0,0,0.5)">{_pick_pct_p:.0f}% prob</div>'
+            f'<div style="font-size:0.6rem;color:rgba(0,0,0,0.35)">Apuesta sugerida</div>'
+            f'</div></div></div>'
+            f'</div>'
         )
         return _html
 
