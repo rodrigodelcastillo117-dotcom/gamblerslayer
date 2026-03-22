@@ -6475,7 +6475,13 @@ if _active_page == "Rongol Picks":
         allowed_bets = rongol_picks
 
         # ── STATS PANEL — accuracy from pick_history ─────────────────────────
-        with st.expander("📊 Accuracy del Sistema", expanded=False):
+        _acc_key = "_acc_open_rongol"
+        _acc_open = st.session_state.get(_acc_key, False)
+        def _toggle_acc():
+            st.session_state[_acc_key] = not st.session_state.get(_acc_key, False)
+        st.button("▼ Cerrar accuracy" if _acc_open else "📊 Accuracy del Sistema",
+                  key="btn_acc_rongol", use_container_width=True, on_click=_toggle_acc)
+        if _acc_open:
             _ph_all = _ph_load()
             _ph_resolved = [p for p in _ph_all if p["resultado"] in ("ganado","perdido","push")]
             _ph_pending  = [p for p in _ph_all if p["resultado"] == "pendiente"]
@@ -7067,13 +7073,14 @@ if _active_page == "Rongol Picks":
                         st.markdown(_card, unsafe_allow_html=True)
                         _ver_key = f"_ver_{_rp.get('id','')[:12]}_{_row_i}_{_ci}"
                         _ver_open = st.session_state.get(_ver_key, False)
-                        if st.button(
-                            "▼ Cerrar análisis" if _ver_open else "▶ Ver análisis completo",
+                        def _toggle_ver(k=_ver_key):
+                            st.session_state[k] = not st.session_state.get(k, False)
+                        st.button(
+                            "▼ Cerrar análisis" if _ver_open else "📋 Por qué este pick",
                             key=_ver_key + "_btn",
-                            use_container_width=True
-                        ):
-                            st.session_state[_ver_key] = not _ver_open
-                            st.rerun()
+                            use_container_width=True,
+                            on_click=_toggle_ver,
+                        )
                         if _ver_open:
                             # ── Resumen en texto: por qué este pick ──────────
                             _sim_r  = _rp.get("sim", {})
@@ -8073,7 +8080,13 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
     if _sr_all:
-        with st.expander("⬇ Exportar CSV", expanded=False):
+        _csv_key = "_csv_open_picks"
+        _csv_open = st.session_state.get(_csv_key, False)
+        def _toggle_csv():
+            st.session_state[_csv_key] = not st.session_state.get(_csv_key, False)
+        st.button("▼ Cerrar" if _csv_open else "⬇ Exportar CSV",
+                  key="btn_csv_picks", use_container_width=True, on_click=_toggle_csv)
+        if _csv_open:
             csv=["Liga,Visitante,Local,Prob Vis%,Prob Local%,Empate%,ML Vis,ML Local,EV Vis,EV Local,BTTS%,EV BTTS,O2.5%,EV O2.5,O3.5%,DC 1X%,DC X2%,Mejor Mercado,Mejor Pick,Mejor EV,DQ%"]
             for _cr in _sr_all:
                 s=_cr["sim"]; bs=s.get("best_single",{}) or {}
