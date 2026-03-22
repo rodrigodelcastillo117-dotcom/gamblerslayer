@@ -6850,9 +6850,9 @@ if _active_page == "Rongol Picks":
             _btn_label = (
                 f"🏆 Ligas · {_n_activas}/{_n_total} activas  {'▲' if _filtro_open else '▼'}"
             )
-            if st.button(_btn_label, key="btn_filtro_ligas", use_container_width=True):
-                st.session_state["picks_filtro_open"] = not _filtro_open
-                st.rerun()
+            def _tog_filtro(_v=_filtro_open):
+                st.session_state["picks_filtro_open"] = not _v
+            st.button(_btn_label, key="btn_filtro_ligas", use_container_width=True, on_click=_tog_filtro)
 
             if st.session_state.get("picks_filtro_open", False):
                 st.markdown(
@@ -6863,32 +6863,20 @@ if _active_page == "Rongol Picks":
                 # Botones rápidos
                 _qc1, _qc2, _qc3 = st.columns(3)
                 with _qc1:
-                    if st.button("✅ Todas", key="btn_ligas_all", use_container_width=True):
-                        st.session_state["picks_ligas_sel"] = set(_ligas_disponibles)
+                    def _set_all(_ld=_ligas_disponibles):
+                        st.session_state["picks_ligas_sel"] = set(_ld)
                         st.session_state["picks_ligas_excluidas"] = set()
-                        st.rerun()
+                    st.button("✅ Todas", key="btn_ligas_all", use_container_width=True, on_click=_set_all)
                 with _qc2:
-                    if st.button("⚽ Solo Soccer", key="btn_ligas_soccer", use_container_width=True):
-                        st.session_state["picks_ligas_sel"] = {
-                            l for l in _ligas_disponibles
-                            if LEAGUES.get(l, {}).get("group") == "Soccer"
-                        }
-                        st.session_state["picks_ligas_excluidas"] = {
-                            l for l in _ligas_disponibles
-                            if LEAGUES.get(l, {}).get("group") != "Soccer"
-                        }
-                        st.rerun()
+                    def _set_soccer(_ld=_ligas_disponibles):
+                        st.session_state["picks_ligas_sel"] = {l for l in _ld if LEAGUES.get(l,{}).get("group")=="Soccer"}
+                        st.session_state["picks_ligas_excluidas"] = {l for l in _ld if LEAGUES.get(l,{}).get("group")!="Soccer"}
+                    st.button("⚽ Solo Soccer", key="btn_ligas_soccer", use_container_width=True, on_click=_set_soccer)
                 with _qc3:
-                    if st.button("🏀 Solo US Sports", key="btn_ligas_us", use_container_width=True):
-                        st.session_state["picks_ligas_sel"] = {
-                            l for l in _ligas_disponibles
-                            if LEAGUES.get(l, {}).get("group") in ("Basketball","Baseball","Football","Hockey")
-                        }
-                        st.session_state["picks_ligas_excluidas"] = {
-                            l for l in _ligas_disponibles
-                            if LEAGUES.get(l, {}).get("group") == "Soccer"
-                        }
-                        st.rerun()
+                    def _set_us(_ld=_ligas_disponibles):
+                        st.session_state["picks_ligas_sel"] = {l for l in _ld if LEAGUES.get(l,{}).get("group") in ("Basketball","Baseball","Football","Hockey")}
+                        st.session_state["picks_ligas_excluidas"] = {l for l in _ld if LEAGUES.get(l,{}).get("group")=="Soccer"}
+                    st.button("🏀 Solo US Sports", key="btn_ligas_us", use_container_width=True, on_click=_set_us)
 
                 st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
 
@@ -7464,13 +7452,14 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
             _check = " ✓" if _is_sel else ""
             with _sp_cols_p[_ci_p]:
                 _btn_txt = _smp["emoji"] + "\n" + _sp_p + "\n" + str(_n_p) + " juegos" + _check
-                if st.button(
+                def _tog_sp(_sp=_sp_p, _sel=_is_sel):
+                    st.session_state["_picks_sel_sport"] = None if _sel else _sp
+                st.button(
                     _btn_txt,
                     key=f"btn_sp_{_sp_p}",
                     use_container_width=True,
-                ):
-                    st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
-                    st.rerun()
+                    on_click=_tog_sp,
+                )
 
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
@@ -8078,15 +8067,6 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                        _sim_map.get(_gg.get("id",""),{})["sim"]["best_single"]["ev"] > 0
                 )
                 _ev_lg_badge = f" · 🔥{_ev_lg} EV+" if _ev_lg else ""
-
-                # Estado abierto/cerrado — por defecto CERRADO (guardado en session_state)
-                _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_')}"
-                _is_open = st.session_state.get(_exp_key, False)
-
-                # Header clickable
-                _hdr_bg     = f"rgba({','.join(str(int(_smp['color'][i:i+2],16)) for i in (1,3,5))},0.10)" if _is_open else "rgba(255,255,255,0.03)"
-                _hdr_border = f"1.5px solid {_smp['color']}66" if _is_open else "1px solid #2A2A2A"
-                _arrow      = "▼" if _is_open else "▶"
 
                 # Liga row: ONE dark button (no white box ever)
                 _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_').replace('.','_')}"
