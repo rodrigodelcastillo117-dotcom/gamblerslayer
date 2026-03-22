@@ -7109,13 +7109,16 @@ if _active_page == "Rongol Picks":
                         st.markdown(_card, unsafe_allow_html=True)
                         _ver_key = f"_ver_{_rp.get('id','')[:12]}_{_row_i}_{_ci}"
                         _ver_open = st.session_state.get(_ver_key, False)
-                        if st.button(
+                        def _toggle_ver(_k=_ver_key, _v=_ver_open):
+                            st.session_state[_k] = not _v
+                        st.button(
                             "▼ Ocultar" if _ver_open else "📋 Por qué este pick",
                             key=_ver_key + "_btn",
                             use_container_width=True,
-                        ):
-                            st.session_state[_ver_key] = not _ver_open
-                            st.rerun()
+                            on_click=_toggle_ver,
+                        )
+                        # Re-read after potential on_click update
+                        _ver_open = st.session_state.get(_ver_key, False)
                         if _ver_open:
                             # ── Resumen en texto: por qué este pick ──────────
                             _sim_r  = _rp.get("sim", {})
@@ -8094,9 +8097,12 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 _arrow = "▼" if _is_open else "▶"
                 _btn_label = f"{_arrow}  {_flag_p} {_lg_p}   {_n_lg} partidos{_ev_lg_badge}"
                 _btn_key = _exp_key + "_btn"
-                if st.button(_btn_label, key=_btn_key, use_container_width=True):
-                    st.session_state[_exp_key] = not _is_open
-                    st.rerun()
+                def _toggle_liga(_k=_exp_key, _v=_is_open):
+                    st.session_state[_k] = not _v
+                st.button(_btn_label, key=_btn_key, use_container_width=True,
+                          on_click=_toggle_liga)
+                # Re-read after potential on_click update
+                _is_open = st.session_state.get(_exp_key, False)
 
                 if _is_open:
                     st.markdown(
