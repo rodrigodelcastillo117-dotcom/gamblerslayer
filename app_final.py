@@ -6911,16 +6911,17 @@ if _active_page == "Rongol Picks":
                             _btn_key = f"liga_tog_{_liga_btn_idx}"
                             _liga_btn_idx += 1
                             _btn_txt = "Quitar" if _activa else "Agregar"
-                            if st.button(_btn_txt, key=_btn_key, use_container_width=True):
+                            def _tog_liga_ind(_lg=_liga, _act=_activa):
                                 _excl = st.session_state.get("picks_ligas_excluidas", set())
-                                if _activa:
-                                    st.session_state["picks_ligas_sel"].discard(_liga)
-                                    _excl.add(_liga)
+                                if _act:
+                                    st.session_state["picks_ligas_sel"].discard(_lg)
+                                    _excl.add(_lg)
                                 else:
-                                    st.session_state["picks_ligas_sel"].add(_liga)
-                                    _excl.discard(_liga)
+                                    st.session_state["picks_ligas_sel"].add(_lg)
+                                    _excl.discard(_lg)
                                 st.session_state["picks_ligas_excluidas"] = _excl
-                                st.rerun()
+                            st.button(_btn_txt, key=_btn_key, use_container_width=True,
+                                      on_click=_tog_liga_ind)
 
                 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -9225,9 +9226,8 @@ elif _active_page == "Reto 13M":
                     key="sel_existing_user"
                 )
                 if sel_existing:
-                    if st.button("⚡ Cargar progreso", key="btn_load_existing", use_container_width=True):
-                        st.session_state["reto_apodo"] = sel_existing
-                        st.rerun()
+                    def _load_prog(_v=sel_existing): st.session_state["reto_apodo"] = _v
+                    st.button("⚡ Cargar progreso", key="btn_load_existing", use_container_width=True, on_click=_load_prog)
         st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
@@ -9242,9 +9242,8 @@ elif _active_page == "Reto 13M":
             unsafe_allow_html=True
         )
     with col_usr2:
-        if st.button("↩ Salir", key="btn_logout_reto", use_container_width=True):
-            st.session_state["reto_apodo"] = ""
-            st.rerun()
+        def _logout_reto(): st.session_state["reto_apodo"] = ""
+        st.button("↩ Salir", key="btn_logout_reto", use_container_width=True, on_click=_logout_reto)
 
     reto = _load_reto(apodo_activo)
     picks = reto.get("picks", [])
@@ -10255,9 +10254,8 @@ elif _active_page == "Califica":
                     unsafe_allow_html=True
                 )
 
-                if st.button("↩ Calificar otro pick", key="btn_cal_reset", use_container_width=True):
-                    st.session_state.pop("_cal_result", None)
-                    st.rerun()
+                def _cal_reset2(): st.session_state.pop("_cal_result", None)
+                st.button("↩ Calificar otro pick", key="btn_cal_reset", use_container_width=True, on_click=_cal_reset2)
 
 elif _active_page == "Config":
     st.markdown('<div class="section-heading">⚙️ Config</div>', unsafe_allow_html=True)
@@ -10306,9 +10304,8 @@ elif _active_page == "Config":
     use_demo_cfg = st.toggle("🧪 Demo", value=st.session_state.get("use_demo_val", False), key="use_demo_v2")
     st.session_state["use_demo_val"] = use_demo_cfg
 
-    if st.button("▶  Analizar ahora", key="run_btn_menu", use_container_width=True):
-        st.session_state["trigger_analyze"] = True
-        st.rerun()
+    def _run_analyze(): st.session_state["trigger_analyze"] = True
+    st.button("▶  Analizar ahora", key="run_btn_menu", use_container_width=True, on_click=_run_analyze)
 
     st.markdown('<div class="den-divider" style="margin:12px 0"></div>', unsafe_allow_html=True)
     st.markdown('<div style="font-size:0.65rem;color:var(--text3);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🛠 HERRAMIENTAS</div>', unsafe_allow_html=True)
@@ -10321,16 +10318,14 @@ elif _active_page == "Config":
             st.session_state.pop("_games_fetched", None)
             st.rerun()
     with _tc2:
-        if st.button("🔍 Test ESPN", key="test_espn_menu", use_container_width=True):
-            st.session_state["run_espn_test"] = True
-            st.rerun()
+        def _run_espn(): st.session_state["run_espn_test"] = True
+        st.button("🔍 Test ESPN", key="test_espn_menu", use_container_width=True, on_click=_run_espn)
 
     _tp_count_sb = st.session_state.get("_tp_count_cached", 0)
     _mem_label = f"✅ {_tp_count_sb} equipos" if _tp_count_sb > 0 else "⬜ Sin memoria"
     st.caption(_mem_label)
-    if st.button("🧠 Poblar memoria", key="populate_menu", use_container_width=True):
-        st.session_state["run_populate"] = True
-        st.rerun()
+    def _run_populate(): st.session_state["run_populate"] = True
+    st.button("🧠 Poblar memoria", key="populate_menu", use_container_width=True, on_click=_run_populate)
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 # ── Ocultar elementos de Streamlit Cloud (JS runtime) ─────────────────────
