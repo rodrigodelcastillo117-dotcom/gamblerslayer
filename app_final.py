@@ -670,17 +670,16 @@ div[data-testid="stButton"]:has(> button[key*="_btn"]) > button:hover {
 }
 
 
-/* ── FORCE ALL BUTTONS DARK — no white buttons ever ─────────────────── */
-/* This covers liga buttons, ver análisis, and any other st.button */
-.stButton > button,
-div[data-testid="stButton"] > button,
-div[data-testid="stBaseButton-secondary"],
-button[data-testid="baseButton-secondary"] {
+/* ── FORCE ALL BUTTONS DARK — maximum specificity ───────────────────── */
+html body div[data-testid="stButton"] button,
+html body .stButton > button,
+html body div[class*="stButton"] button,
+html body div[class*="element-container"] div[data-testid="stButton"] button {
   background: linear-gradient(160deg, #1C1C22 0%, #111114 100%) !important;
   color: #C0C0CC !important;
   border: 1px solid rgba(255,255,255,0.09) !important;
-  border-top: 1px solid rgba(255,255,255,0.15) !important;
-  border-bottom: 1px solid rgba(0,0,0,0.45) !important;
+  border-top: 1.5px solid rgba(255,255,255,0.15) !important;
+  border-bottom: 2px solid rgba(0,0,0,0.5) !important;
   border-radius: 10px !important;
   box-shadow: 0 3px 10px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.06) inset !important;
   font-family: 'Barlow', sans-serif !important;
@@ -689,18 +688,22 @@ button[data-testid="baseButton-secondary"] {
   padding: 10px 16px !important;
   height: auto !important;
   min-height: 40px !important;
-  transition: all 0.15s ease !important;
+  transition: background 0.15s, border-color 0.15s, color 0.15s !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
-.stButton > button:hover,
-div[data-testid="stButton"] > button:hover {
-  border-color: rgba(255,85,0,0.35) !important;
+html body div[data-testid="stButton"] button:hover,
+html body .stButton > button:hover {
+  border-color: rgba(255,85,0,0.4) !important;
   color: #FF5500 !important;
-  box-shadow: 0 3px 14px rgba(255,85,0,0.18), 0 1px 0 rgba(255,255,255,0.06) inset !important;
+  background: linear-gradient(160deg, #22222A 0%, #161619 100%) !important;
+  box-shadow: 0 3px 14px rgba(255,85,0,0.2), 0 1px 0 rgba(255,255,255,0.07) inset !important;
 }
-.stButton > button:active,
-div[data-testid="stButton"] > button:active {
+html body div[data-testid="stButton"] button:active,
+html body .stButton > button:active {
   transform: translateY(1px) !important;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
 }
 
 </style>
@@ -10375,20 +10378,29 @@ _components_hide.html("""
       el.style.visibility = 'hidden';
     });
 
-    // Kill white expander boxes — closed expanders should show nothing below header
+    // Kill white expander boxes
     document.querySelectorAll('[data-testid="stExpander"] details:not([open])').forEach(det => {
-      // Hide every child except the summary (the clickable header)
       Array.from(det.children).forEach(child => {
         if (child.tagName !== 'SUMMARY') {
-          child.style.display = 'none';
-          child.style.height = '0';
-          child.style.overflow = 'hidden';
-          child.style.border = 'none';
-          child.style.padding = '0';
-          child.style.margin = '0';
-          child.style.background = 'transparent';
+          child.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;border:none!important;padding:0!important;margin:0!important;background:transparent!important;';
         }
       });
+    });
+
+    // Force ALL stButton dark (overrides Streamlit white default)
+    document.querySelectorAll('div[data-testid="stButton"] > button').forEach(btn => {
+      if (btn.closest('[data-testid="stRadio"]')) return; // skip nav
+      btn.style.background = 'linear-gradient(160deg,#1C1C22 0%,#111114 100%)';
+      btn.style.color = '#C0C0CC';
+      btn.style.border = '1px solid rgba(255,255,255,0.09)';
+      btn.style.borderTop = '1.5px solid rgba(255,255,255,0.16)';
+      btn.style.borderBottom = '2px solid rgba(0,0,0,0.5)';
+      btn.style.borderRadius = '10px';
+      btn.style.boxShadow = '0 3px 10px rgba(0,0,0,0.35),0 1px 0 rgba(255,255,255,0.06) inset';
+      btn.style.fontFamily = "'Barlow',sans-serif";
+      btn.style.fontWeight = '700';
+      btn.style.minHeight = '40px';
+      btn.style.padding = '10px 16px';
     });
   }
   nuke();
