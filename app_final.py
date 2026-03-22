@@ -711,7 +711,7 @@ if "active_page" not in st.session_state:
 _active_page = st.session_state["active_page"]
 
 # CSS: transforma el radio en bottom nav compacto
-
+# (nav CSS is in main <style> block above)
 
 # Construir opciones: emoji + newline + label (el CSS los separa visualmente)
 _nav_options = [f'{i["icon"]}\n{i["label"]}' for i in _NAV_ITEMS]
@@ -7979,32 +7979,8 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 _cr2,_cg2,_cb2 = int(_smp["color"][1:3],16),int(_smp["color"][3:5],16),int(_smp["color"][5:7],16)
 
                 # Style the button to look like the dark header
-                _btn_style = f"""<style>
-div[data-testid="stButton"]:has(> button[key="{_exp_key}"]) button {{
-  background: {'linear-gradient(160deg,rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.18) 0%,rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.06) 100%)' if _is_open else 'linear-gradient(160deg,#1C1C22 0%,#111114 100%)'} !important;
-  border: {'1.5px solid rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.5)' if _is_open else '1px solid rgba(255,255,255,0.09)'} !important;
-  border-top: {'1.5px solid rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.8)' if _is_open else '1.5px solid rgba(255,255,255,0.15)'} !important;
-  border-bottom: 2px solid rgba(0,0,0,0.45) !important;
-  border-radius: {'12px 12px 0 0' if _is_open else '12px'} !important;
-  color: {'#FF5500' if _is_open else '#D0D0D8'} !important;
-  font-size: 0.84rem !important;
-  font-weight: 700 !important;
-  font-family: 'Barlow', sans-serif !important;
-  text-align: left !important;
-  padding: 12px 16px !important;
-  height: auto !important;
-  min-height: 46px !important;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.07) inset !important;
-  margin-top: 5px !important;
-  width: 100% !important;
-  display: flex !important;
-  justify-content: space-between !important;
-}}
-</style>"""
-                st.markdown(_btn_style, unsafe_allow_html=True)
-
-                _arrow = "▼ " if _is_open else "▶ "
-                _btn_label = f"{_arrow}{_flag_p} {_lg_p}    {_n_lg} partidos{_ev_lg_badge}"
+                _arrow = "▼" if _is_open else "▶"
+                _btn_label = f"{_arrow}  {_flag_p} {_lg_p}   {_n_lg} partidos{_ev_lg_badge}"
                 if st.button(_btn_label, key=_exp_key, use_container_width=True):
                     st.session_state[_exp_key] = not _is_open
                     st.rerun()
