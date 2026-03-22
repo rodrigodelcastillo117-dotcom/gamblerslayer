@@ -8093,7 +8093,8 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 # Style the button to look like the dark header
                 _arrow = "▼" if _is_open else "▶"
                 _btn_label = f"{_arrow}  {_flag_p} {_lg_p}   {_n_lg} partidos{_ev_lg_badge}"
-                if st.button(_btn_label, key=_exp_key, use_container_width=True):
+                _btn_key = _exp_key + "_btn"
+                if st.button(_btn_label, key=_btn_key, use_container_width=True):
                     st.session_state[_exp_key] = not _is_open
                     st.rerun()
 
