@@ -664,6 +664,30 @@ div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]) > bu
 /* Expander styles consolidated above */
 
 
+/* ── Liga toggle buttons — dark pill, no white box ────────────────────── */
+/* Ver análisis button */
+div[data-testid="stButton"]:has(> button[key*="_btn"]) > button {
+  background: linear-gradient(160deg, #1A1A1F 0%, #0F0F12 100%) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-top: 1px solid rgba(255,255,255,0.13) !important;
+  border-bottom: 1px solid rgba(0,0,0,0.4) !important;
+  border-radius: 10px !important;
+  color: #888 !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+  padding: 8px 14px !important;
+  height: auto !important;
+  min-height: 36px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+  margin-top: 4px !important;
+  text-align: left !important;
+}
+div[data-testid="stButton"]:has(> button[key*="_btn"]) > button:hover {
+  color: #FF5500 !important;
+  border-color: rgba(255,85,0,0.3) !important;
+}
+
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -7059,7 +7083,16 @@ if _active_page == "Rongol Picks":
                     )
                     with _cols[_ci]:
                         st.markdown(_card, unsafe_allow_html=True)
-                        with st.expander("📊 Ver análisis", expanded=False):
+                        _ver_key = f"_ver_{_rp.get('id','')[:12]}_{_row_i}_{_ci}"
+                        _ver_open = st.session_state.get(_ver_key, False)
+                        if st.button(
+                            "▼ Cerrar análisis" if _ver_open else "▶ Ver análisis completo",
+                            key=_ver_key + "_btn",
+                            use_container_width=True
+                        ):
+                            st.session_state[_ver_key] = not _ver_open
+                            st.rerun()
+                        if _ver_open:
                             st.markdown(_pick_diamante_card(_rp, _pk, rank=_row_i+_ci, is_fire=_is_fire), unsafe_allow_html=True)
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
@@ -7940,9 +7973,48 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 _hdr_border = f"1.5px solid {_smp['color']}66" if _is_open else "1px solid #2A2A2A"
                 _arrow      = "▼" if _is_open else "▶"
 
-                # Liga row as native st.expander — clean, no white button
-                _exp_label = f"{_flag_p} {_lg_p}  {_n_lg} partidos{_ev_lg_badge}"
-                with st.expander(_exp_label, expanded=False):
+                # Liga row: ONE dark button (no white box ever)
+                _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_').replace('.','_')}"
+                _is_open = st.session_state.get(_exp_key, False)
+                _cr2,_cg2,_cb2 = int(_smp["color"][1:3],16),int(_smp["color"][3:5],16),int(_smp["color"][5:7],16)
+
+                # Style the button to look like the dark header
+                _btn_style = f"""<style>
+div[data-testid="stButton"]:has(> button[key="{_exp_key}"]) button {{
+  background: {'linear-gradient(160deg,rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.18) 0%,rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.06) 100%)' if _is_open else 'linear-gradient(160deg,#1C1C22 0%,#111114 100%)'} !important;
+  border: {'1.5px solid rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.5)' if _is_open else '1px solid rgba(255,255,255,0.09)'} !important;
+  border-top: {'1.5px solid rgba('+str(_cr2)+','+str(_cg2)+','+str(_cb2)+',0.8)' if _is_open else '1.5px solid rgba(255,255,255,0.15)'} !important;
+  border-bottom: 2px solid rgba(0,0,0,0.45) !important;
+  border-radius: {'12px 12px 0 0' if _is_open else '12px'} !important;
+  color: {'#FF5500' if _is_open else '#D0D0D8'} !important;
+  font-size: 0.84rem !important;
+  font-weight: 700 !important;
+  font-family: 'Barlow', sans-serif !important;
+  text-align: left !important;
+  padding: 12px 16px !important;
+  height: auto !important;
+  min-height: 46px !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.07) inset !important;
+  margin-top: 5px !important;
+  width: 100% !important;
+  display: flex !important;
+  justify-content: space-between !important;
+}}
+</style>"""
+                st.markdown(_btn_style, unsafe_allow_html=True)
+
+                _arrow = "▼ " if _is_open else "▶ "
+                _btn_label = f"{_arrow}{_flag_p} {_lg_p}    {_n_lg} partidos{_ev_lg_badge}"
+                if st.button(_btn_label, key=_exp_key, use_container_width=True):
+                    st.session_state[_exp_key] = not _is_open
+                    st.rerun()
+
+                if _is_open:
+                    st.markdown(
+                        f'<div style="background:#0F0F12;border:1.5px solid rgba({_cr2},{_cg2},{_cb2},0.25);'
+                        f'border-top:none;border-radius:0 0 12px 12px;padding:10px 6px 12px;margin-bottom:2px">',
+                        unsafe_allow_html=True
+                    )
                     for _gi3 in range(0, len(_lg_games_p), 3):
                         _row3 = _lg_games_p[_gi3:_gi3+3]
                         _ncols = len(_row3)
@@ -7950,6 +8022,7 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                         for _ci3, _gg_p in enumerate(_row3):
                             with _c3[_ci3]:
                                 st.markdown(_oracle_card(_gg_p, _smp), unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
     # CSV export (collapsed)
     _sr_all = st.session_state.get("sim_results", [])
@@ -10205,10 +10278,26 @@ _components_hide.html("""
         el.style.pointerEvents = 'none';
       });
     });
-    // Hide fixed-position elements that look like Streamlit badges (small, bottom-right)
-    document.querySelectorAll('a[href*="streamlit"], button[title*="Manage"], .viewerBadge_container__1QSob').forEach(el => {
+    // Hide Streamlit badges
+    document.querySelectorAll('a[href*="streamlit"], button[title*="Manage"], .viewerBadge_container__1QSob, footer, [data-testid="stBottom"]').forEach(el => {
       el.style.display = 'none';
       el.style.visibility = 'hidden';
+    });
+
+    // Kill white expander boxes — closed expanders should show nothing below header
+    document.querySelectorAll('[data-testid="stExpander"] details:not([open])').forEach(det => {
+      // Hide every child except the summary (the clickable header)
+      Array.from(det.children).forEach(child => {
+        if (child.tagName !== 'SUMMARY') {
+          child.style.display = 'none';
+          child.style.height = '0';
+          child.style.overflow = 'hidden';
+          child.style.border = 'none';
+          child.style.padding = '0';
+          child.style.margin = '0';
+          child.style.background = 'transparent';
+        }
+      });
     });
   }
   nuke();
