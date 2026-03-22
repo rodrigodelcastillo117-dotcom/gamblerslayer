@@ -641,25 +641,7 @@ div[data-testid="column"] .liga-btn-wrap + div[data-testid="stButton"] {
   margin-top: -120px !important;
 }
 
-/* ── Sport selector: invisible button overlaid on card ────────────────── */
-/* The HTML card is rendered, then button sits on top of it */
-div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]) {
-  margin-top: -108px !important;
-  position: relative !important;
-  z-index: 5 !important;
-}
-div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]) > button {
-  height: 108px !important;
-  min-height: 108px !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  color: transparent !important;
-  font-size: 0 !important;
-  opacity: 0 !important;
-  cursor: pointer !important;
-  border-radius: 16px !important;
-}
+/* Sport selector buttons styled via scoped CSS in Python */
 
 /* Expander styles consolidated above */
 
@@ -7093,6 +7075,94 @@ if _active_page == "Rongol Picks":
                             st.session_state[_ver_key] = not _ver_open
                             st.rerun()
                         if _ver_open:
+                            # ── Resumen en texto: por qué este pick ──────────
+                            _sim_r  = _rp.get("sim", {})
+                            _ev_r   = _pk.get("ev", 0) or 0
+                            _prob_r = _pk.get("prob", 0) or 0
+                            _prob_r = _prob_r if _prob_r <= 1 else _prob_r / 100
+                            _kelly_r = (_pk.get("kelly", 0) or 0) * 25
+                            _dq_r   = _sim_r.get("data_quality", 0) or 0
+                            _mkt_r  = _pk.get("market", "")
+                            _lbl_r  = _pk.get("label", "")
+                            _home_r = _rp.get("home_team", "")
+                            _away_r = _rp.get("away_team", "")
+                            _nsim_r = _sim_r.get("n_simulations", 0) or 0
+
+                            # Build reason sentences
+                            _reasons = []
+
+                            # 1. Probabilidad
+                            _fav_side = "local" if _home_r in _lbl_r else "visitante"
+                            _reasons.append(f"El modelo asigna <b>{_prob_r*100:.0f}%</b> de probabilidad al {_fav_side} ({_lbl_r}) en {_nsim_r:,} simulaciones.")
+
+                            # 2. EV
+                            if _ev_r > 5:
+                                _reasons.append(f"La cuota tiene <b>valor positivo de +${_ev_r:.0f} por $100</b> apostados (la casa paga más de lo que debería).")
+                            elif _ev_r > 0:
+                                _reasons.append(f"EV ligeramente positivo (+{_ev_r:.1f}), la cuota es justa o favorable.")
+                            else:
+                                _reasons.append(f"EV negativo ({_ev_r:.1f}) — pick seleccionado por alta probabilidad, apostar con cautela.")
+
+                            # 3. Form
+                            _hf = _rp.get("home_form"); _af = _rp.get("away_form")
+                            if _hf is not None and _af is not None:
+                                _pick_form = _hf if _home_r in _lbl_r else _af
+                                _rival_form = _af if _home_r in _lbl_r else _hf
+                                if _pick_form > _rival_form + 0.1:
+                                    _reasons.append(f"Mejor forma reciente: {_lbl_r[:12]} {_pick_form*100:.0f}% WR vs rival {_rival_form*100:.0f}% (últ. 10 partidos).")
+                                elif _rival_form > _pick_form + 0.1:
+                                    _reasons.append(f"Ojo: el rival tiene mejor forma ({_rival_form*100:.0f}% WR vs {_pick_form*100:.0f}%). El modelo favorece al pick por otros factores.")
+
+                            # 4. H2H
+                            _h2h_r = _rp.get("h2h", {}) or {}
+                            _h2h_n = _h2h_r.get("count", 0) or 0
+                            if _h2h_n >= 3:
+                                _wh = _h2h_r.get("wins_home", 0)
+                                _wa = _h2h_r.get("wins_away", 0)
+                                _dr = _h2h_r.get("draws", 0)
+                                _pick_is_home = _home_r in _lbl_r
+                                _pick_wins_h2h = _wh if _pick_is_home else _wa
+                                _rival_wins_h2h = _wa if _pick_is_home else _wh
+                                _h2h_pct = _pick_wins_h2h / _h2h_n * 100
+                                if _pick_wins_h2h > _rival_wins_h2h:
+                                    _reasons.append(f"Historial H2H favorable: {_lbl_r[:12]} ganó {_pick_wins_h2h} de {_h2h_n} enfrentamientos directos ({_h2h_pct:.0f}%).")
+                                elif _rival_wins_h2h > _pick_wins_h2h:
+                                    _reasons.append(f"H2H en contra: el rival ganó {_rival_wins_h2h} de {_h2h_n} enfrentamientos. El modelo aún favorece este pick por probabilidad.")
+
+                            # 5. B2B / fatigue
+                            if _sim_r.get("away_back2back") and not _sim_r.get("home_back2back"):
+                                _reasons.append("El visitante juega en back-to-back (menos descanso) — ventaja para el local.")
+                            elif _sim_r.get("home_back2back") and not _sim_r.get("away_back2back"):
+                                _reasons.append("El local juega en back-to-back — posible desventaja por fatiga.")
+
+                            # 6. DQ
+                            if _dq_r >= 70:
+                                _reasons.append(f"Alta calidad de datos (DQ {_dq_r:.0f}%) — predicción confiable.")
+                            elif _dq_r >= 35:
+                                _reasons.append(f"Calidad de datos media (DQ {_dq_r:.0f}%) — predicción moderadamente confiable.")
+                            else:
+                                _reasons.append(f"Pocos datos disponibles (DQ {_dq_r:.0f}%) — mayor incertidumbre.")
+
+                            # 7. Kelly
+                            if _kelly_r > 0:
+                                _reasons.append(f"Criterio Kelly recomienda apostar <b>{_kelly_r:.1f}%</b> del bankroll.")
+
+                            # Render reasons
+                            _reasons_html = "".join(
+                                f'<div style="display:flex;gap:8px;margin-bottom:6px;align-items:flex-start">'
+                                f'<span style="font-size:0.9rem;flex-shrink:0">{["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣"][min(_i,6)]}</span>'
+                                f'<span style="font-size:0.78rem;color:#C8C8D0;line-height:1.5">{_r}</span>'
+                                f'</div>'
+                                for _i, _r in enumerate(_reasons)
+                            )
+                            st.markdown(
+                                f'<div style="background:linear-gradient(160deg,#16161C 0%,#0F0F13 100%);'
+                                f'border:1px solid rgba(255,85,0,0.2);border-radius:14px;padding:14px 16px;margin:4px 0 8px">'
+                                f'<div style="font-size:0.62rem;font-weight:800;color:#FF5500;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">💡 Por qué este pick</div>'
+                                + _reasons_html +
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
                             st.markdown(_pick_diamante_card(_rp, _pk, rank=_row_i+_ci, is_fire=_is_fire), unsafe_allow_html=True)
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
