@@ -670,6 +670,39 @@ div[data-testid="stButton"]:has(> button[key*="_btn"]) > button:hover {
 }
 
 
+/* ── FORCE ALL BUTTONS DARK — no white buttons ever ─────────────────── */
+/* This covers liga buttons, ver análisis, and any other st.button */
+.stButton > button,
+div[data-testid="stButton"] > button,
+div[data-testid="stBaseButton-secondary"],
+button[data-testid="baseButton-secondary"] {
+  background: linear-gradient(160deg, #1C1C22 0%, #111114 100%) !important;
+  color: #C0C0CC !important;
+  border: 1px solid rgba(255,255,255,0.09) !important;
+  border-top: 1px solid rgba(255,255,255,0.15) !important;
+  border-bottom: 1px solid rgba(0,0,0,0.45) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.06) inset !important;
+  font-family: 'Barlow', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 0.82rem !important;
+  padding: 10px 16px !important;
+  height: auto !important;
+  min-height: 40px !important;
+  transition: all 0.15s ease !important;
+}
+.stButton > button:hover,
+div[data-testid="stButton"] > button:hover {
+  border-color: rgba(255,85,0,0.35) !important;
+  color: #FF5500 !important;
+  box-shadow: 0 3px 14px rgba(255,85,0,0.18), 0 1px 0 rgba(255,255,255,0.06) inset !important;
+}
+.stButton > button:active,
+div[data-testid="stButton"] > button:active {
+  transform: translateY(1px) !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -7073,14 +7106,13 @@ if _active_page == "Rongol Picks":
                         st.markdown(_card, unsafe_allow_html=True)
                         _ver_key = f"_ver_{_rp.get('id','')[:12]}_{_row_i}_{_ci}"
                         _ver_open = st.session_state.get(_ver_key, False)
-                        def _toggle_ver(k=_ver_key):
-                            st.session_state[k] = not st.session_state.get(k, False)
-                        st.button(
-                            "▼ Cerrar análisis" if _ver_open else "📋 Por qué este pick",
+                        if st.button(
+                            "▼ Ocultar" if _ver_open else "📋 Por qué este pick",
                             key=_ver_key + "_btn",
                             use_container_width=True,
-                            on_click=_toggle_ver,
-                        )
+                        ):
+                            st.session_state[_ver_key] = not _ver_open
+                            st.rerun()
                         if _ver_open:
                             # ── Resumen en texto: por qué este pick ──────────
                             _sim_r  = _rp.get("sim", {})
