@@ -1766,12 +1766,17 @@ def parse_games(data, league_name):
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
     _tomorrow_cdmx  = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
-    _valid_dates = {_today_cdmx, _yesterday_cdmx, _tomorrow_cdmx,
-                    (_now_mx - _td(days=2)).strftime("%Y-%m-%d"),
-                    (_now_mx - _td(days=3)).strftime("%Y-%m-%d"),
-                    (_now_mx - _td(days=4)).strftime("%Y-%m-%d"),
-                    (_now_mx + _td(days=2)).strftime("%Y-%m-%d"),
-                    }
+    _valid_dates = {
+        _today_cdmx, _yesterday_cdmx, _tomorrow_cdmx,
+        (_now_mx - _td(days=2)).strftime("%Y-%m-%d"),
+        (_now_mx - _td(days=3)).strftime("%Y-%m-%d"),
+        (_now_mx - _td(days=4)).strftime("%Y-%m-%d"),
+        (_now_mx - _td(days=5)).strftime("%Y-%m-%d"),
+        (_now_mx - _td(days=6)).strftime("%Y-%m-%d"),
+        (_now_mx - _td(days=7)).strftime("%Y-%m-%d"),
+        (_now_mx + _td(days=2)).strftime("%Y-%m-%d"),
+        (_now_mx + _td(days=3)).strftime("%Y-%m-%d"),
+    }
 
     for event in data.get("events", []):
         try:
@@ -5556,34 +5561,85 @@ if st.session_state.pop("run_populate", False):
 
 # ── HELPER FUNCTIONS (module level) ─────────────────────────────────────
 def _normalize_team(name):
-    """Lowercase, strip accents, remove common suffixes for fuzzy matching."""
-    import unicodedata
+    """Lowercase, strip accents, remove common suffixes + pick market labels."""
+    import unicodedata, re as _re_norm
     name = name.lower().strip()
+    # Remove market labels that users sometimes include in pick field
+    for mkt in [" ml", " over", " under", " btts", " o/u", " si", " no",
+                " moneyline", " +", " -"]:
+        if name.endswith(mkt):
+            name = name[:-len(mkt)].strip()
+    # Strip accents
     name = ''.join(c for c in unicodedata.normalize('NFD', name)
                    if unicodedata.category(c) != 'Mn')
-    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united"]:
-        name = name.replace(suffix, "")
+    # Remove club suffixes
+    for suffix in [" fc", " cf", " sc", " ac", " bc", " afc", " utd", " united",
+                   " city", " athletic", " atletico", " club", " de", " real",
+                   " cf", " cp", " fk", " sk", " bk"]:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)].strip()
+    # Common Spanish/English aliases
+    _ALIASES = {
+        "atletico": "atletico madrid", "atletico de madrid": "atletico madrid",
+        "man utd": "manchester united", "man city": "manchester city",
+        "wolves": "wolverhampton", "spurs": "tottenham",
+        "psg": "paris saint-germain", "paris sg": "paris saint-germain",
+        "inter": "inter milan", "internazionale": "inter milan",
+        "bayern": "bayern munich", "bayer": "bayer leverkusen",
+        "dortmund": "borussia dortmund", "bvb": "borussia dortmund",
+        "juve": "juventus", "barca": "barcelona", "barsa": "barcelona",
+        "unam": "pumas unam", "america": "club america",
+        "santos": "santos laguna", "tigres": "tigres uanl",
+        "america": "club america", "chivas": "guadalajara",
+        "cruz azul": "cruz azul", "morelia": "atletico morelia",
+    }
+    name = _ALIASES.get(name, name)
     return name.strip()
 
-def _team_match(pick_team, game_home, game_away, threshold=0.70):
-    """Return ('home'|'away'|None) if pick_team matches one of the game teams."""
+def _team_match(pick_team, game_home, game_away, threshold=0.55):
+    """Return ('home'|'away'|None) if pick_team matches one of the game teams.
+    Uses multiple matching strategies in order of reliability.
+    """
+    if not pick_team: return None
     pt = _normalize_team(pick_team)
     ht = _normalize_team(game_home)
     at = _normalize_team(game_away)
-    # Exact substring match first
+
+    if not pt: return None
+
+    # 1. Exact match
+    if pt == ht: return "home"
+    if pt == at: return "away"
+
+    # 2. Substring match (either direction)
     if pt in ht or ht in pt: return "home"
     if pt in at or at in pt: return "away"
-    # Token overlap
+
+    # 3. First significant token match (e.g. "real" in "real madrid")
+    pt_words = [w for w in pt.split() if len(w) >= 4]
+    ht_words = set(ht.split())
+    at_words = set(at.split())
+    if pt_words:
+        if any(w in ht_words for w in pt_words): return "home"
+        if any(w in at_words for w in pt_words): return "away"
+
+    # 4. Token overlap ratio
     pt_tok = set(pt.split())
-    ht_tok = set(ht.split())
-    at_tok = set(at.split())
     def overlap(a, b):
         if not a or not b: return 0
         return len(a & b) / max(len(a), len(b))
-    h_sc = overlap(pt_tok, ht_tok)
-    a_sc = overlap(pt_tok, at_tok)
-    if h_sc >= threshold and h_sc > a_sc: return "home"
-    if a_sc >= threshold: return "away"
+    h_sc = overlap(pt_tok, ht_words)
+    a_sc = overlap(pt_tok, at_words)
+    best = max(h_sc, a_sc)
+    if best >= threshold:
+        if h_sc >= a_sc: return "home"
+        return "away"
+
+    # 5. Any shared token of 5+ chars (catches "manchester" matching "manchester city")
+    pt_long = {w for w in pt.split() if len(w) >= 5}
+    if pt_long & ht_words: return "home"
+    if pt_long & at_words: return "away"
+
     return None
 
 def _evaluate_pick(pick, game):
@@ -5606,7 +5662,16 @@ def _evaluate_pick(pick, game):
 
     # ── ML ────────────────────────────────────────────────────────────────────
     if mercado == "ML":
-        side = _team_match(pick_lbl, game["home_team"], game["away_team"])
+        # Clean pick label — remove market suffixes users might include
+        import re as _re_ev
+        _pick_clean = _re_ev.sub(
+            r'\s*(ml|moneyline|money line|gana|win|local|visitante)\s*$',
+            '', pick_lbl, flags=_re_ev.IGNORECASE
+        ).strip()
+        side = _team_match(_pick_clean or pick_lbl, game["home_team"], game["away_team"])
+        if side is None:
+            # Try matching against the partido string directly
+            side = _team_match(pick_lbl, game["home_team"], game["away_team"])
         if side is None: return None
         if sg == "Soccer":
             if hs == as_: return "push"  # draw = push on ML? no, it loses
@@ -5669,16 +5734,24 @@ def _fetch_finished_games():
     seen_ids = set()
 
     _now_utc = datetime.now(timezone.utc)
-    _yesterday_utc = (_now_utc - _tdff(days=1)).strftime("%Y%m%d")
     _today_utc     = _now_utc.strftime("%Y%m%d")
-    _2days_utc     = (_now_utc - _tdff(days=2)).strftime("%Y%m%d")
+    _fetch_dates   = [
+        _today_utc,
+        (_now_utc - _tdff(days=1)).strftime("%Y%m%d"),
+        (_now_utc - _tdff(days=2)).strftime("%Y%m%d"),
+        (_now_utc - _tdff(days=3)).strftime("%Y%m%d"),
+        (_now_utc - _tdff(days=4)).strftime("%Y%m%d"),
+        (_now_utc - _tdff(days=5)).strftime("%Y%m%d"),
+        (_now_utc - _tdff(days=6)).strftime("%Y%m%d"),
+        (_now_utc - _tdff(days=7)).strftime("%Y%m%d"),
+    ]
 
     for league_name, cfg in LEAGUES.items():
         sport  = cfg["sport"]
         league = cfg["league"]
         tid    = cfg.get("tournament_id")
-        # Fetch today, yesterday, and 2 days ago
-        for date_str in [_today_utc, _yesterday_utc, _2days_utc]:
+        # Fetch last 7 days
+        for date_str in _fetch_dates:
             try:
                 base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
                 url  = f"{base}?dates={date_str}&limit=100"
@@ -6080,10 +6153,27 @@ def _silent_auto_resolve(apodo_activo, reto, picks):
             t1, t2 = partido_txt.strip(), ""
 
         for g in finished_games:
-            m1 = _team_match(t1, g["home_team"], g["away_team"])
+            # Match using both team names from partido string
+            m1 = _team_match(t1, g["home_team"], g["away_team"]) if t1 else None
             m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
+
+            # Also try the pick label directly as team name (for ML picks)
+            pick_as_team = p.get("pick", "").strip()
+            m3 = _team_match(pick_as_team, g["home_team"], g["away_team"]) if pick_as_team else None
+
+            # Need at least one team match from the partido string
             if not (m1 or m2):
-                continue
+                # If pick label matches a team, use that to identify the game
+                if not m3:
+                    continue
+                # Verify the other team also matches loosely
+                if t1 and not m1:
+                    other = _team_match(t1, g["home_team"], g["away_team"])
+                    if not other and t2:
+                        other = _team_match(t2, g["home_team"], g["away_team"])
+                    if not other:
+                        continue  # can't confirm it's the right game
+
             res = _evaluate_pick(p, g)
             if res:
                 picks[i]["resultado"]   = res
@@ -9673,6 +9763,20 @@ e.style.cssText=`position:fixed;top:-10px;left:${Math.random()*100}vw;width:${6+
 const s=document.createElement('style');s.textContent=`@keyframes qfall${i}{to{top:110vh;transform:rotate(${Math.random()*720}deg);opacity:0}}`;
 document.head.appendChild(s);document.body.appendChild(e);setTimeout(()=>e.remove(),2500);}
 try{const a=new AudioContext();const o=a.createOscillator();const g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.setValueAtTime(880,a.currentTime);o.frequency.exponentialRampToValueAtTime(1760,a.currentTime+0.1);g.gain.setValueAtTime(0.3,a.currentTime);g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.3);o.start();o.stop(a.currentTime+0.3);}catch(e){}})();
+</script>""", height=0)
+                        elif _qf_resultado == "perdido":
+                            import streamlit.components.v1 as _fxq2
+                            _fxq2.html("""<script>
+(function(){
+  const el=document.createElement('div');
+  el.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(180,0,0,0.18);z-index:999998;pointer-events:none;display:flex;align-items:center;justify-content:center;animation:fadeW 2.5s forwards';
+  el.innerHTML='<div style="font-family:Impact,sans-serif;font-size:9vw;color:#CC0000;text-shadow:4px 4px 0 #000,-4px -4px 0 #000;letter-spacing:10px;animation:scaleW 0.5s ease-out">PERDIDO</div>';
+  const st2=document.createElement('style');
+  st2.textContent='@keyframes fadeW{0%,60%{opacity:1}100%{opacity:0}}@keyframes scaleW{from{transform:scale(2.5)}to{transform:scale(1)}}';
+  document.head.appendChild(st2);document.body.appendChild(el);
+  setTimeout(()=>el.remove(),2500);
+  try{const a=new AudioContext();[[494,0],[440,0.2],[392,0.4],[349,0.65]].forEach(([f,t])=>{const o=a.createOscillator();const g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.value=f;g.gain.setValueAtTime(0.25,a.currentTime+t);g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+t+0.35);o.start(a.currentTime+t);o.stop(a.currentTime+t+0.4);});}catch(e){}
+})();
 </script>""", height=0)
                         st.rerun()
                     else:
