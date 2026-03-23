@@ -5825,7 +5825,8 @@ if _active_page == "Rongol Picks":
                     team, prob, ev, kelly, ml = r["home_team"], h_prob, h_ev, h_k, h_ml
                 else:
                     team, prob, ev, kelly, ml = r["away_team"], a_prob, a_ev, a_k, a_ml
-                if not ml: return None
+                # Allow pick even without ESPN ML — ev/kelly will be None/0
+                if prob < 5: return None  # skip near-zero probability
                 return {"market":"ML","label":team,"prob":prob,"ev":ev,"kelly":kelly}
 
             if sg == "Soccer":
@@ -5893,41 +5894,45 @@ if _active_page == "Rongol Picks":
         # Build id→game map for quick lookup
         _gmap_rp = {g.get("id", ""): g for g in games}
 
-        _sport_pools = {}
-        for r in sr_cur:
-            _g = _gmap_rp.get(r.get("id", ""))
-            if not _g: continue
-            if _g["state"] == "post": continue
-            # Filter to today CDMX only
-            _raw_date = _g.get("date", "")
-            if _raw_date:
-                try:
-                    from datetime import datetime as _dt_rp
-                    _gdt = _dt_rp.fromisoformat(_raw_date.replace("Z", "+00:00"))
-                    _gdate_cdmx = (_gdt - _td_rp(hours=6)).strftime("%Y-%m-%d")
-                    if _gdate_cdmx not in _valid_rp:
-                        continue
-                except:
-                    pass  # si no parsea, incluir igual
-            bp = _sport_best_pick(r)
-            if bp:
-                sg = LEAGUES.get(r["league"], {}).get("group", "Soccer")
-                _sport_pools.setdefault(sg, []).append({**r, "_pick": bp})
-
-        # Sort each pool by prob desc, take top 1
+        # Sort each pool by prob desc — TOP 3 per LEAGUE (show all sports)
         _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
-        # ── Filtro de deporte activo (tile seleccionado) ──────────────────────
         _sel_sport_filter = st.session_state.get("_picks_sel_sport", None)
 
-        rongol_picks = []
-        for _sg in _SPORT_ORDER_R:
-            # Si hay filtro activo, solo mostrar ese deporte
-            if _sel_sport_filter and _sg != _sel_sport_filter:
-                continue
-            pool = _sport_pools.get(_sg, [])
-            if pool:
-                pool.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
-                rongol_picks.append(pool[0])
+        # Build per-LEAGUE pools (not per sport group)
+        _league_pools = {}
+        for _r_rp in sr_cur:
+            _g_rp = _gmap_rp.get(_r_rp.get("id",""))
+            if not _g_rp: continue
+            if _g_rp["state"] == "post": continue
+            _raw_d = _g_rp.get("date","")
+            if _raw_d:
+                try:
+                    from datetime import datetime as _dt_rp2
+                    _gdt2 = _dt_rp2.fromisoformat(_raw_d.replace("Z","+00:00"))
+                    if (_gdt2 - _td_rp(hours=6)).strftime("%Y-%m-%d") not in _valid_rp:
+                        continue
+                except: pass
+            _bp2 = _sport_best_pick(_r_rp)
+            if _bp2:
+                _lg2 = _r_rp.get("league","")
+                _league_pools.setdefault(_lg2, []).append({**_r_rp, "_pick": _bp2})
+
+        # Sort each league pool, take top 3
+        _all_rongol = []
+        for _lg_rp, _pool_rp in _league_pools.items():
+            _pool_rp.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
+            _all_rongol.extend(_pool_rp[:3])
+
+        # Order by sport group then prob
+        def _sport_rank(r):
+            sg = LEAGUES.get(r.get("league",""),{}).get("group","Soccer")
+            return (_SPORT_ORDER_R.index(sg) if sg in _SPORT_ORDER_R else 99,
+                    -r["_pick"]["prob"])
+        _all_rongol.sort(key=_sport_rank)
+
+        rongol_picks = [r for r in _all_rongol
+                        if not _sel_sport_filter
+                        or LEAGUES.get(r.get("league",""),{}).get("group") == _sel_sport_filter]
 
         # Legacy: keep allowed_bets for DO parlay logic below
         allowed_bets = rongol_picks
@@ -6835,7 +6840,7 @@ elif _active_page == "Picks":
             f'{_total_p} partidos · {len(_sports_p)} deportes · hora CDMX</div>',
             unsafe_allow_html=True
         )
-        # ── Sport selector tiles — clickable ─────────────────────────────────
+        # ── Sport selector tiles — single button per sport ──────────────────────
         _sel_sp = st.session_state.get("_picks_sel_sport", None)
         if _sel_sp and _sel_sp not in _sports_p:
             _sel_sp = None
@@ -6843,33 +6848,23 @@ elif _active_page == "Picks":
 
         _sp_cols_p = st.columns(len(_sports_p))
         for _ci_p, _sp_p in enumerate(_sports_p):
-            _smp = _SPORT_META_P[_sp_p]
-            _n_p = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
+            _smp    = _SPORT_META_P[_sp_p]
+            _n_p    = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
             _is_sel = (_sel_sp == _sp_p)
-            _border = f'2.5px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}44'
-            _bg     = _smp["color"] + "28" if _is_sel else _smp["accent"]
-            _opacity = "1" if (_sel_sp is None or _is_sel) else "0.4"
+            _op     = "1" if (_sel_sp is None or _is_sel) else "0.35"
+            _bg_t   = _smp["color"] + ("44" if _is_sel else "18")
+            _bdr_t  = f'2.5px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}44'
+            _tick   = " ✓" if _is_sel else ""
+            _sp_key = f"btn_sp_{_sp_p.replace(' ','_')}"
             with _sp_cols_p[_ci_p]:
-                st.markdown(
-                    f'<div style="text-align:center;padding:10px 3px;border-radius:12px;'
-                    f'background:{_bg};border:{_border};margin-bottom:6px;opacity:{_opacity};'
-                    f'transition:all 0.2s">'
-                    f'<div style="font-size:1.6rem;line-height:1">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.65rem;font-weight:700;color:{_smp["color"]};'
-                    f'letter-spacing:0.5px;text-transform:uppercase;margin-top:3px">{_sp_p}</div>'
-                    f'<div style="font-size:0.6rem;color:#6B7280;margin-top:1px">{_n_p} juegos</div>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
                 if st.button(
-                    "✕" if _is_sel else "▶",
-                    key=f"btn_sp_{_sp_p}",
+                    f"{_smp['emoji']}\n{_sp_p.upper()}{_tick}\n{_n_p} juegos",
+                    key=_sp_key,
                     use_container_width=True,
                     help=f"{'Quitar filtro' if _is_sel else 'Solo ' + _sp_p}"
                 ):
                     st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
                     st.rerun()
-
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
 
@@ -7329,36 +7324,28 @@ elif _active_page == "Picks":
                 _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_')}"
                 _is_open = st.session_state.get(_exp_key, False)
 
-                # Header clickable
-                _hdr_bg     = f"rgba({','.join(str(int(_smp['color'][i:i+2],16)) for i in (1,3,5))},0.10)" if _is_open else "rgba(255,255,255,0.03)"
-                _hdr_border = f"1.5px solid {_smp['color']}66" if _is_open else "1px solid #2A2A2A"
-                _arrow      = "▼" if _is_open else "▶"
-
-                st.markdown(
-                    f'<div style="background:{_hdr_bg};border:{_hdr_border};'
-                    f'border-radius:{"12px 12px 0 0" if _is_open else "12px"};'
-                    f'padding:9px 14px;margin-top:5px;'
-                    f'display:flex;justify-content:space-between;align-items:center">'
-                    f'<div>'
-                    f'<span style="font-size:0.85rem">{_flag_p}</span> '
-                    f'<span style="font-size:0.78rem;font-weight:700;color:#E8E8E8">{_lg_p}</span>'
-                    f'<span style="font-size:0.68rem;color:#6B7280;margin-left:6px">{_n_lg} partidos{_ctry_str}{_ev_lg_badge}</span>'
-                    f'</div>'
-                    f'<span style="font-size:0.8rem;color:{_smp["color"]};font-weight:700">{_arrow}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-                _btn_k = f"btn_lg_{_lg_btn_counter}"
+                # Single clickable button for league header (no separate ▶)
+                _hdr_bg  = f"rgba({','.join(str(int(_smp['color'][i:i+2],16)) for i in (1,3,5))},0.12)" if _is_open else "rgba(255,255,255,0.03)"
+                _hdr_bdr = f"1.5px solid {_smp['color']}88" if _is_open else f"1px solid {_smp['color']}33"
+                _arrow   = "▼" if _is_open else "▶"
+                _btn_k   = f"btn_lg_{_lg_btn_counter}"
                 _lg_btn_counter += 1
                 if st.button(
-                    "▼ Cerrar" if _is_open else "▶ Ver partidos",
+                    f"{_arrow}  {_flag_p} {_lg_p}{_ctry_str}  ·  {_n_lg} partidos{_ev_lg_badge}",
                     key=_btn_k,
                     use_container_width=True,
                     help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"
                 ):
                     st.session_state[_exp_key] = not _is_open
                     st.rerun()
-
+                st.markdown(
+                    f'<style>div[data-testid="stButton"]:has(button[data-testid="{_btn_k}"]) button{{'
+                    f'background:{_hdr_bg}!important;border:{_hdr_bdr}!important;'
+                    f'border-radius:{"12px 12px 4px 4px" if _is_open else "12px"}!important;'
+                    f'text-align:left!important;font-size:0.78rem!important;font-weight:700!important;'
+                    f'color:#E8E8E8!important;padding:10px 14px!important;margin-top:5px!important}}</style>',
+                    unsafe_allow_html=True
+                )
                 if _is_open:
                     st.markdown(
                         f'<div style="background:#111111;border:1px solid {_smp["color"]}33;'
