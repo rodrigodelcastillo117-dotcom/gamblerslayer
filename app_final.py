@@ -1794,6 +1794,57 @@ def _parse_live_stats(comp, home, away):
         return {}
 
 
+def _fetch_event_odds(event_id, sport, league):
+    """
+    Fetch odds for a specific ESPN event ID.
+    ESPN has event-level odds at: /event/{id}/competitions/{id}/odds
+    Returns dict with spread_line, home_ml, away_ml, over_under, etc.
+    """
+    try:
+        import requests as _rq
+        # Primary: event competitions odds endpoint
+        url = (f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}"
+               f"/summary?event={event_id}")
+        r = _rq.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+        # odds are in data["pickcenter"] or data["odds"]
+        odds_list = data.get("pickcenter") or data.get("odds") or []
+        if not odds_list:
+            return {}
+        o = odds_list[0]
+        _ho = o.get("homeTeamOdds", {}) or {}
+        _ao = o.get("awayTeamOdds", {}) or {}
+        # moneyline
+        _hml = (_ho.get("moneyLine") or _ho.get("current",{}).get("moneyLine") or "")
+        _aml = (_ao.get("moneyLine") or _ao.get("current",{}).get("moneyLine") or "")
+        # over/under
+        _ou = str(o.get("overUnder","") or o.get("total","") or "")
+        # spread
+        _ps = (_ho.get("pointSpread") or _ho.get("handicap") or "")
+        _spread_str = str(float(_ps)) if _ps else ""
+        # spread juice
+        _sph = str(_ho.get("spreadOdds","") or "")
+        _spa = str(_ao.get("spreadOdds","") or "")
+        # win probability
+        _hwp = str(_ho.get("winPercentage","") or "")
+        _awp = str(_ao.get("winPercentage","") or "")
+        return {
+            "home_ml":        str(_hml) if _hml else "",
+            "away_ml":        str(_aml) if _aml else "",
+            "over_under":     _ou,
+            "spread":         o.get("details",""),
+            "spread_line":    _spread_str,
+            "spread_home_ml": _sph,
+            "spread_away_ml": _spa,
+            "home_wp":        _hwp,
+            "away_wp":        _awp,
+        }
+    except:
+        return {}
+
+
 def parse_games(data, league_name):
     """Parse ESPN scoreboard JSON into normalized game dicts."""
     games = []
@@ -1837,6 +1888,14 @@ def parse_games(data, league_name):
 
             odds_info = {}
             ol = comp.get("odds", [])
+            if not ol:
+                # ESPN sometimes omits odds from scoreboard — try summary endpoint
+                _ev_id   = event.get("id","")
+                _cfg     = LEAGUES.get(league_name, {})
+                _sp_try  = _cfg.get("sport","")
+                _lg_try  = _cfg.get("league","")
+                if _ev_id and _sp_try and _lg_try:
+                    odds_info = _fetch_event_odds(_ev_id, _sp_try, _lg_try)
             if ol:
                 o = ol[0]
                 _ou_raw = o.get("overUnder", "") or o.get("total", "") or o.get("overUnderOpen", "") or ""
@@ -4391,7 +4450,7 @@ def run_monte_carlo(game, n=10_000):
         if goal_candidates:
             best_goal = max(goal_candidates, key=lambda x: x[2])  # highest prob
             mt,lb,pr,ev,ml,k = best_goal
-            best_single = {"market":mt,"label":lb,"prob":pr,"ev":ev or 0,"ml":ml,"kelly":k or 0}
+            best_single = {"market":mt,"label":lb,"prob":pr,"ev":ev,"ml":ml,"kelly":k or 0}
         # Done — parejo always uses goal market by prob, no ML/DO override
     else:
         # Normal case: pick by highest EV, with BTTS/O/U preferred on ties
@@ -4565,7 +4624,7 @@ def build_parlays(results):
     game_legs = []
     for r in results_today:
         leg = best_leg_for_game(r)
-        if leg and leg["ev"] > 0:
+        if leg and leg(["ev"] or 0) > 0:
             game_legs.append(leg)
 
     # ── Inter-partido ─────────────────────────────────────────────────────────
@@ -4596,7 +4655,7 @@ def build_parlays(results):
                 "payout": round(pay, 1),
                 "type":   "inter",
             }
-            target = l1["_r"] if l1["ev"] >= l2["ev"] else l2["_r"]
+            target = l1["_r"] if l1(["ev"] or 0) >= l2["ev"] else l2["_r"]
             target["sim"]["best_parlay"] = parlay
             return results
 
@@ -5645,7 +5704,7 @@ if (not _already_simulated or _leagues_changed or run_sidebar) and games:
     st.session_state["sim_results"] = _sr
     st.session_state["last_sim_demo"] = is_demo
     st.session_state["_sim_key"] = _leagues_key
-    _n_pos = len([r for r in _sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
+    _n_pos = len([r for r in _sr if r["sim"].get("best_single") and (r["sim"]["best_single"]["ev"] or 0) > 0])
     # ── AUTO-SAVE picks to pick_history (skip demo mode) ──────────────────
     if not is_demo and _gsheets_available():
         try:
@@ -5688,7 +5747,7 @@ live_g=[g for g in games if g["state"]=="in"]
 pre_g=[g for g in games if g["state"]=="pre"]
 odds_g=[g for g in games if g["odds"]]
 sr=st.session_state.get("sim_results",[])
-pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
+pos_ev=len([r for r in sr if r["sim"].get("best_single") and (r["sim"]["best_single"]["ev"] or 0)>0])
 
 st.markdown(f"""<div class="stat-grid">
   <div class="stat-tile"><div class="stat-num">{len(games)}</div><div class="stat-label">Partidos</div></div>
@@ -5696,7 +5755,7 @@ st.markdown(f"""<div class="stat-grid">
   <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
   <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
   <div class="stat-tile"><div class="stat-num" style="color:#00C896">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"](["ev"] or 0)>0])}</div><div class="stat-label">Parlays EV+</div></div>
 </div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
@@ -6506,7 +6565,7 @@ if _active_page == "Rongol Picks":
         </div>""", unsafe_allow_html=True)
     else:
         # ── Detectar picks terminados ─────────────────────────────────────────────
-        pick_game_ids = {r.get("id","") for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0}
+        pick_game_ids = {r.get("id","") for r in sr if r["sim"].get("best_single") and (r["sim"]["best_single"]["ev"] or 0)>0}
         finished_pick_games  = [g for g in games if g.get("id","") in pick_game_ids and g["state"]=="post"]
         pending_games_picks  = [g for g in games if g["state"] in ("pre","in")]
 
@@ -6546,7 +6605,7 @@ if _active_page == "Rongol Picks":
                 new_sr_picks = run_all_simulations(pending_games_picks, n=n_sims)
             st.session_state["sim_results"] = new_sr_picks
             st.session_state["_picks_regen_done"] = True
-            n_new = len([r for r in new_sr_picks if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
+            n_new = len([r for r in new_sr_picks if r["sim"].get("best_single") and (r["sim"]["best_single"]["ev"] or 0)>0])
             st.toast(f"✓ Nuevos picks generados · {n_new} EV+", icon="🃏")
             st.rerun()
 
@@ -6556,7 +6615,7 @@ if _active_page == "Rongol Picks":
         all_bets=[]
         for r in sr_cur:
             bs=r["sim"].get("best_single")
-            if bs and bs["ev"]>0: all_bets.append(r)
+            if bs and bs(["ev"] or 0)>0: all_bets.append(r)
         all_bets.sort(key=lambda x: x["sim"]["best_single"]["ev"],reverse=True)
 
         # Indicador de estado
@@ -6958,7 +7017,7 @@ if _active_page == "Rongol Picks":
                 _ml_i = _SPORT_ICON.get(_sg_r,"⚽")
                 _type_icons = {"ML":_ml_i,"BTTS":"🎯","OVER":"🔥","UNDER":"🧊","COMBO":"⚽🎯","OTHER":"📊"}
                 icon  = _type_icons.get(type_key,"📊")
-                ev_s  = f'+{tp["ev"]:.1f}' if tp["ev"]>=0 else f'{tp["ev"]:.1f}'
+                ev_s  = f'+{tp["ev"]:.1f}' if tp(["ev"] or 0)>=0 else f'{tp["ev"]:.1f}'
                 prob  = tp["prob"]
                 conf_lbl = _CONF_LABEL(prob)
                 conf_c   = _CONF_COLOR(prob)
@@ -7480,7 +7539,7 @@ if _active_page == "Rongol Picks":
             # (PICKS FUEGO removed — 1 per sport shown in grid above)
 
         # Avoid
-        avoid=[r for r in sr_cur_filtrado if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]<-15]
+        avoid=[r for r in sr_cur_filtrado if r["sim"].get("best_single") and (r["sim"]["best_single"]["ev"] or 0)<-15]
         avoid.sort(key=lambda x:x["sim"]["best_single"]["ev"])
         if avoid:
             st.markdown('<div class="section-heading">♦ Evitar</div>', unsafe_allow_html=True)
@@ -7558,7 +7617,7 @@ elif _active_page == "Picks":
             _bs = _rp["sim"].get("best_single",{}) or {}
             if _bs and _bs.get("ev",0) > 0:
                 _mc2_pc, _mc2_ac, _, _mc2_dl = _pick_clr(_bs.get("market",""), _bs.get("label",""))
-                _ev2s = f'+{_bs["ev"]:.1f}' if _bs["ev"]>=0 else f'{_bs["ev"]:.1f}'
+                _ev2s = f'+{_bs["ev"]:.1f}' if _bs(["ev"] or 0)>=0 else f'{_bs["ev"]:.1f}'
                 _ph = (
                     f'<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
                     f'<span style="background:{_mc2_pc}28;color:{_mc2_ac};border:1px solid {_mc2_pc}66;'
@@ -7609,7 +7668,7 @@ elif _active_page == "Picks":
             elapsed = time.time() - t0
             st.session_state["sim_results"] = sr2
             st.session_state["last_sim_demo"] = is_demo
-            n_pos = len([r for r in sr2 if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
+            n_pos = len([r for r in sr2 if r["sim"].get("best_single") and (r["sim"]["best_single"]["ev"] or 0) > 0])
             st.toast(f"✓ {len(games)*n_sims:,} sims en {elapsed:.1f}s · {n_pos} value bets", icon="🔮")
             st.rerun()
 
@@ -8271,7 +8330,7 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
             1 for dmap in _tree_p[_sp_p].values()
             for gs in dmap.values() for g in gs
             if _sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}) and
-               _sim_map.get(g.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+               (_sim_map.get(g.get("id",""),{}).get("sim",{}).get("best_single",{}).get("ev") or 0) > 0
         )
         _ev_badge = f" 🔥{_ev_count}" if _ev_count else ""
         st.markdown(
@@ -8305,7 +8364,7 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 _ev_lg = sum(
                     1 for _gg in _lg_games_p
                     if _sim_map.get(_gg.get("id",""),{}).get("sim",{}).get("best_single",{}) and
-                       _sim_map.get(_gg.get("id",""),{})["sim"]["best_single"]["ev"] > 0
+                       (_sim_map.get(_gg.get("id",""),{}).get("sim",{}).get("best_single",{}).get("ev") or 0) > 0
                 )
                 _ev_lg_badge = f" · 🔥{_ev_lg} EV+" if _ev_lg else ""
 
@@ -8378,7 +8437,7 @@ elif _active_page == "Parlays":
         parlay_game_ids = set()
         for r in sr:
             bp = r["sim"].get("best_parlay")
-            if bp and bp["ev"] > 0:
+            if bp and bp(["ev"] or 0) > 0:
                 parlay_game_ids.add(r.get("id",""))
 
         finished_parlay_games = [g for g in games if g.get("id","") in parlay_game_ids and g["state"]=="post"]
@@ -8423,13 +8482,13 @@ elif _active_page == "Parlays":
                 new_sr = run_all_simulations(pending_games, n=n_sims)
             st.session_state["sim_results"] = new_sr
             st.session_state["_parlay_regen_done"] = True
-            n_new_parlays = len([r for r in new_sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])
+            n_new_parlays = len([r for r in new_sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"](["ev"] or 0)>0])
             st.toast(f"✓ Parlay actualizado · {n_new_parlays} combinadas EV+", icon="🎰")
             st.rerun()
 
         # ── Mostrar parlays (siempre el más reciente en session_state) ────────────
         sr_current = st.session_state.get("sim_results", [])
-        parlays = [r for r in sr_current if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0]
+        parlays = [r for r in sr_current if r["sim"].get("best_parlay") and r["sim"]["best_parlay"](["ev"] or 0)>0]
         parlays.sort(key=lambda x: x["sim"]["best_parlay"]["ev"], reverse=True)
 
         # ── Helpers para armar el parlay de 2 patas de un mismo partido ──────
