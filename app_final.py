@@ -9128,10 +9128,12 @@ elif _active_page == "Reto 13M":
                     key="sel_existing_user"
                 )
                 if sel_existing:
-                    def _load_prog(_v=sel_existing): st.session_state["reto_apodo"] = _v
-                    st.button("⚡ Cargar progreso", key="btn_load_existing", use_container_width=True, on_click=_load_prog)
+                    if st.button("⚡ Cargar progreso", key="btn_load_existing", use_container_width=True):
+                        st.session_state["reto_apodo"] = sel_existing
+                        st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        st.stop()
+        if not st.session_state.get("reto_apodo"):
+            st.stop()
 
     # ── Usuario activo ────────────────────────────────────────────────────────
     apodo_activo = st.session_state["reto_apodo"]
@@ -9423,7 +9425,11 @@ elif _active_page == "Reto 13M":
     st.session_state[_prev_rango_key] = _rango_actual[2]
 
     _levelup_style = "animation:pulse-glow 1.5s ease-in-out 3;" if _is_level_up else ""
-    _rango_border = f"rgba({','.join(str(int(_rango_actual[3][1:][i:i+2],16) if _rango_actual[3].startswith('#') else '201') for i in (0,2,4))},0.4)" if _rango_actual[3].startswith('#') else "rgba(201,168,76,0.3)"
+    try:
+        _rc = _rango_actual[3].lstrip('#')
+        _rango_border = f"rgba({int(_rc[0:2],16)},{int(_rc[2:4],16)},{int(_rc[4:6],16)},0.4)"
+    except:
+        _rango_border = "rgba(201,168,76,0.4)"
 
     st.markdown(
         f'<div style="background:linear-gradient(135deg,rgba(201,168,76,0.06) 0%,rgba(0,0,0,0) 100%);'
