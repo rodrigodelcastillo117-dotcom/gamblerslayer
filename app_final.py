@@ -7802,13 +7802,18 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                     elif _p_under > _p_over and _p_under >= 52:
                         cands.append({"market":"O/U","label":f"Under {_line:.1f} (avg)","prob":_p_under,"ev":0})
 
-        # ── Spread: short-circuit if MC already selected it ───────────────────
-        # run_monte_carlo already evaluated all markets including Spread.
-        # If it chose Spread as best_single, trust that and return directly.
+        # ── Spread: only prefer over ML when ESPN has REAL spread odds ──────────
+        # Implied spreads (no ESPN line) have inflated EV due to low DQ.
+        # Only short-circuit to Spread when:
+        #   1. ESPN provided a real spread line (not model-implied)
+        #   2. AND the spread has better EV than ML (when ML has a real line)
         _bs_mc = sim.get("best_single")
-        if _bs_mc and _bs_mc.get("market") == "Spread" and (_bs_mc.get("ev") or 0) > 0:
+        _spread_implied_flag = sim.get("spread_implied", False)
+        if (_bs_mc and _bs_mc.get("market") == "Spread"
+                and (_bs_mc.get("ev") or 0) > 0
+                and not _spread_implied_flag):
+            # Real ESPN spread — trust MC selection
             _spr_prob = _bs_mc.get("prob") or 0
-            # Normalize: MC stores prob as 0-100 percentage
             _spr_prob_f = _spr_prob / 100 if _spr_prob > 1 else _spr_prob
             return {
                 "market": "Spread",
@@ -7819,24 +7824,26 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 "kelly":  _bs_mc.get("kelly", 0) or 0,
             }
 
-        # ── Add Spread to oracle candidates (when MC didn't pick it) ──────────
+        # ── Add Spread to oracle candidates (only real ESPN lines) ─────────────
         _p_hc = sim.get("p_home_cover")   # 0-100
         _p_ac = sim.get("p_away_cover")   # 0-100
         _spr_line = sim.get("spread_line")
-        if _spr_line is not None and (_p_hc is not None or _p_ac is not None):
+        _spr_implied = sim.get("spread_implied", False)
+        # Only add spread as candidate when ESPN has a REAL line (not model-implied)
+        # Implied spreads inflate EV artificially — use ML instead when no real line
+        if _spr_line is not None and not _spr_implied and (_p_hc is not None or _p_ac is not None):
             _dec = 1.909  # -110
-            _spr_implied = sim.get("spread_implied", False)
-            _pfx = "~" if _spr_implied else ""
+            _pfx = ""
             _home_nm = (r.get("home_team","") or "")[:14]
             _away_nm = (r.get("away_team","") or "")[:14]
             if _p_hc is not None and _p_hc >= 52.4:
                 _pf = _p_hc / 100
                 _ef = round((_pf*(_dec-1)-(1-_pf))*100, 1)
-                cands.append({"market":"Spread","label":f"{_pfx}{_home_nm} {float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":"-110"})
+                cands.append({"market":"Spread","label":f"{_home_nm} {float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":"-110"})
             if _p_ac is not None and _p_ac >= 52.4:
                 _pf = _p_ac / 100
                 _ef = round((_pf*(_dec-1)-(1-_pf))*100, 1)
-                cands.append({"market":"Spread","label":f"{_pfx}{_away_nm} {-float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":"-110"})
+                cands.append({"market":"Spread","label":f"{_away_nm} {-float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":"-110"})
 
         # Score compuesto universal
         scored = [(c, pick_score_universal(c, sim, r, sg)) for c in cands]
