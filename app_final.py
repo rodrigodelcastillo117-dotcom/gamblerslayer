@@ -8296,75 +8296,65 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
 
         _why = f"MC {_nsim:,} sims · {_fav_p:.0f}% al favorito · DQ {_dq:.0f}%"
 
-        _cta = (
-            '<div style="margin:0 10px 10px;'
-            'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
-            'border-radius:14px;padding:14px;'
-            'border-top:2px solid rgba(255,255,255,0.5);'
-            'box-shadow:0 4px 16px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">'
+        # Spread display helpers
+        if _bp_mkt == "Spread":
+            _spr_ml_raw = bp.get("ml", "-110") or "-110"
+            try:
+                _spr_ml_f = float(str(_spr_ml_raw))
+                _spr_dec_str = f"{100/abs(_spr_ml_f)+1:.2f}" if _spr_ml_f < 0 else f"{_spr_ml_f/100+1:.2f}"
+            except:
+                _spr_dec_str = "1.91"
+        else:
+            _spr_dec_str = _pick_dec_p
 
-            # Row 1: badge + team name
-            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-            f'<span style="font-size:0.6rem;font-weight:900;color:rgba(0,0,0,0.35);letter-spacing:2px">APOSTAR →</span>'
-            f'<span style="font-size:0.65rem;font-weight:900;color:#000;background:rgba(0,0,0,0.12);'
-            f'padding:3px 9px;border-radius:6px;letter-spacing:0.5px;text-transform:uppercase">{_bp_mkt}</span>'
-            f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;'
-            f'text-overflow:ellipsis;white-space:nowrap">'
-            + (_bp_spread_team if _bp_mkt == "Spread" else _bp_lbl) +
-            '</span>'
-            '</div>'
+        # ── CTA card ──────────────────────────────────────────────────────────
+        _cta_parts = []
+        _cta_parts.append('<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);border-radius:14px;padding:14px;border-top:2px solid rgba(255,255,255,0.5);box-shadow:0 4px 16px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">')
 
-            # Row 2: big odds + spread line | prob/conf/kelly
-            f'<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:10px">'
-            f'<div style="display:flex;flex-direction:column;align-items:flex-start;min-width:60px">'
-            f'<span style="font-size:2.8rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:0.9">{_pick_dec_p}</span>'
-            + (
-                f'<span style="font-size:1.6rem;font-weight:900;color:rgba(0,0,0,0.8);'
-                f'font-family:Barlow Condensed,sans-serif;line-height:1.1">{_bp_spread_line}</span>'
-                + (f'<span style="font-size:0.58rem;font-weight:700;color:rgba(0,0,0,0.35)"> modelo</span>' if _bp_spread_impl else '')
-                if _bp_mkt == "Spread" and _bp_spread_line else ''
-            ) +
-            '</div>'
-            f'<div style="display:flex;flex-direction:column;gap:3px;flex:1">'
-            f'<span style="font-size:0.9rem;font-weight:800;color:rgba(0,0,0,0.7)">{_bp_prob*100:.0f}% probabilidad</span>'
-            f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>'
-            + (f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b> del bankroll</span>' if _kelly > 0 else '') +
-            '</div>'
-            '</div>'
+        # Row 1: badge + name
+        _cta_lbl = _bp_spread_team if _bp_mkt == "Spread" else _bp_lbl
+        _cta_parts.append(f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.35);letter-spacing:2px">APOSTAR →</span><span style="font-size:0.62rem;font-weight:900;color:#000;background:rgba(0,0,0,0.12);padding:2px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_bp_mkt}</span><span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_cta_lbl}</span></div>')
 
-            # Row 3: stats grid
-            '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;'
-            'padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">'
-            + ''.join([
-                f'<div style="text-align:center">'
-                f'<div style="font-size:0.5rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">{lbl}</div>'
-                f'<div style="font-size:0.9rem;font-weight:900;color:{clr}">{val}</div>'
-                f'</div>'
-                for lbl, val, clr in [
-                    ("Prob.", f"{_bp_prob*100:.0f}%", "#000"),
-                    ("EV/100",
-                     "S/L" if _ev_val is None else f"{_ev_val:+.0f}",
-                     "#888" if _ev_val is None else ("#006600" if _ev_val>0 else "#880000")),
-                    ("DQ", f"{_dq:.0f}%", "#000"),
-                    ("Kelly", f"{_kelly:.1f}%", "#000"),
-                ]
-            ]) +
-            '</div>'
-            f'<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.08)">'
-            f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">📊 {_why}</span>'
-            '</div>'
-            + (
-                f'<div style="margin-top:4px;padding:4px 8px;background:rgba(0,0,0,0.08);border-radius:7px">'
-                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.6)">⚔️ {_h2h_str}</span>'
-                '</div>' if _h2h_str else ''
-            )
-            + (
-                f'<div style="margin-top:3px;padding:4px 8px;background:rgba(0,0,0,0.06);border-radius:7px">'
-                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">📈 {_form_str}</span>'
-                '</div>' if _form_str else ''
-            )
-            + '</div>'
-        )
+        # Row 2: numbers + stats
+        if _bp_mkt == "Spread" and _bp_spread_line:
+            _cta_parts.append(f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">')
+            _cta_parts.append(f'<div style="background:rgba(0,0,0,0.12);border-radius:10px;padding:6px 14px;text-align:center;min-width:64px"><div style="font-size:0.48rem;font-weight:800;color:rgba(0,0,0,0.4);letter-spacing:1px;text-transform:uppercase">Línea</div><div style="font-size:2.0rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_bp_spread_line}</div>')
+            if _bp_spread_impl:
+                _cta_parts.append('<div style="font-size:0.52rem;color:rgba(0,0,0,0.35);font-weight:700">modelo</div>')
+            _cta_parts.append('</div>')
+            _cta_parts.append(f'<div style="background:rgba(0,0,0,0.08);border-radius:10px;padding:6px 14px;text-align:center;min-width:64px"><div style="font-size:0.48rem;font-weight:800;color:rgba(0,0,0,0.4);letter-spacing:1px;text-transform:uppercase">Cuota</div><div style="font-size:2.0rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_spr_dec_str}</div></div>')
+            _cta_parts.append(f'<div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font-size:0.88rem;font-weight:800;color:rgba(0,0,0,0.7)">{_bp_prob*100:.0f}% probabilidad</span><span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>')
+            if _kelly > 0:
+                _cta_parts.append(f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b></span>')
+            _cta_parts.append('</div></div>')
+        else:
+            _cta_parts.append(f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:2.6rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec_p}</span><div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:0.82rem;font-weight:800;color:rgba(0,0,0,0.65)">{_bp_prob*100:.0f}% probabilidad</span><span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>')
+            if _kelly > 0:
+                _cta_parts.append(f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b> del bankroll</span>')
+            _cta_parts.append('</div></div>')
+
+        # Stats grid
+        _ev_disp = "S/L" if _ev_val is None else f"{_ev_val:+.0f}"
+        _ev_clr  = "#888" if _ev_val is None else ("#006600" if (_ev_val or 0)>0 else "#880000")
+        _cta_parts.append('<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">')
+        for lbl, val, clr in [
+            ("Prob.", f"{_bp_prob*100:.0f}%", "#000"),
+            ("EV/100", _ev_disp, _ev_clr),
+            ("DQ", f"{_dq:.0f}%", "#000"),
+            ("Kelly", f"{_kelly:.1f}%", "#000"),
+        ]:
+            _cta_parts.append(f'<div style="text-align:center"><div style="font-size:0.5rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">{lbl}</div><div style="font-size:0.9rem;font-weight:900;color:{clr}">{val}</div></div>')
+        _cta_parts.append('</div>')
+
+        # Footer: why + h2h + form
+        _cta_parts.append(f'<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.08)"><span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">📊 {_why}</span></div>')
+        if _h2h_str:
+            _cta_parts.append(f'<div style="margin-top:4px;padding:4px 8px;background:rgba(0,0,0,0.08);border-radius:7px"><span style="font-size:0.62rem;color:rgba(0,0,0,0.6)">⚔️ {_h2h_str}</span></div>')
+        if _form_str:
+            _cta_parts.append(f'<div style="margin-top:3px;padding:4px 8px;background:rgba(0,0,0,0.06);border-radius:7px"><span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">📈 {_form_str}</span></div>')
+        _cta_parts.append('</div>')
+        _cta = ''.join(_cta_parts)
+
         _html = (
             '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#EAEAEF 100%);'
             'border-radius:20px;overflow:hidden;margin-bottom:3px;'
