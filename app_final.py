@@ -7802,6 +7802,39 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                     elif _p_under > _p_over and _p_under >= 52:
                         cands.append({"market":"O/U","label":f"Under {_line:.1f} (avg)","prob":_p_under,"ev":0})
 
+        # ── Add Spread if available ────────────────────────────────────────────
+        # Use best_single from run_monte_carlo if it's a Spread market
+        _bs_mc = sim.get("best_single")
+        if _bs_mc and _bs_mc.get("market") == "Spread":
+            # Spread from MC — already has prob and ev calculated
+            _spr_cand = {
+                "market": "Spread",
+                "label":  _bs_mc.get("label",""),
+                "prob":   (_bs_mc.get("prob") or 0) / 100 if (_bs_mc.get("prob") or 0) > 1 else (_bs_mc.get("prob") or 0),
+                "ev":     _bs_mc.get("ev") or 0,
+                "ml":     _bs_mc.get("ml",""),
+            }
+            cands.append(_spr_cand)
+        else:
+            # Fallback: check p_home_cover / p_away_cover directly
+            _p_hc = sim.get("p_home_cover")  # already 0-100
+            _p_ac = sim.get("p_away_cover")
+            _spr_line = sim.get("spread_line")
+            if _spr_line is not None and (_p_hc is not None or _p_ac is not None):
+                _dec = 1.909  # -110 default
+                _spr_implied = sim.get("spread_implied", False)
+                _home_nm = (r.get("home_team","") or "")[:14]
+                _away_nm = (r.get("away_team","") or "")[:14]
+                _pfx = "~" if _spr_implied else ""
+                if _p_hc is not None and _p_hc >= 52.4:
+                    _p_f = _p_hc / 100
+                    _ev_f = round((_p_f*(_dec-1)-(1-_p_f))*100, 1)
+                    cands.append({"market":"Spread","label":f"{_pfx}{_home_nm} {float(_spr_line):+.1f} (Spread)","prob":_p_f,"ev":_ev_f})
+                if _p_ac is not None and _p_ac >= 52.4:
+                    _p_f = _p_ac / 100
+                    _ev_f = round((_p_f*(_dec-1)-(1-_p_f))*100, 1)
+                    cands.append({"market":"Spread","label":f"{_pfx}{_away_nm} {-float(_spr_line):+.1f} (Spread)","prob":_p_f,"ev":_ev_f})
+
         # Score compuesto universal — misma lógica que Rongol y historial
         scored = [(c, pick_score_universal(c, sim, r, sg)) for c in cands]
         scored.sort(key=lambda x: x[1], reverse=True)
