@@ -8298,12 +8298,18 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
 
         # Spread display helpers
         if _bp_mkt == "Spread":
-            _spr_ml_raw = bp.get("ml", "-110") or "-110"
-            try:
-                _spr_ml_f = float(str(_spr_ml_raw))
-                _spr_dec_str = f"{100/abs(_spr_ml_f)+1:.2f}" if _spr_ml_f < 0 else f"{_spr_ml_f/100+1:.2f}"
-            except:
-                _spr_dec_str = "1.91"
+            _spr_ml_raw = bp.get("ml", "") or ""
+            _spr_dec_str = ""  # empty = no real odds available
+            if _spr_ml_raw and _spr_ml_raw not in ("-110", ""):
+                # ESPN provided real spread juice — convert to decimal
+                try:
+                    _spr_ml_f = float(str(_spr_ml_raw))
+                    _spr_dec_str = f"{100/abs(_spr_ml_f)+1:.2f}" if _spr_ml_f < 0 else f"{_spr_ml_f/100+1:.2f}"
+                except:
+                    _spr_dec_str = ""
+            elif _spr_ml_raw == "-110":
+                # Standard juice — only show if it's a REAL ESPN spread (not implied)
+                _spr_dec_str = "1.91" if not _bp_spread_impl else ""
         else:
             _spr_dec_str = _pick_dec_p
 
@@ -8318,11 +8324,14 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
         # Row 2: numbers + stats
         if _bp_mkt == "Spread" and _bp_spread_line:
             _cta_parts.append(f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">')
-            _cta_parts.append(f'<div style="background:rgba(0,0,0,0.12);border-radius:10px;padding:6px 14px;text-align:center;min-width:64px"><div style="font-size:0.48rem;font-weight:800;color:rgba(0,0,0,0.4);letter-spacing:1px;text-transform:uppercase">Línea</div><div style="font-size:2.0rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_bp_spread_line}</div>')
+            _cta_parts.append(f'<div style="background:rgba(0,0,0,0.12);border-radius:8px;padding:5px 10px;text-align:center;white-space:nowrap"><div style="font-size:0.46rem;font-weight:800;color:rgba(0,0,0,0.4);letter-spacing:1px;text-transform:uppercase">Línea</div><div style="font-size:1.5rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1;white-space:nowrap">{_bp_spread_line}</div>')
             if _bp_spread_impl:
-                _cta_parts.append('<div style="font-size:0.52rem;color:rgba(0,0,0,0.35);font-weight:700">modelo</div>')
+                _cta_parts.append('<div style="font-size:0.48rem;color:rgba(0,0,0,0.35);font-weight:700">modelo</div>')
             _cta_parts.append('</div>')
-            _cta_parts.append(f'<div style="background:rgba(0,0,0,0.08);border-radius:10px;padding:6px 14px;text-align:center;min-width:64px"><div style="font-size:0.48rem;font-weight:800;color:rgba(0,0,0,0.4);letter-spacing:1px;text-transform:uppercase">Cuota</div><div style="font-size:2.0rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_spr_dec_str}</div></div>')
+            if _spr_dec_str:
+                _cta_parts.append(f'<div style="background:rgba(0,0,0,0.08);border-radius:8px;padding:5px 10px;text-align:center;white-space:nowrap"><div style="font-size:0.46rem;font-weight:800;color:rgba(0,0,0,0.4);letter-spacing:1px;text-transform:uppercase">Cuota</div><div style="font-size:1.5rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1;white-space:nowrap">{_spr_dec_str}</div></div>')
+            else:
+                _cta_parts.append('<div style="background:rgba(0,0,0,0.06);border-radius:8px;padding:5px 10px;text-align:center;white-space:nowrap"><div style="font-size:0.46rem;font-weight:800;color:rgba(0,0,0,0.4);letter-spacing:1px;text-transform:uppercase">Cuota</div><div style="font-size:0.72rem;font-weight:700;color:rgba(0,0,0,0.35);line-height:1.3;margin-top:2px">ver<br>casa</div></div>')
             _cta_parts.append(f'<div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font-size:0.88rem;font-weight:800;color:rgba(0,0,0,0.7)">{_bp_prob*100:.0f}% probabilidad</span><span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>')
             if _kelly > 0:
                 _cta_parts.append(f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b></span>')
