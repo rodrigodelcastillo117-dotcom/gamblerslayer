@@ -5911,30 +5911,34 @@ if _active_page == "Rongol Picks":
                 try:
                     from datetime import datetime as _dt_rp2
                     _gdt2 = _dt_rp2.fromisoformat(_raw_d.replace("Z","+00:00"))
-                    if (_gdt2 - _td_rp(hours=6)).strftime("%Y-%m-%d") not in _valid_rp:
+                    _game_date_cdmx = (_gdt2 - _td_rp(hours=6)).strftime("%Y-%m-%d")
+                    if _game_date_cdmx not in _valid_rp:
                         continue
-                except: pass
+                except:
+                    pass  # unparseable date → include anyway
             _bp2 = _sport_best_pick(_r_rp)
             if _bp2:
                 _lg2 = _r_rp.get("league","")
                 _league_pools.setdefault(_lg2, []).append({**_r_rp, "_pick": _bp2})
 
-        # Sort each league pool, take top 3
-        _all_rongol = []
+        # Take BEST pick per sport group (1 per sport: Basketball, Hockey, Baseball, Soccer)
+        # Flatten all league pools into one list
+        _all_candidates = []
         for _lg_rp, _pool_rp in _league_pools.items():
-            _pool_rp.sort(key=lambda x: x["_pick"]["prob"], reverse=True)
-            _all_rongol.extend(_pool_rp[:3])
+            _all_candidates.extend(_pool_rp)
 
-        # Order by sport group then prob
-        def _sport_rank(r):
-            sg = LEAGUES.get(r.get("league",""),{}).get("group","Soccer")
-            return (_SPORT_ORDER_R.index(sg) if sg in _SPORT_ORDER_R else 99,
-                    -r["_pick"]["prob"])
-        _all_rongol.sort(key=_sport_rank)
+        # Group by sport group, keep best by prob
+        _sport_best = {}
+        for _cand in _all_candidates:
+            _sg_c = LEAGUES.get(_cand.get("league",""),{}).get("group","Soccer")
+            _p_c  = _cand["_pick"]["prob"]
+            if _sg_c not in _sport_best or _p_c > _sport_best[_sg_c]["_pick"]["prob"]:
+                _sport_best[_sg_c] = _cand
 
-        rongol_picks = [r for r in _all_rongol
-                        if not _sel_sport_filter
-                        or LEAGUES.get(r.get("league",""),{}).get("group") == _sel_sport_filter]
+        # Order by sport group
+        rongol_picks = [_sport_best[sg] for sg in _SPORT_ORDER_R
+                        if sg in _sport_best
+                        and (not _sel_sport_filter or sg == _sel_sport_filter)]
 
         # Legacy: keep allowed_bets for DO parlay logic below
         allowed_bets = rongol_picks
@@ -6354,15 +6358,12 @@ if _active_page == "Rongol Picks":
 
                 st.markdown('</div>', unsafe_allow_html=True)
 
-            # Aplicar filtro de liga Y filtro de deporte
-            rongol_picks = [r for r in rongol_picks if r["league"] in _ligas_sel]
+            # sr_cur_filtrado for DO parlay (still filtered by liga)
             sr_cur_filtrado = [r for r in sr_cur if r["league"] in _ligas_sel]
-            # Filtro adicional por deporte si hay tile seleccionado
             if _sel_sport_filter:
-                rongol_picks = [r for r in rongol_picks
-                                if LEAGUES.get(r["league"],{}).get("group") == _sel_sport_filter]
                 sr_cur_filtrado = [r for r in sr_cur_filtrado
                                    if LEAGUES.get(r["league"],{}).get("group") == _sel_sport_filter]
+            # rongol_picks already has best-per-sport — NO liga filter applied
 
             # ── RONGOL PICKS — 3 por renglón, tarjetas blancas con CTA amarillo ─
             _n_picks = len(rongol_picks)
