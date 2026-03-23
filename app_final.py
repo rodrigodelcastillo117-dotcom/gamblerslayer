@@ -5898,13 +5898,15 @@ if _active_page == "Rongol Picks":
         _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
         _sel_sport_filter = st.session_state.get("_picks_sel_sport", None)
 
-        # Build per-LEAGUE pools (not per sport group)
+        # Build per-LEAGUE pools — use state from sim_result itself (no games lookup needed)
         _league_pools = {}
         for _r_rp in sr_cur:
+            # Skip finished games (use state from sim_result OR from games map)
             _g_rp = _gmap_rp.get(_r_rp.get("id",""))
-            if not _g_rp: continue
-            if _g_rp["state"] == "post": continue
-            _raw_d = _g_rp.get("date","")
+            _state_rp = (_g_rp["state"] if _g_rp else _r_rp.get("state","pre"))
+            if _state_rp == "post": continue
+            # Date filter: use date from sim_result directly
+            _raw_d = _r_rp.get("date","") or (_g_rp.get("date","") if _g_rp else "")
             if _raw_d:
                 try:
                     from datetime import datetime as _dt_rp2
@@ -6729,7 +6731,7 @@ elif _active_page == "Picks":
         "Baseball":   {"emoji":"⚾","color":"#ef4444","accent":"rgba(239,68,68,0.10)"},
         "Football":   {"emoji":"🏈","color":"#a78bfa","accent":"rgba(167,139,250,0.10)"},
     }
-    _SPORTS_ORDER_P = ["Basketball","Soccer","Hockey","Baseball","Football"]
+    _SPORTS_ORDER_P = ["Soccer","Basketball","Hockey","Baseball","Football"]
 
     _today_mx_p    = _now_mx_pt.strftime("%Y-%m-%d")
     _tom_mx_p      = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
@@ -7776,43 +7778,35 @@ elif _active_page == "Parlays":
                 ) if featured else ""
 
                 return (
-                    f'<div style="border-radius:16px;padding:14px 16px;margin:8px 0;'
-                    f'background:linear-gradient(135deg,{_sgc}14 0%,#141414 60%,{_sgc}08 100%);'
-                    f'border:1px solid {_sgc}{"66" if featured else "44"};{_border_extra}">'
-                    f'<div style="height:2px;border-radius:12px 8px 0 0;margin:-14px -16px 12px -16px;{_feat_stripe}"></div>'
-                    f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
-                    f'<div>'
-                    f'<div style="font-size:0.65rem;color:#6B7280;letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">'
-                    f'{_sgi} {_sg} · {_lg}{_feat_label}</div>'
-                    f'<div style="font-size:0.986rem;font-weight:700;color:#E8E8E8">{_matchup}</div>'
-                    f'<div style="font-size:0.728rem;color:#6B7280;margin-top:2px">{_ct}</div>'
+                    '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
+                    'border-radius:20px;overflow:hidden;margin:8px 0;'
+                    'border:1px solid rgba(0,0,0,0.07);'
+                    'box-shadow:0 6px 20px rgba(0,0,0,0.20),0 1px 0 rgba(255,255,255,0.85) inset>'
+                    f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
+                    f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_sgi} {_sg} · {_lg}</span>'
+                    f'<span style="font-size:0.62rem;color:#888">{_matchup[:28]}</span>'
                     f'</div>'
-                    f'<div style="text-align:right;flex-shrink:0">'
-                    f'<div style="font-size:1.232rem;font-weight:900;color:{_sgc};font-family:Inter,sans-serif">{dp["comb_prob_pct"]}%</div>'
-                    f'<div style="font-size:0.616rem;color:#6B7280">prob. combinada</div>'
+                    f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+                    f'<div style="padding:8px 12px">'
+                    f'<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(0,0,0,0.04);border-radius:10px;margin-bottom:4px">'
+                    f'<span style="background:{_p1c}22;color:{_p1a};border:1px solid {_p1c}55;border-radius:8px;padding:2px 8px;font-size:0.72rem;font-weight:900">{_l1["market"]}</span>'
+                    f'<span style="font-size:0.88rem;color:#111;font-weight:700">{_l1.get("label","")}</span>'
+                    f'<span style="margin-left:auto;font-size:0.75rem;color:{_p1a};font-weight:700">{round(_l1.get("prob",0),0):.0f}%</span>'
                     f'</div>'
-                    f'</div>'
-                    f'<div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">'
-                    f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="background:{_p1c}28;color:{_p1a};border:1px solid {_p1c}66;'
-                    f'border-radius:12px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p1l}</span>'
-                    f'<span style="font-size:0.986rem;color:#E8E8E8;font-weight:600">{_l1["label"]}</span>'
-                    f'<span style="margin-left:auto;font-size:0.694rem;color:{_p1a};font-weight:700">{_l1["prob"]:.0f}%</span>'
-                    f'</div>'
-                    f'<div style="font-size:0.694rem;color:#444444;text-align:center;letter-spacing:3px">✕ COMBO ✕</div>'
-                    f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="background:{_p2c}28;color:{_p2a};border:1px solid {_p2c}66;'
-                    f'border-radius:12px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_p2l}</span>'
-                    f'<span style="font-size:0.986rem;color:#E8E8E8;font-weight:600">{_l2["label"]}</span>'
-                    f'<span style="margin-left:auto;font-size:0.694rem;color:{_p2a};font-weight:700">{_l2["prob"]:.0f}%</span>'
+                    f'<div style="text-align:center;font-size:0.62rem;color:#AAA;padding:2px 0">✕ COMBO ✕</div>'
+                    f'<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(0,0,0,0.04);border-radius:10px">'
+                    f'<span style="background:{_p2c}22;color:{_p2a};border:1px solid {_p2c}55;border-radius:8px;padding:2px 8px;font-size:0.72rem;font-weight:900">{_l2["market"]}</span>'
+                    f'<span style="font-size:0.88rem;color:#111;font-weight:700">{_l2.get("label","")}</span>'
+                    f'<span style="margin-left:auto;font-size:0.75rem;color:{_p2a};font-weight:700">{round(_l2.get("prob",0),0):.0f}%</span>'
                     f'</div>'
                     f'</div>'
-                    f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
-                    f'border-top:1px solid {_sgc}22;flex-wrap:wrap">'
-                    f'<span style="font-size:0.694rem;color:#00C896">Pago est. +${dp["payout"]:.0f}/100</span>'
-                    f'<span style="margin-left:auto;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);'
-                    f'border-radius:12px;padding:2px 8px;font-size:0.672rem;color:#ef4444">⚠️ STAKE BAJO</span>'
-                    f'</div>'
+                    f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+                    f'border-radius:12px;padding:10px 14px;border:1px solid rgba(255,255,255,0.35);'
+                    f'box-shadow:0 4px 14px rgba(255,185,0,0.3)">'
+                    f'<div style="display:flex;align-items:center;justify-content:space-between">'
+                    f'<span style="font-size:0.75rem;font-weight:800;color:#111">Pago est. <b>+${dp["payout"]:,}/100</b></span>'
+                    f'<span style="font-size:0.7rem;font-weight:800;color:#111">{dp["combined_prob"]*100:.1f}% prob.</span>'
+                    f'</div></div>'
                     f'</div>'
                 )
 
@@ -7848,30 +7842,30 @@ elif _active_page == "Parlays":
                     unsafe_allow_html=True
                 )
                 st.markdown(
-                    f'<div style="border-radius:16px;padding:14px 16px;margin:0 0 12px 0;'
-                    f'background:linear-gradient(135deg,#C9A84C14 0%,#141414 60%,#C9A84C08 100%);'
-                    f'border:1px solid #C9A84C66;box-shadow:0 0 30px rgba(201,168,76,0.15)">'
-                    f'<div style="height:2px;border-radius:12px 8px 0 0;margin:-14px -16px 12px -16px;'
-                    f'background:linear-gradient(90deg,transparent,#C9A84C,#00C896,#C9A84C,transparent)"></div>'
-                    f'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px">'
+                    f'<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
+                    f'border-radius:20px;overflow:hidden;margin:0 0 8px;'
+                    f'border:1px solid rgba(0,0,0,0.07);'
+                    f'box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset'
+                    f'>'
+                    f'<div style="padding:10px 16px 5px;display:flex;justify-content:space-between;align-items:center">'
                     f'<div>'
-                    f'<div style="font-size:0.65rem;color:#6B7280;letter-spacing:2px;text-transform:uppercase">'
-                    f'{len(_multi_legs)} patas · hoy CDMX</div>'
-                    f'<div style="font-size:0.8rem;color:#C9A84C;margin-top:2px">'
-                    f'{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
+                    f'<div style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{len(_multi_legs)} PATAS · HOY CDMX</div>'
+                    f'<div style="font-size:0.7rem;color:#333;margin-top:2px">{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
                     f'</div>'
                     f'<div style="text-align:right">'
-                    f'<div style="font-size:1.4rem;font-weight:900;color:#C9A84C;font-family:Inter,sans-serif">{_multi_prob_pct}%</div>'
-                    f'<div style="font-size:0.616rem;color:#6B7280">prob. combinada</div>'
-                    f'<div style="font-size:0.694rem;color:{_ev_clr};font-weight:700">EV {_multi_ev:+.1f}</div>'
-                    f'</div>'
-                    f'</div>'
-                    f'<div style="display:flex;flex-direction:column;gap:4px">{_legs_html}</div>'
-                    f'<div style="display:flex;align-items:center;gap:16px;margin-top:10px;padding-top:8px;'
-                    f'border-top:1px solid #C9A84C22;flex-wrap:wrap">'
-                    f'<span style="font-size:0.694rem;color:#00C896">Pago est. +${_multi_payout:.0f}/100</span>'
-                    f'<span style="font-size:0.672rem;color:#6B7280;margin-left:auto">Verifica cuotas en tu casa de apuestas</span>'
-                    f'</div>'
+                    f'<div style="font-size:1.6rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_multi_prob_pct:.1f}%</div>'
+                    f'<div style="font-size:0.55rem;color:#888">prob. combinada</div>'
+                    f'<div style="font-size:0.7rem;color:{_ev_clr};font-weight:700">EV {_multi_ev:+.1f}</div>'
+                    f'</div></div>'
+                    f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+                    f'<div style="padding:8px 12px">{_legs_html}</div>'
+                    f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+                    f'border-radius:12px;padding:10px 14px;border:1px solid rgba(255,255,255,0.35);'
+                    f'box-shadow:0 4px 14px rgba(255,185,0,0.3)">'
+                    f'<div style="display:flex;align-items:center;justify-content:space-between">'
+                    f'<span style="font-size:0.75rem;font-weight:800;color:#111">Pago est. <b>+${round(_multi_payout-100):,}/100</b></span>'
+                    f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">Verifica cuotas en tu casa</span>'
+                    f'</div></div>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
@@ -8283,18 +8277,18 @@ elif _active_page == "En Vivo":
             best     = max(picks, key=lambda p: p["prob"])
             prob_color = "#00C896" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
 
-            # Picks mini-grid (up to 3 cols)
+            # Picks mini-grid (up to 3 cols) — light bg
             _cols = min(len(picks), 3)
-            ph = f'<div style="display:grid;grid-template-columns:repeat({_cols},1fr);gap:4px;margin-bottom:6px">'
+            ph = f'<div style="display:grid;grid-template-columns:repeat({_cols},1fr);gap:6px;padding:8px 0">'
             for i, pk in enumerate(picks):
-                pc = "#00C896" if pk["prob"] >= 70 else "#C9A84C" if pk["prob"] >= 55 else "#f97316"
-                _bg = "rgba(255,232,124,0.08)" if i == 0 else "rgba(255,255,255,0.02)"
-                _bd = "#FFE87C44" if i == 0 else "#333333"
+                pc = "#006600" if pk["prob"] >= 70 else "#664400" if pk["prob"] >= 55 else "#880000"
+                _bg = "rgba(255,224,50,0.18)" if i == 0 else "rgba(0,0,0,0.05)"
+                _bd = "rgba(255,185,0,0.5)" if i == 0 else "rgba(0,0,0,0.1)"
                 ph += (
-                    f'<div style="background:{_bg};border:1px solid {_bd};border-radius:5px;padding:5px 7px">'
-                    f'<div style="font-size:0.72rem;font-weight:700;color:#FFE87C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["label"]}</div>'
-                    f'<div style="font-size:1.0rem;color:{pc};font-weight:700">{pk["prob"]:.0f}%</div>'
-                    f'<div style="font-size:0.62rem;color:#6B7280;line-height:1.2;overflow:hidden;max-height:2.4em">{pk["rationale"][:70]}</div>'
+                    f'<div style="background:{_bg};border:1px solid {_bd};border-radius:10px;padding:7px 8px">'
+                    f'<div style="font-size:0.68rem;font-weight:800;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["market"]} {pk.get("label","")[:15]}</div>'
+                    f'<div style="font-size:1.0rem;color:{pc};font-weight:800">{pk["prob"]:.0f}%</div>'
+                    f'<div style="font-size:0.60rem;color:#888;line-height:1.2">{pk.get("notes","")[:30]}</div>'
                     f'</div>'
                 )
             ph += "</div>"
@@ -8347,19 +8341,29 @@ elif _active_page == "En Vivo":
             )
 
             return (
-                '<div style="background:linear-gradient(135deg,#161616,#111111);'
-                'border:2px solid rgba(255,60,60,0.6);border-radius:12px;overflow:hidden">'
-                '<div style="height:2px;background:linear-gradient(90deg,transparent,#ff3c3c,#ff6b6b,#ff3c3c,transparent)"></div>'
-                '<div style="padding:8px 10px">'
-                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px">'
+                '<div style="background:linear-gradient(160deg,#FFF5F5 0%,#FFE8E8 100%);'
+                'border-radius:20px;overflow:hidden;margin:3px 0;'
+                'border:1.5px solid rgba(255,59,48,0.35);'
+                'box-shadow:0 6px 20px rgba(255,59,48,0.12),0 1px 0 rgba(255,255,255,0.85) inset>'
+                f'<div style="padding:8px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
                 f'<div>'
-                f'<div style="font-size:0.85rem;font-weight:700;color:#fff;line-height:1.2">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div style="font-size:0.75rem;color:#00C896;font-weight:700">{score_str} <span style="color:#888888;font-weight:400;font-size:0.68rem">{headline}</span></div>'
+                f'<div style="font-size:0.85rem;font-weight:800;color:#111;line-height:1.2">{g["away_team"]} @ {g["home_team"]}</div>'
+                f'<div style="font-size:0.78rem;color:#CC0000;font-weight:700">{score_disp}</div>'
                 f'</div>'
-                f'<div style="text-align:right;font-size:0.62rem">{badges}</div>'
+                f'<div>{badges}</div>'
                 f'</div>'
-                + ph + xg_html + sh
-                + '</div></div>'
+                f'<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 12px"></div>'
+                + ph + xg_html
+                + f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FF3B30 0%,#CC0000 100%);'
+                  f'border-radius:12px;padding:10px 14px;'
+                  f'border:1px solid rgba(255,255,255,0.2);'
+                  f'box-shadow:0 4px 14px rgba(255,59,48,0.35)">'
+                  f'<div style="font-size:0.55rem;font-weight:900;color:rgba(255,255,255,0.7);letter-spacing:2px;text-transform:uppercase">🔴 EN VIVO → APOSTAR</div>'
+                  f'<div style="font-size:0.9rem;font-weight:800;color:#FFF;margin-top:4px">{best["market"]} {best.get("label","")}</div>'
+                  f'<div style="font-size:1.8rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{best["prob"]:.0f}%</div>'
+                  f'</div>'
+                + sh
+                + '</div>'
             )
 
         # ── Render: Sport expander → League sub-expander → 3-per-row cards ──
@@ -9639,28 +9643,83 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
         st.error("💀 Fuiste eliminado. Mejor suerte la próxima temporada.")
     elif _already_picked:
         _tp = _this_week_picks[0]
+        # Try to auto-resolve this pick if still pending
+        if _tp["resultado"] == "pendiente":
+            try:
+                _fin = _fetch_finished_games()
+                for _fg in _fin:
+                    _t1, _t2 = _tp.get("equipo",""), _tp.get("partido","").replace(" vs "," @ ").split(" @ ")[-1].strip()
+                    if _team_match(_tp.get("equipo",""), _fg["home_team"], _fg["away_team"]):
+                        _winner = _fg["home_team"] if _fg["home_score"] > _fg["away_score"] else _fg["away_score"]
+                        _res_sv = "ganado" if _team_match(_tp["equipo"], _fg["home_team"], _fg["away_team"]) and (
+                            (_fg["home_score"] > _fg["away_score"] and _team_match(_tp["equipo"], _fg["home_team"], "")) or
+                            (_fg["away_score"] > _fg["home_score"] and _team_match(_tp["equipo"], "", _fg["away_team"]))
+                        ) else "perdido"
+                        _sv_save(_my_ap, _week_sv, _tp["equipo"], _tp.get("partido",""), _res_sv)
+                        break
+            except: pass
         st.success(f"✅ Pick registrado esta semana: **{_tp['equipo']}** vs {_tp['partido']} · Resultado: `{_tp['resultado']}`")
     else:
         st.markdown(f"**Semana {_week_sv}** · Elige tu equipo (no puedes repetir equipos usados):")
-        _col_eq, _col_part = st.columns([2, 3])
-        with _col_eq:
-            _sv_equipo = st.text_input("🏟 Equipo a ganar", key="sv_equipo_input",
+
+        # Build game options from sim_results
+        _sv_sr = st.session_state.get("sim_results", [])
+        _sv_game_opts = {}  # label → (equipo, partido_str)
+        for _rv in _sv_sr:
+            _sim_v = _rv.get("sim", {})
+            if _rv.get("state") == "post": continue
+            _home_v = _rv.get("home_team", "")
+            _away_v = _rv.get("away_team", "")
+            _lg_v   = league_label(_rv.get("league", ""))
+            _h_pct  = _sim_v.get("home_pct", 0) or 0
+            _a_pct  = _sim_v.get("away_pct", 0) or 0
+            _partido_str = f"{_away_v} vs {_home_v}"
+            # Add home team option
+            _h_key = f"{_lg_v} · {_away_v} @ {_home_v} → {_home_v} ({_h_pct:.0f}%)"
+            if _home_v.lower() not in _used_teams:
+                _sv_game_opts[_h_key] = (_home_v, _partido_str)
+            # Add away team option
+            _a_key = f"{_lg_v} · {_away_v} @ {_home_v} → {_away_v} ({_a_pct:.0f}%)"
+            if _away_v.lower() not in _used_teams:
+                _sv_game_opts[_a_key] = (_away_v, _partido_str)
+
+        if not _sv_game_opts:
+            st.warning("⚠ No hay partidos disponibles. Ve a Rongol o Picks y simula primero.")
+            _sv_equipo = st.text_input("🏟 O escribe el equipo manualmente", key="sv_equipo_input",
                                         placeholder="ej. Lakers, Real Madrid…")
-        with _col_part:
             _sv_partido = st.text_input("📅 Partido", key="sv_partido_input",
                                          placeholder="ej. Lakers vs Warriors")
-
-        _warn_dupe = _sv_equipo and _sv_equipo.lower() in _used_teams
-        if _warn_dupe:
-            st.warning(f"⚠ Ya usaste **{_sv_equipo}** en semanas anteriores. Elige otro.")
-
-        if st.button("🏆 Registrar Pick de Supervivencia", key="btn_sv_save",
-                     disabled=_warn_dupe or not _sv_equipo):
-            if _sv_save(_my_ap, _week_sv, _sv_equipo, _sv_partido):
-                st.success(f"✅ Pick guardado: **{_sv_equipo}** · Semana {_week_sv}")
-                st.rerun()
+        else:
+            _sv_opts_sorted = sorted(_sv_game_opts.keys())
+            _sv_sel = st.selectbox(
+                "🎯 Selecciona tu pick de supervivencia",
+                ["— Elige un equipo —"] + _sv_opts_sorted,
+                key="sv_game_sel",
+                label_visibility="collapsed"
+            )
+            if _sv_sel and _sv_sel != "— Elige un equipo —":
+                _sv_equipo, _sv_partido = _sv_game_opts[_sv_sel]
+                _cc1, _cc2 = st.columns([3, 2])
+                with _cc1:
+                    st.markdown(
+                        f'<div style="background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);'
+                        f'border-radius:10px;padding:10px 14px">'
+                        f'<div style="font-size:0.6rem;color:#C9A84C;font-weight:700;letter-spacing:1.5px;text-transform:uppercase">TU PICK</div>'
+                        f'<div style="font-size:1.1rem;font-weight:800;color:#E8E8E8">{_sv_equipo}</div>'
+                        f'<div style="font-size:0.65rem;color:#888">{_sv_partido}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                with _cc2:
+                    if st.button("🏆 Confirmar Pick", key="btn_sv_save", use_container_width=True, type="primary"):
+                        if _sv_save(_my_ap, _week_sv, _sv_equipo, _sv_partido):
+                            st.success(f"✅ Pick guardado: **{_sv_equipo}** · Semana {_week_sv}")
+                            st.rerun()
+                        else:
+                            st.error("❌ Error guardando. Verifica conexión a Sheets.")
             else:
-                st.error("❌ Error guardando. Verifica conexión a Sheets.")
+                _sv_equipo = ""
+
 
     # ── Equipos ya usados ───────────────────────────────────────────────────────
     if _my_ap and _used_teams:
