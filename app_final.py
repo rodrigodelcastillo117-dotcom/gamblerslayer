@@ -3736,10 +3736,12 @@ def run_monte_carlo(game, n=10_000):
     # Runs BEFORE the simulation loop so counters work correctly.
     # hp is the base home win probability from compute_base_prob.
     if _spread_line is None and not is_soccer:
-        _SCALE = {"Basketball": 24, "Football": 28}
+        # Calibrated: NBA ~3.5pts per 10% prob, NFL ~3.0pts per 10%
+        # Source: historical Vegas ATS lines vs ML probabilities
+        _SCALE = {"Basketball": 28, "Football": 26}
         _sc3 = _SCALE.get(sport_grp)
         if _sc3 is not None:
-            # negative = home favored
+            # negative = home favored, rounded to nearest 0.5
             _spread_line = round(-(hp - 0.5) * _sc3 * 2) / 2
             _spread_implied = True
         elif sport_grp in ("Baseball", "Hockey"):
@@ -7809,10 +7811,13 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
         #   2. AND the spread has better EV than ML (when ML has a real line)
         _bs_mc = sim.get("best_single")
         _spread_implied_flag = sim.get("spread_implied", False)
+        # Only recommend Spread when ESPN provided REAL spread odds with real prices
+        _has_real_spread_price = (
+            bool(sim.get("spread_line")) and not sim.get("spread_implied", False)
+        )
         if (_bs_mc and _bs_mc.get("market") == "Spread"
                 and (_bs_mc.get("ev") or 0) > 0
-                and not _spread_implied_flag):
-            # Real ESPN spread — trust MC selection
+                and _has_real_spread_price):
             _spr_prob = _bs_mc.get("prob") or 0
             _spr_prob_f = _spr_prob / 100 if _spr_prob > 1 else _spr_prob
             return {
@@ -7829,21 +7834,29 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
         _p_ac = sim.get("p_away_cover")   # 0-100
         _spr_line = sim.get("spread_line")
         _spr_implied = sim.get("spread_implied", False)
-        # Only add spread as candidate when ESPN has a REAL line (not model-implied)
-        # Implied spreads inflate EV artificially — use ML instead when no real line
-        if _spr_line is not None and not _spr_implied and (_p_hc is not None or _p_ac is not None):
-            _dec = 1.909  # -110
-            _pfx = ""
+        # Add spread as candidate when:
+        # - ESPN has a real line (not implied), OR
+        # - MLB/NHL: run line / puck line always ±1.5 (industry standard, always valid)
+        # Only add spread candidate with real ESPN prices
+        _has_real_price = bool(
+            r.get("odds", {}).get("spread_home_ml", "") not in ("", "-110")
+            if isinstance(r.get("odds"), dict) else False
+        ) or bool(r.get("odds", {}).get("spread_line", "") if isinstance(r.get("odds"), dict) else False)
+        if _spr_line is not None and not _spr_implied and _has_real_price and (_p_hc is not None or _p_ac is not None):
+            _dec = 1.909  # -110 standard
             _home_nm = (r.get("home_team","") or "")[:14]
             _away_nm = (r.get("away_team","") or "")[:14]
+            # For implied spreads: EV is unknown (no real juice from ESPN)
+            # Show None so card displays "S/L" instead of a fake number
+            _ev_known = not _spr_implied
             if _p_hc is not None and _p_hc >= 52.4:
                 _pf = _p_hc / 100
-                _ef = round((_pf*(_dec-1)-(1-_pf))*100, 1)
-                cands.append({"market":"Spread","label":f"{_home_nm} {float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":"-110"})
+                _ef = round((_pf*(_dec-1)-(1-_pf))*100, 1) if _ev_known else None
+                cands.append({"market":"Spread","label":f"{_home_nm} {float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":""})
             if _p_ac is not None and _p_ac >= 52.4:
                 _pf = _p_ac / 100
-                _ef = round((_pf*(_dec-1)-(1-_pf))*100, 1)
-                cands.append({"market":"Spread","label":f"{_away_nm} {-float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":"-110"})
+                _ef = round((_pf*(_dec-1)-(1-_pf))*100, 1) if _ev_known else None
+                cands.append({"market":"Spread","label":f"{_away_nm} {-float(_spr_line):+.1f} (Spread)","prob":_pf,"ev":_ef,"ml":""})
 
         # Score compuesto universal
         scored = [(c, pick_score_universal(c, sim, r, sg)) for c in cands]
