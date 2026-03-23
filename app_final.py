@@ -8301,41 +8301,40 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
             'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
             'border-radius:14px;padding:14px;'
             'border-top:2px solid rgba(255,255,255,0.5);'
-            'box-shadow:0 4px 16px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">',
+            'box-shadow:0 4px 16px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">'
 
-            # ── Row 1: market badge + pick label ──────────────────────────
-            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">',
-            f'<span style="font-size:0.6rem;font-weight:900;color:rgba(0,0,0,0.35);letter-spacing:2px">APOSTAR →</span>',
+            # Row 1: badge + team name
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+            f'<span style="font-size:0.6rem;font-weight:900;color:rgba(0,0,0,0.35);letter-spacing:2px">APOSTAR →</span>'
             f'<span style="font-size:0.65rem;font-weight:900;color:#000;background:rgba(0,0,0,0.12);'
-            f'padding:3px 9px;border-radius:6px;letter-spacing:0.5px;text-transform:uppercase">{_bp_mkt}</span>',
-            f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-            + (_bp_spread_team if _bp_mkt == 'Spread' else _bp_lbl)
-            + '</span>',
-            '</div>',
+            f'padding:3px 9px;border-radius:6px;letter-spacing:0.5px;text-transform:uppercase">{_bp_mkt}</span>'
+            f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;'
+            f'text-overflow:ellipsis;white-space:nowrap">'
+            + (_bp_spread_team if _bp_mkt == "Spread" else _bp_lbl) +
+            '</span>'
+            '</div>'
 
-            # ── Row 2: big number + details ────────────────────────────────
-            f'<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:10px">',
-            # Left: odds + spread line (if spread)
-            f'<div style="display:flex;flex-direction:column;align-items:flex-start">',
-            f'<span style="font-size:2.8rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:0.9">{_pick_dec_p}</span>',
+            # Row 2: big odds + spread line | prob/conf/kelly
+            f'<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:10px">'
+            f'<div style="display:flex;flex-direction:column;align-items:flex-start;min-width:60px">'
+            f'<span style="font-size:2.8rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:0.9">{_pick_dec_p}</span>'
             + (
-                f'<span style="font-size:1.5rem;font-weight:900;color:rgba(0,0,0,0.75);font-family:Barlow Condensed,sans-serif;line-height:1">'
-                + _bp_spread_line
-                + ('</span><span style="font-size:0.6rem;font-weight:700;color:rgba(0,0,0,0.35)"> modelo</span>' if _bp_spread_impl else '</span>')
-                if _bp_mkt == 'Spread' and _bp_spread_line else ''
-            ),
-            '</div>',
-            # Right: prob + conf + kelly
-            f'<div style="display:flex;flex-direction:column;gap:3px;flex:1">',
-            f'<span style="font-size:0.9rem;font-weight:800;color:rgba(0,0,0,0.7)">{_bp_prob*100:.0f}% probabilidad</span>',
-            f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>',
-            + (f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b> del bankroll</span>' if _kelly > 0 else ''),
-            '</div>',
-            '</div>',
+                f'<span style="font-size:1.6rem;font-weight:900;color:rgba(0,0,0,0.8);'
+                f'font-family:Barlow Condensed,sans-serif;line-height:1.1">{_bp_spread_line}</span>'
+                + (f'<span style="font-size:0.58rem;font-weight:700;color:rgba(0,0,0,0.35)"> modelo</span>' if _bp_spread_impl else '')
+                if _bp_mkt == "Spread" and _bp_spread_line else ''
+            ) +
+            '</div>'
+            f'<div style="display:flex;flex-direction:column;gap:3px;flex:1">'
+            f'<span style="font-size:0.9rem;font-weight:800;color:rgba(0,0,0,0.7)">{_bp_prob*100:.0f}% probabilidad</span>'
+            f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>'
+            + (f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b> del bankroll</span>' if _kelly > 0 else '') +
+            '</div>'
+            '</div>'
 
-            # ── Row 3: stats grid ──────────────────────────────────────────
+            # Row 3: stats grid
             '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;'
-            'padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">',
+            'padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">'
             + ''.join([
                 f'<div style="text-align:center">'
                 f'<div style="font-size:0.5rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">{lbl}</div>'
@@ -8349,20 +8348,22 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                     ("DQ", f"{_dq:.0f}%", "#000"),
                     ("Kelly", f"{_kelly:.1f}%", "#000"),
                 ]
-            ]),
-            '</div>',
-            f'<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.08)">',
-            f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">📊 {_why}</span>',
-            '</div>',
-            + (_h2h_str and (
-                f'<div style="margin-top:4px;padding:4px 8px;background:rgba(0,0,0,0.08);border-radius:7px">'
-                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.6)">⚔️ {_h2h_str}</span></div>'
-            ) or ''),
-            + (_form_str and (
-                f'<div style="margin-top:3px;padding:4px 8px;background:rgba(0,0,0,0.06);border-radius:7px">'
-                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">📈 {_form_str}</span></div>'
-            ) or ''),
+            ]) +
             '</div>'
+            f'<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.08)">'
+            f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">📊 {_why}</span>'
+            '</div>'
+            + (
+                f'<div style="margin-top:4px;padding:4px 8px;background:rgba(0,0,0,0.08);border-radius:7px">'
+                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.6)">⚔️ {_h2h_str}</span>'
+                '</div>' if _h2h_str else ''
+            )
+            + (
+                f'<div style="margin-top:3px;padding:4px 8px;background:rgba(0,0,0,0.06);border-radius:7px">'
+                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">📈 {_form_str}</span>'
+                '</div>' if _form_str else ''
+            )
+            + '</div>'
         )
         _html = (
             '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#EAEAEF 100%);'
