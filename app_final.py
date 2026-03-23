@@ -592,11 +592,11 @@ def get_demo_games():
         {"id":"d3","league":"NBA","home_team":"Boston Celtics","away_team":"Miami Heat",
          "home_score":"","away_score":"","home_record":"47-13","away_record":"28-32",
          "state":"pre","status_detail":"8:00 PM ET","date":"","venue":"TD Garden",
-         "odds":{"spread":"BOS -8.5","over_under":"218.0","home_ml":"-320","away_ml":"+260","home_wp":"76","away_wp":"24"}},
+         "odds":{"spread":"BOS -8.5","spread_line":"-8.5","spread_home_ml":"-110","spread_away_ml":"-110","over_under":"218.0","home_ml":"-320","away_ml":"+260","home_wp":"76","away_wp":"24"}},
         {"id":"d4","league":"NBA","home_team":"Denver Nuggets","away_team":"Oklahoma City Thunder",
          "home_score":"62","away_score":"58","home_record":"44-16","away_record":"46-14",
          "state":"in","status_detail":"3rd Qtr 4:22","date":"","venue":"Ball Arena",
-         "odds":{"spread":"OKC -1.5","over_under":"228.0","home_ml":"+105","away_ml":"-125","home_wp":"44","away_wp":"56"}},
+         "odds":{"spread":"OKC -1.5","spread_line":"1.5","spread_home_ml":"-110","spread_away_ml":"-110","over_under":"228.0","home_ml":"+105","away_ml":"-125","home_wp":"44","away_wp":"56"}},
         {"id":"d5","league":"Liga MX","home_team":"Club América","away_team":"Chivas Guadalajara",
          "home_score":"","away_score":"","home_record":"14-4-4","away_record":"10-6-6",
          "state":"pre","status_detail":"Sáb 8:00 PM","date":"","venue":"Estadio Azteca",
@@ -604,7 +604,7 @@ def get_demo_games():
         {"id":"d6","league":"MLB","home_team":"New York Yankees","away_team":"Boston Red Sox",
          "home_score":"","away_score":"","home_record":"18-12","away_record":"15-15",
          "state":"pre","status_detail":"7:05 PM ET","date":"","venue":"Yankee Stadium",
-         "odds":{"spread":"","over_under":"8.5","home_ml":"-145","away_ml":"+122","home_wp":"59","away_wp":"41"}},
+         "odds":{"spread":"NYY -1.5","spread_line":"-1.5","spread_home_ml":"-155","spread_away_ml":"+130","over_under":"8.5","home_ml":"-145","away_ml":"+122","home_wp":"59","away_wp":"41"}},
         {"id":"d7","league":"Bundesliga","home_team":"Bayern Munich","away_team":"Borussia Dortmund",
          "home_score":"","away_score":"","home_record":"20-4-4","away_record":"16-6-6",
          "state":"pre","status_detail":"Sáb 9:30 AM","date":"","venue":"Allianz Arena",
@@ -612,7 +612,7 @@ def get_demo_games():
         {"id":"d8","league":"NHL","home_team":"Florida Panthers","away_team":"Tampa Bay Lightning",
          "home_score":"","away_score":"","home_record":"41-18-6","away_record":"38-22-5",
          "state":"pre","status_detail":"7:00 PM ET","date":"","venue":"Amerant Bank Arena",
-         "odds":{"spread":"","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
+         "odds":{"spread":"FLA -1.5","spread_line":"-1.5","spread_home_ml":"-140","spread_away_ml":"+118","over_under":"6.0","home_ml":"-135","away_ml":"+115","home_wp":"55","away_wp":"45"}},
     ]
 
 def _gsheets_available():
@@ -1852,44 +1852,65 @@ def parse_games(data, league_name):
                 _away_ml = (_away_odds.get("moneyLine") or _away_odds.get("current", {}).get("moneyLine") or
                             _away_odds.get("open", {}).get("moneyLine") or "")
                 # ── Parse spread from ESPN ────────────────────────────────────
-                # ESPN provides spread in multiple places:
-                # 1. o["details"] = "BOS -8.5" (most reliable — the full line text)
-                # 2. homeTeamOdds["pointSpread"] = -8.5 (numeric, home perspective)
-                # 3. homeTeamOdds["spreadOdds"] = -110 (spread momio for home)
-                # 4. homeTeamOdds["handicap"] = -8.5 (some endpoints)
+                # spread_line is ALWAYS from home perspective:
+                #   negative = home is favorite (gives points)
+                #   positive = home is underdog (gets points)
+                # homeTeamOdds.pointSpread is the authoritative source.
+                # details "BOS -8.5" = BOS (home or away) has -8.5,
+                #   so we use pointSpread directly to avoid confusion.
                 _details_str = o.get("details", "") or ""
-                _spread_val = ""
-                _spread_home_ml = ""
-                _spread_away_ml = ""
+                _spread_val      = ""   # numeric string, home perspective
+                _spread_home_ml  = ""   # juice for home to cover
+                _spread_away_ml  = ""   # juice for away to cover
 
-                # Get numeric spread line (home perspective: negative = home is fav)
                 _ho = o.get("homeTeamOdds", {}) or {}
                 _ao = o.get("awayTeamOdds", {}) or {}
-                _ps = (_ho.get("pointSpread") or _ho.get("handicap") or
-                       _ho.get("current", {}).get("pointSpread") or
-                       _ho.get("open", {}).get("pointSpread"))
-                if _ps is not None:
-                    try:
-                        _spread_val = str(float(_ps))
-                    except:
-                        pass
-                # Fallback: parse from details string "BOS -8.5" or "LAL +3.5"
+
+                # 1. Primary: homeTeamOdds.pointSpread (home perspective, always correct)
+                _ps_home = (_ho.get("pointSpread") or
+                            _ho.get("handicap") or
+                            _ho.get("current", {}).get("pointSpread") or
+                            _ho.get("open", {}).get("pointSpread"))
+                if _ps_home is not None:
+                    try: _spread_val = str(float(_ps_home))
+                    except: pass
+
+                # 2. Fallback: parse details string e.g. "BOS -8.5"
+                #    Need to figure out if the team is home or away to get correct sign
                 if not _spread_val and _details_str:
                     import re as _re_odd
-                    _dm = _re_odd.search(r'([A-Za-z]+)\s*([+-]?\d+\.?\d*)', _details_str)
+                    _dm = _re_odd.search(r'([A-Za-z0-9]+)\s*([+-]?\d+\.?\d*)', _details_str)
                     if _dm:
                         try:
-                            _spread_val = str(float(_dm.group(2)))
-                        except:
-                            pass
+                            _det_line = float(_dm.group(2))   # as written
+                            _det_abbr = _dm.group(1).upper()
+                            # Check if this abbreviation matches the HOME team
+                            # Simple heuristic: if home team abbreviation is in det_abbr
+                            _home_nm = (home.get("team",{}).get("abbreviation","") or
+                                        home.get("team",{}).get("shortDisplayName","") or "").upper()
+                            _away_nm = (away.get("team",{}).get("abbreviation","") or
+                                        away.get("team",{}).get("shortDisplayName","") or "").upper()
+                            if _home_nm and _det_abbr.startswith(_home_nm[:2]):
+                                _spread_val = str(_det_line)   # home team's line = home perspective
+                            elif _away_nm and _det_abbr.startswith(_away_nm[:2]):
+                                _spread_val = str(-_det_line)  # away team's line → flip for home perspective
+                            else:
+                                _spread_val = str(_det_line)   # best guess: use as-is
+                        except: pass
 
-                # Spread odds (the juice on the spread)
-                _sp_odds_h = (_ho.get("spreadOdds") or _ho.get("current",{}).get("spreadOdds") or
-                              _ho.get("open",{}).get("spreadOdds"))
-                _sp_odds_a = (_ao.get("spreadOdds") or _ao.get("current",{}).get("spreadOdds") or
-                              _ao.get("open",{}).get("spreadOdds"))
-                if _sp_odds_h: _spread_home_ml = str(_sp_odds_h)
-                if _sp_odds_a: _spread_away_ml = str(_sp_odds_a)
+                # 3. Spread juice (odds for each side to cover)
+                _sp_odds_h = (_ho.get("spreadOdds") or
+                              _ho.get("current", {}).get("spreadOdds") or
+                              _ho.get("open", {}).get("spreadOdds"))
+                _sp_odds_a = (_ao.get("spreadOdds") or
+                              _ao.get("current", {}).get("spreadOdds") or
+                              _ao.get("open", {}).get("spreadOdds"))
+                if _sp_odds_h is not None: _spread_home_ml = str(_sp_odds_h)
+                if _sp_odds_a is not None: _spread_away_ml = str(_sp_odds_a)
+
+                # MLB Run Line / NHL Puck Line: always ±1.5
+                # If spread_val is ±1.5 and juice is very different, that's the
+                # real market price (e.g. NYY -1.5 at -155, Boston +1.5 at +130)
 
                 odds_info = {
                     "spread":          _details_str,   # full string e.g. "BOS -8.5"
@@ -4446,6 +4467,7 @@ def run_monte_carlo(game, n=10_000):
         # Spread market
         "spread_line":_spread_line,
         "spread_raw":_spread_raw,
+        "spread_implied":_spread_implied,
         "p_home_cover":round(p_home_cover*100,1) if p_home_cover is not None else None,
         "p_away_cover":round(p_away_cover*100,1) if p_away_cover is not None else None,
         "best_single":best_single,"best_parlay":best_parlay,"pos_legs":pos_legs,
@@ -8094,13 +8116,34 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
         else:
             _ou_v_p = sim.get("ou_line","") or ""
             _po_p = sim.get("p_o_total",0) or 0; _pu_p = sim.get("p_u_total",0) or 0
+            # Spread pill — use real ESPN line or implied (marked with ~)
+            _spr_line_p  = game.get("odds",{}).get("spread_line","") or ""
+            _spr_raw_p   = game.get("odds",{}).get("spread","") or ""
+            _spr_implied = sim.get("spread_implied", False)
+            _spr_pill_p  = ""
+            if _spr_line_p:
+                try:
+                    _spr_f = float(_spr_line_p)
+                    _spr_lbl = f"{'~' if _spr_implied else ''}{'H' if _spr_f<0 else 'A'}{abs(_spr_f):+.1f}".replace("+-","-").replace("++","+")
+                    # Cleaner: show as the actual spread string from ESPN
+                    if _spr_raw_p and not _spr_implied:
+                        # e.g. "BOS -8.5" → show as "BOS-8.5"
+                        import re as _re_psp
+                        _pm = _re_psp.search(r'([A-Za-z0-9]+)[ ]*([+-]?[0-9]+[.]?[0-9]*)', _spr_raw_p)
+                        _spr_lbl = f"{_pm.group(1)}{float(_pm.group(2)):+.1f}" if _pm else f"{'H' if _spr_f<0 else 'A'}{_spr_f:+.1f}"
+                    else:
+                        _spr_lbl = f"~{'H' if _spr_f<0 else 'A'}{abs(_spr_f):.1f}"
+                    _p_cover = sim.get("p_home_cover",50) or 50
+                    _spr_dec = round(100/abs(-110)+1, 3)  # standard -110 = 1.909
+                    _spr_pill_p = _ppill(_spr_lbl, f"{_spr_dec:.2f}", color="#22d3ee")
+                except: pass
             if _ou_v_p and not str(_ou_v_p).startswith("~"):
                 try: _ou_lbl_p = f"{'O' if _po_p>=_pu_p else 'U'}{float(str(_ou_v_p).lstrip('~')):.1f}"
                 except: _ou_lbl_p = "O/U"
                 _ou_dec_p = _get_dec("", max(_po_p,_pu_p))
-                _pills_p = _ppill(_away_p[:7],_a_dec_p)+_ppill(_ou_lbl_p,_ou_dec_p)+_ppill(_home_p[:7],_h_dec_p)
+                _pills_p = _ppill(_away_p[:7],_a_dec_p)+_spr_pill_p+_ppill(_ou_lbl_p,_ou_dec_p)+_ppill(_home_p[:7],_h_dec_p)
             else:
-                _pills_p = _ppill(_away_p[:8],_a_dec_p)+_ppill(_home_p[:8],_h_dec_p)
+                _pills_p = _ppill(_away_p[:7],_a_dec_p)+_spr_pill_p+_ppill(_home_p[:7],_h_dec_p)
 
         # ── Pick explanation + white card ──────────────────────────────────
         _ev_raw  = bp.get("ev")           # None = no market line available
