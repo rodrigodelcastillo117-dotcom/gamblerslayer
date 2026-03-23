@@ -6279,16 +6279,17 @@ if _active_page == "Rongol Picks":
                     _d_pct   = _sim.get("draw_pct",0) or 0
 
                     # Decimals
-                    def _mk_dec(key, pct):
-                        d = _sim.get(key,"")
-                        if d:
-                            try:
-                                v=float(d); return "1.02" if v<1.02 else (">15" if v>15 else f"{v:.2f}")
-                            except: pass
-                        return prob_to_dec(pct/100) if pct>0 else "-"
-                    _h_dec = _mk_dec("model_home_dec", _h_pct)
-                    _a_dec = _mk_dec("model_away_dec", _a_pct)
-                    _d_dec = _mk_dec("model_draw_dec", _d_pct)
+                    def _cap_dec(v):
+                        try:
+                            f=float(v); return "1.02" if f<1.02 else (">15" if f>15 else f"{f:.2f}")
+                        except: return "-"
+                    def _p2d(pct):
+                        try:
+                            p=float(pct)/100; return "1.02" if p<=0 else (_cap_dec(1/p) if p<1 else "-")
+                        except: return "-"
+                    _h_dec = _cap_dec(_sim.get("model_home_dec","")) or _p2d(_h_pct)
+                    _a_dec = _cap_dec(_sim.get("model_away_dec","")) or _p2d(_a_pct)
+                    _d_dec = _cap_dec(_sim.get("model_draw_dec","")) or _p2d(_d_pct)
                     _pick_dec = _h_dec if _pick_h else _a_dec
                     _pick_pct = _h_pct if _pick_h else _a_pct
 
@@ -6312,7 +6313,7 @@ if _active_page == "Rongol Picks":
                         if _ou_v and not str(_ou_v).startswith("~"):
                             try: _ou_lbl = f"{'O' if _p_o>=_p_u else 'U'}{float(str(_ou_v).lstrip('~')):.1f}"
                             except: _ou_lbl = "O/U"
-                            _ou_dec = prob_to_dec(max(_p_o,_p_u)/100) if max(_p_o,_p_u)>0 else "-"
+                            _ou_raw = max(_p_o,_p_u); _ou_dec = _cap_dec(str(round(1/(_ou_raw/100),2))) if _ou_raw>0 else "-"
                             _pills  = _pill(_away[:6],_a_dec)+_pill(_ou_lbl,_ou_dec)+_pill(_home[:6],_h_dec)
                         else:
                             _pills = _pill(_away[:7],_a_dec)+_pill(_home[:7],_h_dec)
