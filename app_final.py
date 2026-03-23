@@ -5898,7 +5898,11 @@ if _active_page == "Rongol Picks":
         _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
         _sel_sport_filter = st.session_state.get("_picks_sel_sport", None)
 
-        # Build per-LEAGUE pools — use state from sim_result itself (no games lookup needed)
+        # Build per-LEAGUE pools — use state from sim_result itself
+        # DEBUG: count sr_cur items and pool results
+        _debug_total = len(sr_cur)
+        _debug_post = sum(1 for _r in sr_cur if (_gmap_rp.get(_r.get("id","")) or {}).get("state","pre") == "post" or _r.get("state","pre") == "post")
+        _debug_date_fail = 0
         _league_pools = {}
         for _r_rp in sr_cur:
             # Skip finished games (use state from sim_result OR from games map)
@@ -5913,6 +5917,7 @@ if _active_page == "Rongol Picks":
                     _gdt2 = _dt_rp2.fromisoformat(_raw_d.replace("Z","+00:00"))
                     _game_date_cdmx = (_gdt2 - _td_rp(hours=6)).strftime("%Y-%m-%d")
                     if _game_date_cdmx not in _valid_rp:
+                        _debug_date_fail += 1
                         continue
                 except:
                     pass  # unparseable date → include anyway
@@ -5920,6 +5925,19 @@ if _active_page == "Rongol Picks":
             if _bp2:
                 _lg2 = _r_rp.get("league","")
                 _league_pools.setdefault(_lg2, []).append({**_r_rp, "_pick": _bp2})
+
+        # DEBUG display — show why picks are missing
+        with st.expander(f"🔍 Debug Pool ({len(_league_pools)} ligas)", expanded=False):
+            st.write(f"sr_cur total: {_debug_total}, post-skipped: {_debug_post}, date-filtered: {_debug_date_fail}")
+            st.write(f"_league_pools keys: {list(_league_pools.keys())}")
+            for _dbg_lg, _dbg_pool in _league_pools.items():
+                _dbg_probs = [round(p["_pick"]["prob"],1) for p in _dbg_pool[:3]]
+                st.write(f"  {_dbg_lg}: {len(_dbg_pool)} games, probs: {_dbg_probs}")
+            st.write(f"_valid_rp dates: {sorted(_valid_rp)}")
+            # Show first NBA/MLB game dates
+            for _r_dbg in sr_cur[:5]:
+                if _r_dbg.get("league","") in ("NBA","MLB","NHL"):
+                    st.write(f"  {_r_dbg.get('league')}: date={_r_dbg.get('date','?')[:20]}, state={_r_dbg.get('state','?')}")
 
         # Take BEST pick per sport group (1 per sport: Basketball, Hockey, Baseball, Soccer)
         # Flatten all league pools into one list
