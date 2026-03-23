@@ -3740,7 +3740,7 @@ def run_monte_carlo(game, n=10_000):
         _sc3 = _SCALE.get(sport_grp)
         if _sc3 is not None:
             # negative = home favored
-            _spread_line = round(-(hp - 0.5) * _sc3, 1)
+            _spread_line = round(-(hp - 0.5) * _sc3 * 2) / 2
             _spread_implied = True
         elif sport_grp in ("Baseball", "Hockey"):
             # Run line / Puck line fixed at ±1.5
@@ -8192,6 +8192,18 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
         _bp_lbl   = bp.get("label","")
         _bp_prob  = bp.get("prob",0); _bp_prob = _bp_prob if _bp_prob<=1 else _bp_prob/100
         _pick_h_p = _home_p in _bp_lbl
+        # For Spread: parse team name and line number for clean display
+        _bp_spread_team = ""
+        _bp_spread_line = ""
+        _bp_spread_impl = _bp_lbl.startswith("~") if _bp_mkt == "Spread" else False
+        if _bp_mkt == "Spread":
+            import re as _re_bpl
+            _bp_m = _re_bpl.search(r"~?(.+?)[ ]*([+-][0-9]+\.?[0-9]*)[ ]*\(", _bp_lbl)
+            if _bp_m:
+                _bp_spread_team = _bp_m.group(1).strip()
+                _bp_spread_line = _bp_m.group(2)
+            else:
+                _bp_spread_team = _bp_lbl.lstrip("~")
         _pick_dec_p = _h_dec_p if _pick_h_p else _a_dec_p
         _pick_pct_p = _h_pct_p if _pick_h_p else _a_pct_p
 
@@ -8284,9 +8296,17 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
             '<span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:2px">APOSTAR →</span>'
             f'<span style="font-size:0.62rem;font-weight:900;color:#000;background:rgba(0,0,0,0.1);'
             f'padding:2px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_bp_mkt}</span>'
-            f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;'
-            f'text-overflow:ellipsis;white-space:nowrap">{_bp_lbl}</span>'
-            '</div>'
+            + (
+                f'<div style="flex:1;min-width:0">'
+                f'<div style="font-size:0.88rem;font-weight:900;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_bp_spread_team}</div>'
+                f'<div style="font-size:1.5rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">'
+                f'{_bp_spread_line}'
+                + (f' <span style="font-size:0.62rem;font-weight:600;color:rgba(0,0,0,0.4)">modelo</span>' if _bp_spread_impl else '')
+                + '</div></div>'
+                if _bp_mkt == "Spread" else
+                f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_bp_lbl}</span>'
+            )
+            + '</div>'
             f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
             f'<span style="font-size:2.6rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec_p}</span>'
             f'<div style="display:flex;flex-direction:column;gap:2px">'
