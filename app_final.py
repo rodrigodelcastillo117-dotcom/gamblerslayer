@@ -7352,7 +7352,7 @@ if _active_page == "Rongol Picks":
                         + f'<span style="font-size:2.4rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec}</span>'
                         + f'<div style="display:flex;flex-direction:column;gap:3px">'
                         + f'<span style="font-size:0.82rem;font-weight:800;color:rgba(0,0,0,0.7)">{_pick_pct:.0f}% de probabilidad</span>'
-                        + (f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.55)">Ganancia esperada: <b>${(_pk.get("ev",0) or 0)*100/100:+.0f}</b> por $100</span>' )
+                        + (f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.55)">Ganancia esperada: <b>${(_pk.get("ev") or 0):+.0f}</b> por $100</span>' if _pk.get("ev") is not None else '<span style="font-size:0.68rem;color:rgba(0,0,0,0.4)">Sin línea de mercado</span>')
                         + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">Apuesta Kelly: <b>{(_pk.get("kelly",0) or 0)*25:.1f}%</b> del bankroll</span>' if (_pk.get("kelly",0) or 0)>0 else "")
                         + f'</div></div>'
                         # Mini stats row
@@ -7364,7 +7364,7 @@ if _active_page == "Rongol Picks":
                         + f'<div style="font-size:0.85rem;font-weight:800;color:#111">{_pick_dec}</div></div>'
                         + f'<div style="width:1px;background:rgba(0,0,0,0.12)"></div>'
                         + f'<div style="flex:1;text-align:center"><div style="font-size:0.6rem;color:rgba(0,0,0,0.4);font-weight:600;text-transform:uppercase">EV/100</div>'
-                        + f'<div style="font-size:0.85rem;font-weight:800;color:#111">{(_pk.get("ev",0) or 0):+.0f}</div></div>'
+                        + (f'<div style="font-size:0.85rem;font-weight:800;color:{"#00AA00" if (_pk.get("ev") or 0)>0 else "#CC0000"}">{(_pk.get("ev") or 0):+.0f}</div></div>' if _pk.get("ev") is not None else '<div style="font-size:0.85rem;font-weight:800;color:#888">S/L</div></div>')
                         + f'<div style="width:1px;background:rgba(0,0,0,0.12)"></div>'
                         + f'<div style="flex:1;text-align:center"><div style="font-size:0.6rem;color:rgba(0,0,0,0.4);font-weight:600;text-transform:uppercase">DQ</div>'
                         + f'<div style="font-size:0.85rem;font-weight:800;color:#111">{_sim.get("data_quality",0) or 0:.0f}%</div></div>'
