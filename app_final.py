@@ -8204,8 +8204,18 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 _bp_spread_line = _bp_m.group(2)
             else:
                 _bp_spread_team = _bp_lbl.lstrip("~")
-        _pick_dec_p = _h_dec_p if _pick_h_p else _a_dec_p
-        _pick_pct_p = _h_pct_p if _pick_h_p else _a_pct_p
+        if _bp_mkt == "Spread":
+            # Use real spread odds (ESPN) or standard -110 = 1.91
+            _spr_ml_raw = bp.get("ml", "-110") or "-110"
+            try:
+                _spr_ml_f = float(str(_spr_ml_raw))
+                _pick_dec_p = str(round(100/abs(_spr_ml_f)+1, 2)) if _spr_ml_f < 0 else str(round(_spr_ml_f/100+1, 2))
+            except:
+                _pick_dec_p = "1.91"
+            _pick_pct_p = round((_bp_prob if _bp_prob <= 1 else _bp_prob/100) * 100, 0)
+        else:
+            _pick_dec_p = _h_dec_p if _pick_h_p else _a_dec_p
+            _pick_pct_p = _h_pct_p if _pick_h_p else _a_pct_p
 
         # ── Pills ──────────────────────────────────────────────────────────
         def _ppill(lbl, dec):
@@ -8289,33 +8299,43 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
         _cta = (
             '<div style="margin:0 10px 10px;'
             'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
-            'border-radius:14px;padding:12px 14px;'
+            'border-radius:14px;padding:14px;'
             'border-top:2px solid rgba(255,255,255,0.5);'
-            'box-shadow:0 4px 16px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">'
-            f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">'
-            '<span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:2px">APOSTAR →</span>'
-            f'<span style="font-size:0.62rem;font-weight:900;color:#000;background:rgba(0,0,0,0.1);'
-            f'padding:2px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_bp_mkt}</span>'
+            'box-shadow:0 4px 16px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">',
+
+            # ── Row 1: market badge + pick label ──────────────────────────
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">',
+            f'<span style="font-size:0.6rem;font-weight:900;color:rgba(0,0,0,0.35);letter-spacing:2px">APOSTAR →</span>',
+            f'<span style="font-size:0.65rem;font-weight:900;color:#000;background:rgba(0,0,0,0.12);'
+            f'padding:3px 9px;border-radius:6px;letter-spacing:0.5px;text-transform:uppercase">{_bp_mkt}</span>',
+            f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+            + (_bp_spread_team if _bp_mkt == 'Spread' else _bp_lbl)
+            + '</span>',
+            '</div>',
+
+            # ── Row 2: big number + details ────────────────────────────────
+            f'<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:10px">',
+            # Left: odds + spread line (if spread)
+            f'<div style="display:flex;flex-direction:column;align-items:flex-start">',
+            f'<span style="font-size:2.8rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:0.9">{_pick_dec_p}</span>',
             + (
-                f'<div style="flex:1;min-width:0">'
-                f'<div style="font-size:0.88rem;font-weight:900;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{_bp_spread_team}</div>'
-                f'<div style="font-size:1.5rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">'
-                f'{_bp_spread_line}'
-                + (f' <span style="font-size:0.62rem;font-weight:600;color:rgba(0,0,0,0.4)">modelo</span>' if _bp_spread_impl else '')
-                + '</div></div>'
-                if _bp_mkt == "Spread" else
-                f'<span style="font-size:0.95rem;font-weight:900;color:#000;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_bp_lbl}</span>'
-            )
-            + '</div>'
-            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
-            f'<span style="font-size:2.6rem;font-weight:900;color:#000;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec_p}</span>'
-            f'<div style="display:flex;flex-direction:column;gap:2px">'
-            f'<span style="font-size:0.82rem;font-weight:800;color:rgba(0,0,0,0.65)">{_bp_prob*100:.0f}% probabilidad</span>'
-            f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>'
-            + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b> del bankroll</span>' if _kelly > 0 else '')
-            + '</div></div>'
+                f'<span style="font-size:1.5rem;font-weight:900;color:rgba(0,0,0,0.75);font-family:Barlow Condensed,sans-serif;line-height:1">'
+                + _bp_spread_line
+                + ('</span><span style="font-size:0.6rem;font-weight:700;color:rgba(0,0,0,0.35)"> modelo</span>' if _bp_spread_impl else '</span>')
+                if _bp_mkt == 'Spread' and _bp_spread_line else ''
+            ),
+            '</div>',
+            # Right: prob + conf + kelly
+            f'<div style="display:flex;flex-direction:column;gap:3px;flex:1">',
+            f'<span style="font-size:0.9rem;font-weight:800;color:rgba(0,0,0,0.7)">{_bp_prob*100:.0f}% probabilidad</span>',
+            f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.5)">Confianza: <b style="color:{_conf_c}">{_conf_l}</b></span>',
+            + (f'<span style="font-size:0.68rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly:.1f}%</b> del bankroll</span>' if _kelly > 0 else ''),
+            '</div>',
+            '</div>',
+
+            # ── Row 3: stats grid ──────────────────────────────────────────
             '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;'
-            'padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">'
+            'padding-top:8px;border-top:1px solid rgba(0,0,0,0.1)">',
             + ''.join([
                 f'<div style="text-align:center">'
                 f'<div style="font-size:0.5rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">{lbl}</div>'
@@ -8329,22 +8349,20 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                     ("DQ", f"{_dq:.0f}%", "#000"),
                     ("Kelly", f"{_kelly:.1f}%", "#000"),
                 ]
-            ])
-            + '</div>'
-            f'<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.08)">'
-            f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">📊 {_why}</span>'
-            '</div>'
-            + (
+            ]),
+            '</div>',
+            f'<div style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(0,0,0,0.08)">',
+            f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">📊 {_why}</span>',
+            '</div>',
+            + (_h2h_str and (
                 f'<div style="margin-top:4px;padding:4px 8px;background:rgba(0,0,0,0.08);border-radius:7px">'
-                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.6)">⚔️ {_h2h_str}</span>'
-                '</div>' if _h2h_str else ''
-            )
-            + (
+                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.6)">⚔️ {_h2h_str}</span></div>'
+            ) or ''),
+            + (_form_str and (
                 f'<div style="margin-top:3px;padding:4px 8px;background:rgba(0,0,0,0.06);border-radius:7px">'
-                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">📈 {_form_str}</span>'
-                '</div>' if _form_str else ''
-            )
-            + '</div>'
+                f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">📈 {_form_str}</span></div>'
+            ) or ''),
+            '</div>'
         )
         _html = (
             '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#EAEAEF 100%);'
