@@ -6381,7 +6381,8 @@ if _active_page == "Rongol Picks":
                 unsafe_allow_html=True
             )
 
-            # ── Render 3 por renglón ─────────────────────────────────────
+
+            # ── Render 3 por renglón — tarjetas blancas con CTA amarillo ────────
             for _row_i in range(0, _n_picks, 3):
                 _row_picks = rongol_picks[_row_i:_row_i+3]
                 _cols = st.columns(3)
@@ -6390,15 +6391,15 @@ if _active_page == "Rongol Picks":
                         with _cols[_ci]:
                             st.empty()
                         continue
-                    _rp = _row_picks[_ci]
+                    _rp      = _row_picks[_ci]
                     _abs_idx = _row_i + _ci
                     _is_fire = _abs_idx in _fire_indices
                     _pk      = _rp["_pick"]
                     _mkt     = _pk.get("market","")
                     _lbl     = _pk.get("label","")
-                    _prob    = _pk.get("prob",0)
-                    _prob    = _prob if _prob<=1 else _prob/100
-                    _sim     = _rp.get("sim",{})
+                    _prob    = _pk.get("prob",0) or 0
+                    _prob    = _prob if _prob <= 1 else _prob / 100
+                    _sim_r   = _rp.get("sim",{})
                     _sg      = LEAGUES.get(_rp.get("league",""),{}).get("group","Soccer")
                     _sg_icon = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(_sg,"🎯")
                     _ht_id   = _rp.get("home_team_id","")
@@ -6408,84 +6409,225 @@ if _active_page == "Rongol Picks":
                     _home    = _rp.get("home_team","")
                     _lg_lbl  = league_label(_league)
                     _pick_h  = _home in _lbl
-                    _h_pct   = _sim.get("home_pct",0) or 0
-                    _a_pct   = _sim.get("away_pct",0) or 0
-                    _d_pct   = _sim.get("draw_pct",0) or 0
+                    _h_pct   = _sim_r.get("home_pct",0) or 0
+                    _a_pct   = _sim_r.get("away_pct",0) or 0
+                    _d_pct   = _sim_r.get("draw_pct",0) or 0
 
-                    # Decimals
-                    def _cap_dec(v):
+                    # ── Decimals from model ──────────────────────────────────────
+                    def _safe_dec(v, pct_fallback=0):
                         try:
-                            f=float(v); return "1.02" if f<1.02 else (">15" if f>15 else f"{f:.2f}")
-                        except: return "-"
-                    def _p2d(pct):
-                        try:
-                            p=float(pct)/100; return "1.02" if p<=0 else (_cap_dec(1/p) if p<1 else "-")
-                        except: return "-"
-                    _h_dec = _cap_dec(_sim.get("model_home_dec","")) or _p2d(_h_pct)
-                    _a_dec = _cap_dec(_sim.get("model_away_dec","")) or _p2d(_a_pct)
-                    _d_dec = _cap_dec(_sim.get("model_draw_dec","")) or _p2d(_d_pct)
-                    _pick_dec = _h_dec if _pick_h else _a_dec
+                            f = float(v)
+                            if f < 1.02: return "1.02"
+                            if f > 15:   return ">15"
+                            return f"{f:.2f}"
+                        except:
+                            if pct_fallback > 1:
+                                p = pct_fallback / 100
+                                try:
+                                    d = 1.0 / max(p, 0.01) * 1.045
+                                    return "1.02" if d < 1.02 else (">15" if d > 15 else f"{d:.2f}")
+                                except: return "-"
+                            return "-"
+
+                    _h_dec   = _safe_dec(_sim_r.get("model_home_dec",""), _h_pct)
+                    _a_dec   = _safe_dec(_sim_r.get("model_away_dec",""), _a_pct)
+                    _d_dec   = _safe_dec(_sim_r.get("model_draw_dec",""), _d_pct)
+
+                    # Pick decimal: use ESPN ML odds if available, else model
                     _pick_pct = _h_pct if _pick_h else _a_pct
+                    if _mkt == "ML":
+                        _espn_ml = _sim_r.get("home_ml","") if _pick_h else _sim_r.get("away_ml","")
+                        if _espn_ml:
+                            try:
+                                _f = float(_espn_ml)
+                                _espn_dec = round(100/abs(_f)+1,2) if _f < 0 else round(_f/100+1,2)
+                                _pick_dec = f"{_espn_dec:.2f}"
+                            except:
+                                _pick_dec = _h_dec if _pick_h else _a_dec
+                        else:
+                            _pick_dec = _h_dec if _pick_h else _a_dec
+                    elif _mkt in ("O/U","BTTS"):
+                        # Use -110 standard (1.91 decimal)
+                        _ou_ml_str = _sim_r.get("ou_line","") or ""
+                        _pick_dec = "1.91"
+                    else:
+                        _pick_dec = _h_dec if _pick_h else _a_dec
 
                     # Logos
                     _logo_a = _logo_img(_at_id, _league, 44)
                     _logo_h = _logo_img(_ht_id, _league, 44)
 
-                    # Odds pills
-                    def _pill(lbl, dec):
-                        lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else "#A0A0A8"
+                    # ── Odds pills ───────────────────────────────────────────────
+                    def _mk_pill(lbl, dec, highlight=False):
+                        lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else ("#FFE066" if highlight else "#A0A0A8")
+                        bg = "linear-gradient(160deg,#2A2A3A 0%,#1E1E2A 100%)" if highlight else "linear-gradient(160deg,#1E1E24 0%,#141418 100%)"
+                        bdr = "rgba(255,224,102,0.4)" if highlight else "rgba(255,255,255,0.1)"
                         return (
-                            f'<div style="flex:1;background:linear-gradient(160deg,#1E1E24 0%,#141418 100%);'                            f'border-radius:10px;border:1px solid rgba(255,255,255,0.1);'                            f'border-top:1px solid rgba(255,255,255,0.18);'                            f'box-shadow:0 3px 8px rgba(0,0,0,0.4);padding:10px 4px;text-align:center">'                            f'<span style="font-size:0.65rem;color:{lc};display:block;margin-bottom:3px;font-weight:700">{lbl}</span>'                            f'<span style="font-size:1.2rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif;line-height:1">{dec}</span>'                            f'</div>'
+                            '<div style="flex:1;background:' + bg + ';'
+                            'border-radius:10px;border:1px solid ' + bdr + ';'
+                            'border-top:1px solid rgba(255,255,255,0.18);'
+                            'box-shadow:0 3px 8px rgba(0,0,0,0.4);padding:10px 4px;text-align:center">'
+                            '<span style="font-size:0.65rem;color:' + lc + ';display:block;margin-bottom:3px;font-weight:700">' + str(lbl) + '</span>'
+                            '<span style="font-size:1.2rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif;line-height:1">' + str(dec) + '</span>'
+                            '</div>'
                         )
 
                     if _sg == "Soccer":
-                        _pills = _pill("1x",_a_dec)+_pill("x",_d_dec)+_pill("2x",_h_dec)
+                        _pills = _mk_pill("1x",_a_dec) + _mk_pill("x",_d_dec) + _mk_pill("2x",_h_dec)
                     else:
-                        _ou_v = _sim.get("ou_line","") or ""
-                        _p_o  = _sim.get("p_o_total",0) or 0
-                        _p_u  = _sim.get("p_u_total",0) or 0
+                        _ou_v = _sim_r.get("ou_line","") or ""
+                        _p_o  = _sim_r.get("p_o_total",0) or 0
+                        _p_u  = _sim_r.get("p_u_total",0) or 0
                         if _ou_v and not str(_ou_v).startswith("~"):
-                            try: _ou_lbl = f"{'O' if _p_o>=_p_u else 'U'}{float(str(_ou_v).lstrip('~')):.1f}"
-                            except: _ou_lbl = "O/U"
-                            _ou_raw = max(_p_o,_p_u); _ou_dec = _cap_dec(str(round(1/(_ou_raw/100),2))) if _ou_raw>0 else "-"
-                            _pills  = _pill(_away[:6],_a_dec)+_pill(_ou_lbl,_ou_dec)+_pill(_home[:6],_h_dec)
+                            try:
+                                _ou_f = float(str(_ou_v).lstrip("~"))
+                                _ou_lbl = ("O" if _p_o >= _p_u else "U") + f"{_ou_f:.1f}"
+                                _ou_prob = max(_p_o, _p_u)
+                                _ou_dec_v = "1.91"
+                                _is_ou_pick = _mkt == "O/U"
+                                _pills = (_mk_pill(_away[:6], _a_dec) +
+                                          _mk_pill(_ou_lbl, _ou_dec_v, highlight=_is_ou_pick) +
+                                          _mk_pill(_home[:6], _h_dec))
+                            except:
+                                _pills = _mk_pill(_away[:7], _a_dec) + _mk_pill(_home[:7], _h_dec)
                         else:
-                            _pills = _pill(_away[:7],_a_dec)+_pill(_home[:7],_h_dec)
+                            _pills = _mk_pill(_away[:7], _a_dec) + _mk_pill(_home[:7], _h_dec)
 
-                    _ev_v   = _pk.get("ev")
+                    # ── Spread pill (non-soccer with ESPN spread) ────────────────
+                    _spr_line_str = _rp.get("odds",{}).get("spread_line","") or _sim_r.get("spread_line","") or ""
+                    _spr_raw      = _rp.get("odds",{}).get("spread","") or ""
+                    _spr_implied  = _sim_r.get("spread_implied", True)
+                    if _spr_line_str and not _spr_implied and _sg != "Soccer":
+                        try:
+                            _spr_f    = float(_spr_line_str)
+                            _spr_lbl  = ("H" if _spr_f < 0 else "A") + f"{_spr_f:+.1f}"
+                            _spr_hml  = _rp.get("odds",{}).get("spread_home_ml","-110") or "-110"
+                            try:
+                                _sf = float(_spr_hml)
+                                _spr_dec_v = f"{round(100/abs(_sf)+1,2):.2f}" if _sf < 0 else f"{round(_sf/100+1,2):.2f}"
+                            except:
+                                _spr_dec_v = "1.91"
+                            # Add spread pill replacing one side
+                            _pills = (_mk_pill(_away[:6], _a_dec) +
+                                      _mk_pill(_spr_lbl, _spr_dec_v, highlight=(_mkt=="Spread")) +
+                                      _mk_pill(_home[:6], _h_dec))
+                        except:
+                            pass
+
+                    # ── EV display ───────────────────────────────────────────────
+                    _ev_v    = _pk.get("ev")
                     _ev_disp = f"{(_ev_v or 0):+.0f}" if _ev_v is not None else "S/L"
-                    _ev_clr  = "#888" if _ev_v is None else ("#006600" if (_ev_v or 0)>0 else "#880000")
-                    _kelly_r = (_pk.get("kelly",0) or 0)*25
-                    _dq_r    = _sim.get("data_quality",0) or 0
-                    _fire_glow = "box-shadow:0 0 18px rgba(255,200,0,0.18);" if _is_fire else ""
+                    _ev_clr  = "#888" if _ev_v is None else ("#006600" if (_ev_v or 0) > 0 else "#880000")
+                    _kelly_v = (_pk.get("kelly",0) or 0) * 25
+                    _dq_v    = _sim_r.get("data_quality",0) or 0
 
-                    _card = (
-                        f'<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'                        f'border-radius:20px;overflow:hidden;margin-bottom:3px;'                        f'border:1px solid rgba(0,0,0,0.07);'                        f'box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset;{_fire_glow}">'                        f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'                        f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl}</span>'                        f'<span style="font-size:0.65rem">{"🔥" if _is_fire else ""}</span>'                        f'</div>'                        f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'                        f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'                        + _logo_a +
-                        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_away[:9]}</span>'                        f'</div>'                        f'<div style="flex:1.2;text-align:center">'                        f'<div style="font-size:1.6rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'                        f'<div style="font-size:0.5rem;color:#CCC;margin-top:3px">{_sg_icon}</div>'                        f'</div>'                        f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'                        + _logo_h +
-                        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_home[:9]}</span>'                        f'</div></div>'                        f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'                        f'<div style="display:flex;gap:5px;padding:9px 10px 9px">' + _pills + f'</div>'                        f'<div style="margin:0 10px 10px;'                        f'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'                        f'border-radius:12px;padding:11px 14px;'                        f'border:1px solid rgba(255,255,255,0.35);'                        f'box-shadow:0 4px 14px rgba(255,185,0,0.3),0 1px 0 rgba(255,255,255,0.45) inset">'                        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'                        f'<span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.5);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'                        f'<span style="font-size:0.6rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_mkt}</span>'                        f'<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_lbl}</span>'                        f'</div>'                        f'<div style="display:flex;align-items:center;gap:10px;margin-top:4px">'                        f'<span style="font-size:2.2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_pick_dec}</span>'                        f'<div style="flex:1;display:flex;flex-direction:column;gap:2px">'                        f'<span style="font-size:0.78rem;font-weight:800;color:rgba(0,0,0,0.7)">{_pick_pct:.0f}% probabilidad</span>'                        + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Ganancia: <b>${(_pk.get("ev") or 0):+.0f}</b>/100</span>' if _ev_v is not None else '<span style="font-size:0.65rem;color:rgba(0,0,0,0.4)">Sin línea de mercado</span>')
-                        + (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">Kelly: <b>{_kelly_r:.1f}%</b></span>' if _kelly_r>0 else "")
-                        + f'</div></div>'                        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:7px;border-top:1px solid rgba(0,0,0,0.1);margin-top:6px">'                        + "".join(
-                            f'<div style="text-align:center"><div style="font-size:0.48rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">{lb}</div><div style="font-size:0.82rem;font-weight:900;color:{cl}">{vl}</div></div>'
+                    # ── ESPN ML badge (real odds) ────────────────────────────────
+                    _hml_espn = _sim_r.get("home_ml","") or _rp.get("odds",{}).get("home_ml","")
+                    _aml_espn = _sim_r.get("away_ml","") or _rp.get("odds",{}).get("away_ml","")
+                    _pick_ml_str = _hml_espn if _pick_h else _aml_espn
+                    _ml_badge = ""
+                    if _pick_ml_str and _mkt == "ML":
+                        try:
+                            _ml_f = float(_pick_ml_str)
+                            _ml_sign = "+" if _ml_f > 0 else ""
+                            _ml_badge = f'<span style="font-size:0.65rem;color:#C9A84C;font-weight:700;margin-left:6px">ESPN {_ml_sign}{int(_ml_f)}</span>'
+                        except: pass
+
+                    _fire_glow = "box-shadow:0 0 22px rgba(255,200,0,0.22);" if _is_fire else ""
+
+                    # ── Card HTML ────────────────────────────────────────────────
+                    _card_html = (
+                        '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
+                        'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+                        'border:1px solid rgba(0,0,0,0.07);'
+                        'box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset;' + _fire_glow + '">'
+
+                        # Header: league + fire
+                        '<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
+                        '<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">' + _lg_lbl + '</span>'
+                        '<span style="font-size:0.65rem">' + ("🔥" if _is_fire else "") + '</span>'
+                        '</div>'
+
+                        # Teams + logos
+                        '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
+                        '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                        + _logo_a +
+                        '<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
+                        'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _away[:9] + '</span>'
+                        '</div>'
+                        '<div style="flex:1.2;text-align:center">'
+                        '<div style="font-size:1.6rem;font-weight:900;color:#111;'
+                        'font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+                        '<div style="font-size:0.5rem;color:#CCC;margin-top:3px">' + _sg_icon + '</div>'
+                        '</div>'
+                        '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                        + _logo_h +
+                        '<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
+                        'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _home[:9] + '</span>'
+                        '</div></div>'
+
+                        # Divider
+                        '<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+
+                        # Odds pills
+                        '<div style="display:flex;gap:5px;padding:9px 10px 9px">' + _pills + '</div>'
+
+                        # Yellow CTA
+                        '<div style="margin:0 10px 10px;'
+                        'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+                        'border-radius:12px;padding:11px 14px;'
+                        'border:1px solid rgba(255,255,255,0.35);'
+                        'box-shadow:0 4px 14px rgba(255,185,0,0.3),0 1px 0 rgba(255,255,255,0.45) inset">'
+
+                        # CTA row 1: market badge + pick label
+                        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                        '<span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
+                        '<span style="font-size:0.6rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">' + _mkt + '</span>'
+                        '<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
+                        + _ml_badge +
+                        '</div>'
+
+                        # CTA row 2: big decimal + stats
+                        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+                        '<span style="font-size:2.4rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
+                        '<div style="display:flex;flex-direction:column;gap:2px">'
+                        '<span style="font-size:0.8rem;font-weight:800;color:rgba(0,0,0,0.7)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
+                        + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Ganancia: <b>${(_ev_v or 0):+.0f}</b>/100</span>' if _ev_v is not None else '<span style="font-size:0.65rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
+                        (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">Kelly sugerido: <b>{_kelly_v:.1f}%</b></span>' if _kelly_v > 0 else '') +
+                        '</div></div>'
+
+                        # Stats grid: 4 metrics
+                        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:7px;border-top:1px solid rgba(0,0,0,0.1)">'
+                        + "".join(
+                            '<div style="text-align:center">'
+                            '<div style="font-size:0.48rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">' + lb + '</div>'
+                            '<div style="font-size:0.82rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
+                            '</div>'
                             for lb, vl, cl in [
-                                ("Prob", f"{_pick_pct:.0f}%", "#000"),
-                                ("EV/100", _ev_disp, _ev_clr),
-                                ("DQ", f"{_dq_r:.0f}%", "#000"),
-                                ("Kelly", f"{_kelly_r:.1f}%", "#000"),
+                                ("Prob",   f"{_pick_pct:.0f}%",   "#000"),
+                                ("EV/100", _ev_disp,               _ev_clr),
+                                ("DQ",     f"{_dq_v:.0f}%",        "#000"),
+                                ("Kelly",  f"{_kelly_v:.1f}%",     "#000"),
                             ]
-                        )
-                        + f'</div></div></div>'
+                        ) +
+                        '</div>'
+                        '</div>'   # end yellow CTA
+                        '</div>'   # end card
                     )
+
                     with _cols[_ci]:
-                        st.markdown(_card, unsafe_allow_html=True)
-                        # Ver análisis toggle
-                        _ver_key = f"_ver_{_rp.get('id','')[:8]}_{_abs_idx}"
+                        st.markdown(_card_html, unsafe_allow_html=True)
+                        _ver_key  = f"_rvr_{_rp.get('id','')[:8]}_{_abs_idx}"
                         _ver_open = st.session_state.get(_ver_key, False)
-                        def _toggle_ver(_k=_ver_key, _v=_ver_open):
+                        def _tog(_k=_ver_key, _v=_ver_open):
                             st.session_state[_k] = not _v
-                        st.button("▼ Ocultar" if _ver_open else "📋 Ver análisis",
-                                  key=_ver_key+"_btn", use_container_width=True, on_click=_toggle_ver)
+                        st.button(
+                            "▼ Cerrar" if _ver_open else "📋 Ver análisis",
+                            key=_ver_key + "_b", use_container_width=True, on_click=_tog
+                        )
                         if st.session_state.get(_ver_key, False):
                             st.markdown(_pick_diamante_card(_rp, _pk, rank=_abs_idx, is_fire=_is_fire), unsafe_allow_html=True)
+
 
             # ── DO PARLAY ─────────────────────────────────────────────────────
             _do_parlays = []
@@ -6910,222 +7052,228 @@ elif _active_page == "Picks":
         return "".join(parts)
 
     def _oracle_card(g, sm):
-        """Full oracle card for a game — always shows a pick, no EV+ gate."""
+        """White+yellow card for the Picks tab — same format as Rongol."""
         _r    = _sim_map.get(g.get("id",""))
         _time = _mx_time_p(g)
-        _time_s = f' · <span style="color:#C9A84C">{_time}</span>' if _time else ""
-        _sd_raw = (g.get("status_detail") or "").replace("<","").replace(">","").replace("/","").split("\n")[0].strip()
-        # Si ESPN dice "Scheduled" o vacío, mostrar hora CDMX
-        if not _sd_raw or _sd_raw.lower() in ("scheduled", "cancelado", "postponed"):
-            _hora_cdmx = _mx_time_p(g)
-            _sd = (_hora_cdmx + " CDMX") if _hora_cdmx else _sd_raw
+        _sd_raw = (g.get("status_detail") or "").split("\n")[0].strip()
+        if not _sd_raw or _sd_raw.lower() in ("scheduled","cancelado","postponed"):
+            _hora = _mx_time_p(g)
+            _sd = (_hora + " CDMX") if _hora else ""
         else:
             _sd = _sd_raw
-        _low_c  = _r["sim"].get("low_confidence",False) if _r else False
-        _lc_tag = '<span style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:12px;padding:1px 5px;font-size:0.616rem;margin-left:4px">⚠ sin cuotas</span>' if _low_c else ""
-        _live_tag = ('<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);'
-                     'border-radius:12px;padding:1px 5px;font-size:0.616rem;margin-left:4px;font-weight:700">🔴 VIVO</span>'
-                     if g.get("state") == "in" else "")
-        _has_ev = bool(_r and _r["sim"].get("best_single") and _r["sim"]["best_single"].get("ev",0)>0)
-
-        # Card will be colored after pick is computed — use placeholder until then
-        _html_header = (
-            f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">'
-            f'<div>'
-            f'<div class="game-title">{g["away_team"]} @ {g["home_team"]}</div>'
-            f'<div class="game-meta">{league_label(g["league"])} · {_sd}{_time_s}{_lc_tag}{_live_tag}</div>'
-            f'</div>'
-        )
-        _html = None  # will be assembled after pick color is known
 
         if not _r:
-            _html = (
-                f'<div class="game-row" style="border-left:3px solid {sm["color"]}44;margin:4px 0;">'
-                + _html_header +
-                '<div style="color:#444444;font-size:0.762rem;align-self:center">Sin simular</div></div></div>'
+            return (
+                '<div style="background:#111;border:1px solid #222;border-radius:12px;'
+                'padding:12px;margin:4px 0;color:#444;font-size:0.75rem">'
+                + g["away_team"] + " @ " + g["home_team"] + " · Sin simular</div>"
             )
-            return _html
 
-        sim = _r["sim"]
-        dq  = sim["data_quality"]
-        dqc = "#00C896" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
+        sim  = _r["sim"]
+        dq   = sim.get("data_quality", 0) or 0
+        _sg  = LEAGUES.get(g.get("league",""),{}).get("group","Soccer")
+        _sg_icon = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(_sg,"🎯")
 
-        # ── Pick badge — always one pick, no EV+ required ────────────────────
-        bp  = _oracle_pick(_r)
-        _bpc, _bac, _, _bdl = _pick_clr(bp["market"], bp.get("label",""))
-        _ev = bp.get("ev",0) or 0
-        _ev_str = f"+{_ev:.1f}" if _ev >= 0 else f"{_ev:.1f}" if _ev is not None else "S/L"
-        _ev_c   = "#00C896" if _ev>=10 else ("#fbbf24" if _ev>=0 else "#ef4444")
-        badge = (
-            f'<span style="background:{_bpc}28;color:{_bac};border:1px solid {_bpc}66;'
-            f'border-radius:12px;padding:1px 8px;font-size:0.694rem;font-weight:800;margin-right:5px">{_bdl}</span>'
-            f'<span style="font-weight:700;font-size:0.896rem;color:#FFE87C">{bp["label"]}</span>'
-            f'<span style="color:{_ev_c};font-size:0.762rem;margin-left:6px">EV {_ev_str}</span>'
-            f'<span style="color:#6B7280;font-size:0.694rem;margin-left:4px">· {bp["prob"]:.0f}%</span>'
-        )
+        bp   = _oracle_pick(_r)
+        _mkt = bp.get("market","")
+        _lbl = bp.get("label","")
+        _prob_bp = bp.get("prob",0) or 0
+        _prob_bp = _prob_bp if _prob_bp <= 1 else _prob_bp / 100
+        _ev  = bp.get("ev")
+        _ev_disp = f"{(_ev or 0):+.0f}" if _ev is not None else "S/L"
+        _ev_clr  = "#888" if _ev is None else ("#006600" if (_ev or 0)>0 else "#880000")
+        _kelly_bp = (bp.get("kelly",0) or 0) * 25
 
-        # ── Build outer card with full pick-color background/border ────────
-        _card_bg     = f"background:linear-gradient(135deg,{_bpc}18 0%,#141414 70%,{_bpc}0a 100%)"
-        _card_border = f"border:1px solid {_bpc}55"
-        _card_shadow = f"box-shadow:0 0 16px {_bpc}18"
-        _top_stripe  = (
-            f'<div style="height:2px;border-radius:12px 6px 0 0;margin:-10px -12px 8px -12px;'
-            f'background:linear-gradient(90deg,transparent,{_bac},{_bac}88,transparent)"></div>'
-        )
+        # Decimals
+        _h_pct = sim.get("home_pct",0) or 0
+        _a_pct = sim.get("away_pct",0) or 0
+        _d_pct = sim.get("draw_pct",0) or 0
+        _pick_h = g["home_team"] in _lbl
 
-        # Only show ML odds if at least one side has a value
-        _has_ml = bool(sim.get("home_ml") or sim.get("away_ml"))
-        _ml_line = (f'ML {sim["away_ml"] or "—"}/{sim["home_ml"] or "—"}<br>'
-                    if _has_ml else "")
-        _body = (
-            f'<div style="text-align:right;font-size:0.728rem;color:#6B7280;flex-shrink:0">'
-            f'{_ml_line}'
-            f'<span style="color:{dqc}">DQ {dq:.0f}%</span></div>'
-            f'</div>'
-            f'<div style="margin-top:4px">{badge}</div>'
-        )
+        def _sdec(v, pct=0):
+            try:
+                f=float(v)
+                return "1.02" if f<1.02 else (">15" if f>15 else f"{f:.2f}")
+            except:
+                if pct > 1:
+                    try:
+                        d = 1/(pct/100)*1.045
+                        return "1.02" if d<1.02 else (">15" if d>15 else f"{d:.2f}")
+                    except: return "-"
+                return "-"
 
-        # Win probability bars
-        _bars = f'<div style="margin-top:6px">{bar(sim["away_pct"],"#60a5fa",g["away_team"])}' 
-        if sim["is_soccer"]: _bars += bar(sim["draw_pct"],"#a78bfa","Empate")
-        _bars += bar(sim["home_pct"],"#f97316",g["home_team"]) + "</div>"
+        _h_dec = _sdec(sim.get("model_home_dec",""), _h_pct)
+        _a_dec = _sdec(sim.get("model_away_dec",""), _a_pct)
+        _d_dec = _sdec(sim.get("model_draw_dec",""), _d_pct)
 
-        # Goals / totals footer
-        _footer = ""
-        if sim.get("use_goals") and sim.get("p_btts") is not None and sim.get("is_soccer", False):
-            btc = "#00C896" if (sim.get("btts_ev") or 0)>0 else "#6B7E6E"
-            o2c = "#ff6a00" if (sim.get("o25_ev") or 0)>0 else "#6B7E6E"
-            o3c = "#ff6a00" if (sim.get("o35_ev") or 0)>0 else "#6B7E6E"
-            dq_src = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
-            _footer = (
-                f'<div style="font-size:0.728rem;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">'
-                f'<span style="color:{btc}">⚽ BTTS {sim["p_btts"]}%</span>'
-                f'<span style="color:{o2c}">O2.5 {sim["p_o25"]}%</span>'
-                f'<span style="color:{o3c}">O3.5 {sim.get("p_o35","—")}%</span>'
-                f'<span style="color:#444444;margin-left:auto">{dq_src}</span>'
-                f'</div>'
-            )
-            # Marcadores más frecuentes
-            _sf = sim.get("score_freq", [])
-            if _sf:
-                _sf_html = '<div style="margin-top:5px;padding:5px 7px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid #222">'
-                _sf_html += '<div style="font-size:0.6rem;color:#6B7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">📊 Marcadores más frecuentes</div>'
-                _sf_html += '<div style="display:flex;flex-wrap:wrap;gap:4px">'
-                _away = sim.get("away_team", g.get("away_team","V"))
-                _home = sim.get("home_team", g.get("home_team","L"))
-                for _i, ((h_g, a_g), _cnt) in enumerate(_sf[:6]):
-                    _pct = round(_cnt / (sim.get("n_simulations", 10000)) * 100, 1)
-                    _is_top = _i == 0
-                    if h_g > a_g:
-                        _sc = "#f97316"  # local gana — naranja
-                    elif h_g < a_g:
-                        _sc = "#60a5fa"  # visitante gana — azul
-                    else:
-                        _sc = "#a78bfa"  # empate — morado
-                    _sf_html += (
-                        f'<div style="background:{"rgba(255,255,255,0.07)" if _is_top else "rgba(255,255,255,0.03)"};'
-                        f'border:1px solid {"rgba(255,255,255,0.15)" if _is_top else "#222"};'
-                        f'border-radius:8px;padding:3px 8px;text-align:center;min-width:52px">'
-                        f'<div style="font-size:{"0.82rem" if _is_top else "0.75rem"};font-weight:{"800" if _is_top else "600"};color:{_sc}">'
-                        f'{h_g}–{a_g}</div>'
-                        f'<div style="font-size:0.6rem;color:#6B7280">{_pct}%</div>'
-                        f'</div>'
-                    )
-                _sf_html += '</div></div>'
-                _footer += _sf_html
-        elif sim.get("ou_line") and sim.get("p_o_total") is not None:
-            _po = sim.get("p_o_total") or 0
-            _pu = sim.get("p_u_total") or 0
-            _sg_icon_ou = {"Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(
-                LEAGUES.get(g.get("league",""),{}).get("group",""), "🎯")
-            dq_src_ou = "ML+Récords" if dq>=50 else ("Récords" if dq>=25 else ("Prior" if dq>0 else "Sin datos"))
-            _multi = sim.get("multi_lines", {})
-
-            # ── Multi-line table: show each line with Over% / Under% ──────────
-            # Sort lines ascending. ESPN line shown in bold, others dimmer.
-            _ou_val_f = None
-            try: _ou_val_f = float(sim["ou_line"].lstrip("~"))
-            except: pass
-            _implicit_tag = "~" if (sim["ou_line"] or "").startswith("~") else ""
-
-            _rows_html = ""
-            if _multi and _ou_val_f:
-                _sorted_lines = sorted(_multi.keys())
-                for _l in _sorted_lines:
-                    _d = _multi[_l]
-                    _po_l = _d["over"]; _pu_l = _d["under"]
-                    _is_espn = (abs(_l - _ou_val_f) < 0.01)
-                    # Color: best side orange (Over) or purple (Under)
-                    _over_best = _po_l >= _pu_l
-                    _oc = "#ff6a00" if _po_l >= 52 else ("#C9A84C" if _po_l >= 48 else "#6B7E6E")
-                    _uc = "#a78bfa" if _pu_l >= 52 else ("#C9A84C" if _pu_l >= 48 else "#6B7E6E")
-                    _arrow_lbl = f'Over {_l:.1f}' if _over_best else f'Under {_l:.1f}'
-                    _arrow_clr = "#ff6a00" if _over_best else "#a78bfa"
-                    _arrow_pct = _po_l if _over_best else _pu_l
-                    # ESPN line row: slightly highlighted background
-                    _row_bg = "background:rgba(201,168,76,0.07);border-radius:12px;padding:2px 6px;" if _is_espn else "padding:2px 6px;"
-                    _lbl_style = "font-weight:700;color:#C9A84C;" if _is_espn else "color:#444444;"
-                    _espn_badge = ' <span style="font-size:0.6rem;color:#C9A84C;opacity:0.7">ESPN</span>' if _is_espn else ""
-                    _rows_html += (
-                        f'<div style="display:flex;align-items:center;gap:8px;{_row_bg}">'
-                        f'<span style="{_lbl_style}min-width:42px">{_implicit_tag}{_l:.1f}{_espn_badge}</span>'
-                        f'<span style="color:{_oc};min-width:52px">O {_po_l:.0f}%</span>'
-                        f'<span style="color:#444444">|</span>'
-                        f'<span style="color:{_uc};min-width:52px">U {_pu_l:.0f}%</span>'
-                        f'<span style="color:{_arrow_clr};font-weight:700">→ {_arrow_lbl} ({_arrow_pct:.0f}%)</span>'
-                        f'</div>'
-                    )
+        # Pick decimal
+        if _mkt == "ML":
+            _espn_ml = sim.get("home_ml","") if _pick_h else sim.get("away_ml","")
+            if _espn_ml:
+                try:
+                    _f = float(_espn_ml)
+                    _pick_dec = f"{round(100/abs(_f)+1,2):.2f}" if _f<0 else f"{round(_f/100+1,2):.2f}"
+                except: _pick_dec = _h_dec if _pick_h else _a_dec
             else:
-                # Fallback single line
-                _otc = "#ff6a00" if _po >= 50 else "#6B7E6E"
-                _utc = "#a78bfa" if _pu >= 50 else "#6B7E6E"
-                _best_lbl = f'Over {sim["ou_line"]}' if _po >= _pu else f'Under {sim["ou_line"]}'
-                _best_clr = "#ff6a00" if _po >= _pu else "#a78bfa"
-                _rows_html = (
-                    f'<span style="color:{_otc}">Over {_po}%</span>'
-                    f'<span style="color:#444444"> | </span>'
-                    f'<span style="color:{_utc}">Under {_pu}%</span>'
-                    f'<span style="color:{_best_clr};font-weight:700;margin-left:4px">→ {_best_lbl} ({max(_po,_pu):.0f}%)</span>'
-                )
+                _pick_dec = _h_dec if _pick_h else _a_dec
+        else:
+            _pick_dec = "1.91"  # standard -110
 
-            _footer = (
-                f'<div style="font-size:0.72rem;margin-top:5px">'
-                f'<div style="color:#6B7280;margin-bottom:3px">{_sg_icon_ou} O/U · {dq_src_ou}</div>'
-                + _rows_html +
-                f'</div>'
+        _pick_pct = _h_pct if _pick_h else _a_pct
+
+        # ESPN ML badge
+        _pick_espn_ml = (sim.get("home_ml","") if _pick_h else sim.get("away_ml","")) or ""
+        _ml_badge = ""
+        if _pick_espn_ml and _mkt == "ML":
+            try:
+                _mf = float(_pick_espn_ml)
+                _ml_badge = f'<span style="font-size:0.62rem;color:#C9A84C;font-weight:700;margin-left:6px">ESPN {"+" if _mf>0 else ""}{int(_mf)}</span>'
+            except: pass
+
+        # Logos
+        _ht_id = g.get("home_team_id","")
+        _at_id = g.get("away_team_id","")
+        _logo_a = _logo_img(_at_id, g["league"], 40)
+        _logo_h = _logo_img(_ht_id, g["league"], 40)
+
+        # Live badge
+        _live_tag = ""
+        if g.get("state") == "in":
+            _live_tag = '<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);border-radius:12px;padding:1px 5px;font-size:0.6rem;font-weight:700;margin-left:4px">🔴 VIVO</span>'
+
+        # Odds pills
+        def _opill(lbl, dec, hi=False):
+            lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else ("#FFE066" if hi else "#A0A0A8")
+            bg = "linear-gradient(160deg,#2A2A3A 0%,#1E1E2A 100%)" if hi else "linear-gradient(160deg,#1E1E24 0%,#141418 100%)"
+            return (
+                '<div style="flex:1;background:' + bg + ';border-radius:10px;'
+                'border:1px solid rgba(255,255,255,' + ("0.25" if hi else "0.1") + ');'
+                'padding:8px 4px;text-align:center">'
+                '<span style="font-size:0.6rem;color:' + lc + ';display:block;margin-bottom:2px;font-weight:700">' + str(lbl) + '</span>'
+                '<span style="font-size:1.1rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif;line-height:1">' + str(dec) + '</span>'
+                '</div>'
             )
-            # Marcadores más frecuentes (no-soccer)
-            _sf2 = sim.get("score_freq", [])
-            if _sf2:
-                _sf2_html = '<div style="margin-top:5px;padding:5px 7px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid #222">'
-                _sf2_html += '<div style="font-size:0.6rem;color:#6B7280;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">📊 Marcadores más frecuentes</div>'
-                _sf2_html += '<div style="display:flex;flex-wrap:wrap;gap:4px">'
-                for _i, ((h_g, a_g), _cnt) in enumerate(_sf2[:5]):
-                    _pct2 = round(_cnt / (sim.get("n_simulations", 10000)) * 100, 1)
-                    _is_top2 = _i == 0
-                    _sc2 = "#f97316" if h_g > a_g else ("#60a5fa" if h_g < a_g else "#a78bfa")
-                    _sf2_html += (
-                        f'<div style="background:{"rgba(255,255,255,0.07)" if _is_top2 else "rgba(255,255,255,0.03)"};'
-                        f'border:1px solid {"rgba(255,255,255,0.15)" if _is_top2 else "#222"};'
-                        f'border-radius:8px;padding:3px 8px;text-align:center;min-width:52px">'
-                        f'<div style="font-size:{"0.82rem" if _is_top2 else "0.75rem"};font-weight:{"800" if _is_top2 else "600"};color:{_sc2}">'
-                        f'{h_g}–{a_g}</div>'
-                        f'<div style="font-size:0.6rem;color:#6B7280">{_pct2}%</div>'
-                        f'</div>'
-                    )
-                _sf2_html += '</div></div>'
-                _footer += _sf2_html
 
-        _html = (
-            f'<div style="border-radius:12px;padding:10px 12px;margin:4px 0;'
-            f'{_card_bg};{_card_border};{_card_shadow}">'
-            + _top_stripe
-            + _html_header
-            + _body + _bars + _footer
-            + _build_extra_panels(g, sim, bp)
-            + '</div>'
+        if _sg == "Soccer":
+            _pills_h = _opill("1x",_a_dec) + _opill("x",_d_dec) + _opill("2x",_h_dec)
+        else:
+            _ou_v = sim.get("ou_line","") or ""
+            _p_o  = sim.get("p_o_total",0) or 0
+            _p_u  = sim.get("p_u_total",0) or 0
+            if _ou_v and not str(_ou_v).startswith("~"):
+                try:
+                    _ou_f = float(str(_ou_v).lstrip("~"))
+                    _ou_lbl = ("O" if _p_o >= _p_u else "U") + f"{_ou_f:.1f}"
+                    _is_ou = _mkt == "O/U"
+                    _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(g["home_team"][:6],_h_dec)
+                except:
+                    _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
+            else:
+                _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
+
+        # Spread pill
+        _spr_line_o = g.get("odds",{}).get("spread_line","") or ""
+        _spr_imp_o  = sim.get("spread_implied", True)
+        if _spr_line_o and not _spr_imp_o and _sg != "Soccer":
+            try:
+                _sf = float(_spr_line_o)
+                _sl_lbl = ("H" if _sf<0 else "A") + f"{_sf:+.1f}"
+                _sph = g.get("odds",{}).get("spread_home_ml","-110") or "-110"
+                try:
+                    _smf = float(_sph)
+                    _sd_v = f"{round(100/abs(_smf)+1,2):.2f}" if _smf<0 else f"{round(_smf/100+1,2):.2f}"
+                except: _sd_v = "1.91"
+                _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_sl_lbl,_sd_v,hi=(_mkt=="Spread")) + _opill(g["home_team"][:6],_h_dec)
+            except: pass
+
+        # Win probability bars (compact, for detail)
+        _bar_h = f'<div style="font-size:0.65rem;color:#60a5fa;margin-right:8px">{g["away_team"][:10]}: {_a_pct:.0f}%</div>'
+        if _sg == "Soccer":
+            _bar_h += f'<div style="font-size:0.65rem;color:#a78bfa;margin-right:8px">X: {_d_pct:.0f}%</div>'
+        _bar_h += f'<div style="font-size:0.65rem;color:#f97316">{g["home_team"][:10]}: {_h_pct:.0f}%</div>'
+
+        _lg_lbl = league_label(g["league"])
+        _dqc    = "#00C896" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
+
+        return (
+            '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
+            'border-radius:18px;overflow:hidden;margin-bottom:3px;'
+            'border:1px solid rgba(0,0,0,0.07);'
+            'box-shadow:0 6px 20px rgba(0,0,0,0.20),0 1px 0 rgba(255,255,255,0.85) inset">'
+
+            # Header
+            '<div style="padding:8px 14px 3px;display:flex;justify-content:space-between;align-items:center">'
+            '<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">' + _lg_lbl + '</span>'
+            '<div style="display:flex;align-items:center;gap:4px">'
+            + (f'<span style="font-size:0.58rem;color:{_dqc}">DQ {dq:.0f}%</span>' )
+            + _live_tag +
+            '<span style="font-size:0.58rem;color:#888">' + _sd + '</span>'
+            '</div></div>'
+
+            # Teams + logos
+            '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 14px 4px">'
+            '<div style="text-align:center;flex:1">'
+            + _logo_a +
+            '<div style="font-size:0.58rem;font-weight:800;color:#111;text-transform:uppercase;'
+            'margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:68px">' + g["away_team"][:9] + '</div>'
+            '</div>'
+            '<div style="flex:1;text-align:center">'
+            '<div style="font-size:1.4rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+            '<div style="font-size:0.5rem;color:#CCC;margin-top:2px">' + _sg_icon + '</div>'
+            '</div>'
+            '<div style="text-align:center;flex:1">'
+            + _logo_h +
+            '<div style="font-size:0.58rem;font-weight:800;color:#111;text-transform:uppercase;'
+            'margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:68px">' + g["home_team"][:9] + '</div>'
+            '</div></div>'
+
+            # Divider
+            '<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+
+            # Pills
+            '<div style="display:flex;gap:5px;padding:8px 10px 8px">' + _pills_h + '</div>'
+
+            # Yellow CTA
+            '<div style="margin:0 10px 10px;'
+            'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+            'border-radius:12px;padding:10px 12px;'
+            'border:1px solid rgba(255,255,255,0.35);'
+            'box-shadow:0 4px 14px rgba(255,185,0,0.3)">'
+
+            '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
+            '<span style="font-size:0.5rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
+            '<span style="font-size:0.58rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:2px 7px;border-radius:5px;text-transform:uppercase">' + _mkt + '</span>'
+            '<span style="font-size:0.82rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
+            + _ml_badge +
+            '</div>'
+
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+            '<span style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
+            '<div style="flex:1;display:flex;flex-direction:column;gap:2px">'
+            '<span style="font-size:0.75rem;font-weight:800;color:rgba(0,0,0,0.7)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
+            + (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">EV: <b>${(_ev or 0):+.0f}/100</b></span>' if _ev is not None else '<span style="font-size:0.62rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
+            '</div></div>'
+
+            # Stats
+            '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px;'
+            'padding-top:6px;border-top:1px solid rgba(0,0,0,0.1)">'
+            + "".join(
+                '<div style="text-align:center">'
+                '<div style="font-size:0.45rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">' + lb + '</div>'
+                '<div style="font-size:0.78rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
+                '</div>'
+                for lb, vl, cl in [
+                    ("Prob",   f"{_pick_pct:.0f}%",   "#000"),
+                    ("EV",     _ev_disp,               _ev_clr),
+                    ("DQ",     f"{dq:.0f}%",            "#000"),
+                    ("Kelly",  f"{_kelly_bp:.1f}%",    "#000"),
+                ]
+            ) +
+            '</div>'
+            '</div>'   # end CTA
+            '</div>'   # end card
         )
-        return _html
+
 
     # ── Show all sports expanded directly — no click needed ─────────────────
     _sel_sp_now = st.session_state.get("_picks_sel_sport", None)
