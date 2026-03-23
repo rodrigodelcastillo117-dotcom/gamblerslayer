@@ -6255,17 +6255,12 @@ if _active_page == "Rongol Picks":
                 r["league"] for r in sr_cur
                 if r["league"] in LEAGUES
             })
-            # Inicializar selección en session_state (todas activas por default)
-            if "picks_ligas_sel" not in st.session_state:
-                st.session_state["picks_ligas_sel"] = set(_ligas_disponibles)
-            # Si hay ligas nuevas que no estaban antes, añadirlas
-            for _l in _ligas_disponibles:
-                if _l not in st.session_state["picks_ligas_sel"] and \
-                   _l not in st.session_state.get("picks_ligas_excluidas", set()):
-                    st.session_state["picks_ligas_sel"].add(_l)
+            # Rongol liga filter — always include ALL leagues (reset each load)
+            st.session_state["rongol_ligas_sel"] = set(_ligas_disponibles)
+            st.session_state["rongol_ligas_excl"] = set()
 
-            _ligas_sel = st.session_state["picks_ligas_sel"]
-            _n_activas = len([l for l in _ligas_disponibles if l in _ligas_sel])
+            _ligas_sel = st.session_state["rongol_ligas_sel"]
+            _n_activas = len(_ligas_disponibles)
             _n_total   = len(_ligas_disponibles)
 
             # Botón toggle
@@ -6287,27 +6282,27 @@ if _active_page == "Rongol Picks":
                 _qc1, _qc2, _qc3 = st.columns(3)
                 with _qc1:
                     if st.button("✅ Todas", key="btn_ligas_all", use_container_width=True):
-                        st.session_state["picks_ligas_sel"] = set(_ligas_disponibles)
-                        st.session_state["picks_ligas_excluidas"] = set()
+                        st.session_state["rongol_ligas_sel"] = set(_ligas_disponibles)
+                        st.session_state["rongol_ligas_excl"] = set()
                         st.rerun()
                 with _qc2:
                     if st.button("⚽ Solo Soccer", key="btn_ligas_soccer", use_container_width=True):
-                        st.session_state["picks_ligas_sel"] = {
+                        st.session_state["rongol_ligas_sel"] = {
                             l for l in _ligas_disponibles
                             if LEAGUES.get(l, {}).get("group") == "Soccer"
                         }
-                        st.session_state["picks_ligas_excluidas"] = {
+                        st.session_state["rongol_ligas_excl"] = {
                             l for l in _ligas_disponibles
                             if LEAGUES.get(l, {}).get("group") != "Soccer"
                         }
                         st.rerun()
                 with _qc3:
                     if st.button("🏀 Solo US Sports", key="btn_ligas_us", use_container_width=True):
-                        st.session_state["picks_ligas_sel"] = {
+                        st.session_state["rongol_ligas_sel"] = {
                             l for l in _ligas_disponibles
                             if LEAGUES.get(l, {}).get("group") in ("Basketball","Baseball","Football","Hockey")
                         }
-                        st.session_state["picks_ligas_excluidas"] = {
+                        st.session_state["rongol_ligas_excl"] = {
                             l for l in _ligas_disponibles
                             if LEAGUES.get(l, {}).get("group") == "Soccer"
                         }
@@ -6347,14 +6342,14 @@ if _active_page == "Rongol Picks":
                             _liga_btn_idx += 1
                             _btn_txt = "Quitar" if _activa else "Agregar"
                             if st.button(_btn_txt, key=_btn_key, use_container_width=True):
-                                _excl = st.session_state.get("picks_ligas_excluidas", set())
+                                _excl = st.session_state.get("rongol_ligas_excl", set())
                                 if _activa:
-                                    st.session_state["picks_ligas_sel"].discard(_liga)
+                                    st.session_state["rongol_ligas_sel"].discard(_liga)
                                     _excl.add(_liga)
                                 else:
-                                    st.session_state["picks_ligas_sel"].add(_liga)
+                                    st.session_state["rongol_ligas_sel"].add(_liga)
                                     _excl.discard(_liga)
-                                st.session_state["picks_ligas_excluidas"] = _excl
+                                st.session_state["rongol_ligas_excl"] = _excl
                                 st.rerun()
 
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -7820,14 +7815,14 @@ elif _active_page == "Parlays":
                     _lg_lbl = league_label(_l["league"])
                     _sp_ico = _SG_ICONS.get(_l["sport"],"🎯")
                     if _i > 0:
-                        _legs_html += '<div style="font-size:0.694rem;color:#444444;text-align:center;letter-spacing:3px;margin:4px 0">✕ COMBO ✕</div>'
+                        _legs_html += '<div style="font-size:0.694rem;color:#999;text-align:center;letter-spacing:3px;margin:4px 0">✕ COMBO ✕</div>'
                     _legs_html += (
                         f'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;'
-                        f'border-radius:12px;background:rgba(255,255,255,0.03)">'
+                        f'border-radius:12px;background:rgba(0,0,0,0.04);border:1px solid rgba(0,0,0,0.08)">'
                         f'<span style="background:{_lc}28;color:{_la};border:1px solid {_lc}66;'
                         f'border-radius:12px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_ll}</span>'
                         f'<div style="flex:1;min-width:0">'
-                        f'<div style="font-size:0.986rem;color:#E8E8E8;font-weight:600">{_l["label"]}</div>'
+                        f'<div style="font-size:0.986rem;color:#111;font-weight:700">{_l["label"]}</div>'
                         f'<div style="font-size:0.65rem;color:#6B7280">{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name}</div>'
                         f'</div>'
                         f'<span style="font-size:0.694rem;color:{_la};font-weight:700;flex-shrink:0">{_l["prob"]:.0f}%</span>'
@@ -9551,6 +9546,7 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
 
     # ── Cargar datos ────────────────────────────────────────────────────────────
     def _sv_load():
+        """Load all supervivencia picks from Sheets. Returns {apodo: [entries]}"""
         if not _gsheets_available():
             return {}
         try:
@@ -9561,7 +9557,7 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
                 ws = sh.worksheet(_SV_TAB)
             except Exception:
                 ws = sh.add_worksheet(title=_SV_TAB, rows=500, cols=10)
-                ws.update("A1:E1", [["apodo","semana","equipo","partido","resultado"]])
+                ws.update("A1:G1", [["apodo","semana","tipo_reto","partido","pick_valor","linea_espn","resultado"]])
                 return {}
             rows = ws.get_all_values()
             if len(rows) < 2:
@@ -9571,18 +9567,24 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
                 if not any(row):
                     continue
                 ap = row[0]
+                # Support both old schema (col2=equipo) and new (col2=tipo_reto)
                 entry = {
-                    "semana":    row[1] if len(row) > 1 else "",
-                    "equipo":    row[2] if len(row) > 2 else "",
-                    "partido":   row[3] if len(row) > 3 else "",
-                    "resultado": row[4] if len(row) > 4 else "pendiente",
+                    "semana":     row[1] if len(row) > 1 else "",
+                    "tipo_reto":  row[2] if len(row) > 2 else "ML",
+                    "partido":    row[3] if len(row) > 3 else "",
+                    "pick_valor": row[4] if len(row) > 4 else "",
+                    "linea_espn": row[5] if len(row) > 5 else "",
+                    "resultado":  row[6] if len(row) > 6 else "pendiente",
+                    # backwards compat: equipo = pick_valor for ML picks
+                    "equipo":     row[4] if len(row) > 4 else (row[2] if len(row) > 2 else ""),
                 }
                 data.setdefault(ap, []).append(entry)
             return data
         except Exception:
             return {}
 
-    def _sv_save(ap, semana, equipo, partido):
+    def _sv_save(ap, semana, tipo_reto, partido, pick_valor, linea_espn=""):
+        """Save a supervivencia pick to Sheets."""
         if not _gsheets_available():
             return False
         try:
@@ -9593,146 +9595,433 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
                 ws = sh.worksheet(_SV_TAB)
             except Exception:
                 ws = sh.add_worksheet(title=_SV_TAB, rows=500, cols=10)
-                ws.update("A1:E1", [["apodo","semana","equipo","partido","resultado"]])
-            ws.append_row([ap, semana, equipo, partido, "pendiente"])
+                ws.update("A1:G1", [["apodo","semana","tipo_reto","partido","pick_valor","linea_espn","resultado"]])
+            ws.append_row([ap, semana, tipo_reto, partido, pick_valor, linea_espn, "pendiente"])
             return True
         except Exception:
             return False
 
-    # ── Semana actual ───────────────────────────────────────────────────────────
+    def _sv_update_resultado(ap, semana, resultado):
+        """Update resultado for a specific player+week pick."""
+        if not _gsheets_available():
+            return False
+        try:
+            gc  = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            sh  = gc.open_by_key(sid)
+            ws  = sh.worksheet(_SV_TAB)
+            rows = ws.get_all_values()
+            for i, row in enumerate(rows[1:], 2):
+                if row[0] == ap and len(row) > 1 and row[1] == semana:
+                    ws.update_cell(i, 7, resultado)
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _sv_get_daily_reto(today):
+        """
+        Return today's reto type based on day-of-year rotation.
+        Uses a 14-day cycle of different bet types.
+        Returns dict with: tipo, label, icon, descripcion, espn_stat_key
+        """
+        day_n = today.timetuple().tm_yday  # 1-365
+        # 14-type rotation — varies every day
+        retos_cycle = [
+            # (tipo, label, icon, descripcion, espn_stat_key)
+            ("ML_home",     "ML Local Gana",       "🏠", "El equipo LOCAL gana el partido",                    "moneyLine"),
+            ("ML_away",     "ML Visitante Gana",   "✈️", "El equipo VISITANTE gana el partido",                "moneyLine"),
+            ("over_goles",  "Over Goles",          "⚽", "El partido tiene MÁS goles que la línea ESPN O/U",   "overUnder"),
+            ("under_goles", "Under Goles",         "🔒", "El partido tiene MENOS goles que la línea ESPN O/U", "overUnder"),
+            ("btts",        "Ambos Anotan SÍ",     "🥅", "AMBOS equipos marcan al menos 1 gol (solo soccer)",  "btts"),
+            ("over_pts",    "Over Puntos NBA/NHL",  "🏀", "El partido tiene MÁS puntos/goles que el O/U ESPN",  "overUnder"),
+            ("under_pts",   "Under Puntos NBA/NHL", "🧱", "El partido tiene MENOS puntos que el O/U ESPN",      "overUnder"),
+            ("ML_fav",      "ML Favorito Gana",    "👑", "El FAVORITO de momio gana (menor momio decimal)",    "moneyLine"),
+            ("ML_dog",      "ML Underdog Gana",    "🐕", "El UNDERDOG (mayor momio) gana el partido",          "moneyLine"),
+            ("over_corner", "Over Corners",        "🚩", "El partido tiene más de 9.5 corners (soccer)",       "corners"),
+            ("clean_sheet", "Portería a 0",        "🧤", "Un equipo cierra el partido SIN recibir goles",      "cleanSheet"),
+            ("over_shots",  "Over Tiros a Puerta", "🎯", "Un equipo dispara más de 5.5 veces a puerta",       "shotsOnTarget"),
+            ("draw",        "Empate",              "⚖️", "El partido termina en EMPATE (solo soccer)",         "draw"),
+            ("first_half",  "1er Tiempo Gana",     "⏱️", "Tu equipo va GANANDO al descanso del 1er tiempo",   "halfTime"),
+        ]
+        idx = (day_n - 1) % len(retos_cycle)
+        t, label, icon, desc, stat = retos_cycle[idx]
+        return {
+            "tipo":      t,
+            "label":     label,
+            "icon":      icon,
+            "desc":      desc,
+            "stat_key":  stat,
+            "day_n":     day_n,
+            "cycle_pos": idx + 1,
+            "cycle_len": len(retos_cycle),
+        }
+
+    def _sv_fetch_espn_stat(game_id, sport, league, stat_key):
+        """Fetch a specific stat from ESPN summary for auto-resolve."""
+        try:
+            import requests as _rq
+            url = (f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}"
+                   f"/summary?event={game_id}")
+            r = _rq.get(url, timeout=6, headers={"User-Agent":"Mozilla/5.0"})
+            if r.status_code != 200: return None
+            data = r.json()
+            if stat_key == "overUnder":
+                odds = (data.get("pickcenter") or data.get("odds") or [{}])[0]
+                return float(odds.get("overUnder") or 0) or None
+            if stat_key == "moneyLine":
+                odds = (data.get("pickcenter") or data.get("odds") or [{}])[0]
+                ho = (odds.get("homeTeamOdds") or {})
+                ao = (odds.get("awayTeamOdds") or {})
+                return {
+                    "home_ml": ho.get("moneyLine",""),
+                    "away_ml": ao.get("moneyLine",""),
+                }
+            if stat_key == "corners":
+                # Try to get corners from boxscore
+                bs = data.get("boxscore", {})
+                teams = bs.get("teams", [])
+                total = 0
+                for t in teams:
+                    for s in t.get("statistics", []):
+                        if "corner" in s.get("name","").lower():
+                            total += float(s.get("value",0) or 0)
+                return total if total > 0 else None
+            if stat_key == "shotsOnTarget":
+                bs = data.get("boxscore", {})
+                teams = bs.get("teams", [])
+                shots = []
+                for t in teams:
+                    for s in t.get("statistics", []):
+                        if "shot" in s.get("name","").lower() and "target" in s.get("name","").lower():
+                            shots.append(float(s.get("value",0) or 0))
+                return max(shots) if shots else None
+        except:
+            return None
+        return None
+
+    def _sv_auto_resolve_pick(entry, games_finished):
+        """
+        Try to resolve a pending supervivencia pick.
+        Returns 'ganado', 'perdido', or 'pendiente'.
+        """
+        tipo      = entry.get("tipo_reto", "ML")
+        partido   = entry.get("partido", "")
+        pick_val  = entry.get("pick_valor", "")
+        linea     = entry.get("linea_espn", "")
+
+        # Find matching finished game
+        _g = None
+        for fg in games_finished:
+            h, a = fg.get("home_team",""), fg.get("away_team","")
+            if _team_match(pick_val, h, a) or (
+                pick_val in partido or
+                any(_team_match(t.strip(), h, a) for t in partido.replace(" @ "," vs ").split(" vs ") if t.strip())
+            ):
+                _g = fg
+                break
+        if not _g:
+            return "pendiente"
+
+        hs = _g.get("home_score", 0) or 0
+        as_ = _g.get("away_score", 0) or 0
+        try: hs, as_ = float(hs), float(as_)
+        except: return "pendiente"
+
+        total = hs + as_
+
+        if tipo in ("ML_home", "ML_away", "ML_fav", "ML_dog"):
+            if _team_match(pick_val, _g["home_team"], ""):
+                return "ganado" if hs > as_ else "perdido"
+            else:
+                return "ganado" if as_ > hs else "perdido"
+
+        if tipo == "over_goles":
+            try:
+                linea_f = float(linea)
+                return "ganado" if total > linea_f else "perdido"
+            except: return "pendiente"
+
+        if tipo == "under_goles":
+            try:
+                linea_f = float(linea)
+                return "ganado" if total < linea_f else "perdido"
+            except: return "pendiente"
+
+        if tipo == "btts":
+            return "ganado" if (hs > 0 and as_ > 0) else "perdido"
+
+        if tipo in ("over_pts", "under_pts"):
+            try:
+                linea_f = float(linea)
+                if tipo == "over_pts":
+                    return "ganado" if total > linea_f else "perdido"
+                else:
+                    return "ganado" if total < linea_f else "perdido"
+            except: return "pendiente"
+
+        if tipo == "draw":
+            return "ganado" if hs == as_ else "perdido"
+
+        if tipo == "clean_sheet":
+            return "ganado" if (hs == 0 or as_ == 0) else "perdido"
+
+        if tipo == "first_half":
+            # Can't resolve without halftime score — mark pending
+            return "pendiente"
+
+        return "pendiente"
+
+    # ── Semana y DÍA actual ─────────────────────────────────────────────────────
     from datetime import date as _date_sv
     _today_sv   = _date_sv.today()
     _week_sv    = f"{_today_sv.isocalendar()[0]}-W{_today_sv.isocalendar()[1]:02d}"
+    _day_sv     = _today_sv.strftime("%Y-%m-%d")
 
-    # ── Reglas ─────────────────────────────────────────────────────────────────
-    with st.expander("📖 ¿Cómo se juega?", expanded=False):
-        st.markdown("""
-**Reglas del juego:**
-1. 🎯 Cada semana elige **UN** equipo ganador de cualquier liga
-2. 🚫 No puedes repetir el mismo equipo en toda la temporada
-3. 💀 Si tu equipo **pierde o empata** → eres **ELIMINADO**
-4. 🏆 El último jugador en pie gana el premio del grupo
-5. ✅ Picks se registran por semana ISO (Lun–Dom)
-""")
+    # ── Reto del día ─────────────────────────────────────────────────────────────
+    _reto_hoy = _sv_get_daily_reto(_today_sv)
 
-    # ── Estado del jugador actual ───────────────────────────────────────────────
+    # ── Cargar datos ─────────────────────────────────────────────────────────────
     _sv_data = _sv_load()
     _my_ap    = st.session_state.get("reto_apodo", "")
 
-    _my_history  = _sv_data.get(_my_ap, []) if _my_ap else []
-    _used_teams  = {e["equipo"].lower() for e in _my_history}
-    _this_week_picks = [e for e in _my_history if e["semana"] == _week_sv]
-    _already_picked  = len(_this_week_picks) > 0
-    _eliminated = any(e["resultado"] == "perdido" for e in _my_history)
+    # ── Auto-resolve picks pendientes ────────────────────────────────────────────
+    if _sv_data and _my_ap:
+        try:
+            _fin_sv = _fetch_finished_games()
+            _changed_sv = False
+            for _entry_sv in _sv_data.get(_my_ap, []):
+                if _entry_sv.get("resultado","pendiente") == "pendiente" and _entry_sv.get("semana","") < _week_sv:
+                    _res_sv = _sv_auto_resolve_pick(_entry_sv, _fin_sv)
+                    if _res_sv != "pendiente":
+                        _sv_update_resultado(_my_ap, _entry_sv["semana"], _res_sv)
+                        _changed_sv = True
+            if _changed_sv:
+                _sv_data = _sv_load()
+        except: pass
 
-    # Badge de estado
+    _my_hist  = _sv_data.get(_my_ap, [])
+    _eliminated     = any(e.get("resultado","") == "perdido" for e in _my_hist)
+    _weeks_alive    = len({e["semana"] for e in _my_hist if e.get("resultado","") != "perdido"})
+    _used_teams     = {e.get("pick_valor","").lower() for e in _my_hist if e.get("pick_valor")}
+    _this_week_picks = [e for e in _my_hist if e.get("semana","") == _week_sv]
+    _already_picked  = bool(_this_week_picks)
+
+    # ── Badge de estado ──────────────────────────────────────────────────────────
     if _my_ap:
-        _weeks_alive = len({e["semana"] for e in _my_history})
         if _eliminated:
-            _badge_html = f'<span style="background:#c0392b;color:#fff;padding:3px 12px;border-radius:12px;font-size:0.8rem">💀 ELIMINADO · {_weeks_alive} semana{"s" if _weeks_alive!=1 else ""}</span>'
+            st.markdown(
+                '<span style="background:#ef444422;color:#ef4444;border:1px solid #ef444466;'
+                'border-radius:20px;padding:4px 14px;font-size:0.8rem;font-weight:700">'
+                '💀 ELIMINADO</span>',
+                unsafe_allow_html=True
+            )
         else:
-            _flames = "🔥" * min(_weeks_alive, 5)
-            _badge_html = f'<span style="background:#27ae60;color:#fff;padding:3px 12px;border-radius:12px;font-size:0.8rem">✅ EN PIE {_flames} · {_weeks_alive} semana{"s" if _weeks_alive!=1 else ""} sobrevivida{"s" if _weeks_alive!=1 else ""}</span>'
-        st.markdown(_badge_html, unsafe_allow_html=True)
-        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+            _fire = "🔥" * min(_weeks_alive, 5) if _weeks_alive > 0 else ""
+            st.markdown(
+                f'<span style="background:#00C89622;color:#00C896;border:1px solid #00C89666;'
+                f'border-radius:20px;padding:4px 14px;font-size:0.8rem;font-weight:700">'
+                f'✅ EN PIE · {_weeks_alive} semanas sobrevividas {_fire}</span>',
+                unsafe_allow_html=True
+            )
 
-    # ── Registrar pick de esta semana ───────────────────────────────────────────
+    # ── RETO DEL DÍA — card destacada ───────────────────────────────────────────
+    st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
+    _cycle_bar = round(_reto_hoy["cycle_pos"] / _reto_hoy["cycle_len"] * 100)
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,#1A1A2E 0%,#16213E 100%);'
+        f'border:1px solid rgba(201,168,76,0.4);border-top:2px solid #C9A84C;'
+        f'border-radius:16px;padding:16px;margin-bottom:14px">'
+        f'<div style="font-size:0.58rem;color:#C9A84C;font-weight:800;letter-spacing:3px;'
+        f'text-transform:uppercase;margin-bottom:8px">🎲 RETO DE HOY · {_day_sv}</div>'
+        f'<div style="display:flex;align-items:center;gap:12px">'
+        f'<span style="font-size:2.5rem;line-height:1">{_reto_hoy["icon"]}</span>'
+        f'<div style="flex:1">'
+        f'<div style="font-size:1.2rem;font-weight:900;color:#FFE066;font-family:Barlow Condensed,sans-serif">'
+        f'{_reto_hoy["label"].upper()}</div>'
+        f'<div style="font-size:0.75rem;color:#AEAEB2;margin-top:3px">{_reto_hoy["desc"]}</div>'
+        f'</div>'
+        f'<div style="text-align:right">'
+        f'<div style="font-size:0.55rem;color:#555;text-transform:uppercase">ciclo</div>'
+        f'<div style="font-size:0.78rem;font-weight:700;color:#C9A84C">'
+        f'{_reto_hoy["cycle_pos"]}/{_reto_hoy["cycle_len"]}</div>'
+        f'<div style="width:48px;height:4px;background:#222;border-radius:4px;margin-top:3px">'
+        f'<div style="width:{_cycle_bar}%;height:100%;background:#C9A84C;border-radius:4px"></div>'
+        f'</div></div></div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    # ── Registrar pick de esta semana ────────────────────────────────────────────
     if not _my_ap:
         st.info("🔐 Inicia sesión arriba para participar en Supervivencia Semanal.")
     elif _eliminated:
         st.error("💀 Fuiste eliminado. Mejor suerte la próxima temporada.")
     elif _already_picked:
         _tp = _this_week_picks[0]
-        # Try to auto-resolve this pick if still pending
-        if _tp["resultado"] == "pendiente":
-            try:
-                _fin = _fetch_finished_games()
-                for _fg in _fin:
-                    _t1, _t2 = _tp.get("equipo",""), _tp.get("partido","").replace(" vs "," @ ").split(" @ ")[-1].strip()
-                    if _team_match(_tp.get("equipo",""), _fg["home_team"], _fg["away_team"]):
-                        _winner = _fg["home_team"] if _fg["home_score"] > _fg["away_score"] else _fg["away_score"]
-                        _res_sv = "ganado" if _team_match(_tp["equipo"], _fg["home_team"], _fg["away_team"]) and (
-                            (_fg["home_score"] > _fg["away_score"] and _team_match(_tp["equipo"], _fg["home_team"], "")) or
-                            (_fg["away_score"] > _fg["home_score"] and _team_match(_tp["equipo"], "", _fg["away_team"]))
-                        ) else "perdido"
-                        _sv_save(_my_ap, _week_sv, _tp["equipo"], _tp.get("partido",""), _res_sv)
-                        break
-            except: pass
-        st.success(f"✅ Pick registrado esta semana: **{_tp['equipo']}** vs {_tp['partido']} · Resultado: `{_tp['resultado']}`")
+        _res_color = {"ganado":"#00C896","perdido":"#ef4444","pendiente":"#C9A84C"}.get(_tp.get("resultado","pendiente"),"#C9A84C")
+        _res_icon  = {"ganado":"✅","perdido":"❌","pendiente":"⏳"}.get(_tp.get("resultado","pendiente"),"⏳")
+        st.markdown(
+            f'<div style="background:rgba(0,200,150,0.08);border:1px solid rgba(0,200,150,0.25);'
+            f'border-radius:12px;padding:12px 16px;margin-bottom:8px">'
+            f'<div style="font-size:0.6rem;color:#00C896;font-weight:700;letter-spacing:2px;margin-bottom:6px">TU PICK ESTA SEMANA</div>'
+            f'<div style="font-size:1rem;font-weight:800;color:#E8E8E8">{_reto_hoy["icon"]} {_tp.get("pick_valor","")}</div>'
+            f'<div style="font-size:0.7rem;color:#888;margin-top:2px">{_tp.get("partido","")} · {_tp.get("tipo_reto","")}</div>'
+            f'<div style="font-size:0.78rem;font-weight:700;color:{_res_color};margin-top:6px">{_res_icon} {_tp.get("resultado","pendiente").upper()}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
     else:
-        st.markdown(f"**Semana {_week_sv}** · Elige tu equipo (no puedes repetir equipos usados):")
+        # ── Game selector based on reto type ─────────────────────────────────────
+        _sv_sr  = st.session_state.get("sim_results", [])
+        _tipo   = _reto_hoy["tipo"]
+        _sv_game_opts = {}  # display_label → (pick_valor, partido_str, linea_espn)
 
-        # Build game options from sim_results
-        _sv_sr = st.session_state.get("sim_results", [])
-        _sv_game_opts = {}  # label → (equipo, partido_str)
         for _rv in _sv_sr:
-            _sim_v = _rv.get("sim", {})
-            if _rv.get("state") == "post": continue
-            _home_v = _rv.get("home_team", "")
-            _away_v = _rv.get("away_team", "")
-            _lg_v   = league_label(_rv.get("league", ""))
-            _h_pct  = _sim_v.get("home_pct", 0) or 0
-            _a_pct  = _sim_v.get("away_pct", 0) or 0
+            _sim_v  = _rv.get("sim", {})
+            _g_rv   = next((g for g in games if g.get("id") == _rv.get("id")), None)
+            _state  = (_g_rv["state"] if _g_rv else _rv.get("state","pre"))
+            if _state == "post": continue
+            _home_v = _rv.get("home_team","")
+            _away_v = _rv.get("away_team","")
+            _sg_v   = LEAGUES.get(_rv.get("league",""),{}).get("group","Soccer")
+            _lg_lbl = league_label(_rv.get("league",""))
+            _h_pct  = _sim_v.get("home_pct",0) or 0
+            _a_pct  = _sim_v.get("away_pct",0) or 0
+            _ou     = str(_sim_v.get("ou_line","") or "")
+            _ou_implied = _ou.startswith("~")
+            _ou_real    = _ou.lstrip("~") if _ou else ""
             _partido_str = f"{_away_v} vs {_home_v}"
-            # Add home team option
-            _h_key = f"{_lg_v} · {_away_v} @ {_home_v} → {_home_v} ({_h_pct:.0f}%)"
-            if _home_v.lower() not in _used_teams:
-                _sv_game_opts[_h_key] = (_home_v, _partido_str)
-            # Add away team option
-            _a_key = f"{_lg_v} · {_away_v} @ {_home_v} → {_away_v} ({_a_pct:.0f}%)"
-            if _away_v.lower() not in _used_teams:
-                _sv_game_opts[_a_key] = (_away_v, _partido_str)
+            _h_ml   = _sim_v.get("home_ml","") or ""
+            _a_ml   = _sim_v.get("away_ml","") or ""
+
+            # Filter by reto type
+            if _tipo == "ML_home":
+                if _home_v.lower() not in _used_teams:
+                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  LOCAL {_home_v} ({_h_pct:.0f}%){' ESPN '+_h_ml if _h_ml else ''}"
+                    _sv_game_opts[_lbl] = (_home_v, _partido_str, _h_ml)
+            elif _tipo == "ML_away":
+                if _away_v.lower() not in _used_teams:
+                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  VISIT {_away_v} ({_a_pct:.0f}%){' ESPN '+_a_ml if _a_ml else ''}"
+                    _sv_game_opts[_lbl] = (_away_v, _partido_str, _a_ml)
+            elif _tipo == "ML_fav":
+                # Favorito = menor momio absoluto (más cercano a -∞ americano)
+                try:
+                    _hf = float(_h_ml) if _h_ml else 999
+                    _af = float(_a_ml) if _a_ml else 999
+                    _fav_team = _home_v if abs(_hf) < abs(_af) else _away_v
+                    _fav_ml   = _h_ml if abs(_hf) < abs(_af) else _a_ml
+                    _fav_pct  = _h_pct if abs(_hf) < abs(_af) else _a_pct
+                except: _fav_team, _fav_ml, _fav_pct = _home_v, _h_ml, _h_pct
+                if _fav_team.lower() not in _used_teams:
+                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  FAV {_fav_team} ({_fav_pct:.0f}%){' '+_fav_ml if _fav_ml else ''}"
+                    _sv_game_opts[_lbl] = (_fav_team, _partido_str, _fav_ml)
+            elif _tipo == "ML_dog":
+                try:
+                    _hf = float(_h_ml) if _h_ml else 0
+                    _af = float(_a_ml) if _a_ml else 0
+                    _dog_team = _home_v if abs(_hf) > abs(_af) else _away_v
+                    _dog_ml   = _h_ml if abs(_hf) > abs(_af) else _a_ml
+                    _dog_pct  = _h_pct if abs(_hf) > abs(_af) else _a_pct
+                except: _dog_team, _dog_ml, _dog_pct = _away_v, _a_ml, _a_pct
+                if _dog_team.lower() not in _used_teams:
+                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  DOG {_dog_team} ({_dog_pct:.0f}%){' '+_dog_ml if _dog_ml else ''}"
+                    _sv_game_opts[_lbl] = (_dog_team, _partido_str, _dog_ml)
+            elif _tipo in ("over_goles","under_goles") and _sg_v == "Soccer":
+                if _ou_real:
+                    _dir  = "OVER" if _tipo == "over_goles" else "UNDER"
+                    _p_ou = _sim_v.get("p_o25",0) if _tipo == "over_goles" else 100 - (_sim_v.get("p_o25",0) or 0)
+                    _lbl  = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  {_dir} {_ou_real} goles ({_p_ou:.0f}%)"
+                    _sv_game_opts[_lbl] = (f"{_dir} {_ou_real}", _partido_str, _ou_real)
+            elif _tipo == "btts" and _sg_v == "Soccer":
+                _p_btts = _sim_v.get("p_btts",0) or 0
+                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  BTTS SÍ ({_p_btts:.0f}%)"
+                _sv_game_opts[_lbl] = ("BTTS SÍ", _partido_str, "")
+            elif _tipo in ("over_pts","under_pts") and _sg_v in ("Basketball","Hockey"):
+                if _ou_real and not _ou_implied:
+                    _dir  = "OVER" if _tipo == "over_pts" else "UNDER"
+                    _p_ou = (_sim_v.get("p_o_total",0) or 0) if _tipo == "over_pts" else 100 - (_sim_v.get("p_o_total",0) or 0)
+                    _lbl  = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  {_dir} {_ou_real} ({_p_ou:.0f}%)"
+                    _sv_game_opts[_lbl] = (f"{_dir} {_ou_real}", _partido_str, _ou_real)
+            elif _tipo == "draw" and _sg_v == "Soccer":
+                _p_draw = _sim_v.get("draw_pct",0) or 0
+                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  EMPATE ({_p_draw:.0f}%)"
+                _sv_game_opts[_lbl] = ("Empate", _partido_str, "")
+            elif _tipo == "clean_sheet" and _sg_v == "Soccer":
+                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  Portería a 0"
+                _sv_game_opts[_lbl] = ("Portería a 0", _partido_str, "")
+            elif _tipo in ("over_corner","over_shots","first_half"):
+                # Less common — show all sports
+                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}"
+                if _lbl not in _sv_game_opts:
+                    _sv_game_opts[_lbl] = (_home_v, _partido_str, "")
+
+        # ── Render selector ───────────────────────────────────────────────────────
+        st.markdown(
+            f'<div style="font-size:0.75rem;color:#AEAEB2;margin-bottom:8px">'
+            f'Semana <b>{_week_sv}</b> · Elige tu pick para el reto de hoy <b>{_reto_hoy["icon"]} {_reto_hoy["label"]}</b>:'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
         if not _sv_game_opts:
-            st.warning("⚠ No hay partidos disponibles. Ve a Rongol o Picks y simula primero.")
-            _sv_equipo = st.text_input("🏟 O escribe el equipo manualmente", key="sv_equipo_input",
-                                        placeholder="ej. Lakers, Real Madrid…")
-            _sv_partido = st.text_input("📅 Partido", key="sv_partido_input",
-                                         placeholder="ej. Lakers vs Warriors")
+            st.warning(f"⚠ No hay partidos disponibles para el reto '{_reto_hoy['label']}' de hoy. Simula partidos en ⚡ Rongol o 🎯 Picks primero.")
+            # Fallback manual
+            _cv1, _cv2 = st.columns([2,3])
+            with _cv1:
+                _sv_pick_manual = st.text_input("Pick manual", key="sv_pick_m", placeholder="ej. Lakers, Over 5.5…")
+            with _cv2:
+                _sv_partido_manual = st.text_input("Partido", key="sv_part_m", placeholder="ej. Lakers vs Warriors")
+            if st.button("🏆 Confirmar Pick Manual", key="btn_sv_manual") and _sv_pick_manual:
+                if _sv_save(_my_ap, _week_sv, _reto_hoy["tipo"], _sv_partido_manual, _sv_pick_manual):
+                    st.success(f"✅ Pick guardado: {_sv_pick_manual}")
+                    st.rerun()
         else:
-            _sv_opts_sorted = sorted(_sv_game_opts.keys())
+            _opts_sorted = ["— Elige tu pick —"] + sorted(_sv_game_opts.keys())
             _sv_sel = st.selectbox(
-                "🎯 Selecciona tu pick de supervivencia",
-                ["— Elige un equipo —"] + _sv_opts_sorted,
+                "pick_sv",
+                _opts_sorted,
                 key="sv_game_sel",
                 label_visibility="collapsed"
             )
-            if _sv_sel and _sv_sel != "— Elige un equipo —":
-                _sv_equipo, _sv_partido = _sv_game_opts[_sv_sel]
-                _cc1, _cc2 = st.columns([3, 2])
-                with _cc1:
+
+            if _sv_sel and _sv_sel != "— Elige tu pick —":
+                _pick_v, _partido_v, _linea_v = _sv_game_opts[_sv_sel]
+                _cca, _ccb = st.columns([3,2])
+                with _cca:
                     st.markdown(
-                        f'<div style="background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);'
-                        f'border-radius:10px;padding:10px 14px">'
-                        f'<div style="font-size:0.6rem;color:#C9A84C;font-weight:700;letter-spacing:1.5px;text-transform:uppercase">TU PICK</div>'
-                        f'<div style="font-size:1.1rem;font-weight:800;color:#E8E8E8">{_sv_equipo}</div>'
-                        f'<div style="font-size:0.65rem;color:#888">{_sv_partido}</div>'
-                        f'</div>',
+                        f'<div style="background:linear-gradient(135deg,rgba(201,168,76,0.12),rgba(201,168,76,0.04));'
+                        f'border:1px solid rgba(201,168,76,0.35);border-radius:12px;padding:12px 14px">'
+                        f'<div style="font-size:0.58rem;color:#C9A84C;font-weight:800;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">'
+                        f'{_reto_hoy["icon"]} TU PICK DE SUPERVIVENCIA</div>'
+                        f'<div style="font-size:1.1rem;font-weight:800;color:#FFE066">{_pick_v}</div>'
+                        f'<div style="font-size:0.65rem;color:#888;margin-top:2px">{_partido_v}</div>'
+                        + (f'<div style="font-size:0.62rem;color:#C9A84C;margin-top:3px">Línea ESPN: {_linea_v}</div>' if _linea_v else '')
+                        + f'</div>',
                         unsafe_allow_html=True
                     )
-                with _cc2:
+                with _ccb:
                     if st.button("🏆 Confirmar Pick", key="btn_sv_save", use_container_width=True, type="primary"):
-                        if _sv_save(_my_ap, _week_sv, _sv_equipo, _sv_partido):
-                            st.success(f"✅ Pick guardado: **{_sv_equipo}** · Semana {_week_sv}")
+                        if _sv_save(_my_ap, _week_sv, _reto_hoy["tipo"], _partido_v, _pick_v, _linea_v):
+                            st.success(f"✅ Pick guardado: **{_pick_v}** · Semana {_week_sv}")
                             st.rerun()
                         else:
                             st.error("❌ Error guardando. Verifica conexión a Sheets.")
-            else:
-                _sv_equipo = ""
 
-
-    # ── Equipos ya usados ───────────────────────────────────────────────────────
+    # ── Equipos ya usados ─────────────────────────────────────────────────────────
     if _my_ap and _used_teams:
-        with st.expander(f"🚫 Equipos ya usados ({len(_used_teams)})", expanded=False):
+        with st.expander(f"🚫 Picks ya usados ({len(_used_teams)})", expanded=False):
             _used_sorted = sorted(_used_teams)
             _cols_used = st.columns(4)
             for _ui, _ut in enumerate(_used_sorted):
                 with _cols_used[_ui % 4]:
-                    st.markdown(f'<div style="background:#2a2a2a;border-radius:8px;padding:4px 10px;'
-                                f'margin:2px 0;color:#888;font-size:0.8rem">🚫 {_ut.title()}</div>',
-                                unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;'
+                        f'padding:6px 8px;margin:2px 0;color:#888;font-size:0.8rem">🚫 {_ut.title()}</div>',
+                        unsafe_allow_html=True
+                    )
 
-    # ── Arena de Supervivencia: tabla de todos ──────────────────────────────────
+    # ── Arena de Supervivencia ────────────────────────────────────────────────────
     st.markdown("""
 <div style="margin:24px 0 8px;font-size:0.95rem;font-weight:700;
 color:#f0c040;letter-spacing:1px">⚔️ Arena de Supervivencia</div>
@@ -9741,60 +10030,48 @@ color:#f0c040;letter-spacing:1px">⚔️ Arena de Supervivencia</div>
     if not _sv_data:
         st.info("Nadie ha registrado picks aún. ¡Sé el primero!")
     else:
-        # Compute status for each player
         _arena_rows = []
         for _ap_sv, _hist_sv in sorted(_sv_data.items()):
-            _elim = any(e["resultado"] == "perdido" for e in _hist_sv)
+            _elim  = any(e.get("resultado","") == "perdido" for e in _hist_sv)
             _weeks_sv = len({e["semana"] for e in _hist_sv})
-            _this_wk  = next((e for e in _hist_sv if e["semana"] == _week_sv), None)
+            _this_wk  = next((e for e in _hist_sv if e.get("semana","") == _week_sv), None)
             _arena_rows.append({
-                "apodo":   _ap_sv,
-                "estado":  "💀 Eliminado" if _elim else "✅ En Pie",
-                "semanas": _weeks_sv,
-                "pick_semana": _this_wk["equipo"] if _this_wk else "–",
-                "resultado": _this_wk["resultado"] if _this_wk else "–",
-                "vivo": not _elim,
+                "apodo":    _ap_sv,
+                "estado":   "💀 Eliminado" if _elim else "✅ En Pie",
+                "semanas":  _weeks_sv,
+                "pick_sem": _this_wk.get("pick_valor","—") if _this_wk else "—",
+                "reto_sem": _this_wk.get("tipo_reto","—") if _this_wk else "—",
+                "resultado":_this_wk.get("resultado","—") if _this_wk else "—",
+                "vivo":     not _elim,
             })
-        # Sort: alive first, then by weeks survived desc
-        _arena_rows.sort(key=lambda r: (not r["vivo"], -r["semanas"]))
+        _arena_rows.sort(key=lambda x: (-x["vivo"], -x["semanas"]))
+        _n_vivos = sum(1 for r in _arena_rows if r["vivo"])
+        st.caption(f"{_n_vivos} de {len(_arena_rows)} jugadores en pie esta semana")
 
-        # Table header
-        st.markdown("""
-<div style="display:grid;grid-template-columns:30px 1fr 80px 80px 100px 80px;
-gap:4px;padding:6px 8px;background:#1a1a1a;border-radius:8px 8px 0 0;
-font-size:0.75rem;color:#888;font-weight:600;text-transform:uppercase">
-<div>#</div><div>Jugador</div><div>Estado</div><div>Semanas</div>
-<div>Pick Semana</div><div>Resultado</div>
-</div>""", unsafe_allow_html=True)
-
-        _medals = ["🥇", "🥈", "🥉"]
-        for _ri, _row in enumerate(_arena_rows):
-            _rank_icon = _medals[_ri] if _ri < 3 and _row["vivo"] else f"{_ri+1}"
-            _bg = "#1e2a1e" if _row["vivo"] else "#1e1e1e"
-            _color = "#ccc" if _row["vivo"] else "#666"
-            _res_color = {"ganado": "#27ae60", "perdido": "#c0392b", "pendiente": "#f39c12"}.get(_row["resultado"], "#888")
-            _is_me = _row["apodo"] == _my_ap
-            _border = "border:1px solid #f0c040;" if _is_me else ""
-            st.markdown(f"""
-<div style="display:grid;grid-template-columns:30px 1fr 80px 80px 100px 80px;
-gap:4px;padding:6px 8px;background:{_bg};{_border}border-radius:4px;
-margin:1px 0;font-size:0.82rem;color:{_color}">
-<div style="font-size:0.9rem">{_rank_icon}</div>
-<div style="font-weight:{'700' if _is_me else '400'}">{_row['apodo']}{'  ← tú' if _is_me else ''}</div>
-<div>{_row['estado']}</div>
-<div style="text-align:center">{_row['semanas']}</div>
-<div style="text-align:center">{_row['pick_semana']}</div>
-<div style="color:{_res_color};text-align:center">{_row['resultado']}</div>
-</div>""", unsafe_allow_html=True)
-
-        # Summary counter
-        _vivos_count = sum(1 for r in _arena_rows if r["vivo"])
-        _total_count  = len(_arena_rows)
-        st.markdown(f"""
-<div style="text-align:center;font-size:0.75rem;color:#888;padding:8px;
-background:#111;border-radius:0 0 8px 8px;margin-top:1px">
-{_vivos_count} de {_total_count} jugadores en pie esta semana
-</div>""", unsafe_allow_html=True)
+        for _pos, _row in enumerate(_arena_rows, 1):
+            _is_me = (_row["apodo"] == _my_ap)
+            _pos_icon = ["🥇","🥈","🥉"][_pos-1] if _pos <= 3 and _row["vivo"] else ("💀" if not _row["vivo"] else str(_pos))
+            _border = "2px solid #C9A84C" if _is_me else ("1px solid rgba(0,200,150,0.2)" if _row["vivo"] else "1px solid rgba(239,68,68,0.15)")
+            _bg = "rgba(201,168,76,0.08)" if _is_me else ("rgba(0,200,150,0.04)" if _row["vivo"] else "rgba(239,68,68,0.04)")
+            _res_c = {"ganado":"#00C896","perdido":"#ef4444","pendiente":"#C9A84C","—":"#444"}.get(_row["resultado"],"#444")
+            st.markdown(
+                f'<div style="background:{_bg};border:{_border};border-radius:12px;'
+                f'padding:10px 14px;margin:4px 0;display:grid;grid-template-columns:32px 1fr 60px 80px 60px;gap:8px;align-items:center">'
+                f'<div style="font-size:1.1rem;text-align:center">{_pos_icon}</div>'
+                f'<div>'
+                f'<div style="font-size:0.82rem;font-weight:800;color:{"#C9A84C" if _is_me else "#E8E8E8"}">'
+                f'{_row["apodo"].upper()}{"  ← tú" if _is_me else ""}</div>'
+                f'<div style="font-size:0.58rem;color:#555">{_row["semanas"]} sem. sobrevividas</div>'
+                f'</div>'
+                f'<div style="font-size:0.65rem;color:#AAA;text-align:center">'
+                f'<div style="font-size:0.6rem;color:#555">reto</div>{_row["reto_sem"][:8]}</div>'
+                f'<div style="font-size:0.72rem;font-weight:700;text-align:center;color:#AEAEB2">{_row["pick_sem"][:10]}</div>'
+                f'<div style="font-size:0.72rem;font-weight:700;color:{_res_c};text-align:center">'
+                f'{"✅" if _row["resultado"]=="ganado" else ("❌" if _row["resultado"]=="perdido" else ("⏳" if _row["resultado"]=="pendiente" else "—"))}'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
 
 elif _active_page == "Config":
