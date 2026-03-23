@@ -5851,14 +5851,21 @@ def _save_reto(data, apodo):
     except:
         return False
 
+# Tabs that are NOT user profiles — always excluded from user lists
+_SYSTEM_TABS = {"pick_history", "line_movement", "team_profiles", "Sheet1", "Hoja1",
+                "sheet1", "hoja1", "SHEET1", "HOJA1"}
+
 def _list_reto_users():
-    """List all users from Google Sheets tabs or local files."""
+    """List only real user profile tabs (excludes system tabs)."""
     if _gsheets_available():
         try:
             gc = _get_gsheet_client()
             sid = st.secrets["gsheets"]["spreadsheet_id"]
             sh = gc.open_by_key(sid)
-            return sorted([ws.title for ws in sh.worksheets()])
+            return sorted([
+                ws.title for ws in sh.worksheets()
+                if ws.title not in _SYSTEM_TABS
+            ])
         except:
             pass
     # Fallback: local files
@@ -5886,8 +5893,7 @@ def _load_leaderboard():
     """
     users = _list_reto_users()
     # Filter out non-user tabs
-    _skip_tabs = {"pick_history", "line_movement", "team_profiles", "Sheet1", "Hoja1"}
-    users = [u for u in users if u not in _skip_tabs]
+    users = [u for u in users if u not in _SYSTEM_TABS]
 
     rows = []
     if not _gsheets_available():
@@ -5984,8 +5990,7 @@ def _load_leaderboard_with_resolve():
     Runs in background with 3-min cache so it doesn't hammer the API.
     """
     users = _list_reto_users()
-    _skip = {"pick_history","line_movement","team_profiles","Sheet1","Hoja1"}
-    users = [u for u in users if u not in _skip]
+    users = [u for u in users if u not in _SYSTEM_TABS]
 
     if not _gsheets_available() or not users:
         return
@@ -9258,6 +9263,18 @@ elif _active_page == "Reto 13M":
         )
 
     # ── Narrative feed ────────────────────────────────────────────────────
+    # Calculate streak early (also calculated later in gamification block)
+    _racha_n, _racha_tipo = 0, ""
+    for _pp_early in reversed(picks):
+        _r_e = _pp_early.get("resultado","pendiente")
+        if _r_e == "pendiente": continue
+        if _racha_n == 0:
+            _racha_n, _racha_tipo = 1, _r_e
+        elif _r_e == _racha_tipo:
+            _racha_n += 1
+        else:
+            break
+
     _picks_res_n = [p for p in picks if p.get("resultado") in ("ganado","perdido")]
     if _picks_res_n:
         _msgs = []
