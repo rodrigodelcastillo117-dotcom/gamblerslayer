@@ -1,4 +1,4 @@
-# GAMBLERS_DEN_VERSION=2026_03_22_V9_FIXED
+# GAMBLERS_DEN_VERSION=2026_03_23_V10_FINAL
 """
 THE GAMBLERS DEN
 Monte Carlo Sports Betting Analyzer
@@ -2217,7 +2217,12 @@ def parse_games(data, league_name):
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
     _tomorrow_cdmx  = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
-    _valid_dates = {_today_cdmx, _yesterday_cdmx, _tomorrow_cdmx}
+    _valid_dates = {_today_cdmx, _yesterday_cdmx, _tomorrow_cdmx,
+                    (_now_mx - _td(days=2)).strftime("%Y-%m-%d"),
+                    (_now_mx - _td(days=3)).strftime("%Y-%m-%d"),
+                    (_now_mx - _td(days=4)).strftime("%Y-%m-%d"),
+                    (_now_mx + _td(days=2)).strftime("%Y-%m-%d"),
+                    }
 
     for event in data.get("events", []):
         try:
@@ -6107,15 +6112,53 @@ def _evaluate_pick(pick, game):
 
 @st.cache_data(ttl=300)
 def _fetch_finished_games():
-    """Fetch recently finished games across all leagues for auto-resolve."""
+    """Fetch recently finished games across all leagues for auto-resolve.
+    Fetches today AND yesterday to catch games from the last 48h.
+    """
+    from datetime import timedelta as _tdff
     finished = []
+    seen_ids = set()
+
+    _now_utc = datetime.now(timezone.utc)
+    _yesterday_utc = (_now_utc - _tdff(days=1)).strftime("%Y%m%d")
+    _today_utc     = _now_utc.strftime("%Y%m%d")
+    _2days_utc     = (_now_utc - _tdff(days=2)).strftime("%Y%m%d")
+
     for league_name, cfg in LEAGUES.items():
+        sport  = cfg["sport"]
+        league = cfg["league"]
+        tid    = cfg.get("tournament_id")
+        # Fetch today, yesterday, and 2 days ago
+        for date_str in [_today_utc, _yesterday_utc, _2days_utc]:
+            try:
+                base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+                url  = f"{base}?dates={date_str}&limit=100"
+                r = __import__("requests").get(url, timeout=6,
+                    headers={"User-Agent": "Mozilla/5.0"})
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                for g in parse_games(data, league_name):
+                    gid = g.get("id","")
+                    if gid and gid in seen_ids:
+                        continue
+                    if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
+                        finished.append(g)
+                        if gid:
+                            seen_ids.add(gid)
+            except:
+                pass
+        # Also try the regular scoreboard (catches live→post transitions)
         try:
-            data = fetch_scoreboard(cfg["sport"], cfg["league"],
-                                    tournament_id=cfg.get("tournament_id"))
+            data = fetch_scoreboard(sport, league, tournament_id=tid)
             for g in parse_games(data, league_name):
+                gid = g.get("id","")
+                if gid and gid in seen_ids:
+                    continue
                 if g.get("state") == "post" and g.get("home_score") and g.get("away_score"):
                     finished.append(g)
+                    if gid:
+                        seen_ids.add(gid)
         except:
             pass
     return finished
@@ -9274,6 +9317,111 @@ elif _active_page == "Reto 13M":
     progreso_pct = min((bank_actual / meta) * 100, 100)
     multiplicador = bank_actual / bank_inicial if bank_inicial > 0 else 1
 
+    # ══════════════════════════════════════════════════════════════════════
+    # GAMIFICACIÓN — Niveles, rangos, racha, badges
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ── Nivel y rango según bank actual ──────────────────────────────────
+    _RANGOS = [
+        (2_000_000_000, "🏆", "Inmortal",          "#FFD700"),
+        (13_000_000,    "👑", "El 13 Millones",     "#FFD700"),
+        (5_000_000,     "💎", "Magnate",             "#00BFFF"),
+        (1_000_000,     "🚀", "Millonario",          "#00BFFF"),
+        (500_000,       "🔥", "Leyenda de Las Vegas","#FF4500"),
+        (100_000,       "⚡", "Alto Voltaje",        "#FF8C00"),
+        (70_000,        "🎰", "Jugador Profesional", "#FF8C00"),
+        (40_000,        "🦈", "Tiburón en Potencia", "#3D8EFF"),
+        (20_000,        "💪", "Apostador Serio",     "#3D8EFF"),
+        (10_000,        "📈", "En Racha",            "#3D8EFF"),
+        (5_000,         "🟢", "Novato de Barrio",    "#00C896"),
+        (0,             "🌱", "Semilla",             "#888"),
+    ]
+    _rango_actual = next((r for r in _RANGOS if bank_actual >= r[0]), _RANGOS[-1])
+    _rango_next   = None
+    for _r in reversed(_RANGOS):
+        if _r[0] > bank_actual:
+            _rango_next = _r
+            break
+
+    # ── Racha activa ──────────────────────────────────────────────────────
+    _racha_n, _racha_tipo = 0, ""
+    for _pp in reversed(picks):
+        _r = _pp.get("resultado","pendiente")
+        if _r == "pendiente": continue
+        if _racha_n == 0:
+            _racha_n, _racha_tipo = 1, _r
+        elif _r == _racha_tipo:
+            _racha_n += 1
+        else:
+            break
+
+    # ── Badges ganados ────────────────────────────────────────────────────
+    _picks_res = [p for p in picks if p.get("resultado") in ("ganado","perdido")]
+    _picks_gan = [p for p in picks if p.get("resultado") == "ganado"]
+
+    _badges_earned = []
+    # Multiplicador badges
+    for _mult, _ico, _lbl in [(2,"🥈","2×"),(5,"🥇","5×"),(10,"💎","10×"),(50,"🚀","50×"),(100,"👑","100×")]:
+        if multiplicador >= _mult:
+            _badges_earned.append((_ico, _lbl))
+
+    # Deporte badges
+    _over_picks  = [p for p in _picks_gan if "over" in (p.get("pick","") or "").lower() or "over" in (p.get("pick_label","") or "").lower()]
+    _btts_picks  = [p for p in _picks_gan if (p.get("mercado","") or "").upper() in ("BTTS","AA")]
+    _high_odds   = [p for p in _picks_gan if float(p.get("momio",0) or 0) >= 2.5]
+    _ml_picks    = [p for p in _picks_gan if (p.get("mercado","") or "").upper() == "ML"]
+    _soccer_gan  = [p for p in _picks_gan if (p.get("deporte","") or "").lower() in ("soccer","fútbol")]
+
+    if len(_over_picks) >= 5:  _badges_earned.append(("⚽", "Rey del Over"))
+    if len(_btts_picks) >= 5:  _badges_earned.append(("🎯", "Cazador BTTS"))
+    if len(_high_odds)  >= 3:  _badges_earned.append(("🎲", "Cazador de Momios Altos"))
+    if len(_ml_picks)   >= 10: _badges_earned.append(("🏆", "ML Master"))
+    if len(_soccer_gan) >= 5:  _badges_earned.append(("⚽", "Depredador del Fútbol"))
+    if _racha_n >= 3 and _racha_tipo == "ganado": _badges_earned.append(("🔥", f"En Llamas {_racha_n}×"))
+    if len(_picks_res) >= 20 and (len(_picks_gan)/len(_picks_res)) >= 0.70: _badges_earned.append(("🧠", "Estratega"))
+
+    # ── Render: Rango + Racha en banner compacto ──────────────────────────
+    _racha_html = ""
+    if _racha_n >= 2:
+        if _racha_tipo == "ganado":
+            _racha_emoji = "🔥" * min(_racha_n, 5)
+            _racha_color = "#FF5500"
+            _racha_bg    = "rgba(255,85,0,0.12)"
+            _racha_border= "rgba(255,85,0,0.35)"
+            _racha_txt   = f"<b>¡RACHA GANADORA!</b> {_racha_n} seguidos {_racha_emoji}"
+        else:
+            _racha_emoji = "🧊❄️"
+            _racha_color = "#60a5fa"
+            _racha_bg    = "rgba(96,165,250,0.08)"
+            _racha_border= "rgba(96,165,250,0.25)"
+            _racha_txt   = f"{_racha_emoji} {_racha_n} perdidas seguidas — respira, analiza, vuelve"
+        _racha_html = (
+            f'<div style="background:{_racha_bg};border:1px solid {_racha_border};'
+            f'border-radius:12px;padding:10px 16px;margin:8px 0;text-align:center;'
+            f'font-size:0.88rem;color:{_racha_color}">{_racha_txt}</div>'
+        )
+
+    _next_rango_html = ""
+    if _rango_next:
+        _falta_rango = _rango_next[0] - bank_actual
+        _next_rango_html = f'<span style="font-size:0.62rem;color:#666;margin-left:8px">→ ${_falta_rango:,.0f} para {_rango_next[1]} {_rango_next[2]}</span>'
+
+    st.markdown(
+        f'<div style="background:linear-gradient(160deg,rgba(201,168,76,0.08) 0%,rgba(0,0,0,0) 100%);'
+        f'border:1px solid rgba(201,168,76,0.2);border-radius:16px;'
+        f'padding:14px 18px;margin:12px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+        f'<span style="font-size:2rem">{_rango_actual[1]}</span>'
+        f'<div style="flex:1">'
+        f'<div style="font-size:0.95rem;font-weight:800;color:{_rango_actual[3]}">{_rango_actual[2]}</div>'
+        f'<div style="font-size:0.65rem;color:#666;margin-top:2px">{multiplicador:.2f}× · ${bank_actual:,.0f}{_next_rango_html}</div>'
+        f'</div>'
+        + ("".join(f'<span title="{b[1]}" style="font-size:1.3rem">{b[0]}</span>' for b in _badges_earned[-5:]))
+        + f'</div>',
+        unsafe_allow_html=True
+    )
+    if _racha_html:
+        st.markdown(_racha_html, unsafe_allow_html=True)
+
     # ── KPIs ──────────────────────────────────────────────────────────────────
     n_gan = sum(1 for p in picks if p.get("resultado")=="ganado")
     n_per = sum(1 for p in picks if p.get("resultado")=="perdido")
@@ -9628,6 +9776,187 @@ elif _active_page == "Reto 13M":
 
         st.markdown('<div class="den-divider" style="margin:18px 0"></div>', unsafe_allow_html=True)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # SIMULADOR DE DESTINO
+    # ══════════════════════════════════════════════════════════════════════
+    with st.expander("🔮 Simulador de Destino — ¿Qué pasa si gano los próximos N picks?", expanded=False):
+        _sim_col1, _sim_col2 = st.columns([2,1])
+        with _sim_col1:
+            _n_futuros = st.slider("Número de picks futuros a simular", 1, 20, 5, key="sim_futuros_n")
+        with _sim_col2:
+            # Average odds from past wins
+            _avg_momio_hist = 0.0
+            _gan_momios = [float(p.get("momio",0) or 0) for p in picks if p.get("resultado")=="ganado" and float(p.get("momio",0) or 0) > 1]
+            if _gan_momios:
+                _avg_momio_hist = sum(_gan_momios) / len(_gan_momios)
+            _momio_sim = st.number_input("Cuota promedio", min_value=1.01, max_value=10.0,
+                                          value=round(_avg_momio_hist, 2) if _avg_momio_hist > 1 else 1.90,
+                                          step=0.05, key="sim_momio")
+
+        # Calculate stake % (Kelly-style: default 3% of bank)
+        _kelly_pct_sim = st.slider("% del bank por pick (Kelly)", 1, 15, 3, key="sim_kelly") / 100
+
+        # Project future bank values
+        _sim_banks = [bank_actual]
+        _bank_run = bank_actual
+        for _i in range(_n_futuros):
+            _stake = _bank_run * _kelly_pct_sim
+            _ganancia = _stake * (_momio_sim - 1)
+            _bank_run = _bank_run + _ganancia
+            _sim_banks.append(round(_bank_run, 2))
+
+        _proj_final = _sim_banks[-1]
+        _proj_mult  = _proj_final / bank_inicial if bank_inicial > 0 else 1
+        _proj_rango = next((r for r in _RANGOS if _proj_final >= r[0]), _RANGOS[-1])
+
+        # Visual projection display
+        _proj_html = (
+            f'<div style="background:linear-gradient(160deg,rgba(0,212,126,0.08) 0%,rgba(0,0,0,0) 100%);'
+            f'border:1px solid rgba(0,212,126,0.25);border-radius:14px;padding:16px;margin:8px 0;text-align:center">'
+            f'<div style="font-size:0.62rem;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">Si ganas los próximos {_n_futuros} picks</div>'
+            f'<div style="font-size:2.8rem;font-weight:900;color:#00D47E;font-family:Barlow Condensed,sans-serif;line-height:1">${_proj_final:,.0f}</div>'
+            f'<div style="font-size:0.82rem;color:#888;margin-top:6px">{_proj_mult:.1f}× del bank inicial · {_proj_rango[1]} {_proj_rango[2]}</div>'
+            f'<div style="font-size:0.68rem;color:#555;margin-top:4px">apostando {_kelly_pct_sim*100:.0f}% del bank a cuota {_momio_sim:.2f}</div>'
+            f'</div>'
+        )
+        st.markdown(_proj_html, unsafe_allow_html=True)
+
+        # Mini projection chart
+        if len(_sim_banks) > 1:
+            import json as _j2
+            _pts = list(range(len(_sim_banks)))
+            _chart_js = f"""
+            <div id="simchart" style="height:120px;margin-top:8px"></div>
+            <script>
+            (function(){{
+              const banks = {_j2.dumps(_sim_banks)};
+              const canvas = document.createElement('canvas');
+              canvas.style.width='100%'; canvas.style.height='120px';
+              document.getElementById('simchart').appendChild(canvas);
+              const ctx = canvas.getContext('2d');
+              canvas.width = canvas.offsetWidth || 400;
+              canvas.height = 120;
+              const w = canvas.width, h = canvas.height;
+              const min_ = Math.min(...banks), max_ = Math.max(...banks);
+              const pad = 20;
+              ctx.strokeStyle = '#00D47E'; ctx.lineWidth = 2.5;
+              ctx.shadowColor = '#00D47E'; ctx.shadowBlur = 8;
+              ctx.beginPath();
+              banks.forEach((v,i) => {{
+                const x = pad + (i/(banks.length-1))*(w-2*pad);
+                const y = h - pad - ((v-min_)/(max_-min_||1))*(h-2*pad);
+                i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+              }});
+              ctx.stroke();
+              // Fill
+              ctx.shadowBlur = 0;
+              banks.forEach((v,i) => {{
+                const x = pad + (i/(banks.length-1))*(w-2*pad);
+                const y = h - pad - ((v-min_)/(max_-min_||1))*(h-2*pad);
+                ctx.fillStyle = '#00D47E';
+                ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill();
+              }});
+            }})();
+            </script>
+            """
+            st.markdown(_chart_js, unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # MODO SANDBOX (Picks de Chocolate)
+    # ══════════════════════════════════════════════════════════════════════
+    if "sandbox_picks" not in st.session_state:
+        st.session_state["sandbox_picks"] = []
+
+    _sandbox_open = st.session_state.get("_sandbox_open", False)
+    def _toggle_sandbox(): st.session_state["_sandbox_open"] = not st.session_state.get("_sandbox_open", False)
+    st.button(
+        "▼ Cerrar Sandbox" if _sandbox_open else "🍫 Modo Sandbox — Practica sin dinero real",
+        key="btn_sandbox_toggle", use_container_width=True, on_click=_toggle_sandbox
+    )
+    _sandbox_open = st.session_state.get("_sandbox_open", False)
+
+    if _sandbox_open:
+        st.markdown(
+            '<div style="background:rgba(155,109,255,0.06);border:1px solid rgba(155,109,255,0.2);'
+            'border-radius:14px;padding:14px 16px;margin:6px 0">'
+            '<div style="font-size:0.72rem;font-weight:800;color:#9B6DFF;letter-spacing:1.5px;'
+            'text-transform:uppercase;margin-bottom:8px">🍫 PICKS DE CHOCOLATE — Sin dinero real</div>'
+            '<div style="font-size:0.78rem;color:#888">Prueba tu estrategia aquí antes de arriesgar el bank real. '
+            'Los picks de sandbox no afectan tu bankroll.</div>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        _sb_c1, _sb_c2, _sb_c3 = st.columns(3)
+        with _sb_c1:
+            _sb_partido = st.text_input("Partido", placeholder="Real Madrid vs Barcelona", key="sb_partido")
+        with _sb_c2:
+            _sb_pick    = st.text_input("Pick", placeholder="Real Madrid ML", key="sb_pick")
+        with _sb_c3:
+            _sb_momio   = st.number_input("Cuota", min_value=1.01, max_value=50.0, value=1.90, step=0.05, key="sb_momio")
+
+        _sb_c4, _sb_c5 = st.columns(2)
+        with _sb_c4:
+            _sb_monto = st.number_input("Monto simulado $", min_value=100, max_value=100000, value=1000, step=100, key="sb_monto")
+        with _sb_c5:
+            _sb_resultado = st.selectbox("Resultado", ["pendiente","ganado","perdido"], key="sb_resultado")
+
+        def _add_sandbox():
+            if st.session_state.get("sb_partido","").strip():
+                st.session_state["sandbox_picks"].append({
+                    "partido": st.session_state.get("sb_partido",""),
+                    "pick": st.session_state.get("sb_pick",""),
+                    "momio": st.session_state.get("sb_momio", 1.90),
+                    "monto": st.session_state.get("sb_monto", 1000),
+                    "resultado": st.session_state.get("sb_resultado","pendiente"),
+                })
+        st.button("➕ Agregar al Sandbox", key="btn_add_sandbox", use_container_width=True, on_click=_add_sandbox)
+
+        # Show sandbox stats
+        _sb_picks = st.session_state.get("sandbox_picks",[])
+        if _sb_picks:
+            _sb_gan = sum(1 for p in _sb_picks if p.get("resultado")=="ganado")
+            _sb_per = sum(1 for p in _sb_picks if p.get("resultado")=="perdido")
+            _sb_wr  = _sb_gan/(_sb_gan+_sb_per)*100 if (_sb_gan+_sb_per)>0 else 0
+            _sb_profit = sum(
+                float(p.get("monto",0))*(float(p.get("momio",1.9))-1) if p.get("resultado")=="ganado"
+                else -float(p.get("monto",0)) if p.get("resultado")=="perdido" else 0
+                for p in _sb_picks
+            )
+            _sb_sport_stats = {}
+            for _p in _sb_picks:
+                _sport_key = (_p.get("pick","") or "Otro")[:15]
+                if _sport_key not in _sb_sport_stats:
+                    _sb_sport_stats[_sport_key] = {"g":0,"p":0}
+                if _p.get("resultado")=="ganado": _sb_sport_stats[_sport_key]["g"]+=1
+                elif _p.get("resultado")=="perdido": _sb_sport_stats[_sport_key]["p"]+=1
+
+            st.markdown(
+                f'<div style="background:#0F0F12;border-radius:12px;padding:12px 16px;margin:8px 0;'
+                f'display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">'
+                f'<div><div style="font-size:1.1rem;font-weight:800;color:#9B6DFF">{len(_sb_picks)}</div>'
+                f'<div style="font-size:0.58rem;color:#555;text-transform:uppercase">Picks</div></div>'
+                f'<div><div style="font-size:1.1rem;font-weight:800;color:#00D47E">{_sb_wr:.0f}%</div>'
+                f'<div style="font-size:0.58rem;color:#555;text-transform:uppercase">Win Rate</div></div>'
+                f'<div><div style="font-size:1.1rem;font-weight:800;color:{"#00D47E" if _sb_profit>=0 else "#ef4444"}">'
+                f'{"+" if _sb_profit>=0 else ""}${_sb_profit:,.0f}</div>'
+                f'<div style="font-size:0.58rem;color:#555;text-transform:uppercase">Profit</div></div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+            # Best sport in sandbox
+            _sb_best = max(_sb_sport_stats.items(), key=lambda x: x[1]["g"]/(x[1]["g"]+x[1]["p"]) if (x[1]["g"]+x[1]["p"])>0 else 0, default=None)
+            if _sb_best and (_sb_best[1]["g"]+_sb_best[1]["p"]) >= 2:
+                _sb_best_wr = _sb_best[1]["g"]/(_sb_best[1]["g"]+_sb_best[1]["p"])*100
+                st.markdown(
+                    f'<div style="font-size:0.75rem;color:#9B6DFF;margin-top:6px;text-align:center">'
+                    f'🧠 Tu mejor pick en sandbox: <b>{_sb_best[0]}</b> ({_sb_best_wr:.0f}% WR)</div>',
+                    unsafe_allow_html=True
+                )
+
+            def _clear_sandbox(): st.session_state["sandbox_picks"] = []
+            st.button("🗑️ Limpiar Sandbox", key="btn_clear_sandbox", use_container_width=True, on_click=_clear_sandbox)
+
     # ── Formulario: agregar pick ──────────────────────────────────────────────
     # Gold labels for all form elements in this tab
     st.markdown("""
@@ -9730,6 +10059,71 @@ elif _active_page == "Reto 13M":
                     reto["picks"] = picks
                     if _save_reto(reto, apodo_activo):
                         st.toast(f"✅ Pick #{nuevo['num']} registrado", icon="💰")
+                        # 🎉 Confetti / Wasted effects
+                        if reto_resultado == "ganado":
+                            import streamlit.components.v1 as _fx
+                            _fx.html("""<script>
+(function confetti(){
+  const colors=['#00D47E','#FFD700','#FF5500','#00BFFF','#FF69B4'];
+  for(let i=0;i<80;i++){
+    const el=document.createElement('div');
+    el.style.cssText=`position:fixed;top:-10px;left:${Math.random()*100}vw;
+      width:${6+Math.random()*8}px;height:${6+Math.random()*8}px;
+      background:${colors[Math.floor(Math.random()*colors.length)]};
+      border-radius:${Math.random()>0.5?'50%':'2px'};
+      z-index:999999;pointer-events:none;opacity:1;
+      animation:fall${i} ${1+Math.random()*2}s ease-in forwards`;
+    const keyframes=`@keyframes fall${i}{to{top:110vh;transform:rotate(${Math.random()*720}deg);opacity:0}}`;
+    const style=document.createElement('style');
+    style.textContent=keyframes;
+    document.head.appendChild(style);
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(),3000);
+  }
+  // Coin sound via Web Audio API
+  try{
+    const ac=new AudioContext();
+    const o=ac.createOscillator(); const g=ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.setValueAtTime(880,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1760,ac.currentTime+0.1);
+    g.gain.setValueAtTime(0.3,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.3);
+    o.start(); o.stop(ac.currentTime+0.3);
+  }catch(e){}
+})();
+</script>""", height=0)
+                        elif reto_resultado == "perdido":
+                            import streamlit.components.v1 as _fx2
+                            _fx2.html("""<script>
+(function wasted(){
+  const el=document.createElement('div');
+  el.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;'+
+    'background:rgba(180,0,0,0.15);z-index:999998;pointer-events:none;'+
+    'display:flex;align-items:center;justify-content:center;'+
+    'animation:fadeWasted 2s forwards';
+  el.innerHTML='<div style="font-family:Impact,sans-serif;font-size:8vw;'+
+    'color:#CC0000;text-shadow:3px 3px 0 #000,-3px -3px 0 #000;'+
+    'letter-spacing:8px;animation:scaleWasted 0.5s ease-out">PERDIDO</div>';
+  const style=document.createElement('style');
+  style.textContent='@keyframes fadeWasted{0%{opacity:1}70%{opacity:1}100%{opacity:0}}'+
+    '@keyframes scaleWasted{from{transform:scale(2)}to{transform:scale(1)}}';
+  document.head.appendChild(style);
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),2500);
+  // Sad trombone sound
+  try{
+    const ac=new AudioContext();
+    [[494,0],[440,0.2],[392,0.4],[349,0.6]].forEach(([freq,t])=>{
+      const o=ac.createOscillator(); const g=ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.frequency.value=freq; g.gain.setValueAtTime(0.2,ac.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+t+0.35);
+      o.start(ac.currentTime+t); o.stop(ac.currentTime+t+0.4);
+    });
+  }catch(e){}
+})();
+</script>""", height=0)
                         st.rerun()
                     else:
                         st.error("Error guardando. Verifica permisos de escritura.")
@@ -9758,8 +10152,45 @@ elif _active_page == "Reto 13M":
     if picks:
         st.markdown('<div class="section-heading">📋 Historial de Picks</div>', unsafe_allow_html=True)
 
+        # ── Filtros rápidos ────────────────────────────────────────────────
+        _filt_c1, _filt_c2, _filt_c3, _filt_c4 = st.columns(4)
+        with _filt_c1:
+            def _set_filt_hoy():
+                st.session_state["reto_filtro"] = "hoy"
+            def _set_filt_gan():
+                st.session_state["reto_filtro"] = "ganados"
+            def _set_filt_all():
+                st.session_state["reto_filtro"] = "todos"
+            st.button("📅 Hoy",     key="filt_hoy",  use_container_width=True, on_click=_set_filt_hoy)
+        with _filt_c2:
+            st.button("✅ Ganados",  key="filt_gan",  use_container_width=True, on_click=_set_filt_gan)
+        with _filt_c3:
+            def _set_filt_hi():
+                st.session_state["reto_filtro"] = "momio_alto"
+            st.button("💰 Momio >2", key="filt_hi",   use_container_width=True, on_click=_set_filt_hi)
+        with _filt_c4:
+            st.button("🔄 Todos",    key="filt_all",  use_container_width=True, on_click=_set_filt_all)
+
+        # Apply filter
+        _filtro = st.session_state.get("reto_filtro", "todos")
+        from datetime import date as _date_reto
+        _today_str = _date_reto.today().isoformat()
+        if _filtro == "hoy":
+            _picks_show = [p for p in picks if (p.get("fecha","") or "")[:10] == _today_str]
+        elif _filtro == "ganados":
+            _picks_show = [p for p in picks if p.get("resultado") == "ganado"]
+        elif _filtro == "momio_alto":
+            _picks_show = [p for p in picks if float(p.get("momio",0) or 0) >= 2.0]
+        else:
+            _picks_show = picks
+
+        # Filter label
+        _filt_label = {"hoy":"📅 Hoy","ganados":"✅ Solo ganados","momio_alto":"💰 Momio ≥2.0","todos":"🔄 Todos"}.get(_filtro,"Todos")
+        if _filtro != "todos":
+            st.caption(f"Filtro activo: **{_filt_label}** — {len(_picks_show)} picks")
+
         running_bank = bank_inicial
-        for p in reversed(picks):
+        for p in reversed(_picks_show):
             num = p.get("num","?")
             res = p.get("resultado","pendiente")
             stake = float(p.get("monto",0))
