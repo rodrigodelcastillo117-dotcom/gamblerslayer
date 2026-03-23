@@ -5755,7 +5755,7 @@ st.markdown(f"""<div class="stat-grid">
   <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
   <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
   <div class="stat-tile"><div class="stat-num" style="color:#00C896">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"](["ev"] or 0)>0])}</div><div class="stat-label">Parlays EV+</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and (r["sim"]["best_parlay"].get("ev") or 0)>0])}</div><div class="stat-label">Parlays EV+</div></div>
 </div>""", unsafe_allow_html=True)
 
 st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
@@ -8482,13 +8482,13 @@ elif _active_page == "Parlays":
                 new_sr = run_all_simulations(pending_games, n=n_sims)
             st.session_state["sim_results"] = new_sr
             st.session_state["_parlay_regen_done"] = True
-            n_new_parlays = len([r for r in new_sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"](["ev"] or 0)>0])
+            n_new_parlays = len([r for r in new_sr if r["sim"].get("best_parlay") and (r["sim"]["best_parlay"].get("ev") or 0)>0])
             st.toast(f"✓ Parlay actualizado · {n_new_parlays} combinadas EV+", icon="🎰")
             st.rerun()
 
         # ── Mostrar parlays (siempre el más reciente en session_state) ────────────
         sr_current = st.session_state.get("sim_results", [])
-        parlays = [r for r in sr_current if r["sim"].get("best_parlay") and r["sim"]["best_parlay"](["ev"] or 0)>0]
+        parlays = [r for r in sr_current if r["sim"].get("best_parlay") and (r["sim"]["best_parlay"].get("ev") or 0)>0]
         parlays.sort(key=lambda x: x["sim"]["best_parlay"]["ev"], reverse=True)
 
         # ── Helpers para armar el parlay de 2 patas de un mismo partido ──────
