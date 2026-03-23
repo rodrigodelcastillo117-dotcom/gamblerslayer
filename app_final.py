@@ -35,677 +35,226 @@ st.markdown('''<link rel="preconnect" href="https://fonts.googleapis.com">
 
 st.markdown("""
 <style>
-/* Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700&display=swap');
+/* ═══════════════════════════════════════════════════════════
+   GAMBLERS DEN V11 — PREMIUM DARK SPORTSBOOK
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600;700;800&display=swap');
 
-/* ═══════════════════════════════════════════════════════
-   DESIGN SYSTEM — Premium Dark Sportsbook
-   Inspired by: DraftKings, FanDuel, Bet365
-   ═══════════════════════════════════════════════════════ */
 :root {
-  /* Backgrounds — deep layered dark */
-  --bg:        #0A0A0B;
-  --bg2:       #111114;
-  --bg3:       #18181C;
-  --bg4:       #1E1E24;
-  --card:      #111114;
-
-  /* Borders */
-  --border:    rgba(255,255,255,0.07);
-  --border2:   rgba(255,255,255,0.12);
-  --border3:   rgba(255,255,255,0.18);
-
-  /* Brand */
-  --orange:    #FF5500;
-  --orange2:   #FF7A3D;
-  --yellow:    #FFD600;
-  --yellow2:   #FFE566;
-
-  /* Semantic */
-  --green:     #00D47E;
-  --green2:    #00FF96;
-  --red:       #FF3341;
-  --blue:      #3D8EFF;
-  --purple:    #9B6DFF;
-
-  /* Text */
-  --text:      #F0F0F2;
-  --text2:     #909098;
-  --text3:     #50505A;
-
-  /* Misc */
-  --white:     #FFFFFF;
-  --nav-h:     68px;
-  --radius:    14px;
-  --radius-sm: 10px;
-  --radius-lg: 20px;
-  --gold:      #FFD600;
-  --cyan:      #00D47E;
-  --felt:      #0A0A0B;
-  --dark:      #0A0A0B;
-  --muted:     #50505A;
-
-  /* 3D effect tokens */
-  --card-shadow: 0 2px 0 rgba(255,255,255,0.04) inset, 0 -1px 0 rgba(0,0,0,0.5) inset, 0 8px 32px rgba(0,0,0,0.4);
-  --btn-shadow-orange: 0 1px 0 rgba(255,255,255,0.15) inset, 0 -2px 0 rgba(0,0,0,0.3) inset, 0 4px 16px rgba(255,85,0,0.35);
-  --btn-shadow-dark: 0 1px 0 rgba(255,255,255,0.08) inset, 0 -2px 0 rgba(0,0,0,0.4) inset, 0 4px 12px rgba(0,0,0,0.4);
+  --bg:#08080A; --bg2:#0E0E12; --bg3:#141418; --bg4:#1A1A1F; --bg5:#202028;
+  --border:rgba(255,255,255,0.06); --border2:rgba(255,255,255,0.10); --border3:rgba(255,255,255,0.16);
+  --orange:#FF5500; --orange2:#FF7A3D;
+  --yellow:#FFD600; --yellow2:#FFE566;
+  --green:#00D47E; --green2:#00FF96;
+  --red:#FF3341; --blue:#3D8EFF; --purple:#9B6DFF;
+  --gold:#C9A84C; --gold2:#FFE87C;
+  --text:#EEEEF2; --text2:#848490; --text3:#44444E;
+  --nav-h:68px; --r:14px; --r-sm:10px; --r-lg:20px;
+  --shadow:0 8px 32px rgba(0,0,0,0.5);
+  --shadow-sm:0 2px 8px rgba(0,0,0,0.35);
+  --card-shadow:0 2px 0 rgba(255,255,255,0.04) inset,0 -1px 0 rgba(0,0,0,0.5) inset,0 8px 32px rgba(0,0,0,0.4);
+  --btn-shadow-orange:0 1px 0 rgba(255,255,255,0.15) inset,0 -2px 0 rgba(0,0,0,0.3) inset,0 4px 16px rgba(255,85,0,0.35);
+  --btn-shadow-dark:0 1px 0 rgba(255,255,255,0.08) inset,0 -2px 0 rgba(0,0,0,0.4) inset,0 4px 12px rgba(0,0,0,0.4);
 }
 
-/* ── Reset & Base ─────────────────────────────────────── */
-* { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+/* ── Reset ─────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html,body,.stApp,.main,.stMainBlockContainer{background-color:var(--bg)!important;color:var(--text)!important;font-family:'Barlow',-apple-system,BlinkMacSystemFont,sans-serif!important}
+.block-container{padding:0 16px!important;max-width:960px!important;padding-bottom:calc(var(--nav-h) + 90px)!important}
+h1,h2,h3{font-family:'Barlow Condensed',sans-serif!important}
 
-html, body, .stApp, .main, .stMainBlockContainer {
-  background-color: var(--bg) !important;
-  color: var(--text) !important;
-  font-family: 'Barlow', -apple-system, BlinkMacSystemFont, sans-serif !important;
-}
+/* ── Hide chrome ───────────────────────────────────────────── */
+#MainMenu,header[data-testid="stHeader"],footer,[data-testid="stDecoration"],[data-testid="stStatusWidget"],[data-testid="stToolbar"],[data-testid="stBottom"]{display:none!important}
+div[data-testid="stAppViewContainer"]>section{opacity:1!important}
+[data-stale="true"]{opacity:1!important}
 
-/* ── Hide Streamlit chrome ───────────────────────────── */
-#MainMenu, footer, header[data-testid="stHeader"] { display:none !important; }
-.stDeployButton,
-[data-testid="stToolbar"],
-[data-testid="stDecoration"],
-[data-testid="stStatusWidget"],
-[data-testid="stMainMenuPopover"],
-.viewerBadge_container__1QSob,
-.viewerBadge_link__1S137,
-.viewerBadge_text__1JaDK,
-button[title="Manage app"],
-button[aria-label="Manage app"],
-button[data-testid*="manage"],
-a[href*="streamlit.io"],
-a[href*="streamlit.app"],
-div[class*="StatusWidget"],
-div[class*="ToolbarActions"],
-div[class*="deployButton"],
-/* Hosted by Streamlit footer + username */
-footer,
-footer *,
-[data-testid="stBottom"],
-div[class*="reportview-container"] footer,
-div[class*="footer"],
-section[data-testid="stBottom"],
-/* The red crown / manage app floating button */
-div[class*="streamlit-wide"] > div:last-child > div:last-child > div[style*="position: fixed"],
-iframe[title*="streamlit"] { display:none !important; visibility:hidden !important; opacity:0 !important; height:0 !important; overflow:hidden !important; }
-[data-testid="stSidebar"], [data-testid="collapsedControl"] { display:none !important; }
-
-/* ── Scrollbar ────────────────────────────────────────── */
-::-webkit-scrollbar { width:3px; height:3px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:3px; }
-
-/* ── Layout ───────────────────────────────────────────── */
-.block-container {
-  padding: 16px 14px 140px 14px !important;
-  max-width: 520px !important;
-  margin: 0 auto !important;
-}
-@media (min-width:768px) {
-  .block-container { max-width:780px !important; padding:20px 28px calc(var(--nav-h) + 40px) 28px !important; }
-}
-
-/* ═══════════════════════════════════════════════════════
-   HEADER
-   ═══════════════════════════════════════════════════════ */
-.den-header {
-  text-align: center;
-  padding: 20px 0 10px;
-  position: relative;
-}
-.den-header::before {
-  content: '';
-  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
-  width: 60px; height: 2px;
-  background: linear-gradient(90deg, transparent, var(--orange), transparent);
-  border-radius: 2px;
-}
-.den-logo {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 2.4rem; font-weight: 900; letter-spacing: -1px;
-  color: var(--white); line-height: 1; margin: 0;
-  text-transform: uppercase;
-}
-.den-logo span { color: var(--orange); }
-.den-subtitle {
-  font-size: 0.6rem; color: var(--text3);
-  letter-spacing: 4px; text-transform: uppercase; margin-top: 6px;
-  font-weight: 600;
-}
-.den-divider {
-  width: 100%; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,85,0,0.2), transparent);
-  margin: 14px 0;
-}
-.den-corner { display: none; }
-
-/* ═══════════════════════════════════════════════════════
-   CARDS — Premium 3D dark glass
-   ═══════════════════════════════════════════════════════ */
-.pick-card {
-  background: linear-gradient(160deg, #1A1A20 0%, #111114 100%) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  border-top: 1px solid rgba(255,255,255,0.14) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--card-shadow) !important;
-  padding: 0 !important;
-  margin: 8px 0 !important;
-  overflow: hidden !important;
-  position: relative !important;
-}
-
-/* ── Stat tiles ────────────────────────────────────────── */
-.stat-grid { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
-.stat-tile {
-  flex: 1; min-width: 68px;
-  background: linear-gradient(160deg, #1A1A20 0%, #111114 100%);
-  border: 1px solid var(--border);
-  border-top: 1px solid rgba(255,255,255,0.1);
-  border-radius: var(--radius);
-  padding: 12px 8px; text-align: center;
-  box-shadow: var(--card-shadow);
-}
-.stat-num { font-family: 'Barlow Condensed', sans-serif; font-size: 1.6rem; font-weight: 900; color: var(--white); line-height: 1; }
-.stat-label { font-size: 0.52rem; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 4px; font-weight: 600; }
-
-/* ── Section heading ────────────────────────────────────── */
-.section-heading {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-size: 0.72rem; font-weight: 800; color: var(--orange);
-  letter-spacing: 3px; text-transform: uppercase;
-  margin: 18px 0 10px;
-  display: flex; align-items: center; gap: 10px;
-}
-.section-heading::before { content: ''; width: 3px; height: 14px; background: var(--orange); border-radius: 2px; flex-shrink: 0; }
-.section-heading::after  { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,85,0,0.3), transparent); }
-
-/* ── Liga + Sport toggle buttons — invisible hitbox only ─────────────── */
-/* We inject a wrapper div.liga-btn-wrap around each button via markdown */
-.liga-btn-wrap + div[data-testid="stButton"] > button,
-.liga-btn-wrap ~ div[data-testid="stButton"] > button {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  color: transparent !important;
-  font-size: 0 !important;
-  height: 4px !important;
-  padding: 0 !important;
-  min-height: 0 !important;
-  margin: -2px 0 0 0 !important;
-  overflow: hidden !important;
-}
-
-/* ── Game rows ─────────────────────────────────────────── */
-.game-row {
-  background: linear-gradient(160deg, #16161A 0%, #111114 100%);
-  border: 1px solid var(--border);
-  border-top: 1px solid rgba(255,255,255,0.1);
-  border-radius: var(--radius);
-  padding: 12px 14px; margin: 5px 0;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  border-left: 2px solid transparent;
-  transition: border-left-color 0.15s, background 0.15s;
-}
-.game-row:hover { border-left-color: var(--orange); }
-.game-row-ev { border-left-color: var(--green) !important; }
-.game-title { font-size: 0.88rem; font-weight: 700; color: var(--white); }
-.game-meta  { font-size: 0.7rem; color: var(--text3); margin-top: 2px; }
-
-/* ── Banners ────────────────────────────────────────────── */
-.warn-banner {
-  background: rgba(255,214,0,0.05);
-  border: 1px solid rgba(255,214,0,0.15);
-  border-left: 3px solid var(--yellow);
-  border-radius: var(--radius-sm);
-  padding: 9px 13px; font-size: 0.78rem; color: var(--yellow); margin: 8px 0;
-}
-.demo-banner {
-  background: rgba(255,51,65,0.05);
-  border: 1px solid rgba(255,51,65,0.15);
-  border-left: 3px solid var(--red);
-  border-radius: var(--radius-sm);
-  padding: 9px 13px; font-size: 0.78rem; color: var(--red); margin: 8px 0;
-}
-
-/* ── Chips / Badges ────────────────────────────────────── */
-.market-chip { display:inline-block; font-size:0.58rem; font-weight:800; letter-spacing:0.8px; text-transform:uppercase; padding:3px 8px; border-radius:5px; }
-.chip-ml     { background:rgba(255,85,0,0.12);  color:var(--orange);  border:1px solid rgba(255,85,0,0.25); }
-.chip-btts   { background:rgba(0,212,126,0.10); color:var(--green);   border:1px solid rgba(0,212,126,0.25); }
-.chip-ou     { background:rgba(61,142,255,0.10);color:var(--blue);    border:1px solid rgba(61,142,255,0.25); }
-.chip-combo  { background:rgba(155,109,255,0.10);color:var(--purple); border:1px solid rgba(155,109,255,0.2); }
-
-.conf-badge { display:inline-flex; align-items:center; gap:4px; font-size:0.6rem; font-weight:700; letter-spacing:0.3px; text-transform:uppercase; padding:3px 8px; border-radius:20px; }
-.conf-high   { background:rgba(0,212,126,0.10); color:var(--green);  border:1px solid rgba(0,212,126,0.25); }
-.conf-medium { background:rgba(255,214,0,0.10); color:var(--yellow); border:1px solid rgba(255,214,0,0.25); }
-.conf-low    { background:rgba(255,51,65,0.10);  color:var(--red);    border:1px solid rgba(255,51,65,0.25); }
-
-/* ── Live dot ───────────────────────────────────────────── */
-.live-dot { display:inline-block; width:6px; height:6px; background:var(--red); border-radius:50%; margin-right:5px; animation:blink 1.2s ease-in-out infinite; vertical-align:middle; }
-@keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.7)} }
-
-/* ═══════════════════════════════════════════════════════
-   BUTTONS — Premium 3D pressed effect
-   ═══════════════════════════════════════════════════════ */
-.stButton > button,
-button[data-testid="baseButton-secondary"],
-div[data-testid="stButton"] > button {
-  background: linear-gradient(160deg, #222228 0%, #16161A 100%) !important;
-  color: var(--text) !important;
-  font-family: 'Barlow', sans-serif !important;
-  font-size: 0.84rem !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.3px !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  border-top: 1px solid rgba(255,255,255,0.18) !important;
-  border-bottom: 1px solid rgba(0,0,0,0.5) !important;
-  padding: 10px 18px !important;
-  border-radius: var(--radius-sm) !important;
-  width: 100% !important;
-  cursor: pointer !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.07) inset !important;
-  transition: all 0.1s ease !important;
-}
-.stButton > button:hover, div[data-testid="stButton"] > button:hover {
-  background: linear-gradient(160deg, #28282F 0%, #1C1C21 100%) !important;
-  border-color: rgba(255,85,0,0.35) !important;
-  color: var(--orange) !important;
-  box-shadow: 0 4px 16px rgba(255,85,0,0.2), 0 1px 0 rgba(255,255,255,0.08) inset !important;
-}
-.stButton > button:active, div[data-testid="stButton"] > button:active {
-  transform: translateY(1px) !important;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 0px 0 rgba(255,255,255,0.04) inset !important;
-}
-.stButton > button[kind="primary"], div[data-testid="stButton"] > button[kind="primary"] {
-  background: linear-gradient(160deg, #FF6622 0%, #CC3D00 100%) !important;
-  color: #fff !important;
-  border: 1px solid rgba(255,255,255,0.2) !important;
-  border-top: 1px solid rgba(255,255,255,0.3) !important;
-  border-bottom: 1px solid rgba(0,0,0,0.4) !important;
-  box-shadow: var(--btn-shadow-orange) !important;
-  font-weight: 800 !important;
-}
-.stButton > button[kind="primary"]:hover {
-  background: linear-gradient(160deg, #FF7733 0%, #DD4400 100%) !important;
-}
-
-/* ── Download button ─────────────────────────────────── */
-.stDownloadButton > button {
-  background: linear-gradient(160deg, #1E1E24 0%, #141418 100%) !important;
-  color: var(--orange) !important;
-  border: 1px solid rgba(255,85,0,0.25) !important;
-  border-top: 1px solid rgba(255,85,0,0.35) !important;
-  border-radius: var(--radius-sm) !important;
-  box-shadow: var(--btn-shadow-dark) !important;
-}
-
-/* ═══════════════════════════════════════════════════════
-   INPUTS
-   ═══════════════════════════════════════════════════════ */
+/* ── Inputs ────────────────────────────────────────────────── */
 div[data-testid="stTextInput"] input,
 div[data-testid="stNumberInput"] input,
-div[data-testid="stTextArea"] textarea {
-  background: linear-gradient(160deg, #16161A 0%, #111114 100%) !important;
-  border: 1px solid var(--border2) !important;
-  border-top: 1px solid rgba(0,0,0,0.4) !important;
-  border-radius: var(--radius-sm) !important;
-  color: var(--text) !important;
-  font-family: 'Barlow', sans-serif !important;
-  font-size: 0.88rem !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3) inset !important;
-}
+div[data-testid="stTextArea"] textarea{
+  background:var(--bg3)!important;border:1px solid var(--border2)!important;
+  border-radius:var(--r-sm)!important;color:var(--text)!important;
+  font-family:'Barlow',sans-serif!important;font-size:0.9rem!important;
+  padding:10px 14px!important;transition:border-color 0.15s,box-shadow 0.15s!important}
 div[data-testid="stTextInput"] input:focus,
-div[data-testid="stNumberInput"] input:focus {
-  border-color: var(--orange) !important;
-  box-shadow: 0 0 0 2px rgba(255,85,0,0.15), 0 2px 8px rgba(0,0,0,0.3) inset !important;
-}
-div[data-testid="stSelectbox"] > div > div {
-  background: linear-gradient(160deg, #16161A 0%, #111114 100%) !important;
-  border: 1px solid var(--border2) !important;
-  border-radius: var(--radius-sm) !important;
-  color: var(--text) !important;
-  font-family: 'Barlow', sans-serif !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3) inset !important;
-}
-div[data-testid="stSelectbox"] label, div[data-testid="stTextInput"] label,
-div[data-testid="stNumberInput"] label, div[data-testid="stTextArea"] label,
-div[data-testid="stSlider"] label, div[data-testid="stRadio"] label,
-div[data-testid="stMultiSelect"] label {
-  color: var(--text2) !important; font-family: 'Barlow', sans-serif !important;
-  font-size: 0.74rem !important; font-weight: 600 !important; letter-spacing: 0.4px !important;
-}
+div[data-testid="stNumberInput"] input:focus,
+div[data-testid="stTextArea"] textarea:focus{
+  border-color:var(--orange)!important;box-shadow:0 0 0 3px rgba(255,85,0,0.12)!important;outline:none!important}
+div[data-testid="stTextInput"] label,
+div[data-testid="stNumberInput"] label,
+div[data-testid="stTextArea"] label,
+div[data-testid="stSelectbox"] label,
+div[data-testid="stSlider"] label,
+div[data-testid="stDateInput"] label{
+  font-size:0.68rem!important;font-weight:700!important;color:var(--text2)!important;
+  letter-spacing:0.5px!important;text-transform:uppercase!important}
+div[data-testid="stSelectbox"]>div>div{
+  background:var(--bg3)!important;border:1px solid var(--border2)!important;
+  border-radius:var(--r-sm)!important;color:var(--text)!important}
+div[data-testid="stSelectbox"] ul{background:var(--bg4)!important;border:1px solid var(--border2)!important;border-radius:var(--r-sm)!important}
+div[data-testid="stSelectbox"] li{color:var(--text)!important}
+div[data-testid="stSelectbox"] li:hover{background:var(--bg5)!important}
+div[data-testid="stNumberInput"] button{background:var(--bg4)!important;border-color:var(--border2)!important;color:var(--text2)!important}
+div[data-testid="stSlider"] div[data-baseweb="slider"] div[role="slider"]{background:var(--orange)!important;box-shadow:0 0 10px rgba(255,85,0,0.4)!important}
 
-/* ═══════════════════════════════════════════════════════
-   TABS
-   ═══════════════════════════════════════════════════════ */
-.stTabs [data-baseweb="tab-list"] {
-  background: transparent !important;
-  border-bottom: 1px solid var(--border) !important;
-  gap: 0 !important;
-  overflow-x: auto !important;
-  scrollbar-width: none !important;
-}
-.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display:none !important; }
-.stTabs [data-baseweb="tab"] {
-  font-family: 'Barlow', sans-serif !important;
-  font-size: 0.75rem !important; font-weight: 700 !important;
-  color: var(--text3) !important; background: transparent !important;
-  border: none !important; padding: 10px 14px !important;
-  letter-spacing: 0.3px !important; white-space: nowrap !important;
-}
-.stTabs [aria-selected="true"] { color: var(--orange) !important; border-bottom: 2px solid var(--orange) !important; }
-.stTabs [data-baseweb="tab-panel"] { background: transparent !important; padding-top: 12px !important; }
+/* ── Buttons ─────────────────────────────────────────────────── */
+html body div[data-testid="stButton"] button,
+html body .stButton>button{
+  background:linear-gradient(170deg,var(--bg4) 0%,var(--bg3) 100%)!important;
+  color:var(--text2)!important;
+  border:1px solid var(--border2)!important;
+  border-top:1px solid var(--border3)!important;
+  border-bottom:2px solid rgba(0,0,0,0.5)!important;
+  border-radius:var(--r-sm)!important;
+  box-shadow:0 3px 10px rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.05) inset!important;
+  font-family:'Barlow',sans-serif!important;font-weight:700!important;font-size:0.84rem!important;
+  padding:10px 16px!important;height:auto!important;min-height:42px!important;
+  transition:all 0.15s!important;letter-spacing:0.3px!important}
+html body div[data-testid="stButton"] button:hover,
+html body .stButton>button:hover{
+  border-color:rgba(255,85,0,0.4)!important;color:var(--orange)!important;
+  background:linear-gradient(170deg,#222228 0%,#18181C 100%)!important;
+  box-shadow:0 4px 16px rgba(255,85,0,0.15),0 1px 0 rgba(255,255,255,0.06) inset!important;
+  transform:translateY(-1px)!important}
+html body div[data-testid="stButton"] button:active,
+html body .stButton>button:active{transform:translateY(1px)!important;box-shadow:0 1px 4px rgba(0,0,0,0.5)!important}
 
-/* ═══════════════════════════════════════════════════════
-   EXPANDERS
-   ═══════════════════════════════════════════════════════ */
-/* Expander base */
-[data-testid="stExpander"] {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  margin: 4px 0 !important;
-}
-/* Summary header — dark 3D pill */
-[data-testid="stExpander"] summary {
-  background: linear-gradient(160deg, #1C1C22 0%, #111114 100%) !important;
-  color: #D0D0D8 !important;
-  border: 1px solid rgba(255,255,255,0.09) !important;
-  border-top: 1.5px solid rgba(255,255,255,0.16) !important;
-  border-bottom: 2px solid rgba(0,0,0,0.45) !important;
-  border-radius: 12px !important;
-  padding: 12px 16px !important;
-  font-family: 'Barlow', sans-serif !important;
-  font-weight: 700 !important;
-  font-size: 0.85rem !important;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.07) inset !important;
-}
-[data-testid="stExpander"] summary:hover {
-  border-color: rgba(255,85,0,0.35) !important;
-  color: #FF5500 !important;
-}
-[data-testid="stExpander"] details[open] > summary {
-  border-radius: 12px 12px 0 0 !important;
-  border-bottom-color: transparent !important;
-  color: #FF5500 !important;
-  border-color: rgba(255,85,0,0.4) !important;
-}
-[data-testid="stExpander"] summary svg { fill: #FF5500 !important; }
-/* Open content */
-[data-testid="stExpander"] details[open] > div:last-child {
-  background: #0F0F12 !important;
-  border: 1px solid rgba(255,85,0,0.2) !important;
-  border-top: none !important;
-  border-radius: 0 0 12px 12px !important;
-  padding: 8px !important;
-}
-/* KILL white box when closed — every possible selector */
-[data-testid="stExpander"] details:not([open]) > div,
-[data-testid="stExpander"] details:not([open]) > div:last-child,
-[data-testid="stExpander"] details:not([open]) > *:not(summary) {
-  display: none !important;
-  height: 0 !important;
-  overflow: hidden !important;
-  visibility: hidden !important;
-  border: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
+/* ── Metrics ─────────────────────────────────────────────────── */
+div[data-testid="stMetric"]{background:var(--bg3)!important;border:1px solid var(--border)!important;border-top:1px solid var(--border2)!important;border-radius:var(--r)!important;padding:14px 16px!important}
+div[data-testid="stMetric"] label{color:var(--text3)!important;font-size:0.62rem!important;letter-spacing:1.5px!important;text-transform:uppercase!important}
+div[data-testid="stMetricValue"]{color:var(--text)!important;font-family:'Barlow Condensed',sans-serif!important;font-size:1.6rem!important;font-weight:900!important}
 
-/* ── Metrics ─────────────────────────────────────────── */
-div[data-testid="stMetric"] {
-  background: linear-gradient(160deg, #1A1A20 0%, #111114 100%) !important;
-  border-radius: var(--radius) !important; padding: 12px !important;
-  border: 1px solid var(--border) !important;
-  border-top: 1px solid rgba(255,255,255,0.1) !important;
-  box-shadow: var(--card-shadow) !important;
-}
-div[data-testid="stMetricValue"] { color: var(--text) !important; font-family: 'Barlow Condensed', sans-serif !important; font-weight: 800 !important; }
-div[data-testid="stMetricLabel"] { color: var(--text3) !important; font-family: 'Barlow', sans-serif !important; }
+/* ── Expanders ─────────────────────────────────────────────── */
+[data-testid="stExpander"]{background:transparent!important;border:none!important;box-shadow:none!important}
+[data-testid="stExpander"] summary{
+  background:linear-gradient(160deg,var(--bg4) 0%,var(--bg3) 100%)!important;
+  border:1px solid var(--border2)!important;border-top:1px solid var(--border3)!important;
+  border-radius:var(--r-sm)!important;padding:12px 16px!important;
+  color:var(--text2)!important;font-weight:700!important;font-size:0.84rem!important;
+  transition:border-color 0.15s!important}
+[data-testid="stExpander"] summary:hover{border-color:rgba(255,85,0,0.3)!important;color:var(--text)!important}
+[data-testid="stExpander"] details[open]>summary{border-radius:var(--r-sm) var(--r-sm) 0 0!important;border-color:rgba(255,85,0,0.3)!important;color:var(--orange)!important}
+[data-testid="stExpander"] details[open]>div:last-child{background:var(--bg2)!important;border:1px solid rgba(255,85,0,0.15)!important;border-top:none!important;border-radius:0 0 var(--r-sm) var(--r-sm)!important;padding:14px!important}
+[data-testid="stExpander"] details:not([open])>*:not(summary){display:none!important;height:0!important;overflow:hidden!important;visibility:hidden!important;border:none!important;padding:0!important;margin:0!important}
+[data-testid="stExpander"] summary svg{fill:var(--orange)!important}
 
-/* ── Spinner / Toast ─────────────────────────────────── */
-.stSpinner > div { border-top-color: var(--orange) !important; }
-.stToast { background: var(--bg3) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; }
-.stCaption, div[data-testid="stCaptionContainer"] p { color: var(--text3) !important; font-family: 'Barlow', sans-serif !important; }
+/* ── Header ──────────────────────────────────────────────────── */
+.den-header{background:linear-gradient(180deg,rgba(255,85,0,0.06) 0%,transparent 100%);border-bottom:1px solid rgba(255,85,0,0.12);padding:18px 0 14px;text-align:center;margin-bottom:4px;position:relative;overflow:hidden}
+.den-header::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,85,0,0.6),transparent)}
+.den-logo{font-family:'Barlow Condensed',sans-serif;font-size:2.2rem;font-weight:900;letter-spacing:4px;color:var(--text);text-transform:uppercase;line-height:1}
+.den-logo span{color:var(--orange)}
+.den-subtitle{font-size:0.6rem;color:var(--text3);letter-spacing:4px;text-transform:uppercase;margin-top:6px;font-weight:600}
+.den-divider{width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--border2),transparent);margin:16px 0}
+.den-corner{display:none}
 
-/* ── Misc ─────────────────────────────────────────────── */
-hr { border-color: var(--border) !important; }
-div[data-testid="stStatusWidget"] { display: none !important; }
-[data-stale="true"] { opacity: 1 !important; }
-[data-testid="stAppViewBlockContainer"] { opacity: 1 !important; }
+/* ── Section headings ────────────────────────────────────────── */
+.section-heading{font-family:'Barlow Condensed',sans-serif;font-size:0.72rem;font-weight:800;color:var(--text3);letter-spacing:3px;text-transform:uppercase;margin:20px 0 10px;display:flex;align-items:center;gap:10px}
+.section-heading::before{content:'';width:3px;height:14px;background:var(--orange);border-radius:2px;flex-shrink:0}
+.section-heading::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(255,85,0,0.3),transparent)}
 
-/* ── Empty state ─────────────────────────────────────── */
-.empty-state { text-align: center; padding: 40px 20px; color: var(--text3); }
-.empty-icon  { font-size: 2.5rem; margin-bottom: 10px; }
-.empty-title { font-size: 0.95rem; font-weight: 700; color: var(--white); margin-bottom: 6px; }
+/* ── Pick card (white) ──────────────────────────────────────── */
+.pick-card{background:linear-gradient(160deg,#F8F8FC 0%,#EBEBF2 100%);border-radius:var(--r-lg);padding:16px;box-shadow:var(--card-shadow);margin-bottom:8px}
 
-/* ═══════════════════════════════════════════════════════
-   PROGRESS BARS (inline)
-   ═══════════════════════════════════════════════════════ */
-.bar-wrap  { margin: 4px 0; }
-.bar-bg    { background: rgba(255,255,255,0.05); border-radius: 20px; height: 5px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.4); }
-.bar-fill  { height: 5px; border-radius: 20px; }
+/* ── Stat tiles ─────────────────────────────────────────────── */
+.stat-grid{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}
+.stat-tile{flex:1;min-width:70px;background:linear-gradient(160deg,var(--bg4) 0%,var(--bg3) 100%);border:1px solid var(--border);border-top:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 10px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.25)}
+.stat-num{font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:900;color:var(--text);line-height:1}
+.stat-label{font-size:0.52rem;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px;font-weight:700}
 
-/* ═══════════════════════════════════════════════════════
-   NAV — Fixed bottom pill, premium 3D
-   ═══════════════════════════════════════════════════════ */
-/* ── Contenedor fixed bottom ── */
-div[data-testid="stRadio"] > div[role="radiogroup"] {
-  position: fixed !important;
-  bottom: 16px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: min(96vw, 500px) !important;
-  height: 62px !important;
-  background: linear-gradient(160deg, #1C1C22 0%, #111114 100%) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  border-top: 1px solid rgba(255,255,255,0.18) !important;
-  border-bottom: 1px solid rgba(0,0,0,0.6) !important;
-  border-radius: 30px !important;
-  z-index: 99999 !important;
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: stretch !important;
-  padding: 5px !important;
-  gap: 0 !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 2px 0 rgba(255,255,255,0.05) inset !important;
-  overflow: hidden !important;
-  pointer-events: auto !important;
-  touch-action: manipulation !important;
-  visibility: visible !important;
-  opacity: 1 !important;
-  display: flex !important;
-}
-@media (min-width: 768px) {
-  div[data-testid="stRadio"] > div[role="radiogroup"] {
-    width: 720px !important; height: 68px !important;
-    bottom: 20px !important; border-radius: 32px !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: flex !important;
-  }
-}
+/* ── Chips ────────────────────────────────────────────────────── */
+.market-chip{display:inline-block;font-size:0.6rem;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;padding:3px 8px;border-radius:6px}
+.chip-ml{background:rgba(255,85,0,0.12);color:var(--orange);border:1px solid rgba(255,85,0,0.25)}
+.chip-btts{background:rgba(0,212,126,0.10);color:var(--green);border:1px solid rgba(0,212,126,0.25)}
+.chip-ou{background:rgba(61,142,255,0.10);color:var(--blue);border:1px solid rgba(61,142,255,0.25)}
+.chip-combo{background:rgba(155,109,255,0.10);color:var(--purple);border:1px solid rgba(155,109,255,0.2)}
+.chip-warn{background:rgba(255,51,65,0.12);color:var(--red);border:1px solid rgba(255,51,65,0.25)}
+.conf-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.6rem;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;padding:3px 9px;border-radius:20px}
+.conf-high{background:rgba(0,212,126,0.10);color:var(--green);border:1px solid rgba(0,212,126,0.25)}
+.conf-medium{background:rgba(255,214,0,0.10);color:var(--yellow);border:1px solid rgba(255,214,0,0.25)}
+.conf-low{background:rgba(255,51,65,0.10);color:var(--red);border:1px solid rgba(255,51,65,0.25)}
 
-/* ── Hide real radio input ── */
-div[data-testid="stRadio"] input[type="radio"] { display: none !important; }
+/* ── Warn / Demo banners ─────────────────────────────────────── */
+.warn-banner{background:rgba(255,85,0,0.06);border:1px solid rgba(255,85,0,0.2);border-radius:var(--r-sm);padding:12px 16px;font-size:0.82rem;color:var(--orange2);text-align:center;margin:8px 0}
+.demo-banner{background:rgba(61,142,255,0.08);border:1px solid rgba(61,142,255,0.2);border-radius:var(--r-sm);padding:10px 16px;font-size:0.78rem;color:var(--blue);text-align:center;margin:8px 0}
 
-/* ── Each nav tab ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"] {
-  flex: 1 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 2px !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
-  touch-action: manipulation !important;
-  -webkit-tap-highlight-color: rgba(255,85,0,0.2) !important;
-  user-select: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 24px !important;
-  transition: background 0.15s, box-shadow 0.15s !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-}
+/* ── Empty state ─────────────────────────────────────────────── */
+.empty-state{text-align:center;padding:48px 20px;color:var(--text3)}
+.empty-icon{font-size:2.8rem;margin-bottom:12px;filter:grayscale(0.4)}
+.empty-title{font-size:1rem;font-weight:700;color:var(--text2);margin-bottom:6px;font-family:'Barlow Condensed',sans-serif;letter-spacing:1px}
+.empty-sub{font-size:0.78rem;color:var(--text3)}
 
-/* ── Active tab ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
-  background: linear-gradient(160deg, rgba(255,85,0,0.28) 0%, rgba(255,85,0,0.12) 100%) !important;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.1) inset, 0 -1px 0 rgba(0,0,0,0.3) inset !important;
-}
+/* ── Dataframe ───────────────────────────────────────────────── */
+div[data-testid="stDataFrame"]{border-radius:var(--r)!important;overflow:hidden!important}
+div[data-testid="stDataFrame"] table{font-size:0.8rem!important}
+div[data-testid="stDataFrame"] thead tr th{background:var(--bg4)!important;color:var(--text3)!important;font-size:0.62rem!important;letter-spacing:1.5px!important;text-transform:uppercase!important;font-weight:700!important;border-bottom:1px solid var(--border2)!important}
+div[data-testid="stDataFrame"] tbody tr{border-bottom:1px solid var(--border)!important}
+div[data-testid="stDataFrame"] tbody tr:hover{background:rgba(255,255,255,0.02)!important}
 
-/* ── Tab text ── */
+/* ── Misc ─────────────────────────────────────────────────────── */
+.stSpinner>div{border-top-color:var(--orange)!important}
+div[data-testid="stProgress"]>div>div{background:var(--orange)!important}
+div[data-testid="stProgress"]>div{background:var(--bg4)!important;border-radius:99px!important}
+div[data-testid="stToast"]{background:var(--bg4)!important;border:1px solid var(--border2)!important;border-radius:var(--r)!important;box-shadow:var(--shadow)!important;color:var(--text)!important}
+div[data-testid="stCaptionContainer"] p{color:var(--text3)!important;font-size:0.72rem!important}
+
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--bg5);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--border2)}
+
+/* ── Bottom Nav ─────────────────────────────────────────────── */
+div[data-testid="stRadio"]>div[role="radiogroup"]{
+  position:fixed!important;bottom:16px!important;left:50%!important;transform:translateX(-50%)!important;
+  width:min(96vw,500px)!important;height:62px!important;
+  background:linear-gradient(160deg,#1A1A20 0%,#101014 100%)!important;
+  backdrop-filter:blur(24px)!important;-webkit-backdrop-filter:blur(24px)!important;
+  border:1px solid rgba(255,255,255,0.10)!important;border-top:1px solid rgba(255,255,255,0.16)!important;
+  border-bottom:1px solid rgba(0,0,0,0.6)!important;border-radius:30px!important;
+  z-index:99999!important;display:flex!important;flex-direction:row!important;align-items:stretch!important;
+  padding:5px!important;gap:0!important;
+  box-shadow:0 8px 40px rgba(0,0,0,0.7),0 2px 0 rgba(255,255,255,0.05) inset!important;
+  overflow:hidden!important;pointer-events:auto!important;touch-action:manipulation!important;
+  visibility:visible!important;opacity:1!important}
+@media(min-width:768px){
+  div[data-testid="stRadio"]>div[role="radiogroup"]{width:720px!important;height:68px!important;bottom:20px!important;border-radius:32px!important;visibility:visible!important;opacity:1!important;display:flex!important}}
+div[data-testid="stRadio"] input[type="radio"]{display:none!important}
+div[data-testid="stRadio"] label[data-baseweb="radio"]{
+  flex:1!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;
+  gap:2px!important;cursor:pointer!important;pointer-events:auto!important;touch-action:manipulation!important;
+  -webkit-tap-highlight-color:rgba(255,85,0,0.2)!important;user-select:none!important;
+  padding:0!important;margin:0!important;border-radius:24px!important;
+  transition:background 0.15s,box-shadow 0.15s!important;min-width:0!important;overflow:hidden!important}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked){
+  background:linear-gradient(160deg,rgba(255,85,0,0.25) 0%,rgba(255,85,0,0.10) 100%)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,0.08) inset,0 -1px 0 rgba(0,0,0,0.3) inset!important}
 div[data-testid="stRadio"] label[data-baseweb="radio"] span,
 div[data-testid="stRadio"] label[data-baseweb="radio"] p,
-div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-  font-size: 0.62rem !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.3px !important;
-  text-transform: uppercase !important;
-  color: #888 !important;
-  line-height: 1 !important;
-  margin: 0 !important;
-  font-family: 'Barlow', sans-serif !important;
-  white-space: nowrap !important;
-}
-@media (min-width: 768px) {
-  div[data-testid="stRadio"] label[data-baseweb="radio"] span,
-  div[data-testid="stRadio"] label[data-baseweb="radio"] p,
-  div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-    font-size: 0.82rem !important;
-  }
-}
-@media (max-width: 390px) {
-  div[data-testid="stRadio"] label[data-baseweb="radio"] span,
-  div[data-testid="stRadio"] label[data-baseweb="radio"] p,
-  div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-    font-size: 0.52rem !important;
-  }
-}
-
-/* ── Active text ── */
+div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p{
+  font-size:0.62rem!important;font-weight:800!important;letter-spacing:0.3px!important;
+  text-transform:uppercase!important;color:var(--text3)!important;line-height:1!important;
+  margin:0!important;font-family:'Barlow',sans-serif!important;white-space:nowrap!important}
 div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) span,
 div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) p,
-div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) div[data-testid="stMarkdownContainer"] p {
-  color: #FF5500 !important;
-  text-shadow: 0 0 12px rgba(255,85,0,0.4) !important;
-}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) div[data-testid="stMarkdownContainer"] p{
+  color:var(--orange)!important;text-shadow:0 0 12px rgba(255,85,0,0.5)!important}
+div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:last-child){border-right:1px solid rgba(255,255,255,0.04)!important}
 
-/* ── Dividers between tabs ── */
-div[data-testid="stRadio"] label[data-baseweb="radio"]:not(:last-child) {
-  border-right: 1px solid rgba(255,255,255,0.05) !important;
-}
+/* ── Reto animations ─────────────────────────────────────────── */
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+@keyframes pulse-glow{0%,100%{box-shadow:0 0 20px rgba(201,168,76,0.15)}50%{box-shadow:0 0 40px rgba(201,168,76,0.35)}}
 
-/* ── Mobile bottom padding ── */
-@media (max-width: 768px) {
-  .stApp { padding-bottom: env(safe-area-inset-bottom) !important; }
-  .block-container {
-    padding-left: 10px !important; padding-right: 10px !important;
-    max-width: 100% !important; overflow-x: hidden !important;
-    padding-bottom: calc(var(--nav-h) + 80px) !important;
-  }
-  .den-logo { font-size: 1.9rem !important; }
-  .den-subtitle { font-size: 0.52rem !important; }
-}
-@media (max-width: 390px) {
+/* ── Mobile ──────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .stApp{padding-bottom:env(safe-area-inset-bottom)!important}
+  .block-container{padding-left:10px!important;padding-right:10px!important;max-width:100%!important;overflow-x:hidden!important;padding-bottom:calc(var(--nav-h) + 80px)!important}
+  .den-logo{font-size:1.9rem!important}
+  .den-subtitle{font-size:0.52rem!important}
   div[data-testid="stRadio"] label[data-baseweb="radio"] span,
-  div[data-testid="stRadio"] label[data-baseweb="radio"] p,
-  div[data-testid="stRadio"] label[data-baseweb="radio"] div[data-testid="stMarkdownContainer"] p {
-    font-size: 0.62rem !important;
-  }
-}
-
-/* ── Suppress Streamlit rerun fade ── */
-*, *::before, *::after { transition-property: background, color, border-color, box-shadow, opacity, transform !important; }
-div[data-testid="stAppViewContainer"] > section { opacity: 1 !important; }
-[data-stale="true"] { opacity: 1 !important; }
-
-/* ── Sport selector buttons — overlay the card above, fully transparent ── */
-div[data-testid="column"] .liga-btn-wrap + div[data-testid="stButton"] > button {
-  position: relative !important;
-  margin-top: -120px !important;
-  height: 120px !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  color: transparent !important;
-  font-size: 0 !important;
-  z-index: 10 !important;
-  border-radius: 14px !important;
-  cursor: pointer !important;
-  opacity: 0 !important;
-}
-div[data-testid="column"] .liga-btn-wrap + div[data-testid="stButton"] {
-  margin-top: -120px !important;
-}
-
-/* Sport selector buttons styled via scoped CSS in Python */
-
-/* Expander styles consolidated above */
-
-
-/* ── Liga toggle buttons — dark pill, no white box ────────────────────── */
-/* Ver análisis button */
-div[data-testid="stButton"]:has(> button[key*="_btn"]) > button {
-  background: linear-gradient(160deg, #1A1A1F 0%, #0F0F12 100%) !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-  border-top: 1px solid rgba(255,255,255,0.13) !important;
-  border-bottom: 1px solid rgba(0,0,0,0.4) !important;
-  border-radius: 10px !important;
-  color: #888 !important;
-  font-size: 0.75rem !important;
-  font-weight: 700 !important;
-  padding: 8px 14px !important;
-  height: auto !important;
-  min-height: 36px !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
-  margin-top: 4px !important;
-  text-align: left !important;
-}
-div[data-testid="stButton"]:has(> button[key*="_btn"]) > button:hover {
-  color: #FF5500 !important;
-  border-color: rgba(255,85,0,0.3) !important;
-}
-
-
-/* ── FORCE ALL BUTTONS DARK — maximum specificity ───────────────────── */
-html body div[data-testid="stButton"] button,
-html body .stButton > button,
-html body div[class*="stButton"] button,
-html body div[class*="element-container"] div[data-testid="stButton"] button {
-  background: linear-gradient(160deg, #1C1C22 0%, #111114 100%) !important;
-  color: #C0C0CC !important;
-  border: 1px solid rgba(255,255,255,0.09) !important;
-  border-top: 1.5px solid rgba(255,255,255,0.15) !important;
-  border-bottom: 2px solid rgba(0,0,0,0.5) !important;
-  border-radius: 10px !important;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.06) inset !important;
-  font-family: 'Barlow', sans-serif !important;
-  font-weight: 700 !important;
-  font-size: 0.82rem !important;
-  padding: 10px 16px !important;
-  height: auto !important;
-  min-height: 40px !important;
-  transition: background 0.15s, border-color 0.15s, color 0.15s !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-}
-html body div[data-testid="stButton"] button:hover,
-html body .stButton > button:hover {
-  border-color: rgba(255,85,0,0.4) !important;
-  color: #FF5500 !important;
-  background: linear-gradient(160deg, #22222A 0%, #161619 100%) !important;
-  box-shadow: 0 3px 14px rgba(255,85,0,0.2), 0 1px 0 rgba(255,255,255,0.07) inset !important;
-}
-html body div[data-testid="stButton"] button:active,
-html body .stButton > button:active {
-  transform: translateY(1px) !important;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
-}
+  div[data-testid="stRadio"] label[data-baseweb="radio"] p{font-size:0.55rem!important}}
+@media(max-width:390px){
+  div[data-testid="stRadio"] label[data-baseweb="radio"] span,
+  div[data-testid="stRadio"] label[data-baseweb="radio"] p{font-size:0.5rem!important}}
 
 </style>
 """, unsafe_allow_html=True)
@@ -6324,6 +5873,261 @@ def _list_reto_users():
     return sorted(users)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# LEADERBOARD + SOCIAL FEED — Lee todos los usuarios del Sheets
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_leaderboard():
+    """
+    Load stats for ALL users from Google Sheets for leaderboard.
+    Returns list of dicts sorted by bank_actual desc.
+    Cached 5 minutes to avoid hammering the API.
+    """
+    users = _list_reto_users()
+    # Filter out non-user tabs
+    _skip_tabs = {"pick_history", "line_movement", "team_profiles", "Sheet1", "Hoja1"}
+    users = [u for u in users if u not in _skip_tabs]
+
+    rows = []
+    if not _gsheets_available():
+        return rows
+
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+
+        for apodo in users:
+            try:
+                ws        = sh.worksheet(apodo)
+                all_rows  = ws.get_all_values()
+                if len(all_rows) < 2:
+                    continue
+
+                # Config row
+                bank_ini = float(all_rows[1][0]) if all_rows[1][0] else 2000.0
+                meta_val = float(all_rows[1][1]) if len(all_rows[1]) > 1 and all_rows[1][1] else 13_000_000.0
+
+                # Parse picks
+                picks_data = []
+                for row in all_rows[2:]:
+                    if not any(row): continue
+                    try:
+                        res    = row[8] if len(row) > 8 else "pendiente"
+                        momio  = float(row[5]) if len(row) > 5 and row[5] else 1.9
+                        monto  = float(row[7]) if len(row) > 7 and row[7] else 0
+                        fecha  = row[1] if len(row) > 1 else ""
+                        partido= row[2] if len(row) > 2 else ""
+                        pick_l = row[3] if len(row) > 3 else ""
+                        mercado= row[4] if len(row) > 4 else ""
+                        nota   = row[9] if len(row) > 9 else ""
+                        picks_data.append({
+                            "resultado": res, "momio": momio, "monto": monto,
+                            "fecha": fecha, "partido": partido, "pick": pick_l,
+                            "mercado": mercado, "nota": nota,
+                        })
+                    except:
+                        continue
+
+                # Calculate stats
+                bank = bank_ini
+                n_gan = n_per = n_pen = 0
+                last_picks = []
+                for p in picks_data:
+                    res = p["resultado"]
+                    if res == "ganado":
+                        mm = p["momio"]; ss = p["monto"]
+                        bank += ss * (mm - 1) if mm >= 1.01 else ss * 100 / abs(mm) if mm < 0 else 0
+                        n_gan += 1
+                    elif res == "perdido":
+                        bank -= p["monto"]
+                        n_per += 1
+                    elif res == "pendiente":
+                        n_pen += 1
+                    last_picks.append(p)
+
+                resolved = n_gan + n_per
+                wr = n_gan / resolved * 100 if resolved > 0 else 0
+                mult = bank / bank_ini if bank_ini > 0 else 1
+
+                # Last pick for social feed
+                last_pick = last_picks[-1] if last_picks else None
+
+                rows.append({
+                    "apodo":      apodo,
+                    "bank":       round(bank, 2),
+                    "bank_ini":   bank_ini,
+                    "mult":       round(mult, 3),
+                    "wr":         round(wr, 1),
+                    "n_picks":    len(picks_data),
+                    "n_gan":      n_gan,
+                    "n_per":      n_per,
+                    "n_pen":      n_pen,
+                    "last_pick":  last_pick,
+                    "all_picks":  last_picks[-5:],  # last 5 for social feed
+                })
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Sort by bank desc
+    rows.sort(key=lambda x: x["bank"], reverse=True)
+    return rows
+
+
+@st.cache_data(ttl=180, show_spinner=False)
+def _load_leaderboard_with_resolve():
+    """
+    Load leaderboard AND silently resolve all pending picks for all users.
+    Runs in background with 3-min cache so it doesn't hammer the API.
+    """
+    users = _list_reto_users()
+    _skip = {"pick_history","line_movement","team_profiles","Sheet1","Hoja1"}
+    users = [u for u in users if u not in _skip]
+
+    if not _gsheets_available() or not users:
+        return
+
+    # Fetch finished games ONCE — shared for all users
+    try:
+        finished_games = _fetch_finished_games()
+    except:
+        return
+
+    if not finished_games:
+        return
+
+    any_changed = False
+    for apodo in users:
+        try:
+            reto_data = _load_reto(apodo)
+            picks_data = reto_data.get("picks", [])
+            pending = [p for p in picks_data if p.get("resultado") == "pendiente"]
+            if not pending:
+                continue
+
+            changed = False
+            for i, p in enumerate(picks_data):
+                if p.get("resultado") != "pendiente":
+                    continue
+                partido_txt = p.get("partido","")
+                sep = " vs " if " vs " in partido_txt.lower() else (" @ " if " @ " in partido_txt else None)
+                t1, t2 = (partido_txt.split(sep,1) + [""])[:2] if sep else (partido_txt, "")
+                t1, t2 = t1.strip(), t2.strip()
+
+                for g in finished_games:
+                    m1 = _team_match(t1, g["home_team"], g["away_team"])
+                    m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
+                    if (m1 or m2):
+                        res = _evaluate_pick(p, g)
+                        if res:
+                            picks_data[i]["resultado"]  = res
+                            picks_data[i]["home_score"] = str(g.get("home_score",""))
+                            picks_data[i]["away_score"] = str(g.get("away_score",""))
+                            changed = True
+                            break
+
+            if changed:
+                reto_data["picks"] = picks_data
+                _save_reto(reto_data, apodo)
+                any_changed = True
+        except:
+            continue
+
+    if any_changed:
+        try:
+            _load_leaderboard.clear()
+        except:
+            pass
+
+
+def _silent_auto_resolve(apodo_activo, reto, picks):
+    """
+    Silently resolve ALL pending picks for a user against ESPN finished games.
+    Runs on every Reto tab load. Returns (updated_picks, n_resolved, details).
+    Saves to Sheets automatically if anything resolved.
+    """
+    pendientes = [p for p in picks if p.get("resultado") == "pendiente"]
+    if not pendientes:
+        return picks, 0, []
+
+    try:
+        finished_games = _fetch_finished_games()
+    except:
+        return picks, 0, []
+
+    n_resolved = 0
+    details    = []
+    changed    = False
+
+    for i, p in enumerate(picks):
+        if p.get("resultado") != "pendiente":
+            continue
+
+        partido_txt = p.get("partido", "")
+        sep = " vs " if " vs " in partido_txt.lower() else (" @ " if " @ " in partido_txt else None)
+        if sep:
+            parts = partido_txt.split(sep, 1)
+            t1, t2 = parts[0].strip(), parts[1].strip()
+        else:
+            t1, t2 = partido_txt.strip(), ""
+
+        for g in finished_games:
+            m1 = _team_match(t1, g["home_team"], g["away_team"])
+            m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
+            if not (m1 or m2):
+                continue
+            res = _evaluate_pick(p, g)
+            if res:
+                picks[i]["resultado"]   = res
+                picks[i]["home_score"]  = str(g.get("home_score", ""))
+                picks[i]["away_score"]  = str(g.get("away_score", ""))
+                n_resolved += 1
+                changed = True
+                icon = "✅" if res == "ganado" else ("❌" if res == "perdido" else "🔄")
+                details.append({
+                    "icon":  icon,
+                    "num":   p.get("num", "?"),
+                    "texto": partido_txt,
+                    "res":   res,
+                    "hs":    g.get("home_score",""),
+                    "as_":   g.get("away_score",""),
+                })
+                break  # found match, move to next pick
+
+    if changed:
+        reto["picks"] = picks
+        _save_reto(reto, apodo_activo)
+        # Invalidate leaderboard cache so it reflects new results
+        try:
+            _load_leaderboard.clear()
+        except:
+            pass
+
+    return picks, n_resolved, details
+
+
+def _rango_for_bank(bank):
+    """Return (icon, name, color) for a given bank amount."""
+    _R = [
+        (2_000_000_000, "🏆", "Inmortal",          "#FFD700"),
+        (13_000_000,    "👑", "El 13M",             "#FFD700"),
+        (5_000_000,     "💎", "Magnate",             "#00BFFF"),
+        (1_000_000,     "🚀", "Millonario",          "#00BFFF"),
+        (500_000,       "🔥", "Leyenda de Las Vegas","#FF4500"),
+        (100_000,       "⚡", "Alto Voltaje",        "#FF8C00"),
+        (70_000,        "🎰", "Jugador Pro",         "#FF8C00"),
+        (40_000,        "🦈", "Tiburón",             "#3D8EFF"),
+        (20_000,        "💪", "Apostador Serio",     "#3D8EFF"),
+        (10_000,        "📈", "En Racha",            "#3D8EFF"),
+        (5_000,         "🟢", "Novato",              "#00C896"),
+        (0,             "🌱", "Semilla",             "#888"),
+    ]
+    return next((r[1:] for r in _R if bank >= r[0]), ("🌱", "Semilla", "#888"))
+
+
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     if not sr:
@@ -9206,20 +9010,69 @@ elif _active_page == "En Vivo":
 elif _active_page == "Reto 13M":
 
     # ── Login por apodo ───────────────────────────────────────────────────────
-    st.markdown('''<div style="
-        text-align:center;
-        font-family:'Inter',sans-serif;
-        font-size:1.792rem;
-        font-weight:700;
-        color:#C9A84C;
-        letter-spacing:4px;
-        padding:16px 0 4px;
-        text-shadow: 0 0 20px rgba(201,168,76,0.4)
-    ">💰 RETO 13 MILLONES</div>
-    <div style="text-align:center;font-family:'Inter',sans-serif;font-size:0.896rem;
-        color:#6B7280;letter-spacing:2px;margin-bottom:20px">
-        DE $2,000 A $13,000,000 · UNA APUESTA A LA VEZ
-    </div>''', unsafe_allow_html=True)
+    st.markdown('''
+    <style>
+    @keyframes shimmer {
+        0%   { background-position: -400px 0 }
+        100% { background-position: 400px 0 }
+    }
+    @keyframes pulse-glow {
+        0%,100% { box-shadow: 0 0 20px rgba(201,168,76,0.2), 0 0 60px rgba(201,168,76,0.05) }
+        50%     { box-shadow: 0 0 40px rgba(201,168,76,0.4), 0 0 80px rgba(201,168,76,0.15) }
+    }
+    .reto-hero {
+        background: linear-gradient(135deg, #0A0A0B 0%, #111108 50%, #0A0A0B 100%);
+        border: 1px solid rgba(201,168,76,0.2);
+        border-top: 1px solid rgba(201,168,76,0.4);
+        border-radius: 20px;
+        padding: 24px 20px 20px;
+        text-align: center;
+        margin-bottom: 16px;
+        position: relative;
+        overflow: hidden;
+        animation: pulse-glow 4s ease-in-out infinite;
+    }
+    .reto-hero::before {
+        content: "";
+        position: absolute;
+        top: 0; left: -100%;
+        width: 60%; height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(201,168,76,0.04), transparent);
+        animation: shimmer 3s infinite;
+    }
+    .reto-title {
+        font-family: "Barlow Condensed", "Impact", sans-serif;
+        font-size: 2.4rem;
+        font-weight: 900;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        background: linear-gradient(135deg, #FFE87C 0%, #C9A84C 50%, #FFE87C 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        line-height: 1;
+        margin: 0;
+    }
+    .reto-sub {
+        font-size: 0.65rem;
+        color: #444;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+        margin-top: 8px;
+        font-weight: 600;
+    }
+    .reto-coin {
+        font-size: 2rem;
+        margin-bottom: 8px;
+        filter: drop-shadow(0 0 12px rgba(201,168,76,0.6));
+    }
+    </style>
+    <div class="reto-hero">
+        <div class="reto-coin">💰</div>
+        <div class="reto-title">Reto 13 Millones</div>
+        <div class="reto-sub">De $2,000 a $13,000,000 · Una apuesta a la vez</div>
+    </div>
+    ''', unsafe_allow_html=True)
 
     # Session state para el apodo activo
     if "reto_apodo" not in st.session_state:
@@ -9278,21 +9131,74 @@ elif _active_page == "Reto 13M":
     # ── Usuario activo ────────────────────────────────────────────────────────
     apodo_activo = st.session_state["reto_apodo"]
 
-    col_usr1, col_usr2 = st.columns([4,1])
-    with col_usr1:
+    _usr_col1, _usr_col2 = st.columns([5,1])
+    with _usr_col1:
         st.markdown(
-            f'<div style="font-family:\'Inter\',sans-serif;font-size:1.008rem;color:#C9A84C;'
-            f'letter-spacing:2px;margin-bottom:12px">👤 {apodo_activo.upper()}</div>',
+            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">'
+            f'<div style="width:34px;height:34px;border-radius:50%;'
+            f'background:linear-gradient(135deg,#C9A84C,#FFE87C);'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'font-size:1rem;font-weight:900;color:#0A0A0B;flex-shrink:0">'
+            f'{apodo_activo[0].upper() if apodo_activo else "?"}</div>'
+            f'<div>'
+            f'<div style="font-family:Barlow Condensed,sans-serif;font-size:1.1rem;'
+            f'font-weight:800;color:#C9A84C;letter-spacing:1px">{apodo_activo.upper()}</div>'
+            f'<div style="font-size:0.6rem;color:#444;letter-spacing:2px">JUGADOR ACTIVO</div>'
+            f'</div></div>',
             unsafe_allow_html=True
         )
-    with col_usr2:
+    with _usr_col2:
         def _logout_reto(): st.session_state["reto_apodo"] = ""
-        st.button("↩ Salir", key="btn_logout_reto", use_container_width=True, on_click=_logout_reto)
+        st.button("↩", key="btn_logout_reto", use_container_width=True, on_click=_logout_reto)
 
     reto = _load_reto(apodo_activo)
     picks = reto.get("picks", [])
     bank_inicial = reto.get("bank_inicial", 2000.0)
     meta = reto.get("meta", 13_000_000.0)
+
+    # ── Background resolve ALL users (leaderboard stays accurate) ───────────
+    _bg_resolve_key = f"_bg_resolve_{datetime.now().strftime('%Y%m%d%H%M')[:-1]}"  # every 10 min
+    if st.session_state.get("_bg_resolve_last") != _bg_resolve_key:
+        st.session_state["_bg_resolve_last"] = _bg_resolve_key
+        try:
+            _load_leaderboard_with_resolve()
+        except:
+            pass
+
+    # ── Auto-resolve silencioso — corre en cada carga ─────────────────────────
+    # Detecta partidos terminados y actualiza picks pendientes automáticamente
+    _auto_key = f"_auto_resolved_{apodo_activo}_{len([p for p in picks if p.get('resultado')=='pendiente'])}"
+    if st.session_state.get("_auto_last_key") != _auto_key:
+        st.session_state["_auto_last_key"] = _auto_key
+        if any(p.get("resultado") == "pendiente" for p in picks):
+            picks, _n_auto, _auto_details = _silent_auto_resolve(apodo_activo, reto, picks)
+            reto["picks"] = picks
+            if _n_auto > 0:
+                st.session_state["_auto_resolved_details"] = _auto_details
+                st.session_state["_auto_resolved_n"] = _n_auto
+    else:
+        _n_auto = 0
+        _auto_details = []
+
+    # Show auto-resolve notifications if any picks just resolved
+    _notif_details = st.session_state.pop("_auto_resolved_details", [])
+    _notif_n       = st.session_state.pop("_auto_resolved_n", 0)
+    if _notif_n > 0 and _notif_details:
+        for _d in _notif_details:
+            _notif_color = "#00D47E" if _d["res"] == "ganado" else "#ef4444" if _d["res"] == "perdido" else "#C9A84C"
+            _score_txt   = f" ({_d['hs']}-{_d['as_']})" if _d.get("hs") else ""
+            st.markdown(
+                f'<div style="background:linear-gradient(90deg,{_notif_color}15,transparent);'
+                f'border-left:3px solid {_notif_color};border-radius:8px;'
+                f'padding:8px 14px;margin:3px 0;font-size:0.78rem;'
+                f'display:flex;align-items:center;gap:8px">'
+                f'<span style="font-size:1rem">{_d["icon"]}</span>'
+                f'<span>Pick <b>#{_d["num"]}</b> — {_d["texto"][:30]}'
+                f'<b style="color:{_notif_color}"> → {_d["res"].upper()}</b>'
+                f'<span style="color:#555;font-size:0.7rem">{_score_txt}</span></span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
     # ── Calcular bank actual ──────────────────────────────────────────────────
     bank_actual = bank_inicial
@@ -9316,6 +9222,93 @@ elif _active_page == "Reto 13M":
 
     progreso_pct = min((bank_actual / meta) * 100, 100)
     multiplicador = bank_actual / bank_inicial if bank_inicial > 0 else 1
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PICK DEL DÍA + NARRATIVE FEED
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ── Pick del día desde Rongol ─────────────────────────────────────────
+    _rongol_recs = st.session_state.get("rongol_picks_cache", [])
+    if _rongol_recs:
+        _top_rp = _rongol_recs[0]
+        _top_pk = _top_rp.get("_pick", {})
+        _top_prob = _top_pk.get("prob", 0) or 0
+        _top_prob = _top_prob if _top_prob <= 1 else _top_prob / 100
+        _top_ev   = _top_pk.get("ev", 0) or 0
+        _top_lbl  = _top_pk.get("label", "")
+        _top_mkt  = _top_pk.get("market", "")
+        _top_game = f'{_top_rp.get("away_team","")} vs {_top_rp.get("home_team","")}'
+        _top_dec  = _top_pk.get("decimal", 0) or 0
+        st.markdown(
+            f'<div style="background:linear-gradient(135deg,rgba(255,85,0,0.08) 0%,rgba(255,85,0,0.03) 100%);'
+            f'border:1px solid rgba(255,85,0,0.25);border-top:1px solid rgba(255,85,0,0.4);'
+            f'border-radius:16px;padding:14px 16px;margin:10px 0;position:relative;overflow:hidden">'
+            f'<div style="position:absolute;top:0;right:0;font-size:4rem;opacity:0.04;line-height:1;padding:4px">🎯</div>'
+            f'<div style="font-size:0.58rem;font-weight:800;color:var(--orange);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">⚡ Pick Recomendado Hoy</div>'
+            f'<div style="font-size:0.9rem;font-weight:700;color:#E8E8E0;margin-bottom:4px">{_top_game}</div>'
+            f'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+            f'<span style="font-size:1.3rem;font-weight:900;color:var(--gold);font-family:Barlow Condensed,sans-serif">{_top_dec:.2f}</span>'
+            f'<span style="font-size:0.75rem;font-weight:700;color:#ccc">{_top_lbl}</span>'
+            f'<span style="font-size:0.65rem;background:rgba(0,212,126,0.1);color:var(--green);'
+            f'padding:2px 8px;border-radius:20px;border:1px solid rgba(0,212,126,0.25)">{_top_prob*100:.0f}% prob</span>'
+            f'<span style="font-size:0.65rem;background:rgba(255,85,0,0.1);color:var(--orange);'
+            f'padding:2px 8px;border-radius:20px;border:1px solid rgba(255,85,0,0.25)">EV +{_top_ev:.1f}</span>'
+            f'</div></div>',
+            unsafe_allow_html=True
+        )
+
+    # ── Narrative feed ────────────────────────────────────────────────────
+    _picks_res_n = [p for p in picks if p.get("resultado") in ("ganado","perdido")]
+    if _picks_res_n:
+        _msgs = []
+        # Best single pick
+        _best_pick = None; _best_gain = 0
+        for _p in picks:
+            if _p.get("resultado") == "ganado":
+                _mm = float(_p.get("momio",0) or 0); _ss = float(_p.get("monto",0) or 0)
+                _gn = _ss*(_mm-1) if _mm>=1.01 else _ss*100/abs(_mm) if _mm<0 else 0
+                if _gn > _best_gain: _best_gain=_gn; _best_pick=_p
+        if _best_pick:
+            _msgs.append(f'🏆 Mejor pick: <b>{_best_pick.get("pick","")}</b> · ganaste <b style="color:var(--green)">+${_best_gain:,.0f}</b>')
+        # Days active
+        if picks:
+            try:
+                from datetime import datetime as _dtn
+                _first = picks[0].get("fecha","")[:10]
+                _days = (datetime.now().date() - datetime.strptime(_first, "%Y-%m-%d").date()).days if _first else 0
+                if _days > 0: _msgs.append(f'📅 Llevas <b>{_days} días</b> en el reto')
+            except: pass
+        # Win streak message
+        if _racha_n >= 5 and _racha_tipo == "ganado":
+            _msgs.append(f'🔥 Racha histórica: <b>{_racha_n} ganados</b> consecutivos')
+        # Projected finish
+        if len(_picks_res_n) >= 5:
+            _avg_daily = len(_picks_res_n) / max(_days if _days > 0 else 1, 1)
+            _picks_needed = 0; _sim_b = bank_actual
+            while _sim_b < meta and _picks_needed < 10000:
+                _avg_odds = sum(float(p.get("momio",1.9) or 1.9) for p in _picks_res_n[-10:]) / min(len(_picks_res_n), 10)
+                _avg_stake_pct = sum(float(p.get("monto",0) or 0) for p in _picks_res_n[-10:]) / max(sum(_sim_b for _ in range(min(len(_picks_res_n),10))),1)
+                _avg_stake_pct = min(max(_avg_stake_pct, 0.01), 0.2)
+                _wr = len([p for p in _picks_res_n if p.get("resultado")=="ganado"])/len(_picks_res_n)
+                _sim_b *= (1 + _wr * _avg_stake_pct * (_avg_odds-1) - (1-_wr) * _avg_stake_pct)
+                _picks_needed += 1
+            if _picks_needed < 5000 and _avg_daily > 0:
+                _days_needed = _picks_needed / _avg_daily
+                _msgs.append(f'📈 A tu ritmo actual, llegas en <b>~{_days_needed:.0f} días</b> más')
+
+        if _msgs:
+            _feed_html = ''.join(
+                f'<div style="font-size:0.75rem;color:#888;padding:5px 0;'
+                f'border-bottom:1px solid rgba(255,255,255,0.04)">{m}</div>'
+                for m in _msgs
+            )
+            st.markdown(
+                f'<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);'
+                f'border-radius:12px;padding:12px 14px;margin:8px 0">'
+                f'<div style="font-size:0.58rem;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;font-weight:700">📖 Tu Historia</div>'
+                + _feed_html + '</div>',
+                unsafe_allow_html=True
+            )
 
     # ══════════════════════════════════════════════════════════════════════
     # GAMIFICACIÓN — Niveles, rangos, racha, badges
@@ -9406,19 +9399,49 @@ elif _active_page == "Reto 13M":
         _falta_rango = _rango_next[0] - bank_actual
         _next_rango_html = f'<span style="font-size:0.62rem;color:#666;margin-left:8px">→ ${_falta_rango:,.0f} para {_rango_next[1]} {_rango_next[2]}</span>'
 
+    # Detect level-up
+    _prev_rango_key = f"_reto_prev_rango_{apodo_activo}"
+    _prev_rango_name = st.session_state.get(_prev_rango_key, _rango_actual[2])
+    _is_level_up = (_prev_rango_name != _rango_actual[2] and _prev_rango_name != "")
+    st.session_state[_prev_rango_key] = _rango_actual[2]
+
+    _levelup_style = "animation:pulse-glow 1.5s ease-in-out 3;" if _is_level_up else ""
+    _rango_border = f"rgba({','.join(str(int(_rango_actual[3][1:][i:i+2],16) if _rango_actual[3].startswith('#') else '201') for i in (0,2,4))},0.4)" if _rango_actual[3].startswith('#') else "rgba(201,168,76,0.3)"
+
     st.markdown(
-        f'<div style="background:linear-gradient(160deg,rgba(201,168,76,0.08) 0%,rgba(0,0,0,0) 100%);'
-        f'border:1px solid rgba(201,168,76,0.2);border-radius:16px;'
-        f'padding:14px 18px;margin:12px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
-        f'<span style="font-size:2rem">{_rango_actual[1]}</span>'
+        f'<div style="background:linear-gradient(135deg,rgba(201,168,76,0.06) 0%,rgba(0,0,0,0) 100%);'
+        f'border:1px solid {_rango_border};border-top:1px solid rgba(201,168,76,0.35);'
+        f'border-radius:18px;padding:16px 18px;margin:12px 0;'
+        f'display:flex;align-items:center;gap:14px;flex-wrap:wrap;{_levelup_style}">'
+        + (f'<div style="background:rgba(0,212,126,0.15);border:1px solid rgba(0,212,126,0.4);'
+           f'border-radius:8px;padding:4px 10px;font-size:0.65rem;font-weight:800;color:#00D47E;'
+           f'letter-spacing:1px;margin-bottom:6px;width:100%">🎉 ¡SUBISTE DE NIVEL! → {_rango_actual[2]}</div>'
+           if _is_level_up else '')
+        + f'<span style="font-size:2.5rem;filter:drop-shadow(0 0 12px rgba(201,168,76,0.5))">{_rango_actual[1]}</span>'
         f'<div style="flex:1">'
-        f'<div style="font-size:0.95rem;font-weight:800;color:{_rango_actual[3]}">{_rango_actual[2]}</div>'
-        f'<div style="font-size:0.65rem;color:#666;margin-top:2px">{multiplicador:.2f}× · ${bank_actual:,.0f}{_next_rango_html}</div>'
+        f'<div style="font-size:1rem;font-weight:900;color:{_rango_actual[3]};'
+        f'font-family:Barlow Condensed,sans-serif;letter-spacing:1px">{_rango_actual[2].upper()}</div>'
+        f'<div style="font-size:0.65rem;color:#555;margin-top:3px">'
+        f'{multiplicador:.2f}× multiplicador · ${bank_actual:,.0f}{_next_rango_html}</div>'
         f'</div>'
-        + ("".join(f'<span title="{b[1]}" style="font-size:1.3rem">{b[0]}</span>' for b in _badges_earned[-5:]))
-        + f'</div>',
+        f'<div style="display:flex;gap:4px;flex-wrap:wrap">'
+        + "".join(f'<span title="{b[1]}" style="font-size:1.4rem;filter:drop-shadow(0 0 6px rgba(201,168,76,0.3))">{b[0]}</span>' for b in _badges_earned[-6:])
+        + f'</div></div>',
         unsafe_allow_html=True
     )
+
+    # Level up sound
+    if _is_level_up:
+        import streamlit.components.v1 as _fxlv
+        _fxlv.html("""<script>
+try{const a=new AudioContext();
+[[523,0],[659,0.15],[784,0.3],[1047,0.45]].forEach(([f,t])=>{
+  const o=a.createOscillator();const g=a.createGain();o.connect(g);g.connect(a.destination);
+  o.frequency.value=f;g.gain.setValueAtTime(0.25,a.currentTime+t);
+  g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+t+0.3);
+  o.start(a.currentTime+t);o.stop(a.currentTime+t+0.35);});
+}catch(e){}
+</script>""", height=0)
     if _racha_html:
         st.markdown(_racha_html, unsafe_allow_html=True)
 
@@ -9428,55 +9451,212 @@ elif _active_page == "Reto 13M":
     n_pen = sum(1 for p in picks if p.get("resultado")=="pendiente")
     win_rate = (n_gan / (n_gan + n_per) * 100) if (n_gan + n_per) > 0 else 0
 
-    st.markdown(f'''<div class="stat-grid" style="margin-bottom:16px">
-      <div class="stat-tile">
-        <div class="stat-num" style="color:#C9A84C">${bank_actual:,.0f}</div>
-        <div class="stat-label">Bank Actual</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-num" style="color:#00C896">{multiplicador:.1f}×</div>
-        <div class="stat-label">Multiplicador</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-num" style="color:#60a5fa">{len(picks)}</div>
-        <div class="stat-label">Total Picks</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-num" style="color:#00C896">{win_rate:.0f}%</div>
-        <div class="stat-label">Win Rate</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-num" style="color:#00C896">{n_gan}</div>
-        <div class="stat-label">Ganados</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-num" style="color:#ef4444">{n_per}</div>
-        <div class="stat-label">Perdidos</div>
-      </div>
-    </div>''', unsafe_allow_html=True)
+    # ── Hero KPI: Bank actual (main metric) ──────────────────────────────
+    _bank_color = "#00D47E" if bank_actual >= bank_inicial else "#ef4444"
+    _bank_delta = bank_actual - bank_inicial
+    st.markdown(f'''
+    <div style="background:linear-gradient(160deg,#161610 0%,#0F0F0A 100%);
+        border:1px solid rgba(201,168,76,0.18);border-top:1px solid rgba(201,168,76,0.35);
+        border-radius:20px;padding:22px 24px;margin-bottom:10px;
+        box-shadow:0 8px 32px rgba(201,168,76,0.08),0 2px 0 rgba(201,168,76,0.15) inset;
+        position:relative;overflow:hidden">
+        <div style="font-size:0.58rem;color:#666;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px;font-weight:700">💼 Bank Actual</div>
+        <div style="font-family:Barlow Condensed,sans-serif;font-size:3rem;font-weight:900;
+            color:#C9A84C;line-height:1;
+            text-shadow:0 0 30px rgba(201,168,76,0.3)">${bank_actual:,.0f}</div>
+        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+            <span style="font-size:0.72rem;color:{"#00D47E" if _bank_delta>=0 else "#ef4444"};font-weight:700">
+                {"+" if _bank_delta>=0 else ""}{_bank_delta:+,.0f} vs inicio</span>
+            <span style="font-size:0.72rem;color:#888">{multiplicador:.2f}× multiplicador</span>
+            <span style="font-size:0.72rem;color:#666">Meta: ${meta:,.0f}</span>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    # ── Stats grid ────────────────────────────────────────────────────────
+    _wr_color = "#00D47E" if win_rate >= 55 else ("#f59e0b" if win_rate >= 45 else "#ef4444")
+    st.markdown(f'''
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+        <div style="background:linear-gradient(160deg,#161616 0%,#0F0F0F 100%);
+            border:1px solid rgba(255,255,255,0.06);border-top:1px solid rgba(255,255,255,0.1);
+            border-radius:14px;padding:14px 10px;text-align:center;
+            box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+            <div style="font-size:1.5rem;font-weight:900;color:{_wr_color};
+                font-family:Barlow Condensed,sans-serif;line-height:1">{win_rate:.0f}%</div>
+            <div style="font-size:0.52rem;color:#555;text-transform:uppercase;letter-spacing:1px;margin-top:4px;font-weight:700">Win Rate</div>
+        </div>
+        <div style="background:linear-gradient(160deg,#0F1A13 0%,#0A0F0C 100%);
+            border:1px solid rgba(0,212,126,0.15);border-top:1px solid rgba(0,212,126,0.25);
+            border-radius:14px;padding:14px 10px;text-align:center;
+            box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+            <div style="font-size:1.5rem;font-weight:900;color:#00D47E;
+                font-family:Barlow Condensed,sans-serif;line-height:1">{n_gan}</div>
+            <div style="font-size:0.52rem;color:#555;text-transform:uppercase;letter-spacing:1px;margin-top:4px;font-weight:700">✅ Ganados</div>
+        </div>
+        <div style="background:linear-gradient(160deg,#1A0F0F 0%,#0F0A0A 100%);
+            border:1px solid rgba(239,68,68,0.15);border-top:1px solid rgba(239,68,68,0.25);
+            border-radius:14px;padding:14px 10px;text-align:center;
+            box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+            <div style="font-size:1.5rem;font-weight:900;color:#ef4444;
+                font-family:Barlow Condensed,sans-serif;line-height:1">{n_per}</div>
+            <div style="font-size:0.52rem;color:#555;text-transform:uppercase;letter-spacing:1px;margin-top:4px;font-weight:700">❌ Perdidos</div>
+        </div>
+        <div style="background:linear-gradient(160deg,#161616 0%,#0F0F0F 100%);
+            border:1px solid rgba(255,255,255,0.06);border-top:1px solid rgba(255,255,255,0.1);
+            border-radius:14px;padding:14px 10px;text-align:center;
+            box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+            <div style="font-size:1.5rem;font-weight:900;color:#888;
+                font-family:Barlow Condensed,sans-serif;line-height:1">{n_pen}</div>
+            <div style="font-size:0.52rem;color:#555;text-transform:uppercase;letter-spacing:1px;margin-top:4px;font-weight:700">⏳ Pendientes</div>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
 
     # ── Barra de progreso hacia meta ──────────────────────────────────────────
     falta = max(meta - bank_actual, 0)
+    _milestones = [
+        (2000, "🌱"), (5000, "🟢"), (10000, "📈"), (20000, "💪"),
+        (40000, "🦈"), (70000, "🎰"), (100000, "🔥"), (500000, "🚀"),
+        (1000000, "💎"), (13000000, "👑")
+    ]
+    _ms_html = ""
+    for _ms_val, _ms_icon in _milestones:
+        _ms_pct = min((_ms_val / meta) * 100, 100)
+        _ms_reached = bank_actual >= _ms_val
+        _ms_opacity = "1" if _ms_reached else "0.25"
+        _ms_html += (
+            f'<div style="position:absolute;left:{_ms_pct:.1f}%;top:-18px;'
+            f'transform:translateX(-50%);font-size:0.7rem;opacity:{_ms_opacity};'
+            f'filter:{"none" if _ms_reached else "grayscale(1)"}">{_ms_icon}</div>'
+        )
+
     st.markdown(f'''
-    <div style="margin:8px 0 20px">
-      <div style="display:flex;justify-content:space-between;
-          font-family:'Inter',sans-serif;font-size:0.806rem;color:#6B7280;margin-bottom:6px">
-        <span>${bank_inicial:,.0f} inicio</span>
-        <span style="color:#C9A84C;font-weight:700">{progreso_pct:.4f}% completado</span>
-        <span>Meta: ${meta:,.0f}</span>
-      </div>
-      <div style="background:#1A1A1A;border-radius:12px;height:10px;overflow:hidden;
-          border:1px solid rgba(201,168,76,0.15)">
-        <div style="height:100%;width:{min(progreso_pct,100):.4f}%;
-            background:linear-gradient(90deg,#C9A84C,#FFE87C);
-            border-radius:12px;transition:width 0.5s ease"></div>
-      </div>
-      <div style="text-align:center;font-family:'Inter',sans-serif;
-          font-size:0.806rem;color:#6B7280;margin-top:6px">
-        Faltan <b style="color:#C9A84C">${falta:,.0f}</b> para la meta
-      </div>
+    <div style="margin:16px 0 20px;background:linear-gradient(160deg,#161614 0%,#0F0F0C 100%);
+        border:1px solid rgba(201,168,76,0.15);border-radius:16px;padding:16px 18px;
+        box-shadow:0 4px 16px rgba(0,0,0,0.3)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+            <span style="font-size:0.6rem;color:#555;text-transform:uppercase;letter-spacing:2px;font-weight:700">Progreso hacia la meta</span>
+            <span style="font-size:0.85rem;font-weight:800;color:#C9A84C">{progreso_pct:.2f}%</span>
+        </div>
+        <div style="position:relative;margin-top:22px">
+            {_ms_html}
+            <div style="background:rgba(255,255,255,0.05);border-radius:20px;height:14px;
+                overflow:visible;box-shadow:inset 0 2px 4px rgba(0,0,0,0.5)">
+                <div style="height:14px;width:{min(progreso_pct,100):.2f}%;
+                    background:linear-gradient(90deg,#C9A84C,#FFE87C,#C9A84C);
+                    background-size:200% 100%;
+                    border-radius:20px;
+                    box-shadow:0 0 16px rgba(201,168,76,0.5);
+                    animation:shimmer 2s infinite;
+                    position:relative">
+                    <div style="position:absolute;right:-6px;top:-3px;width:20px;height:20px;
+                        background:#FFE87C;border-radius:50%;
+                        box-shadow:0 0 12px rgba(255,232,124,0.8)"></div>
+                </div>
+            </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:0.68rem;color:#444">
+            <span>${bank_inicial:,.0f}</span>
+            <span style="color:#C9A84C;font-weight:700">Faltan <b>${falta:,.0f}</b></span>
+            <span>🏆 ${meta:,.0f}</span>
+        </div>
     </div>
     ''', unsafe_allow_html=True)
+
+    # ── Quick Add Pick (compact, always visible) ─────────────────────────────
+    st.markdown(
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:0.72rem;font-weight:800;'
+        'color:var(--text3);letter-spacing:3px;text-transform:uppercase;'
+        'margin:16px 0 8px;display:flex;align-items:center;gap:10px">'
+        '<span style="width:3px;height:14px;background:var(--orange);border-radius:2px;flex-shrink:0"></span>'
+        '➕ REGISTRAR PICK'
+        '<span style="flex:1;height:1px;background:linear-gradient(90deg,rgba(255,85,0,0.3),transparent)"></span>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    with st.container():
+        st.markdown(
+            '<div style="background:linear-gradient(160deg,#161618 0%,#0F0F12 100%);'
+            'border:1px solid rgba(255,85,0,0.2);border-top:1px solid rgba(255,85,0,0.35);'
+            'border-radius:16px;padding:16px;margin-bottom:8px">',
+            unsafe_allow_html=True
+        )
+        _qf1, _qf2, _qf3 = st.columns([3,2,2])
+        with _qf1:
+            _qf_partido = st.text_input("Partido", placeholder="Real Madrid vs Barça",
+                                         key="qf_partido", label_visibility="visible")
+        with _qf2:
+            _qf_pick = st.text_input("Pick", placeholder="Real Madrid ML",
+                                      key="qf_pick", label_visibility="visible")
+        with _qf3:
+            _qf_mercado = st.selectbox("Mercado", ["ML","O/U","BTTS","DO","Spread","Otro"],
+                                        key="qf_mercado")
+        _qf4, _qf5, _qf6 = st.columns([2,2,2])
+        with _qf4:
+            _qf_momio = st.number_input("Cuota decimal", min_value=1.01, max_value=50.0,
+                                         value=1.91, step=0.05, key="qf_momio", format="%.2f")
+        with _qf5:
+            _qf_monto = st.number_input("Monto ($)", min_value=1.0,
+                                         value=float(min(bank_actual * 0.05, bank_actual)) if bank_actual > 0 else 100.0,
+                                         step=10.0, key="qf_monto")
+        with _qf6:
+            _qf_resultado = st.selectbox("Resultado",
+                                          ["pendiente","ganado","perdido","push"],
+                                          key="qf_resultado")
+
+        # Live preview
+        _qf_gan_est = _qf_monto * (_qf_momio - 1)
+        _qf_bank_new = bank_actual + _qf_gan_est if _qf_resultado == "ganado" else bank_actual - _qf_monto if _qf_resultado == "perdido" else bank_actual
+        _qf_preview_color = "#00D47E" if _qf_resultado == "ganado" else "#ef4444" if _qf_resultado == "perdido" else "#888"
+        st.markdown(
+            f'<div style="display:flex;gap:16px;margin:8px 0 4px;font-size:0.72rem;flex-wrap:wrap">'
+            f'<span style="color:#555">Ganancia si gana: <b style="color:#00D47E">+${_qf_gan_est:,.0f}</b></span>'
+            f'<span style="color:#555">Bank resultante: <b style="color:{_qf_preview_color}">${_qf_bank_new:,.0f}</b></span>'
+            f'<span style="color:#555">Kelly sugerido: <b style="color:var(--gold)">{min(max((_qf_momio-1)/(_qf_momio)*0.5,0.01)*100,15):.1f}%</b></span>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        _qf_btn_col, _qf_note_col = st.columns([1,2])
+        with _qf_note_col:
+            _qf_nota = st.text_input("Nota", placeholder="Liga MX J12 · del oráculo",
+                                      key="qf_nota", label_visibility="collapsed")
+        with _qf_btn_col:
+            if st.button("⚡ Agregar Pick", use_container_width=True, key="btn_qf_add"):
+                if _qf_partido.strip() and _qf_pick.strip():
+                    _qf_momio_fmt = f"{_qf_momio:.2f}"
+                    _qf_nuevo = {
+                        "num":       len(picks) + 1,
+                        "fecha":     datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                        "partido":   _qf_partido.strip(),
+                        "pick":      _qf_pick.strip(),
+                        "mercado":   _qf_mercado,
+                        "momio":     round(_qf_momio, 4),
+                        "momio_fmt": _qf_momio_fmt,
+                        "monto":     _qf_monto,
+                        "resultado": _qf_resultado,
+                        "nota":      _qf_nota,
+                    }
+                    picks.append(_qf_nuevo)
+                    reto["picks"] = picks
+                    if _save_reto(reto, apodo_activo):
+                        st.toast(f"⚡ Pick #{_qf_nuevo['num']} registrado!", icon="💰")
+                        if _qf_resultado == "ganado":
+                            import streamlit.components.v1 as _fxq
+                            _fxq.html("""<script>
+(function(){const c=['#00D47E','#FFD700','#FF5500','#00BFFF'];
+for(let i=0;i<60;i++){const e=document.createElement('div');
+e.style.cssText=`position:fixed;top:-10px;left:${Math.random()*100}vw;width:${6+Math.random()*7}px;height:${6+Math.random()*7}px;background:${c[Math.floor(Math.random()*c.length)]};border-radius:${Math.random()>.5?'50%':'2px'};z-index:999999;pointer-events:none;animation:qfall${i} ${1+Math.random()*1.5}s ease-in forwards`;
+const s=document.createElement('style');s.textContent=`@keyframes qfall${i}{to{top:110vh;transform:rotate(${Math.random()*720}deg);opacity:0}}`;
+document.head.appendChild(s);document.body.appendChild(e);setTimeout(()=>e.remove(),2500);}
+try{const a=new AudioContext();const o=a.createOscillator();const g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.setValueAtTime(880,a.currentTime);o.frequency.exponentialRampToValueAtTime(1760,a.currentTime+0.1);g.gain.setValueAtTime(0.3,a.currentTime);g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+0.3);o.start();o.stop(a.currentTime+0.3);}catch(e){}})();
+</script>""", height=0)
+                        st.rerun()
+                    else:
+                        st.error("Error guardando. Verifica permisos.")
+                else:
+                    st.warning("Completa al menos Partido y Pick.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Gráfica de bankroll ───────────────────────────────────────────────────
     if picks:
@@ -9775,6 +9955,172 @@ elif _active_page == "Reto 13M":
             st.markdown(f'<div style="background:#0F0F11;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,0.07)">{_tbl_html}</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="den-divider" style="margin:18px 0"></div>', unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # LEADERBOARD — siempre visible, auto-refresh
+    # ══════════════════════════════════════════════════════════════════════
+    st.markdown(
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:0.72rem;font-weight:800;'
+        'color:var(--text3);letter-spacing:3px;text-transform:uppercase;'
+        'margin:18px 0 10px;display:flex;align-items:center;gap:10px">'
+        '<span style="width:3px;height:14px;background:var(--gold);border-radius:2px;flex-shrink:0"></span>'
+        '🏆 LEADERBOARD'
+        '<span style="flex:1;height:1px;background:linear-gradient(90deg,rgba(201,168,76,0.3),transparent)"></span>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    # Load all users — cached 2 min
+    _lb_col1, _lb_col2 = st.columns([4,1])
+    with _lb_col2:
+        def _refresh_lb():
+            _load_leaderboard.clear()
+        st.button("↺ Refresh", key="btn_lb_refresh", use_container_width=True, on_click=_refresh_lb)
+
+    _lb_data = _load_leaderboard()
+
+    if not _lb_data:
+        st.markdown(
+            '<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);'
+            'border-radius:12px;padding:20px;text-align:center;color:#444;font-size:0.8rem">'
+            '⚙️ Configura Google Sheets para ver el leaderboard</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        # ── Header row ────────────────────────────────────────────────
+        st.markdown(
+            '<div style="display:grid;grid-template-columns:28px 36px 1fr 90px 60px 56px;'
+            'gap:8px;padding:0 8px 6px;align-items:center;'
+            'border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:4px">'
+            '<span style="font-size:0.55rem;color:#333;text-transform:uppercase;letter-spacing:1px">#</span>'
+            '<span></span>'
+            '<span style="font-size:0.55rem;color:#333;text-transform:uppercase;letter-spacing:1px">Jugador</span>'
+            '<span style="font-size:0.55rem;color:#333;text-transform:uppercase;letter-spacing:1px;text-align:right">Bank</span>'
+            '<span style="font-size:0.55rem;color:#333;text-transform:uppercase;letter-spacing:1px;text-align:center">Racha</span>'
+            '<span style="font-size:0.55rem;color:#333;text-transform:uppercase;letter-spacing:1px;text-align:right">WR</span>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+        _my_pos = None
+        for _pos, _u in enumerate(_lb_data, 1):
+            _is_me = (_u["apodo"] == apodo_activo)
+            if _is_me: _my_pos = _pos
+
+            # Calculate active win streak for this user
+            _u_streak = 0; _u_streak_type = ""
+            for _up in reversed(_u.get("all_picks", []) + _u.get("all_picks", [])):
+                break  # need full picks — use n_gan as proxy for now
+            # Compute streak from all_picks (last 5) - approximate
+            _all_up = _u.get("all_picks", [])
+            _u_streak = 0
+            for _up in reversed(_all_up):
+                _up_r = _up.get("resultado","")
+                if _up_r == "pendiente": continue
+                if _u_streak == 0:
+                    _u_streak = 1; _u_streak_type = _up_r
+                elif _up_r == _u_streak_type:
+                    _u_streak += 1
+                else:
+                    break
+
+            # Streak display
+            if _u_streak >= 2 and _u_streak_type == "ganado":
+                _streak_html = f'<span style="font-size:0.72rem;color:#FF5500;font-weight:800">🔥{_u_streak}</span>'
+            elif _u_streak >= 2 and _u_streak_type == "perdido":
+                _streak_html = f'<span style="font-size:0.72rem;color:#60a5fa">🧊{_u_streak}</span>'
+            else:
+                _streak_html = f'<span style="font-size:0.65rem;color:#333">{_u["n_gan"]}G/{_u["n_per"]}P</span>'
+
+            _u_icon, _u_rango, _u_color = _rango_for_bank(_u["bank"])
+            _pos_color = {"1":"#FFD700","2":"#C0C0C0","3":"#CD7F32"}.get(str(_pos),"#333")
+            _bank_color = "#00D47E" if _u["bank"] >= _u["bank_ini"] else "#ef4444"
+            _wr_color   = "#00D47E" if _u["wr"] >= 55 else ("#f59e0b" if _u["wr"] >= 45 else "#ef4444")
+
+            # Card bg: gold tint for me, podium tint for top 3
+            if _is_me:
+                _row_bg = "linear-gradient(90deg,rgba(201,168,76,0.08) 0%,rgba(0,0,0,0) 100%)"
+                _row_border = "1px solid rgba(201,168,76,0.25)"
+                _row_bl = "3px solid var(--gold)"
+            elif _pos == 1:
+                _row_bg = "linear-gradient(90deg,rgba(255,215,0,0.05) 0%,rgba(0,0,0,0) 100%)"
+                _row_border = "1px solid rgba(255,215,0,0.12)"
+                _row_bl = "3px solid #FFD700"
+            elif _pos <= 3:
+                _row_bg = "linear-gradient(90deg,rgba(255,255,255,0.02) 0%,rgba(0,0,0,0) 100%)"
+                _row_border = "1px solid rgba(255,255,255,0.05)"
+                _row_bl = f"3px solid {_pos_color}"
+            else:
+                _row_bg = "transparent"
+                _row_border = "1px solid rgba(255,255,255,0.04)"
+                _row_bl = "3px solid transparent"
+
+            st.markdown(
+                f'<div style="display:grid;grid-template-columns:28px 36px 1fr 90px 60px 56px;'
+                f'gap:8px;padding:10px 8px;align-items:center;'
+                f'background:{_row_bg};border:{_row_border};border-left:{_row_bl};'
+                f'border-radius:10px;margin:3px 0">'
+
+                # Pos
+                f'<div style="font-size:{"1rem" if _pos<=3 else "0.72rem"};'
+                f'color:{_pos_color};font-weight:900;text-align:center">'
+                f'{["🥇","🥈","🥉"][_pos-1] if _pos<=3 else str(_pos)}</div>'
+
+                # Avatar
+                f'<div style="width:32px;height:32px;border-radius:50%;'
+                f'background:linear-gradient(135deg,{_u_color},{_u_color}66);'
+                f'display:flex;align-items:center;justify-content:center;'
+                f'font-size:0.85rem;font-weight:900;color:#0A0A0B;'
+                f'box-shadow:0 0 8px {_u_color}44">{_u["apodo"][0].upper()}</div>'
+
+                # Name + rango
+                f'<div style="min-width:0">'
+                f'<div style="font-size:0.82rem;font-weight:800;'
+                f'color:{"var(--gold)" if _is_me else "var(--text)"};'
+                f'font-family:Barlow Condensed,sans-serif;letter-spacing:0.5px;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+                f'{_u["apodo"].upper()}'
+                f'{"  👈" if _is_me else ""}</div>'
+                f'<div style="font-size:0.55rem;color:{_u_color};margin-top:1px">'
+                f'{_u_icon} {_u_rango}</div>'
+                f'</div>'
+
+                # Bank
+                f'<div style="text-align:right">'
+                f'<div style="font-size:0.88rem;font-weight:900;color:{_bank_color};'
+                f'font-family:Barlow Condensed,sans-serif">${_u["bank"]:,.0f}</div>'
+                f'<div style="font-size:0.55rem;color:#444;margin-top:1px">{_u["mult"]:.1f}×</div>'
+                f'</div>'
+
+                # Streak
+                f'<div style="text-align:center">{_streak_html}</div>'
+
+                # WR
+                f'<div style="text-align:right">'
+                f'<div style="font-size:0.78rem;font-weight:700;color:{_wr_color}">{_u["wr"]:.0f}%</div>'
+                f'<div style="font-size:0.55rem;color:#333">{_u["n_picks"]}p</div>'
+                f'</div>'
+
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        # Footer: my rank + last updated
+        _lb_footer_parts = []
+        if _my_pos:
+            _gap_to_1 = _lb_data[0]["bank"] - _lb_data[_my_pos-1]["bank"] if _my_pos > 1 else 0
+            _footer_txt = f'Posición #{_my_pos} de {len(_lb_data)}'
+            if _gap_to_1 > 0:
+                _footer_txt += f' · A ${_gap_to_1:,.0f} del líder'
+            _lb_footer_parts.append(_footer_txt)
+
+        if _lb_footer_parts:
+            st.markdown(
+                f'<div style="text-align:center;font-size:0.65rem;color:#333;margin-top:8px">'
+                f'{" · ".join(_lb_footer_parts)} · cache 5min</div>',
+                unsafe_allow_html=True
+            )
+
 
     # ══════════════════════════════════════════════════════════════════════
     # SIMULADOR DE DESTINO
@@ -10150,7 +10496,13 @@ elif _active_page == "Reto 13M":
 
     # ── Historial de picks ────────────────────────────────────────────────────
     if picks:
-        st.markdown('<div class="section-heading">📋 Historial de Picks</div>', unsafe_allow_html=True)
+        st.markdown('''<div style="font-family:Barlow Condensed,sans-serif;font-size:0.78rem;
+            font-weight:800;color:#C9A84C;letter-spacing:3px;text-transform:uppercase;
+            margin:18px 0 10px;display:flex;align-items:center;gap:10px">
+            <span style="width:3px;height:16px;background:#C9A84C;border-radius:2px;flex-shrink:0"></span>
+            📋 HISTORIAL DE PICKS
+            <span style="flex:1;height:1px;background:linear-gradient(90deg,rgba(201,168,76,0.3),transparent)"></span>
+        </div>''', unsafe_allow_html=True)
 
         # ── Filtros rápidos ────────────────────────────────────────────────
         _filt_c1, _filt_c2, _filt_c3, _filt_c4 = st.columns(4)
@@ -10222,99 +10574,61 @@ elif _active_page == "Reto 13M":
             momio_fmt = p.get("momio_fmt") or (f"+{momio_p:.0f}" if momio_p > 0 else f"{momio_p:.2f}")
             nota_html = f'<div style="font-size:0.784rem;color:#444444;margin-top:2px">{p.get("nota","")}</div>' if p.get("nota") else ""
 
-            # ── Render pick row con Streamlit nativo ──────────────────────
+            # ── Pick row — premium card ────────────────────────────────────
+            _res_colors2 = {"ganado":"#00D47E","perdido":"#ef4444","push":"#C9A84C","pendiente":"#555"}
+            _res_bgs2    = {"ganado":"#0D1A10","perdido":"#1A0D0D","push":"#1A1A0D","pendiente":"#111114"}
+            _res_bord2   = {"ganado":"rgba(0,212,126,0.25)","perdido":"rgba(239,68,68,0.25)","push":"rgba(201,168,76,0.2)","pendiente":"rgba(255,255,255,0.05)"}
+            _rc2 = _res_colors2.get(res,"#555")
+            _rbg2= _res_bgs2.get(res,"#111")
+            _rbo2= _res_bord2.get(res,"rgba(255,255,255,0.05)")
+            _mkt_c2 = {"ML":"#3D8EFF","O/U":"#FF8C00","BTTS":"#00C896","AA":"#00C896","DO":"#9B6DFF"}.get(p.get("mercado",""),"#888")
+            _pick_txt = p.get("pick","") or p.get("pick_label","")
             with st.container():
-                h_left, h_right = st.columns([3, 1])
-                with h_left:
-                    mercado_chip = {"ML":"🎯","O/U":"📊","BTTS":"⚽","DO":"🔄","Spread":"📐","Otro":"🎲"}.get(p.get("mercado","ML"),"🎯")
-                    st.markdown(
-                        f'<span style="color:#C9A84C;font-family:\'Inter\',sans-serif;font-size:0.874rem">#{num}</span>'
-                        f' <span style="color:#E8E8E8;font-weight:600">{p.get("partido","")}</span>'
-                        f' <span style="background:rgba(201,168,76,0.15);color:#C9A84C;'
-                        f'border-radius:12px;padding:1px 6px;font-size:0.784rem;margin-left:4px">'
-                        f'{mercado_chip} {p.get("mercado","ML")}</span>',
-                        unsafe_allow_html=True
-                    )
-                    st.markdown(
-                        f'<div style="font-size:0.952rem;color:#A0A0A0;margin:2px 0">▶ {p.get("pick","")}</div>',
-                        unsafe_allow_html=True
-                    )
-                    if p.get("nota"):
-                        st.caption(p["nota"])
-                    st.caption(p.get("fecha",""))
-                with h_right:
-                    st.markdown(
-                        f'<div style="text-align:right">'
-                        f'<div style="font-size:1.12rem;font-weight:700;color:{res_color}">{res_icon} {res.upper()}</div>'
-                        f'<div style="font-size:0.952rem;color:{res_color};font-weight:600">{delta_str}</div>'
-                        f'<div style="font-size:0.806rem;color:#6B7280">${stake:,.0f} @ {momio_fmt}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-                st.markdown('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.05);margin:8px 0">', unsafe_allow_html=True)
-
+                _nota_html = f'<div style="font-size:0.6rem;color:#444;margin-top:3px">{p.get("nota","")}</div>' if p.get("nota") else ""
+                st.markdown(
+                    f'<div style="background:{_rbg2};border:1px solid {_rbo2};'
+                    f'border-left:3px solid {_rc2};border-radius:12px;'
+                    f'padding:12px 14px;margin:3px 0;'
+                    f'box-shadow:0 2px 8px rgba(0,0,0,0.25)">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+                    f'<div style="flex:1;min-width:0">'
+                    f'<div style="font-size:0.82rem;font-weight:700;color:#D8D8E0;'
+                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px">{p.get("partido","")}</div>'
+                    f'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+                    f'<span style="font-size:0.58rem;background:rgba(201,168,76,0.1);color:#C9A84C;padding:2px 6px;border-radius:4px;font-weight:800">#{num}</span>'
+                    f'<span style="font-size:0.6rem;color:{_mkt_c2};padding:2px 7px;border-radius:4px;font-weight:700;border:1px solid {_mkt_c2}44;background:rgba(255,255,255,0.03)">{p.get("mercado","")}</span>'
+                    f'<span style="font-size:0.68rem;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">{_pick_txt[:25]}</span>'
+                    f'</div>'
+                    + _nota_html
+                    + f'<div style="font-size:0.58rem;color:#2A2A2A;margin-top:2px">{p.get("fecha","")[:10]}</div>'
+                    f'</div>'
+                    f'<div style="text-align:right;flex-shrink:0">'
+                    f'<div style="font-size:0.95rem;font-weight:900;color:{_rc2};font-family:Barlow Condensed,sans-serif">{res_icon} {delta_str}</div>'
+                    f'<div style="font-size:0.62rem;color:#444;margin-top:2px">{momio_fmt} · ${stake:,.0f}</div>'
+                    f'</div></div></div>',
+                    unsafe_allow_html=True
+                )
         st.markdown('<div class="den-divider" style="margin:16px 0"></div>', unsafe_allow_html=True)
 
-        # ── AUTO-RESOLVE: detecta resultados ESPN automáticamente ──────────────
+        # ── Picks pendientes — auto-resueltos automáticamente ────────────────
         pendientes = [p for p in picks if p.get("resultado")=="pendiente"]
         if pendientes:
-            st.markdown('<div class="section-heading" style="font-size:1.008rem">⏳ Picks Pendientes</div>', unsafe_allow_html=True)
-
-            col_auto, col_manual = st.columns([1,1])
-            with col_auto:
-                if st.button("🔍 Auto-Resolver con ESPN", use_container_width=True, key="btn_auto_resolve",
-                             help="Busca los resultados de tus picks pendientes en ESPN automáticamente"):
-                    with st.spinner("Consultando ESPN..."):
-                        finished_games = _fetch_finished_games()
-                    resolved = 0
-                    not_found = []
-                    details = []
-                    for i, p in enumerate(picks):
-                        if p.get("resultado") != "pendiente":
-                            continue
-                        # Parse partido field "Team A vs Team B" or "Team A @ Team B"
-                        partido_txt = p.get("partido","")
-                        sep = " vs " if " vs " in partido_txt.lower() else (" @ " if " @ " in partido_txt else None)
-                        if sep:
-                            parts = partido_txt.split(sep, 1)
-                            t1, t2 = parts[0].strip(), parts[1].strip()
-                        else:
-                            t1, t2 = partido_txt.strip(), ""
-
-                        best_match = None
-                        best_result = None
-                        for g in finished_games:
-                            # Match either team from the pick against the game
-                            m1 = _team_match(t1, g["home_team"], g["away_team"])
-                            m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
-                            if m1 or m2:
-                                res = _evaluate_pick(p, g)
-                                if res:
-                                    best_match = g
-                                    best_result = res
-                                    break
-
-                        if best_result:
-                            picks[i]["resultado"] = best_result
-                            resolved += 1
-                            icon = "✅" if best_result=="ganado" else ("❌" if best_result=="perdido" else "🔄")
-                            details.append(f"{icon} #{p['num']} {partido_txt} → **{best_result.upper()}**")
-                        else:
-                            not_found.append(f"#{p['num']} {partido_txt}")
-
-                    if resolved > 0:
-                        reto["picks"] = picks
-                        _save_reto(reto, apodo_activo)
-                        for d in details:
-                            st.markdown(d)
-                        st.toast(f"✓ {resolved} pick(s) resueltos automáticamente", icon="🔍")
-                        st.rerun()
-                    else:
-                        st.info("No se encontraron resultados aún. Los partidos pueden no haber terminado o los nombres no coinciden.")
-                    if not_found:
-                        with st.expander(f"⚠ {len(not_found)} sin resolver"):
-                            for nf in not_found:
-                                st.caption(nf)
+            st.markdown('<div class="section-heading">⏳ Pendientes de Resultado</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);'
+                f'border-radius:10px;padding:10px 14px;font-size:0.75rem;color:#555;'
+                f'display:flex;align-items:center;gap:8px;margin-bottom:8px">'
+                f'<span style="font-size:1rem">🤖</span>'
+                f'<span>El sistema verifica automáticamente los resultados de ESPN cada vez que abres esta pestaña. '
+                f'{len(pendientes)} pick{"s" if len(pendientes)!=1 else ""} en espera.</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+            # Force-resolve button (manual trigger if user wants immediate check)
+            def _force_resolve():
+                st.session_state["_auto_last_key"] = ""  # reset key to force re-check
+            st.button("🔄 Verificar ahora", key="btn_force_resolve",
+                      use_container_width=False, on_click=_force_resolve)
 
             # ── Manual override ───────────────────────────────────────────────
             st.markdown('<div style="font-size:0.784rem;color:#6B7280;margin:8px 0 4px 0">✏️ Actualizar manualmente</div>', unsafe_allow_html=True)
