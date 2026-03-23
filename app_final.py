@@ -5898,46 +5898,21 @@ if _active_page == "Rongol Picks":
         _SPORT_ORDER_R = ["Soccer","Basketball","Hockey","Baseball","Football"]
         _sel_sport_filter = st.session_state.get("_picks_sel_sport", None)
 
-        # Build per-LEAGUE pools — use state from sim_result itself
-        # DEBUG: count sr_cur items and pool results
-        _debug_total = len(sr_cur)
-        _debug_post = sum(1 for _r in sr_cur if (_gmap_rp.get(_r.get("id","")) or {}).get("state","pre") == "post" or _r.get("state","pre") == "post")
-        _debug_date_fail = 0
+        # Build per-LEAGUE pools — NO date filter, only skip "post" games
         _league_pools = {}
+        _dbg_none = []  # track why games are skipped
         for _r_rp in sr_cur:
-            # Skip finished games (use state from sim_result OR from games map)
-            _g_rp = _gmap_rp.get(_r_rp.get("id",""))
+            _g_rp     = _gmap_rp.get(_r_rp.get("id",""))
             _state_rp = (_g_rp["state"] if _g_rp else _r_rp.get("state","pre"))
-            if _state_rp == "post": continue
-            # Date filter: use date from sim_result directly
-            _raw_d = _r_rp.get("date","") or (_g_rp.get("date","") if _g_rp else "")
-            if _raw_d:
-                try:
-                    from datetime import datetime as _dt_rp2
-                    _gdt2 = _dt_rp2.fromisoformat(_raw_d.replace("Z","+00:00"))
-                    _game_date_cdmx = (_gdt2 - _td_rp(hours=6)).strftime("%Y-%m-%d")
-                    if _game_date_cdmx not in _valid_rp:
-                        _debug_date_fail += 1
-                        continue
-                except:
-                    pass  # unparseable date → include anyway
+            if _state_rp == "post":
+                continue
             _bp2 = _sport_best_pick(_r_rp)
             if _bp2:
                 _lg2 = _r_rp.get("league","")
-                _league_pools.setdefault(_lg2, []).append({**_r_rp, "_pick": _bp2})
-
-        # DEBUG display — show why picks are missing
-        with st.expander(f"🔍 Debug Pool ({len(_league_pools)} ligas)", expanded=False):
-            st.write(f"sr_cur total: {_debug_total}, post-skipped: {_debug_post}, date-filtered: {_debug_date_fail}")
-            st.write(f"_league_pools keys: {list(_league_pools.keys())}")
-            for _dbg_lg, _dbg_pool in _league_pools.items():
-                _dbg_probs = [round(p["_pick"]["prob"],1) for p in _dbg_pool[:3]]
-                st.write(f"  {_dbg_lg}: {len(_dbg_pool)} games, probs: {_dbg_probs}")
-            st.write(f"_valid_rp dates: {sorted(_valid_rp)}")
-            # Show first NBA/MLB game dates
-            for _r_dbg in sr_cur[:5]:
-                if _r_dbg.get("league","") in ("NBA","MLB","NHL"):
-                    st.write(f"  {_r_dbg.get('league')}: date={_r_dbg.get('date','?')[:20]}, state={_r_dbg.get('state','?')}")
+                if _lg2:
+                    _league_pools.setdefault(_lg2, []).append({**_r_rp, "_pick": _bp2})
+            else:
+                _dbg_none.append(f"{_r_rp.get('league','?')}: hp={_r_rp.get('sim',{}).get('home_pct',0):.0f} ap={_r_rp.get('sim',{}).get('away_pct',0):.0f}")
 
         # Take BEST pick per sport group (1 per sport: Basketball, Hockey, Baseball, Soccer)
         # Flatten all league pools into one list
@@ -5960,6 +5935,20 @@ if _active_page == "Rongol Picks":
 
         # Legacy: keep allowed_bets for DO parlay logic below
         allowed_bets = rongol_picks
+
+        # ── Inline debug (remove after fix confirmed) ─────────────────────────
+        _dbg_leagues = list(_league_pools.keys())
+        _dbg_sports  = list(_sport_best.keys()) if "_sport_best" in dir() else []
+        if len(rongol_picks) < 2:
+            st.markdown(
+                f'<div style="background:rgba(255,50,50,0.1);border:1px solid #ff5555;'
+                f'border-radius:8px;padding:8px 12px;font-size:0.7rem;color:#ff9999;margin-bottom:8px">'
+                f'⚠ Debug: sr_cur={len(sr_cur)} juegos · pools={_dbg_leagues} · '
+                f'sports={_dbg_sports} · picks={len(rongol_picks)}<br>'
+                f'_sport_best_pick None para: {_dbg_none[:5]}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
         # ── STATS PANEL — accuracy from pick_history ─────────────────────────
         with st.expander("📊 Accuracy del Sistema", expanded=False):
@@ -6730,6 +6719,27 @@ if _active_page == "Rongol Picks":
         st.markdown(f'<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.806rem;color:#444444">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 elif _active_page == "Picks":
+    # ── Global CSS for Picks tab ──────────────────────────────────────────────
+    st.markdown("""<style>
+/* Liga expand buttons — styled rows */
+div[data-testid="stButton"] button[kind="secondary"] {
+    background:rgba(255,255,255,0.03)!important;
+    border:1px solid rgba(255,255,255,0.10)!important;
+    border-radius:12px!important;
+    color:#E8E8E8!important;
+    font-weight:600!important;
+    text-align:left!important;
+    padding:10px 16px!important;
+}
+/* Sport tile buttons */
+div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button[kind="secondary"] {
+    border-radius:18px!important;
+    font-weight:700!important;
+    white-space:pre-line!important;
+    min-height:90px!important;
+    font-size:0.75rem!important;
+}
+</style>""", unsafe_allow_html=True)
     # ══════════════════════════════════════════════════════════════════════════
     # PRÓXIMOS PARTIDOS — sport tiles + date/league expanders  (TOP of tab)
     # ══════════════════════════════════════════════════════════════════════════
@@ -7354,14 +7364,6 @@ elif _active_page == "Picks":
                 ):
                     st.session_state[_exp_key] = not _is_open
                     st.rerun()
-                st.markdown(
-                    f'<style>div[data-testid="stButton"]:has(button[data-testid="{_btn_k}"]) button{{'
-                    f'background:{_hdr_bg}!important;border:{_hdr_bdr}!important;'
-                    f'border-radius:{"12px 12px 4px 4px" if _is_open else "12px"}!important;'
-                    f'text-align:left!important;font-size:0.78rem!important;font-weight:700!important;'
-                    f'color:#E8E8E8!important;padding:10px 14px!important;margin-top:5px!important}}</style>',
-                    unsafe_allow_html=True
-                )
                 if _is_open:
                     st.markdown(
                         f'<div style="background:#111111;border:1px solid {_smp["color"]}33;'
