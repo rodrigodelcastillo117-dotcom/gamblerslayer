@@ -3392,9 +3392,12 @@ def run_monte_carlo(game, n=10_000):
     _std_under = {line: 0 for line in _std_lines}
 
     hw=aw=d=btts=o15=o25=o35=u25=u35=dc_1x=dc_x2=dc_12=o_total=u_total=0
+    home_cover=away_cover=spread_push=0
     rng=random.Random()
     _score_freq = {}  # {(home_goals, away_goals): count}
 
+    _spread_line = None  # no ESPN spread in v10 base
+    _spread_implied = False
     for _ in range(n):
         ph=max(0.01,min(0.99,hp+rng.gauss(0,sigma)))
         if use_goals:
