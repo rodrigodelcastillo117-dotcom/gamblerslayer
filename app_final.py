@@ -327,6 +327,20 @@ LEAGUES = {
     "Belgian Pro League":     {"sport":"soccer",    "league":"bel.1",                  "group":"Soccer"},
     "Eredivisie":             {"sport":"soccer",    "league":"ned.1",                  "group":"Soccer"},
     "CONCACAF Champions Cup": {"sport":"soccer", "league":"concacaf.champions",  "group":"Soccer", "country":"CONCACAF"},
+    # ── Selecciones / FIFA Internacional ─────────────────────────────────────
+    # Pausa FIFA: UEFA Nations League Finals, CONCACAF Nations League,
+    # Copa Oro, Eliminatorias, Amistosos internacionales
+    "UEFA Nations League":    {"sport":"soccer", "league":"uefa.nations",        "group":"Soccer", "country":"Europa"},
+    "CONCACAF Nations League":{"sport":"soccer", "league":"concacaf.nations.league","group":"Soccer","country":"CONCACAF"},
+    "Copa Oro":               {"sport":"soccer", "league":"concacaf.gold",        "group":"Soccer", "country":"CONCACAF"},
+    "Copa América":           {"sport":"soccer", "league":"conmebol.america",     "group":"Soccer", "country":"CONMEBOL"},
+    "Eliminatorias UEFA":     {"sport":"soccer", "league":"uefa.qualifying",      "group":"Soccer", "country":"Europa"},
+    "Eliminatorias CONMEBOL": {"sport":"soccer", "league":"conmebol.worldcup",   "group":"Soccer", "country":"CONMEBOL"},
+    "Eliminatorias CONCACAF": {"sport":"soccer", "league":"concacaf.worldcup",   "group":"Soccer", "country":"CONCACAF"},
+    "Amistosos Internacionales":{"sport":"soccer","league":"fifa.friendly",       "group":"Soccer", "country":"Mundial"},
+    "Africa Cup of Nations":  {"sport":"soccer", "league":"caf.nations",          "group":"Soccer", "country":"África"},
+    "Asian Cup":              {"sport":"soccer", "league":"afc.cupofnations",     "group":"Soccer", "country":"Asia"},
+    "World Cup":              {"sport":"soccer", "league":"fifa.world",           "group":"Soccer", "country":"Mundial"},
     # ── Ligas ocultas: no aparecen en el menú, solo sus equipos favoritos ────
     "Superliga":              {"sport":"soccer",    "league":"DEN.1",                  "group":"Soccer", "hidden":True},
     "Süper Lig":              {"sport":"soccer",    "league":"TUR.1",                  "group":"Soccer", "hidden":True},
@@ -401,6 +415,17 @@ LEAGUE_FLAG = {
     "Primeira Liga":          "🇵🇹",
     "Eliteserien":            "🇳🇴",
     "Allsvenskan":            "🇸🇪",
+    "UEFA Nations League":     "🏆",
+    "CONCACAF Nations League": "🌎",
+    "Copa Oro":                "🥇",
+    "Copa América":            "🏆",
+    "Eliminatorias UEFA":      "🌍",
+    "Eliminatorias CONMEBOL":  "🌎",
+    "Eliminatorias CONCACAF":  "🌎",
+    "Amistosos Internacionales":"🌐",
+    "Africa Cup of Nations":   "🌍",
+    "Asian Cup":               "🌏",
+    "World Cup":               "🌍",
 }
 
 def league_label(name):
@@ -473,6 +498,18 @@ LEAGUE_AVG_GOALS = {
     "Primeira Liga":          2.58,  # Portugal 2025-26
     "Eliteserien":            2.88,  # Noruega
     "Allsvenskan":            2.72,  # Suecia
+    # International / selecciones
+    "UEFA Nations League":     2.5,
+    "CONCACAF Nations League": 2.8,
+    "Copa Oro":                2.7,
+    "Copa América":            2.4,
+    "Eliminatorias UEFA":      2.8,
+    "Eliminatorias CONMEBOL":  2.6,
+    "Eliminatorias CONCACAF":  2.9,
+    "Amistosos Internacionales":2.6,
+    "Africa Cup of Nations":   2.3,
+    "Asian Cup":               2.4,
+    "World Cup":               2.5,
 }
 
 # ── MLB Ballpark Factors ────────────────────────────────────────────────────
@@ -2920,6 +2957,9 @@ SOCCER_LEAGUES = {
     "MLS","Liga MX","Premier League","La Liga","Bundesliga",
     "Serie A","Ligue 1","Champions League","Europa League","Conference League",
     "CONCACAF Champions Cup","Saudi Pro League","Belgian Pro League","Eredivisie",
+    "UEFA Nations League","CONCACAF Nations League","Copa Oro","Copa América",
+    "Eliminatorias UEFA","Eliminatorias CONMEBOL","Eliminatorias CONCACAF",
+    "Amistosos Internacionales","Africa Cup of Nations","Asian Cup","World Cup",
 }
 
 def get_lambda(game):
@@ -4252,20 +4292,46 @@ def run_monte_carlo(game, n=10_000):
             game["_low_confidence"] = True
 
     # ── Add Spread/Handicap to candidates ────────────────────────────────────
-    # Use the already-parsed spread_line from game["odds"] (set during parse_games)
+    # 1. Try ESPN real spread_line first
     _sl_val2 = None
+    _sl_from_espn = False
     _sl_str2 = game.get("odds", {}).get("spread_line", "") or ""
     if _sl_str2:
-        try: _sl_val2 = float(_sl_str2)
+        try: _sl_val2 = float(_sl_str2); _sl_from_espn = True
         except: pass
-    # Fallback: parse from spread string "BOS -8.5"
+    # Fallback: parse from ESPN spread string "BOS -8.5"
     if _sl_val2 is None:
         import re as _re_sl2
         _sl_raw2 = game.get("odds", {}).get("spread", "") or ""
-        _slm2 = _re_sl2.search(r"[+-]?[0-9]+\.?[0-9]*", _sl_raw2)
-        if _slm2:
-            try: _sl_val2 = float(_slm2.group())
-            except: pass
+        if _sl_raw2:
+            _slm2 = _re_sl2.search(r"[+-]?[0-9]+\.?[0-9]*", _sl_raw2)
+            if _slm2:
+                try: _sl_val2 = float(_slm2.group()); _sl_from_espn = True
+                except: pass
+    # 2. If no ESPN spread, compute implied spread from win probability
+    # Only for non-soccer sports (NBA, NFL, MLB, NHL)
+    _sl_implied = False
+    if _sl_val2 is None and not is_soccer and use_goals and sh > 0.5:
+        _SPREAD_SCALE = {"Basketball": 24, "Football": 28, "Baseball": None, "Hockey": None}
+        _sc = _SPREAD_SCALE.get(sport_grp)
+        if _sc is not None:
+            # home is favorite: negative spread
+            _sl_val2 = round(-(sh - 0.5) * _sc, 1)
+            _sl_implied = True
+        elif sport_grp in ("Baseball", "Hockey"):
+            # Run line / Puck line: always -1.5 for favorite
+            _sl_val2 = -1.5
+            _sl_implied = True
+    elif _sl_val2 is None and not is_soccer and use_goals and sa > 0.5:
+        _SPREAD_SCALE = {"Basketball": 24, "Football": 28}
+        _sc = _SPREAD_SCALE.get(sport_grp)
+        if _sc is not None:
+            # away is favorite: positive home spread
+            _sl_val2 = round((sa - 0.5) * _sc, 1)
+            _sl_implied = True
+        elif sport_grp in ("Baseball", "Hockey"):
+            _sl_val2 = 1.5  # home is dog
+            _sl_implied = True
     # Use already-computed cover probs
     _p_hc2 = p_home_cover  # 0.0-1.0
     _p_ac2 = p_away_cover
@@ -8059,7 +8125,8 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 _pills_p = _ppill(_away_p[:8],_a_dec_p)+_ppill(_home_p[:8],_h_dec_p)
 
         # ── Pick explanation + white card ──────────────────────────────────
-        _ev_val = bp.get("ev", 0) or 0
+        _ev_raw  = bp.get("ev")           # None = no market line available
+        _ev_val  = _ev_raw if _ev_raw is not None else None
         _kelly  = (bp.get("kelly", 0) or 0) * 25
         _dq     = sim.get("data_quality", 0) or 0
         _conf_c = "#007744" if _bp_prob >= 0.65 else ("#996600" if _bp_prob >= 0.50 else "#880000")
@@ -8120,7 +8187,9 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                 f'</div>'
                 for lbl, val, clr in [
                     ("Prob.", f"{_bp_prob*100:.0f}%", "#000"),
-                    ("EV/100", f"{_ev_val:+.0f}", "#006600" if _ev_val>0 else "#880000"),
+                    ("EV/100",
+                     "S/L" if _ev_val is None else f"{_ev_val:+.0f}",
+                     "#888" if _ev_val is None else ("#006600" if _ev_val>0 else "#880000")),
                     ("DQ", f"{_dq:.0f}%", "#000"),
                     ("Kelly", f"{_kelly:.1f}%", "#000"),
                 ]
