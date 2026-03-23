@@ -3636,24 +3636,37 @@ def run_monte_carlo(game, n=10_000):
     rng=random.Random()
     _score_freq = {}  # {(home_goals, away_goals): count}
 
-    # ── Use real ESPN spread_line ──────────────────────────────────────────
+    # ── Spread line for simulation ────────────────────────────────────────
     _spread_raw  = game.get("odds", {}).get("spread", "") or ""
     _spread_line = None
-    # Primary: use the already-parsed numeric value from odds parsing
+    _spread_implied = False
+    # 1. Real ESPN spread_line (already parsed in parse_games)
     _sl_str = game.get("odds", {}).get("spread_line", "") or ""
     if _sl_str:
-        try:
-            _spread_line = float(_sl_str)
-        except:
-            pass
-    # Fallback: parse from "BOS -8.5" details string
+        try: _spread_line = float(_sl_str)
+        except: pass
+    # 2. Fallback: parse from ESPN "BOS -8.5" string
     if _spread_line is None and _spread_raw:
         import re as _re_sp
-        _sp_m = _re_sp.search(r'[+-]?\d+\.?\d*', _spread_raw)
+        _sp_m = _re_sp.search(r'[+-]?[0-9]+\.?[0-9]*', _spread_raw)
         if _sp_m:
             try: _spread_line = float(_sp_m.group())
             except: pass
-    # Spread momios from ESPN (usually -110/-110, but sometimes different)
+    # 3. Implied spread from win probability (when ESPN has no line)
+    # Runs BEFORE the simulation loop so counters work correctly.
+    # hp is the base home win probability from compute_base_prob.
+    if _spread_line is None and not is_soccer:
+        _SCALE = {"Basketball": 24, "Football": 28}
+        _sc3 = _SCALE.get(sport_grp)
+        if _sc3 is not None:
+            # negative = home favored
+            _spread_line = round(-(hp - 0.5) * _sc3, 1)
+            _spread_implied = True
+        elif sport_grp in ("Baseball", "Hockey"):
+            # Run line / Puck line fixed at ±1.5
+            _spread_line = -1.5 if hp >= 0.5 else 1.5
+            _spread_implied = True
+    # Spread momios from ESPN (default -110/-110)
     _spread_home_ml_str = game.get("odds", {}).get("spread_home_ml", "-110") or "-110"
     _spread_away_ml_str = game.get("odds", {}).get("spread_away_ml", "-110") or "-110"
     try: _spread_home_ml_f = float(_spread_home_ml_str)
@@ -4292,46 +4305,11 @@ def run_monte_carlo(game, n=10_000):
             game["_low_confidence"] = True
 
     # ── Add Spread/Handicap to candidates ────────────────────────────────────
-    # 1. Try ESPN real spread_line first
-    _sl_val2 = None
-    _sl_from_espn = False
-    _sl_str2 = game.get("odds", {}).get("spread_line", "") or ""
-    if _sl_str2:
-        try: _sl_val2 = float(_sl_str2); _sl_from_espn = True
-        except: pass
-    # Fallback: parse from ESPN spread string "BOS -8.5"
-    if _sl_val2 is None:
-        import re as _re_sl2
-        _sl_raw2 = game.get("odds", {}).get("spread", "") or ""
-        if _sl_raw2:
-            _slm2 = _re_sl2.search(r"[+-]?[0-9]+\.?[0-9]*", _sl_raw2)
-            if _slm2:
-                try: _sl_val2 = float(_slm2.group()); _sl_from_espn = True
-                except: pass
-    # 2. If no ESPN spread, compute implied spread from win probability
-    # Only for non-soccer sports (NBA, NFL, MLB, NHL)
-    _sl_implied = False
-    if _sl_val2 is None and not is_soccer and use_goals and sh > 0.5:
-        _SPREAD_SCALE = {"Basketball": 24, "Football": 28, "Baseball": None, "Hockey": None}
-        _sc = _SPREAD_SCALE.get(sport_grp)
-        if _sc is not None:
-            # home is favorite: negative spread
-            _sl_val2 = round(-(sh - 0.5) * _sc, 1)
-            _sl_implied = True
-        elif sport_grp in ("Baseball", "Hockey"):
-            # Run line / Puck line: always -1.5 for favorite
-            _sl_val2 = -1.5
-            _sl_implied = True
-    elif _sl_val2 is None and not is_soccer and use_goals and sa > 0.5:
-        _SPREAD_SCALE = {"Basketball": 24, "Football": 28}
-        _sc = _SPREAD_SCALE.get(sport_grp)
-        if _sc is not None:
-            # away is favorite: positive home spread
-            _sl_val2 = round((sa - 0.5) * _sc, 1)
-            _sl_implied = True
-        elif sport_grp in ("Baseball", "Hockey"):
-            _sl_val2 = 1.5  # home is dog
-            _sl_implied = True
+    # Use _spread_line already computed in MC block (ESPN real OR implied)
+    _sl_val2 = _spread_line       # set in MC setup block
+    _sl_from_espn = not _spread_implied
+    # Implied spread already computed in MC block (_spread_line / _spread_implied)
+    _sl_implied = _spread_implied
     # Use already-computed cover probs
     _p_hc2 = p_home_cover  # 0.0-1.0
     _p_ac2 = p_away_cover
