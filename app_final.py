@@ -1814,13 +1814,56 @@ def parse_games(data, league_name):
                             _home_odds.get("open", {}).get("moneyLine") or "")
                 _away_ml = (_away_odds.get("moneyLine") or _away_odds.get("current", {}).get("moneyLine") or
                             _away_odds.get("open", {}).get("moneyLine") or "")
+                # ── Parse spread from ESPN ────────────────────────────────────
+                # ESPN provides spread in multiple places:
+                # 1. o["details"] = "BOS -8.5" (most reliable — the full line text)
+                # 2. homeTeamOdds["pointSpread"] = -8.5 (numeric, home perspective)
+                # 3. homeTeamOdds["spreadOdds"] = -110 (spread momio for home)
+                # 4. homeTeamOdds["handicap"] = -8.5 (some endpoints)
+                _details_str = o.get("details", "") or ""
+                _spread_val = ""
+                _spread_home_ml = ""
+                _spread_away_ml = ""
+
+                # Get numeric spread line (home perspective: negative = home is fav)
+                _ho = o.get("homeTeamOdds", {}) or {}
+                _ao = o.get("awayTeamOdds", {}) or {}
+                _ps = (_ho.get("pointSpread") or _ho.get("handicap") or
+                       _ho.get("current", {}).get("pointSpread") or
+                       _ho.get("open", {}).get("pointSpread"))
+                if _ps is not None:
+                    try:
+                        _spread_val = str(float(_ps))
+                    except:
+                        pass
+                # Fallback: parse from details string "BOS -8.5" or "LAL +3.5"
+                if not _spread_val and _details_str:
+                    import re as _re_odd
+                    _dm = _re_odd.search(r'([A-Za-z]+)\s*([+-]?\d+\.?\d*)', _details_str)
+                    if _dm:
+                        try:
+                            _spread_val = str(float(_dm.group(2)))
+                        except:
+                            pass
+
+                # Spread odds (the juice on the spread)
+                _sp_odds_h = (_ho.get("spreadOdds") or _ho.get("current",{}).get("spreadOdds") or
+                              _ho.get("open",{}).get("spreadOdds"))
+                _sp_odds_a = (_ao.get("spreadOdds") or _ao.get("current",{}).get("spreadOdds") or
+                              _ao.get("open",{}).get("spreadOdds"))
+                if _sp_odds_h: _spread_home_ml = str(_sp_odds_h)
+                if _sp_odds_a: _spread_away_ml = str(_sp_odds_a)
+
                 odds_info = {
-                    "spread":     o.get("details", ""),
-                    "over_under": str(_ou_raw) if _ou_raw else "",
-                    "home_ml":    str(_home_ml) if _home_ml else "",
-                    "away_ml":    str(_away_ml) if _away_ml else "",
-                    "home_wp":    o.get("homeTeamOdds", {}).get("winPercentage", ""),
-                    "away_wp":    o.get("awayTeamOdds", {}).get("winPercentage", ""),
+                    "spread":          _details_str,   # full string e.g. "BOS -8.5"
+                    "spread_line":     _spread_val,    # numeric e.g. "-8.5" (home perspective)
+                    "spread_home_ml":  _spread_home_ml or "-110",
+                    "spread_away_ml":  _spread_away_ml or "-110",
+                    "over_under":      str(_ou_raw) if _ou_raw else "",
+                    "home_ml":         str(_home_ml) if _home_ml else "",
+                    "away_ml":         str(_away_ml) if _away_ml else "",
+                    "home_wp":         _ho.get("winPercentage", ""),
+                    "away_wp":         _ao.get("winPercentage", ""),
                 }
 
             hr = home.get("records", [{}])
@@ -3548,8 +3591,35 @@ def run_monte_carlo(game, n=10_000):
     _std_under = {line: 0 for line in _std_lines}
 
     hw=aw=d=btts=o15=o25=o35=u25=u35=dc_1x=dc_x2=dc_12=o_total=u_total=0
+    # Spread/handicap counters
+    home_cover=0; away_cover=0; spread_push=0
     rng=random.Random()
     _score_freq = {}  # {(home_goals, away_goals): count}
+
+    # ── Use real ESPN spread_line ──────────────────────────────────────────
+    _spread_raw  = game.get("odds", {}).get("spread", "") or ""
+    _spread_line = None
+    # Primary: use the already-parsed numeric value from odds parsing
+    _sl_str = game.get("odds", {}).get("spread_line", "") or ""
+    if _sl_str:
+        try:
+            _spread_line = float(_sl_str)
+        except:
+            pass
+    # Fallback: parse from "BOS -8.5" details string
+    if _spread_line is None and _spread_raw:
+        import re as _re_sp
+        _sp_m = _re_sp.search(r'[+-]?\d+\.?\d*', _spread_raw)
+        if _sp_m:
+            try: _spread_line = float(_sp_m.group())
+            except: pass
+    # Spread momios from ESPN (usually -110/-110, but sometimes different)
+    _spread_home_ml_str = game.get("odds", {}).get("spread_home_ml", "-110") or "-110"
+    _spread_away_ml_str = game.get("odds", {}).get("spread_away_ml", "-110") or "-110"
+    try: _spread_home_ml_f = float(_spread_home_ml_str)
+    except: _spread_home_ml_f = -110.0
+    try: _spread_away_ml_f = float(_spread_away_ml_str)
+    except: _spread_away_ml_f = -110.0
 
     for _ in range(n):
         ph=max(0.01,min(0.99,hp+rng.gauss(0,sigma)))
@@ -3574,6 +3644,12 @@ def run_monte_carlo(game, n=10_000):
                 elif gh==ga: d+=1; dc_1x+=1; dc_x2+=1
                 else: aw+=1; dc_x2+=1; dc_12+=1
                 if gh>0 and ga>0: btts+=1
+                # Spread/AH cover (home perspective)
+                if _spread_line is not None:
+                    _diff = gh - ga  # positive = home wins by
+                    if _diff + _spread_line > 0: home_cover += 1
+                    elif _diff + _spread_line < 0: away_cover += 1
+                    else: spread_push += 1
                 if tg>1.5: o15+=1
                 if tg>2.5: o25+=1
                 else: u25+=1
@@ -3643,6 +3719,12 @@ def run_monte_carlo(game, n=10_000):
                             sim_total += max(0, rng.gauss(1.3, 0.8))
                         if sim_h > sim_a: hw += 1; dc_1x += 1; dc_12 += 1
                         else: aw += 1; dc_x2 += 1; dc_12 += 1
+                        # Run line cover (MLB standard is -1.5 / +1.5)
+                        if _spread_line is not None:
+                            _diff = sim_h - sim_a
+                            if _diff + _spread_line > 0: home_cover += 1
+                            elif _diff + _spread_line < 0: away_cover += 1
+                            else: spread_push += 1
                         if ou_val > 0:
                             _bias = 0.0 if _nonsoccer_no_line else PUBLIC_BIAS_PTS.get(sport_grp, 0.0)
                             if sim_total > (ou_val - _bias): o_total += 1
@@ -3662,6 +3744,12 @@ def run_monte_carlo(game, n=10_000):
                     # Contar marcador redondeado
                     _sk = (round(sim_h), round(sim_a))
                     _score_freq[_sk] = _score_freq.get(_sk, 0) + 1
+                    # Spread cover
+                    if _spread_line is not None:
+                        _diff = sim_h - sim_a
+                        if _diff + _spread_line > 0: home_cover += 1
+                        elif _diff + _spread_line < 0: away_cover += 1
+                        else: spread_push += 1
                     if ou_val > 0:
                         # Sharp: ESPN line is inflated by public bias. Correct by shifting
                         # effective comparison line down. When using implicit line, no bias.
@@ -3681,6 +3769,10 @@ def run_monte_carlo(game, n=10_000):
                 else: aw+=1; dc_x2+=1; dc_12+=1
 
     sh=hw/n; sa=aw/n; sd=d/n
+    # Spread probabilities
+    _sp_total = home_cover + away_cover + spread_push
+    p_home_cover = home_cover / _sp_total if _sp_total > 0 else None
+    p_away_cover = away_cover / _sp_total if _sp_total > 0 else None
     # NBA/NHL/MLB: O/U over the actual line (lam_h + lam_a = expected total)
     p_o_total = o_total/n if (use_goals and not is_soccer and (o_total+u_total)>0) else None
     p_u_total = u_total/n if (use_goals and not is_soccer and (o_total+u_total)>0) else None
@@ -4159,12 +4251,56 @@ def run_monte_carlo(game, n=10_000):
             # Marcar el partido con baja confianza para que el display lo indique
             game["_low_confidence"] = True
 
+    # ── Add Spread/Handicap to candidates ────────────────────────────────────
+    _sl = sim.get("spread_line") if "sim" not in dir() else None
+    # Get from the game object directly (sim is not available here, use game odds)
+    _sl_raw2 = game.get("odds", {}).get("spread", "") or ""
+    _sl_val2 = None
+    import re as _re_sl2
+    _slm2 = _re_sl2.search(r"([+-]?\d+\.?\d*)", _sl_raw2)
+    if _slm2:
+        try: _sl_val2 = float(_slm2.group(1))
+        except: pass
+    # Use already-computed cover probs
+    _p_hc2 = p_home_cover  # 0.0-1.0
+    _p_ac2 = p_away_cover
+    if _sl_val2 is not None and _p_hc2 is not None and _p_ac2 is not None:
+        # Use real ESPN spread odds
+        _sph_ml = float(game.get("odds",{}).get("spread_home_ml","-110") or "-110")
+        _spa_ml = float(game.get("odds",{}).get("spread_away_ml","-110") or "-110")
+        _sdh = (100/abs(_sph_ml)+1) if _sph_ml < 0 else (_sph_ml/100+1)
+        _sda = (100/abs(_spa_ml)+1) if _spa_ml < 0 else (_spa_ml/100+1)
+        _ev_hc2 = round((_p_hc2 * (_sdh-1) - (1-_p_hc2)) * 100, 1)
+        _ev_ac2 = round((_p_ac2 * (_sda-1) - (1-_p_ac2)) * 100, 1)
+        _kh2 = round(max(0, (_p_hc2 - (1-_p_hc2)/(_sdh-1)) * 0.25), 3) if _sdh > 1 else 0
+        _ka2 = round(max(0, (_p_ac2 - (1-_p_ac2)/(_sda-1)) * 0.25), 3) if _sda > 1 else 0
+        _sl_name2 = "Run Line" if sport_grp=="Baseball" else ("Puck Line" if sport_grp=="Hockey" else ("AH" if is_soccer else "Spread"))
+        _home_nm = (game.get("home_team","Local") or "Local")[:14]
+        _away_nm = (game.get("away_team","Visit") or "Visit")[:14]
+        _lbl_hc2 = f"{_home_nm} {_sl_val2:+.1f} ({_sl_name2})"
+        _lbl_ac2 = f"{_away_nm} {-_sl_val2:+.1f} ({_sl_name2})"
+        # Add spread when EV+ OR when it offers better value than a heavy ML favorite
+        _ml_is_heavy_fav = False
+        try:
+            _h_ml_f = float(str(game.get("odds",{}).get("home_ml","") or 0))
+            _a_ml_f = float(str(game.get("odds",{}).get("away_ml","") or 0))
+            # Heavy favorite: ML worse than -200 (pays less than 0.50 per unit)
+            _ml_is_heavy_fav = (_h_ml_f < -200 or _a_ml_f < -200)
+        except: pass
+
+        # Threshold: 52.4% to beat -110 juice (break-even), or lower for heavy fav games
+        _spread_threshold = 0.48 if _ml_is_heavy_fav else 0.524
+        if _p_hc2 >= _spread_threshold:
+            candidates.append(("Spread", _lbl_hc2, round(_p_hc2*100,1), _ev_hc2, "-110", _kh2))
+        if _p_ac2 >= _spread_threshold:
+            candidates.append(("Spread", _lbl_ac2, round(_p_ac2*100,1), _ev_ac2, "-110", _ka2))
+
     # Detect "partido parejo" — requires real ML signal to be meaningful
     # Without ML, hp≈aw≈0.37 always → _parejo always True → always picks U3.5
     _spread = abs(sh - sa) * 100  # percentage spread between teams
     _parejo = use_goals and is_soccer and _spread < 12 and _has_ml
 
-    MARKET_PREF = {"BTTS": 4, "O/U": 3, "ML": 2, "DO": 1}
+    MARKET_PREF = {"BTTS": 4, "O/U": 3, "Spread": 3, "ML": 2, "DO": 1}
     best_single=None; best_ev_v=-999; best_pref=-1
 
     # Pre-filter: si hay candidatos BTTS o O/U con EV positivo, excluir DO del concurso
@@ -4188,11 +4324,20 @@ def run_monte_carlo(game, n=10_000):
             best_single = {"market":mt,"label":lb,"prob":pr,"ev":ev or 0,"ml":ml,"kelly":k or 0}
         # Done — parejo always uses goal market by prob, no ML/DO override
     else:
-        # Normal case: pick by highest EV, with BTTS preferred on ties
+        # Normal case: pick by highest EV, with BTTS/O/U preferred on ties
+        # Special rule: if there's a heavy ML favorite, compare spread vs ML EV
+        _ml_ev_best   = max((ev for mt,lb,pr,ev,ml,k in candidates_main if mt=="ML" and ev is not None), default=-999)
+        _spread_ev_best = max((ev for mt,lb,pr,ev,ml,k in candidates_main if mt=="Spread" and ev is not None), default=-999)
+        # If spread has significantly better EV than ML, boost spread priority
+        _spread_over_ml = (_spread_ev_best > _ml_ev_best + 2.0 and _spread_ev_best > 0)
+
         for mtype,label,prob,ev,ml,kelly in candidates_main:
             if prob is None or ev is None:
                 continue
             pref = MARKET_PREF.get(mtype, 0)
+            # Boost spread preference when it clearly beats ML on EV
+            if mtype == "Spread" and _spread_over_ml:
+                pref = 4  # same as BTTS — spread is the value play here
             is_better_ev = ev > best_ev_v + 1.0
             is_same_ev_better_market = (abs(ev - best_ev_v) <= 1.0) and (pref > best_pref)
             if is_better_ev or is_same_ev_better_market:
@@ -4249,6 +4394,11 @@ def run_monte_carlo(game, n=10_000):
         "p_dc_1x":round(p_dc_1x*100,1),"dc_1x_ev":dc_1x_ev,
         "p_dc_x2":round(p_dc_x2*100,1),"dc_x2_ev":dc_x2_ev,
         "p_dc_12":round(p_dc_12*100,1),"dc_12_ev":dc_12_ev,
+        # Spread market
+        "spread_line":_spread_line,
+        "spread_raw":_spread_raw,
+        "p_home_cover":round(p_home_cover*100,1) if p_home_cover is not None else None,
+        "p_away_cover":round(p_away_cover*100,1) if p_away_cover is not None else None,
         "best_single":best_single,"best_parlay":best_parlay,"pos_legs":pos_legs,
         "p_o_total":round(p_o_total*100,1) if p_o_total is not None else None,
         "p_u_total":round(p_u_total*100,1) if p_u_total is not None else None,
@@ -4717,6 +4867,9 @@ def _pick_clr(market, label=""):
         if "under" in l:
             return "#5b21b6", "#a78bfa", "UNDER", "UNDER"
         return "#b45309", "#fbbf24", "OU",   "O/U"   # line unknown
+    if m in ("SPREAD","AH","RUN LINE","RUN_LINE","PUCK LINE","PUCK_LINE",
+             "HANDICAP","ASIAN_HANDICAP"):
+        return "#0e7490", "#22d3ee", "AH", m.replace("_"," ").title()
     if m == "COMBO":
         return "#92400e", "#f59e0b", "COMBO", "COMBO"  # amarillo dorado
     if m == "DO":
@@ -4922,6 +5075,27 @@ def render_pick_card(r, rank=None):
                 f'<span style="font-size:0.65rem;color:#ff6a00">O/U modelo: <b>{_m_ou}</b></span>'
                 f'<span style="font-size:0.65rem;color:{_ou_color}">{_ou_diff_str}</span>'
                 f'<span style="font-size:0.65rem;color:#6B7280">ESPN: {_ou_espn}</span>'
+                f'</div>'
+            )
+        # Spread/handicap line
+        _spr_raw_c  = sim.get("spread_raw","") or game.get("odds",{}).get("spread","") or ""
+        _p_hcov_c   = sim.get("p_home_cover")
+        _p_acov_c   = sim.get("p_away_cover")
+        if _spr_raw_c and _p_hcov_c is not None:
+            _h_team = r.get("home_team","Local")[:12]
+            _a_team = r.get("away_team","Visit")[:12]
+            _hcov_clr = "#00C896" if _p_hcov_c >= 52.4 else ("#C9A84C" if _p_hcov_c >= 48 else "#6B7280")
+            _acov_clr = "#00C896" if _p_acov_c >= 52.4 else ("#C9A84C" if _p_acov_c >= 48 else "#6B7280")
+            _sg_c = LEAGUES.get(r.get("league",""),{}).get("group","Soccer")
+            _sl_name_c = "Run Line" if _sg_c=="Baseball" else ("Puck Line" if _sg_c=="Hockey" else ("AH" if _sg_c=="Soccer" else "Spread"))
+            _model_lines_html += (
+                f'<div style="width:100%;border-top:1px solid rgba(255,255,255,0.05);'
+                f'padding-top:4px;margin-top:2px;display:flex;gap:10px;align-items:center">'
+                f'<span style="font-size:0.65rem;color:#22d3ee">📐 {_sl_name_c}: <b>{_spr_raw_c}</b></span>'
+                f'<span style="font-size:0.65rem;color:{_hcov_clr}">'
+                f'{_h_team}: <b>{_p_hcov_c:.0f}%</b> cubre</span>'
+                f'<span style="font-size:0.65rem;color:{_acov_clr}">'
+                f'{_a_team}: <b>{_p_acov_c:.0f}%</b> cubre</span>'
                 f'</div>'
             )
         _model_lines_html += '</div>'
@@ -5656,7 +5830,10 @@ def _evaluate_pick(pick, game):
     except:
         return None  # no score yet
 
-    mercado  = (pick.get("mercado") or "ML").upper()
+    mercado  = (pick.get("mercado") or "ML").upper().replace(" ","_")
+    # Normalize spread variants
+    if mercado in ("RUN_LINE","PUCK_LINE","ASIAN_HANDICAP","HANDICAP","AH","SPREAD"):
+        mercado = "SPREAD"
     pick_lbl = pick.get("pick","").strip()
     sg       = LEAGUES.get(game.get("league",""), {}).get("group","Soccer")
 
@@ -5721,6 +5898,31 @@ def _evaluate_pick(pick, game):
         if "12" in lbl_lower or "sin empate" in lbl_lower:
             return "ganado" if (home_w or away_w) else "perdido"
         return None
+
+    # ── Spread / Run Line / Puck Line / Asian Handicap ───────────────────────
+    if mercado in ("SPREAD", "AH", "RUN LINE", "PUCK LINE", "HANDICAP",
+                   "RUN_LINE", "PUCK_LINE", "ASIAN_HANDICAP"):
+        import re as _re_sp2
+        # Parse line from pick label: "Dodgers -1.5 (Run Line)" → team=Dodgers, line=-1.5
+        # Or "Chiefs -7.5 (Spread)" → team=Chiefs, line=-7.5
+        _nums2 = _re_sp2.findall(r'[+-]?\d+\.?\d*', pick_lbl)
+        if not _nums2: return None
+        _line = float(_nums2[0])
+        # Identify which team the pick is for
+        _pick_clean2 = _re_sp2.sub(r'[+-]?\d+\.?\d*.*', '', pick_lbl).strip()
+        _pick_clean2 = _re_sp2.sub(r'\(.*\)', '', _pick_clean2).strip()
+        side2 = _team_match(_pick_clean2, game["home_team"], game["away_team"])
+        if side2 is None: return None
+        # home_diff = home_score - away_score
+        home_diff = hs - as_
+        # If pick is home team: home wins against spread if home_diff + line > 0
+        if side2 == "home":
+            result_diff = home_diff + _line
+        else:  # away team: mirror the line
+            result_diff = -home_diff + (-_line if _line > 0 else abs(_line))
+        if result_diff > 0: return "ganado"
+        elif result_diff < 0: return "perdido"
+        else: return "push"
 
     return None
 
@@ -9702,8 +9904,11 @@ try{const a=new AudioContext();
             _qf_pick = st.text_input("Pick", placeholder="Real Madrid ML",
                                       key="qf_pick", label_visibility="visible")
         with _qf3:
-            _qf_mercado = st.selectbox("Mercado", ["ML","O/U","BTTS","DO","Spread","Otro"],
-                                        key="qf_mercado")
+            _qf_mercado = st.selectbox("Mercado", 
+                ["ML","O/U","BTTS","DO","Spread","Run Line","Puck Line","AH","Otro"],
+                key="qf_mercado",
+                help="Spread=NFL/NBA/Soccer handicap | Run Line=MLB -1.5 | Puck Line=NHL -1.5 | AH=Asian Handicap soccer"
+            )
         _qf4, _qf5, _qf6 = st.columns([2,2,2])
         with _qf4:
             _qf_momio = st.number_input("Cuota decimal", min_value=1.01, max_value=50.0,
