@@ -4252,15 +4252,20 @@ def run_monte_carlo(game, n=10_000):
             game["_low_confidence"] = True
 
     # ── Add Spread/Handicap to candidates ────────────────────────────────────
-    _sl = sim.get("spread_line") if "sim" not in dir() else None
-    # Get from the game object directly (sim is not available here, use game odds)
-    _sl_raw2 = game.get("odds", {}).get("spread", "") or ""
+    # Use the already-parsed spread_line from game["odds"] (set during parse_games)
     _sl_val2 = None
-    import re as _re_sl2
-    _slm2 = _re_sl2.search(r"([+-]?\d+\.?\d*)", _sl_raw2)
-    if _slm2:
-        try: _sl_val2 = float(_slm2.group(1))
+    _sl_str2 = game.get("odds", {}).get("spread_line", "") or ""
+    if _sl_str2:
+        try: _sl_val2 = float(_sl_str2)
         except: pass
+    # Fallback: parse from spread string "BOS -8.5"
+    if _sl_val2 is None:
+        import re as _re_sl2
+        _sl_raw2 = game.get("odds", {}).get("spread", "") or ""
+        _slm2 = _re_sl2.search(r"[+-]?[0-9]+\.?[0-9]*", _sl_raw2)
+        if _slm2:
+            try: _sl_val2 = float(_slm2.group())
+            except: pass
     # Use already-computed cover probs
     _p_hc2 = p_home_cover  # 0.0-1.0
     _p_ac2 = p_away_cover
