@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN
+THE GAMBLERS DEN v2026.03.23-B
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -8,6 +8,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 import requests
 import random
+
+# ── VERSION STAMP — shows on load to confirm correct file is running ──────────
+if "version_shown" not in st.session_state:
+    st.session_state["version_shown"] = True
+    st.toast("✅ Gamblers Den v2026.03.23-B cargado", icon="🎰")
 import math
 import time
 import os
