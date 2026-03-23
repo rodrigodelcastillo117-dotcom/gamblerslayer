@@ -4624,7 +4624,7 @@ def build_parlays(results):
     game_legs = []
     for r in results_today:
         leg = best_leg_for_game(r)
-        if leg and leg(["ev"] or 0) > 0:
+        if leg and (leg.get("ev") or 0) > 0:
             game_legs.append(leg)
 
     # ── Inter-partido ─────────────────────────────────────────────────────────
@@ -4655,7 +4655,7 @@ def build_parlays(results):
                 "payout": round(pay, 1),
                 "type":   "inter",
             }
-            target = l1["_r"] if l1(["ev"] or 0) >= l2["ev"] else l2["_r"]
+            target = l1["_r"] if (l1.get("ev") or 0) >= (l2.get("ev") or 0) else l2["_r"]
             target["sim"]["best_parlay"] = parlay
             return results
 
@@ -6615,7 +6615,7 @@ if _active_page == "Rongol Picks":
         all_bets=[]
         for r in sr_cur:
             bs=r["sim"].get("best_single")
-            if bs and bs(["ev"] or 0)>0: all_bets.append(r)
+            if bs and (bs.get("ev") or 0)>0: all_bets.append(r)
         all_bets.sort(key=lambda x: x["sim"]["best_single"]["ev"],reverse=True)
 
         # Indicador de estado
@@ -7017,7 +7017,7 @@ if _active_page == "Rongol Picks":
                 _ml_i = _SPORT_ICON.get(_sg_r,"⚽")
                 _type_icons = {"ML":_ml_i,"BTTS":"🎯","OVER":"🔥","UNDER":"🧊","COMBO":"⚽🎯","OTHER":"📊"}
                 icon  = _type_icons.get(type_key,"📊")
-                ev_s  = f'+{tp["ev"]:.1f}' if tp(["ev"] or 0)>=0 else f'{tp["ev"]:.1f}'
+                ev_s  = f'+{tp["ev"]:.1f}' if (tp.get("ev") or 0)>=0 else f'{tp["ev"]:.1f}'
                 prob  = tp["prob"]
                 conf_lbl = _CONF_LABEL(prob)
                 conf_c   = _CONF_COLOR(prob)
@@ -7617,7 +7617,7 @@ elif _active_page == "Picks":
             _bs = _rp["sim"].get("best_single",{}) or {}
             if _bs and _bs.get("ev",0) > 0:
                 _mc2_pc, _mc2_ac, _, _mc2_dl = _pick_clr(_bs.get("market",""), _bs.get("label",""))
-                _ev2s = f'+{_bs["ev"]:.1f}' if _bs(["ev"] or 0)>=0 else f'{_bs["ev"]:.1f}'
+                _ev2s = f'+{_bs["ev"]:.1f}' if (_bs.get("ev") or 0)>=0 else f'{_bs["ev"]:.1f}'
                 _ph = (
                     f'<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
                     f'<span style="background:{_mc2_pc}28;color:{_mc2_ac};border:1px solid {_mc2_pc}66;'
@@ -8437,7 +8437,7 @@ elif _active_page == "Parlays":
         parlay_game_ids = set()
         for r in sr:
             bp = r["sim"].get("best_parlay")
-            if bp and bp(["ev"] or 0) > 0:
+            if bp and (bp.get("ev") or 0) > 0:
                 parlay_game_ids.add(r.get("id",""))
 
         finished_parlay_games = [g for g in games if g.get("id","") in parlay_game_ids and g["state"]=="post"]
