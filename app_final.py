@@ -8117,9 +8117,9 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
             _ou_v_p = sim.get("ou_line","") or ""
             _po_p = sim.get("p_o_total",0) or 0; _pu_p = sim.get("p_u_total",0) or 0
             # Spread pill — use real ESPN line or implied (marked with ~)
-            _spr_line_p  = game.get("odds",{}).get("spread_line","") or ""
-            _spr_raw_p   = game.get("odds",{}).get("spread","") or ""
-            _spr_implied = sim.get("spread_implied", False)
+            _spr_line_p  = g.get("odds",{}).get("spread_line","") or ""
+            _spr_raw_p   = g.get("odds",{}).get("spread","") or ""
+            _spr_implied = sm.get("spread_implied", False)
             _spr_pill_p  = ""
             if _spr_line_p:
                 try:
@@ -8133,7 +8133,7 @@ div[data-testid="stButton"]:has(> button[key="btn_sp_{_sp_tmp}"]) button {{
                         _spr_lbl = f"{_pm.group(1)}{float(_pm.group(2)):+.1f}" if _pm else f"{'H' if _spr_f<0 else 'A'}{_spr_f:+.1f}"
                     else:
                         _spr_lbl = f"~{'H' if _spr_f<0 else 'A'}{abs(_spr_f):.1f}"
-                    _p_cover = sim.get("p_home_cover",50) or 50
+                    _p_cover = sm.get("p_home_cover",50) or 50
                     _spr_dec = round(100/abs(-110)+1, 3)  # standard -110 = 1.909
                     _spr_pill_p = _ppill(_spr_lbl, f"{_spr_dec:.2f}", color="#22d3ee")
                 except: pass
