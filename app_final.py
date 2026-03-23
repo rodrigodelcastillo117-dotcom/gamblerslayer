@@ -1,3 +1,4 @@
+# GAMBLERS_DEN_VERSION=2026_03_22_V9_FIXED
 """
 THE GAMBLERS DEN
 Monte Carlo Sports Betting Analyzer
