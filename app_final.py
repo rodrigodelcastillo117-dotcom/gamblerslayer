@@ -5100,6 +5100,31 @@ def run_monte_carlo(game, n=10_000):
                 best_single = {"market":mtype, "label":label, "prob":prob,
                                "ev":ev or 0, "ml":ml, "kelly":kelly or 0}
 
+    # ── POST-PROCESO SOCCER: nunca dejar ML como best_single ─────────────────
+    # Si es soccer y best_single es ML, buscar el mejor O/U o BTTS de candidates_main
+    if is_soccer and best_single and best_single.get("market") == "ML":
+        _alt = None
+        _alt_ev = -9999
+        for mtype, label, prob, ev, ml, kelly in candidates_main:
+            if mtype in ("O/U", "BTTS") and prob is not None:
+                _adj = (ev or 0) + MARKET_EV_BONUS.get(mtype, 0)
+                if _adj > _alt_ev:
+                    _alt_ev = _adj
+                    _alt = {"market":mtype,"label":label,"prob":prob,
+                            "ev":ev or 0,"ml":ml,"kelly":kelly or 0}
+        if _alt:
+            best_single = _alt
+        else:
+            # Sin O/U ni BTTS disponibles — calcular O/U desde prob Poisson
+            if p_o25 is not None:
+                best_single = {"market":"O/U","label":"Over 2.5",
+                               "prob":p_o25,"ev":o25_ev or 0,"ml":str(OU_ML),"kelly":0}
+            elif p_u25 is not None:
+                best_single = {"market":"O/U","label":"Under 2.5",
+                               "prob":p_u25,"ev":u25_ev or 0,"ml":str(OU_ML),"kelly":0}
+            else:
+                best_single = None  # sin datos, no mostrar pick
+
     # intra-parlay candidates stored for use by build_parlays()
     best_parlay=None  # will be set by build_parlays() in run_all_simulations
     pos_legs=[(mtype,label,prob,ev,ml) for mtype,label,prob,ev,ml,k in candidates
@@ -6141,7 +6166,8 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo)
+_SIM_VERSION = "v20260324b"  # bump para invalidar cache con fix de ML soccer
+_leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
 
@@ -9052,8 +9078,13 @@ elif _active_page == "Parlays":
                 _a_ev = float(_sim_s.get("away_ev", 0) or 0)
                 _h_k  = float(_sim_s.get("home_kelly", 0) or 0)
                 _a_k  = float(_sim_s.get("away_kelly", 0) or 0)
-                _p_o25 = float(_sim_s.get("p_o25", 0) or 0)
-                _o25ev = float(_sim_s.get("o25_ev", 0) or 0)
+                _p_o25 = float(_sim_s.get("p_o25") or 0)
+                _p_u25 = float(_sim_s.get("p_u25") or 0)
+                # Si p_u25 no está en el sim, calcular desde p_o25
+                if _p_u25 == 0 and _p_o25 > 0:
+                    _p_u25 = round(100.0 - _p_o25, 1)
+                _o25ev = float(_sim_s.get("o25_ev") or 0)
+                _u25ev = float(_sim_s.get("u25_ev") or 0)
 
                 # H2H enrichment bonus
                 _h2h         = _sr_s.get("_h2h", {}) or {}
@@ -9088,10 +9119,26 @@ elif _active_page == "Parlays":
                 _a_ev    = float(_sim_s.get("away_ev", 0) or 0)
                 _h_k     = float(_sim_s.get("home_kelly", 0) or 0)
                 _a_k     = float(_sim_s.get("away_kelly", 0) or 0)
-                _p_o25   = float(_sim_s.get("p_o25", 0) or 0)
-                _o25ev   = float(_sim_s.get("o25_ev", 0) or 0)
-                _p_btts  = float(_sim_s.get("p_btts", 0) or 0)
-                _btts_ev = float(_sim_s.get("btts_ev", 0) or 0)
+                _p_o25   = float(_sim_s.get("p_o25") or 0)
+                _o25ev   = float(_sim_s.get("o25_ev") or 0)
+                _p_u25   = float(_sim_s.get("p_u25") or 0)
+                _u25ev   = float(_sim_s.get("u25_ev") or 0)
+                # Calcular p_u25 desde p_o25 si no existe
+                if _p_u25 == 0 and _p_o25 > 0:
+                    _p_u25 = round(100.0 - _p_o25, 1)
+                _p_btts  = float(_sim_s.get("p_btts") or 0)
+                _btts_ev = float(_sim_s.get("btts_ev") or 0)
+                # Si p_o25 es 0 pero hay lambda, estimar p_o25 via Poisson simple
+                if _p_o25 == 0:
+                    _lam_h0 = float(_sim_s.get("lam_real_h") or 0)
+                    _lam_a0 = float(_sim_s.get("lam_real_a") or 0)
+                    if _lam_h0 > 0 and _lam_a0 > 0:
+                        import math as _math
+                        _mu = _lam_h0 + _lam_a0
+                        # P(goals <= 2) via Poisson
+                        _p_le2 = sum(_math.exp(-_mu) * (_mu**k) / _math.factorial(k) for k in range(3))
+                        _p_o25 = round((1 - _p_le2) * 100, 1)
+                        _p_u25 = round(_p_le2 * 100, 1)
 
                 # --- Extraer todos los signals disponibles ---
                 _dq       = float(_sim_s.get("data_quality", 0) or 0)
@@ -9258,8 +9305,8 @@ elif _active_page == "Parlays":
                     })
 
                 # ── 3. Under 2.5 ─────────────────────────────────────────────
-                _p_u25_son = 100.0 - _p_o25 if _p_o25 else 0.0
-                _u25ev_son = float(_sim_s.get("u25_ev", 0) or 0)
+                _p_u25_son = _p_u25 if _p_u25 > 0 else (100.0 - _p_o25 if _p_o25 > 0 else 0.0)
+                _u25ev_son = _u25ev if _u25ev != 0 else float(_sim_s.get("u25_ev") or 0)
                 if _p_u25_son >= 45:  # threshold bajo — el score rankea por calidad
                     _info_lam_u = f"λ={_lam_tot:.1f}" if _lam_tot > 0 else ""
                     _son_raw.append({
