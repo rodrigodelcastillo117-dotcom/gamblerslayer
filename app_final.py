@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN v2026.03.23-K
+THE GAMBLERS DEN v2026.03.23-L
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -12,7 +12,7 @@ import random
 # ── VERSION STAMP — shows on load to confirm correct file is running ──────────
 if "version_shown" not in st.session_state:
     st.session_state["version_shown"] = True
-    st.toast("✅ Gamblers Den v2026.03.23-K cargado", icon="🎰")
+    st.toast("✅ Gamblers Den v2026.03.23-L cargado", icon="🎰")
 import math
 import time
 import os
@@ -2961,17 +2961,39 @@ def compute_base_prob(game):
     # For qualifier/friendly: check if venue country matches away team
     # ESPN stores country names like "Turkey", "Argentina", etc.
     if not _is_neutral and _is_intl and _venue_country:
-        # Extract key words from team names to match against venue country
-        _away_words = set(_away_team.lower().replace("ü","u").replace("ö","o")
-                          .replace("ñ","n").split())
-        _venue_ctry = _venue_country.lower().replace("ü","u").replace("ö","o").replace("ñ","n")
-        # If any meaningful word from away team appears in venue country → away is home
-        if any(w in _venue_ctry or _venue_ctry in w
-               for w in _away_words if len(w) > 3):
-            _is_neutral = False  # not neutral — away team is actually home
-            boost = -_base_boost * (0.3 if has_ml else 1.0)  # flip advantage
+        # Normalize accents
+        def _norm(s): return (s.lower().replace("ü","u").replace("ö","o").replace("ñ","n")
+                              .replace("é","e").replace("á","a").replace("ó","o").replace("ú","u"))
+        # Country alias map for ESPN name mismatches
+        _CTRY_ALIAS = {
+            "turkiye":["turkey","turkiye"],"turkey":["turkey","turkiye"],
+            "brasil":["brazil","brasil"],"brazil":["brazil","brasil"],
+            "espana":["spain","espana"],"spain":["spain","espana"],
+            "usa":["united states","usa"],"united states":["united states","usa"],
+            "england":["england","united kingdom"],
+            "korea":["south korea","korea","republic of korea"],
+            "south korea":["south korea","korea"],
+            "czechia":["czech republic","czechia"],"czech republic":["czech republic","czechia"],
+            "ivory coast":["cote d'ivoire","ivory coast"],
+            "iran":["iran","islamic republic of iran"],
+            "north macedonia":["north macedonia","macedonia"],
+        }
+        _away_words = set(_norm(_away_team).split())
+        _venue_ctry = _norm(_venue_country)
+
+        def _venue_matches_team(words, ctry):
+            for w in words:
+                if len(w) <= 3: continue
+                if w in ctry or ctry in w: return True
+                # alias check
+                aliases = _CTRY_ALIAS.get(w, [])
+                if any(a in ctry or ctry in a for a in aliases): return True
+            return False
+
+        if _venue_matches_team(_away_words, _venue_ctry):
+            _is_neutral = False
+            boost = -_base_boost * (0.3 if has_ml else 1.0)  # away is actual home
         else:
-            # Qualifier where we can't tell → small neutral boost
             boost = _base_boost * 0.2 * (0.3 if has_ml else 1.0)
     elif _is_neutral:
         boost = 0.0  # no home advantage at neutral sites
