@@ -10098,69 +10098,169 @@ elif _active_page == "En Vivo":
         return None
 
     def live_pick_other(g, sim):
-        """MLB/NBA/NHL en vivo — picks contextuales con O/U y ML reales."""
+        """
+        Picks en vivo por deporte con lógica contextual:
+        MLB  — inning, run rate proyectado, O/U contextual, remontadas
+        NBA  — cuarto, pace, proyección de puntos, spread ajustado
+        NHL  — periodo, goles vs línea (básico)
+        NFL  — cuarto, ML (básico)
+        """
+        import re as _re
         try:
             hs  = int(g.get("home_score") or 0)
             as_ = int(g.get("away_score") or 0)
         except:
             hs, as_ = 0, 0
         total_score = hs + as_
-        home_pct    = sim.get("home_pct", 50)
-        away_pct    = sim.get("away_pct", 50)
-        sport_group = LEAGUES.get(g["league"], {}).get("group", "")
-        status      = g.get("status_detail", "")
+        home_pct    = float(sim.get("home_pct", 50) or 50)
+        away_pct    = float(sim.get("away_pct", 50) or 50)
+        sport_group = LEAGUES.get(g.get("league",""), {}).get("group", "")
+        status      = g.get("status_detail", "") or ""
 
-        if home_pct >= away_pct:
-            fav_label = f"{g['home_team']} gana"; fav_prob = home_pct; fav_team = g["home_team"]
-        else:
-            fav_label = f"{g['away_team']} gana"; fav_prob = away_pct; fav_team = g["away_team"]
+        fav_is_home = home_pct >= away_pct
+        fav_team    = g["home_team"] if fav_is_home else g["away_team"]
+        dog_team    = g["away_team"] if fav_is_home else g["home_team"]
+        fav_prob    = max(home_pct, away_pct)
+        fav_score   = hs if fav_is_home else as_
+        dog_score   = as_ if fav_is_home else hs
+        diff        = fav_score - dog_score  # positivo = favorito va ganando
 
         p_o_total = float(sim.get("p_o_total") or 0)
         p_u_total = float(sim.get("p_u_total") or 0)
-        ou_line   = sim.get("ou_line") or ""
-        picks     = []
+        try:
+            ou_line = float(str(sim.get("ou_line") or "").lstrip("~"))
+        except:
+            ou_line = 0.0
 
+        picks = []
+
+        # ══════════════════════════════════════════════════════════════
+        # ⚾ MLB — run rate, inning, O/U contextual, remontadas
+        # ══════════════════════════════════════════════════════════════
         if sport_group == "Baseball":
-            if ou_line and (p_o_total > 0 or p_u_total > 0):
-                try:
-                    _ou_f = float(str(ou_line).lstrip("~"))
-                    if p_u_total >= p_o_total:
-                        picks.append({"label": f"Under {_ou_f:.1f} carreras", "prob": p_u_total,
-                                      "market": "O/U", "rationale": f"Marcador {as_}-{hs} ({total_score} carreras). Under {_ou_f:.1f} con {p_u_total:.0f}% según modelo."})
-                    else:
-                        picks.append({"label": f"Over {_ou_f:.1f} carreras", "prob": p_o_total,
-                                      "market": "O/U", "rationale": f"Marcador {as_}-{hs}. Over {_ou_f:.1f} con {p_o_total:.0f}%."})
-                except: pass
-            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
-                           "rationale": f"{fav_team} {fav_prob:.0f}% · Marcador {as_}-{hs}"})
+            _inn_m   = _re.search(r"(\d+)", status)
+            inning   = int(_inn_m.group(1)) if _inn_m else 5
+            is_late  = inning >= 7
+            innings_played = max(inning - 1, 1)
+            run_rate = total_score / innings_played
+            innings_left   = max(9 - inning, 0)
+            proj_total = round(total_score + run_rate * innings_left * 0.85, 1)
 
+            if ou_line > 0:
+                runs_needed = ou_line - total_score
+                if is_late and runs_needed > innings_left * 1.5:
+                    u_prob = min(88, (p_u_total + 15) if p_u_total > 0 else 75)
+                    picks.append({"label": f"Under {ou_line:.1f} carreras", "prob": round(u_prob,1),
+                        "market": "O/U",
+                        "rationale": f"Inning {inning}, {as_}-{hs} ({total_score} carreras). Necesitan {runs_needed:.1f} en {innings_left} inn. Proyección: {proj_total:.1f} — Under favorito."})
+                elif proj_total > ou_line and run_rate > 1.2:
+                    o_prob = min(82, (p_o_total + 10) if p_o_total > 0 else 62)
+                    picks.append({"label": f"Over {ou_line:.1f} carreras", "prob": round(o_prob,1),
+                        "market": "O/U",
+                        "rationale": f"Pace {run_rate:.1f}/inn → proyección {proj_total:.1f} carreras, supera línea {ou_line:.1f}."})
+                else:
+                    best = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
+                    if best[1] > 0:
+                        picks.append({"label": f"{best[0]} {ou_line:.1f} carreras", "prob": best[1],
+                            "market": "O/U",
+                            "rationale": f"Inning {inning}, pace {run_rate:.1f}/inn. {best[0]} {ou_line:.1f}: {best[1]:.0f}%."})
+
+            if diff > 0 and is_late:
+                w_adj = min(95, fav_prob + diff * 4)
+                picks.append({"label": f"{fav_team} gana", "prob": round(w_adj,1),
+                    "market": "ML",
+                    "rationale": f"Gana {fav_score}-{dog_score} en inn {inning} ({innings_left} restantes). Prob. ajustada: {w_adj:.0f}%."})
+            elif diff < 0:
+                cb = {1:68, 2:42, 3:22, 4:10}.get(abs(diff), max(5, 100-abs(diff)*18))
+                picks.append({"label": f"{fav_team} remonta", "prob": round(min(fav_prob, cb),1),
+                    "market": "ML",
+                    "rationale": f"Va abajo {dog_score}-{fav_score}, inn {inning}. Remontada ~{cb:.0f}% histórico MLB."})
+            else:
+                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
+                    "market": "ML",
+                    "rationale": f"Inning {inning}, {fav_team} favorito ({fav_prob:.0f}%)."})
+
+        # ══════════════════════════════════════════════════════════════
+        # 🏀 NBA — pace, proyección, cuarto
+        # ══════════════════════════════════════════════════════════════
         elif sport_group == "Basketball":
-            diff = abs(hs - as_)
-            if ou_line and (p_o_total > 0 or p_u_total > 0):
-                try:
-                    _ou_f = float(str(ou_line).lstrip("~"))
-                    best_ou = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
-                    picks.append({"label": f"{best_ou[0]} {_ou_f:.1f} pts", "prob": best_ou[1],
-                                  "market": "O/U", "rationale": f"{as_}-{hs} ({total_score} pts). {best_ou[0]} {_ou_f:.1f} con {best_ou[1]:.0f}%."})
-                except: pass
-            note = f"{diff} pts diferencia" if diff > 0 else "igualado"
-            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
-                           "rationale": f"{fav_team} {fav_prob:.0f}% · {note} · {status}"})
+            _qtr_m   = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
+            _ot      = "OT" in status.upper()
+            qtr      = int(_qtr_m.group(1)) if _qtr_m else (5 if _ot else 2)
+            if _ot: qtr = 5
+            _time_m  = _re.search(r"(\d+):(\d+)", status)
+            mins_in_qtr = (int(_time_m.group(1)) + int(_time_m.group(2))/60) if _time_m else 6.0
+            mins_played = (qtr - 1)*12 + max(0, 12 - mins_in_qtr)
+            mins_left   = max(48 - mins_played, 0) if not _ot else 5.0
+            pace        = total_score / max(mins_played, 1)
+            proj_total  = round(total_score + pace * mins_left, 1)
 
+            if ou_line > 0:
+                pts_needed     = ou_line - total_score
+                rate_needed    = pts_needed / max(mins_left, 0.1)
+                avg_pace       = 2.25  # ~270 pts/60min NBA
+                if rate_needed > avg_pace * 1.3 and mins_left < 12:
+                    u_prob = min(85, (p_u_total + 12) if p_u_total > 0 else 70)
+                    picks.append({"label": f"Under {ou_line:.1f} pts", "prob": round(u_prob,1),
+                        "market": "O/U",
+                        "rationale": f"Q{qtr}, {as_}-{hs} ({total_score} pts). Necesitan {pts_needed:.0f} pts en {mins_left:.0f} min a {rate_needed:.1f}/min — pace muy alto. Proyección: {proj_total:.0f}."})
+                elif proj_total > ou_line + 5:
+                    o_prob = min(82, (p_o_total + 8) if p_o_total > 0 else 65)
+                    picks.append({"label": f"Over {ou_line:.1f} pts", "prob": round(o_prob,1),
+                        "market": "O/U",
+                        "rationale": f"Pace {pace:.1f} pts/min, proyección {proj_total:.0f} pts vs línea {ou_line:.1f}."})
+                else:
+                    best = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
+                    if best[1] > 0:
+                        picks.append({"label": f"{best[0]} {ou_line:.1f} pts", "prob": best[1],
+                            "market": "O/U",
+                            "rationale": f"Q{qtr}, pace {pace:.1f}/min, proy. {proj_total:.0f}. {best[0]}: {best[1]:.0f}%."})
+
+            if qtr >= 4 and diff > 0:
+                w_adj = min(97, fav_prob + diff * 2.5)
+                picks.append({"label": f"{fav_team} gana", "prob": round(w_adj,1),
+                    "market": "ML",
+                    "rationale": f"Q{qtr}, {fav_team} +{diff} pts ({fav_score}-{dog_score}), {mins_left:.0f} min. Prob. ajustada: {w_adj:.0f}%."})
+            elif abs(diff) <= 3:
+                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
+                    "market": "ML",
+                    "rationale": f"Q{qtr}, partido cerrado {as_}-{hs}. {fav_team} ({fav_prob:.0f}%)."})
+            else:
+                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
+                    "market": "ML",
+                    "rationale": f"Q{qtr}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}"})
+
+        # ══════════════════════════════════════════════════════════════
+        # 🏒 NHL — básico
+        # ══════════════════════════════════════════════════════════════
         elif sport_group == "Hockey":
-            if ou_line and (p_o_total > 0 or p_u_total > 0):
-                try:
-                    _ou_f = float(str(ou_line).lstrip("~"))
-                    best_ou = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
-                    picks.append({"label": f"{best_ou[0]} {_ou_f:.1f} goles", "prob": best_ou[1],
-                                  "market": "O/U", "rationale": f"{as_}-{hs} en hockey. {best_ou[0]} {_ou_f:.1f} con {best_ou[1]:.0f}%."})
-                except: pass
-            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
-                           "rationale": f"{fav_team} {fav_prob:.0f}% · {status}"})
+            _per_m = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
+            period = int(_per_m.group(1)) if (_per_m and _per_m.group(1)) else 2
+            is_late = period >= 3
+            if ou_line > 0:
+                goals_left = ou_line - total_score
+                if is_late and goals_left > 1.5:
+                    u_p = min(82, (p_u_total + 10) if p_u_total > 0 else 68)
+                    picks.append({"label": f"Under {ou_line:.1f}", "prob": round(u_p,1),
+                        "market": "O/U",
+                        "rationale": f"Periodo {period}, {total_score} goles. Necesitan {goals_left:.1f} más — difícil."})
+                else:
+                    best = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
+                    if best[1] > 0:
+                        picks.append({"label": f"{best[0]} {ou_line:.1f}", "prob": best[1],
+                            "market": "O/U",
+                            "rationale": f"Periodo {period}, {total_score} goles. {best[0]}: {best[1]:.0f}%."})
+            picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
+                "market": "ML",
+                "rationale": f"Periodo {period}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}"})
 
+        # ══════════════════════════════════════════════════════════════
+        # 🏈 NFL / otros — básico
+        # ══════════════════════════════════════════════════════════════
         else:
-            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
-                           "rationale": f"{fav_team} con {fav_prob:.0f}%."})
+            picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
+                "market": "ML",
+                "rationale": f"{fav_team} {fav_prob:.0f}% · {as_}-{hs} · {status}"})
 
         return {"picks": picks[:2], "headline": f"{as_}–{hs} · {status}"}
 
