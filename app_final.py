@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN v2026.03.23-O
+THE GAMBLERS DEN v2026.03.24-A
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -12,7 +12,7 @@ import random
 # ── VERSION STAMP — shows on load to confirm correct file is running ──────────
 if "version_shown" not in st.session_state:
     st.session_state["version_shown"] = True
-    st.toast("✅ Gamblers Den v2026.03.23-O cargado", icon="🎰")
+    st.toast("✅ Gamblers Den v2026.03.24-A cargado", icon="🎰")
 import math
 import time
 import os
@@ -2129,11 +2129,10 @@ def parse_games(data, league_name):
     _now_utc    = datetime.now(timezone.utc)
     _now_mx     = _now_utc - _td(hours=6)
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
-    _today_cdmx     = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
-    # Ventana ESTRICTA: ayer + hoy + 6 días adelante. Nada más.
+    # Ventana: ayer + hoy + 6 días adelante
     _valid_dates = {_yesterday_cdmx, _today_cdmx}
-    for _d in range(1, 7):  # today+1 … today+6
+    for _d in range(1, 7):
         _valid_dates.add((_now_mx + _td(days=_d)).strftime("%Y-%m-%d"))
 
     for event in data.get("events", []):
@@ -2145,11 +2144,13 @@ def parse_games(data, league_name):
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
                     if _ev_cdmx_date not in _valid_dates:
-                        continue  # fuera de ventana → descartar
+                        # Allow live/in-progress games regardless of date
+                        _state = event.get("status", {}).get("type", {}).get("state", "")
+                        if _state != "in":
+                            continue  # drop only pre/post games outside window
                 except Exception:
-                    continue  # fecha no parseable → descartar (antes hacía pass = dejaba pasar todo)
-            else:
-                continue  # sin fecha → descartar
+                    pass  # if date can't be parsed, keep the event (might be live)
+            # No date = keep (ESPN sometimes omits date for live games)
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
@@ -2365,6 +2366,20 @@ def get_all_games(leagues):
                 data = fetch_scoreboard(cfg["sport"], cfg["league"],
                                         tournament_id=cfg.get("tournament_id"))
             parsed = parse_games(data, name)
+
+            # If no games found for non-soccer, try ESPN default (no date) as fallback
+            if not parsed and cfg["sport"] != "soccer":
+                try:
+                    _base = f"https://site.api.espn.com/apis/site/v2/sports/{cfg['sport']}/{cfg['league']}/scoreboard"
+                    _r = requests.get(f"{_base}?limit=100", timeout=5,
+                                      headers={"User-Agent": "Mozilla/5.0"})
+                    if _r.status_code == 200:
+                        _d2 = _r.json()
+                        if _d2.get("events"):
+                            parsed = parse_games(_d2, name)
+                except:
+                    pass
+
             if cfg.get("hidden"):
                 parsed = [g for g in parsed
                           if g.get("home_team") in WATCHED_TEAMS
@@ -6042,27 +6057,45 @@ else:
             games.append(_cg_copy)
 
     if not games:
-        col_a,col_b=st.columns(2)
+        # Try to auto-switch to demo so the app is usable
+        col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("↺ Reintentar ESPN"): st.cache_data.clear(); st.rerun()
+            if st.button("↺ Reintentar ESPN", use_container_width=True):
+                st.cache_data.clear()
+                st.session_state.pop("_games_fetched", None)
+                st.rerun()
         with col_b:
-            if st.button("🧪 Usar demo"): st.session_state["force_demo"]=True; st.rerun()
+            if st.button("🧪 Usar demo", use_container_width=True):
+                st.session_state["force_demo"] = True
+                st.rerun()
 
         leagues_str = ", ".join(sel_leagues[:6])
-        # Show per-league breakdown if we have errors
-        if fetch_errors:
-            sin_partidos = [e for e in fetch_errors if "sin partidos" in e]
-            con_error    = [e for e in fetch_errors if "sin partidos" not in e]
-            detail_html  = ""
-            if sin_partidos:
-                detail_html += f"<br>📅 Sin partidos hoy: <b>{', '.join(e.split(':')[0] for e in sin_partidos)}</b>"
-            if con_error:
-                detail_html += f"<br>⚠ Error de API: <b>{', '.join(e.split(':')[0] for e in con_error)}</b>"
-        else:
-            detail_html = ""
+
+        # Build more helpful error with ESPN test links
+        _now_mx_err = datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=6)
+        _today_str  = _now_mx_err.strftime("%Y%m%d")
+
         st.markdown(
-            f'<div class="warn-banner">No se encontraron partidos para: <b>{leagues_str}</b>.{detail_html}<br>'            f'Puede que no haya juegos programados hoy. Activa <b>Modo Demo</b> para ver cómo funciona la app.</div>',
-            unsafe_allow_html=True)
+            f'<div class="warn-banner">'
+            f'⚠️ ESPN no devolvió partidos para: <b>{leagues_str}</b>.<br><br>'
+            f'<b>Posibles causas:</b><br>'
+            f'• No hay partidos programados para hoy en esas ligas<br>'
+            f'• ESPN está tardando — presiona "Reintentar ESPN"<br>'
+            f'• Hoy es día de descanso (lunes/martes en NBA, etc.)<br><br>'
+            f'<b>Verifica manualmente:</b> '
+            f'<a href="https://www.espn.com/nba/scoreboard/_/date/{_today_str}" target="_blank" style="color:#FF8C00">NBA</a> · '
+            f'<a href="https://www.espn.com/mlb/scoreboard/_/date/{_today_str}" target="_blank" style="color:#FF8C00">MLB</a> · '
+            f'<a href="https://www.espn.com/soccer/scoreboard" target="_blank" style="color:#FF8C00">Soccer</a>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        # Show fetch errors if any
+        if fetch_errors:
+            with st.expander("🔍 Detalle de errores de API"):
+                for err in fetch_errors[:10]:
+                    st.caption(f"• {err}")
+
         st.stop()
     else:
         sel_set=set(sel_leagues)
