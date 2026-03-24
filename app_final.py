@@ -7209,7 +7209,17 @@ if _active_page == "Rongol Picks":
                     st.caption("Sin picks guardados aún.")
 
         if not rongol_picks:
-            st.markdown('<div class="warn-banner">No se encontraron picks. Intenta con más ligas o pulsa ▶ ANALIZAR.</div>', unsafe_allow_html=True)
+            _n_soccer_pre = len([r for r in sr_cur
+                                 if LEAGUES.get(r.get("league",""),{}).get("group")=="Soccer"
+                                 and r.get("state","pre") != "post"])
+            if _n_soccer_pre == 0:
+                _next_soccer_msg = " Los partidos de soccer del 25-26 de marzo aparecerán cuando ESPN los publique (normalmente 12-24h antes)."
+            else:
+                _next_soccer_msg = f" {_n_soccer_pre} partidos soccer simulados sin candidatos O/U — re-simula en ⚙."
+            st.markdown(
+                f'<div class="warn-banner">Sin picks disponibles hoy.{_next_soccer_msg}</div>',
+                unsafe_allow_html=True
+            )
         else:
             # ── helpers ──────────────────────────────────────────────────────
             _MKT_COLOR = {"ML":"#60a5fa","O/U":"#ff6a00","BTTS":"#00C896","DO":"#a78bfa","COMBO":"#f59e0b"}
@@ -7932,16 +7942,26 @@ elif _active_page == "Picks":
             _smp  = _SPORT_META_P[_sp_p]
             _is_s = (_sel_sp == _sp_p)
             _key  = f"btn_sp_{_sp_p.replace(' ','_')}"
-            _bg   = f"{_smp['color']}33" if _is_s else f"{_smp['color']}14"
-            _bdr  = f"2px solid {_smp['color']}CC" if _is_s else f"1px solid {_smp['color']}44"
-            _shad = f"0 0 18px {_smp['color']}44" if _is_s else "none"
+            _c    = _smp['color']
+            if _is_s:
+                _bg   = f"linear-gradient(160deg,{_c}55 0%,{_c}33 100%)"
+                _bdr  = f"2px solid {_c}DD"
+                _shad = f"0 4px 20px {_c}66, 0 1px 0 rgba(255,255,255,0.15) inset"
+                _txt  = _c
+            else:
+                _bg   = f"linear-gradient(160deg,{_c}22 0%,{_c}10 100%)"
+                _bdr  = f"1.5px solid {_c}55"
+                _shad = f"0 2px 8px {_c}22"
+                _txt  = f"{_c}CC"
             _tile_css += (
                 f'div[data-testid="stButton"]:has(button[data-testid="{_key}"]) button{{'
-                f'background:{_bg}!important;border:{_bdr}!important;border-radius:18px!important;'
-                f'box-shadow:{_shad}!important;min-height:100px!important;'
-                f'white-space:pre-wrap!important;font-size:0.75rem!important;'
-                f'font-weight:700!important;color:{_smp["color"]}!important;'
-                f'opacity:{"1" if (_sel_sp is None or _is_s) else "0.4"}!important}}'
+                f'background:{_bg}!important;border:{_bdr}!important;border-radius:16px!important;'
+                f'box-shadow:{_shad}!important;min-height:90px!important;'
+                f'white-space:pre-wrap!important;font-size:0.78rem!important;'
+                f'font-weight:800!important;color:{_txt}!important;'
+                f'letter-spacing:0.5px!important;'
+                f'opacity:{1.0 if (_sel_sp is None or _is_s) else 0.45}!important;'
+                f'transition:all 0.15s ease!important}}'
             )
         st.markdown(f'<style>{_tile_css}</style>', unsafe_allow_html=True)
 
@@ -8169,6 +8189,20 @@ elif _active_page == "Picks":
         _sg_icon = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(_sg,"🎯")
 
         bp   = _oracle_pick(_r)
+        if not bp:
+            # Soccer sin datos suficientes — mostrar card básica con probs
+            _h_pct = sim.get("home_pct", 0) or 0
+            _a_pct = sim.get("away_pct", 0) or 0
+            return (
+                '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
+                'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+                'border:1px solid rgba(0,0,0,0.07);padding:12px 14px;'
+                'box-shadow:0 4px 12px rgba(0,0,0,0.15)">'
+                f'<div style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">{league_label(g.get("league",""))}</div>'
+                f'<div style="font-size:0.75rem;font-weight:700;color:#333">{g["away_team"]} @ {g["home_team"]}</div>'
+                f'<div style="font-size:0.65rem;color:#888;margin-top:4px">Sin datos de mercado · {_a_pct:.0f}% / {_h_pct:.0f}%</div>'
+                '</div>'
+            )
         _mkt = bp.get("market","")
         _lbl = bp.get("label","")
         _prob_bp = bp.get("prob",0) or 0
@@ -8445,7 +8479,8 @@ elif _active_page == "Picks":
                     f'<div style="background:{_hdr_bg};border:{_hdr_bdr};'
                     f'border-radius:{"12px 12px 0 0" if _is_open else "12px"};'
                     f'padding:12px 16px;margin-top:6px;pointer-events:none;'
-                    f'display:flex;justify-content:space-between;align-items:center;margin-bottom:-46px;position:relative;z-index:0">'
+                    f'display:flex;justify-content:space-between;align-items:center;'
+                    f'margin-bottom:-46px;position:relative;z-index:2">'
                     f'<div style="display:flex;align-items:center;gap:8px">'
                     f'<span style="font-size:1rem">{_flag_p}</span>'
                     f'<span style="font-size:0.82rem;font-weight:700;color:#E8E8E8">{_lg_p}{_ctry_str}</span>'
@@ -8462,10 +8497,8 @@ elif _active_page == "Picks":
                     st.rerun()
                 st.markdown(
                     f'<style>'
-                    f'div[data-testid="stHorizontalBlock"] button[kind="secondary"],'
-                    f'div[data-testid="column"] button[kind="secondary"],'
-                    f'[data-testid="baseButton-secondary"]'
-                    f'{{background:transparent!important;border:none!important;'
+                    f'div[data-testid="stButton"]:has(button[data-testid="{_btn_k}"]) button{{'
+                    f'background:transparent!important;border:none!important;'
                     f'box-shadow:none!important;color:transparent!important;height:46px!important;'
                     f'position:relative!important;z-index:1!important;margin-top:-46px!important}}'
                     f'</style>',
