@@ -778,7 +778,7 @@ def _make_card(
 
         # Header: league + fire badge
         f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
-        f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{league_label_str}</span>'
+        f'<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">{league_label_str}</span>'
         f'<span style="font-size:0.65rem">{"🔥" if is_fire else ""}</span>'
         f'</div>'
 
@@ -4794,16 +4794,10 @@ def run_monte_carlo(game, n=10_000):
     dc_1x_ev=calc_ev(p_dc_1x,DC_ML); dc_x2_ev=calc_ev(p_dc_x2,DC_ML); dc_12_ev=calc_ev(p_dc_12,DC_ML)
 
     _sport_group_early = LEAGUES.get(game["league"], {}).get("group", "")
-    # Soccer ML: solo incluir si prob ≥ 65% — líneas ML de soccer tienen vig alto
-    # y con prob < 65% el edge real raramente justifica el riesgo.
-    # No-soccer: incluir siempre (NBA/NHL/NFL tienen 2 outcomes, vig más justo).
-    _ML_MIN_SOCCER = 0.65
+    # Soccer: NUNCA incluir ML — vig altísimo (3 outcomes), mejor EV en O/U y BTTS.
+    # No-soccer: incluir siempre (2 outcomes, vig más justo).
     if _sport_group_early == "Soccer":
-        candidates = []
-        if sh >= _ML_MIN_SOCCER:
-            candidates.append(("ML", game["home_team"]+" ML", sh, home_ev, hml, hk))
-        if sa >= _ML_MIN_SOCCER:
-            candidates.append(("ML", game["away_team"]+" ML", sa, away_ev, aml, ak))
+        candidates = []  # ML soccer completamente excluido
     else:
         candidates = [
             ("ML", game["home_team"]+" ML", sh, home_ev, hml, hk),
@@ -5074,12 +5068,12 @@ def run_monte_carlo(game, n=10_000):
     # varianza de los mercados de resultado (H/D/A tienen 3 outcomes).
     # ═══════════════════════════════════════════════════════════════════════
 
-    # Pre-filter: excluir DO (EV ficticio por DC_ML hardcoded)
-    # Para soccer: excluir también ML con prob < 65% — vig alto, edge real insuficiente
+    # Pre-filter: excluir DO (EV ficticio) y ML de soccer (3 outcomes = vig alto,
+    # mejor EV siempre en O/U 2.5 / Under 2.5 / BTTS)
     candidates_main = [
         (mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
         if mt != "DO"
-        and not (sport_group == "Soccer" and mt == "ML" and (pr or 0) < 0.65)
+        and not (sport_group == "Soccer" and mt == "ML")
     ]
 
     # Selección por mayor EV
@@ -5632,7 +5626,23 @@ def render_pick_card(r, rank=None):
         return ""
 
     prob_pct  = bs["prob"] * 100
-    ev_val    = bs["ev"]
+    # Si ev es None (sin momio ESPN), calcular EV implícito desde prob y decimal estándar
+    ev_val    = bs.get("ev")
+    if ev_val is None:
+        # Usar prob para calcular EV vs cuota estándar según mercado
+        _prob_f = bs.get("prob", 0) or 0
+        _std_ml = {"ML": -110, "O/U": -110, "BTTS": -110}.get(bs.get("market","ML"), -110)
+        _bs_ml  = bs.get("ml", "") or ""
+        if _bs_ml:
+            try:
+                _mf = float(_bs_ml)
+                _payout = _mf / 100 if _mf > 0 else 100 / abs(_mf)
+                ev_val = round(_prob_f * _payout * 100 - (1 - _prob_f) * 100, 1)
+            except:
+                ev_val = None
+        # Si aún None, EV vs -110 estándar
+        if ev_val is None and _prob_f > 0:
+            ev_val = round(_prob_f * (100/1.1) - (1 - _prob_f) * 100, 1)
     kelly_pct = bs["kelly"]
 
     impl = ml_to_prob(bs["ml"]) * 100 if bs["market"] == "ML" and bs["ml"] else 0
@@ -7521,6 +7531,19 @@ if _active_page == "Rongol Picks":
 
                     # ── EV display ───────────────────────────────────────────────
                     _ev_v    = _pk.get("ev")
+                    _prob_pk = (_pk.get("prob") or 0)
+                    _prob_pk_f = _prob_pk if _prob_pk <= 1 else _prob_pk / 100
+                    # Calcular EV implícito si es None
+                    if _ev_v is None and _prob_pk_f > 0:
+                        _pk_ml = _pk.get("ml","") or ""
+                        if _pk_ml:
+                            try:
+                                _mfp = float(_pk_ml)
+                                _payp = _mfp/100 if _mfp > 0 else 100/abs(_mfp)
+                                _ev_v = round(_prob_pk_f * _payp * 100 - (1-_prob_pk_f)*100, 1)
+                            except: pass
+                        if _ev_v is None:
+                            _ev_v = round(_prob_pk_f * (100/1.1) - (1-_prob_pk_f)*100, 1)
                     _ev_disp = f"{(_ev_v or 0):+.0f}" if _ev_v is not None else "S/L"
                     _ev_clr  = "#888" if _ev_v is None else ("#006600" if (_ev_v or 0) > 0 else "#880000")
                     _kelly_v = (_pk.get("kelly",0) or 0) * 25
@@ -7549,7 +7572,7 @@ if _active_page == "Rongol Picks":
 
                         # Header: league + fire
                         '<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
-                        '<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">' + _lg_lbl + '</span>'
+                        '<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">' + _lg_lbl + '</span>'
                         '<span style="font-size:0.65rem">' + ("🔥" if _is_fire else "") + '</span>'
                         '</div>'
 
@@ -7888,25 +7911,69 @@ elif _active_page == "Picks":
     _sim_map = {r.get("id", ""): r for r in st.session_state.get("sim_results", [])}
 
     def _oracle_pick(r):
-        """Best pick = highest EV. Kelly protects against extreme underdogs."""
+        """
+        Best pick por mercado.
+        Soccer: NUNCA ML (3 outcomes, vig alto). Solo O/U 2.5, Under 2.5, BTTS.
+        No-soccer: ML siempre permitido.
+        """
         sim = r.get("sim") or {}
         if not sim: return None
+        _is_soccer = sim.get("is_soccer", False) or \
+                     LEAGUES.get(r.get("league",""), {}).get("group","") == "Soccer"
+
+        # ── Path 1: _scored_candidates (mejor EV, ya filtrado) ──
         _scored = sim.get("_scored_candidates", [])
-        if _scored:
-            best = _scored[0]  # highest EV
-            return {"market":best["market"],"label":best["label"],
-                    "prob":best["prob"],"ev":best["ev"]}
+        for _cand in _scored:
+            _mkt = _cand.get("market","")
+            if _is_soccer and _mkt == "ML":
+                continue  # soccer: nunca ML
+            return {"market": _mkt, "label": _cand["label"],
+                    "prob": _cand["prob"], "ev": _cand.get("ev", 0),
+                    "ml": _cand.get("ml", "")}
+
+        # ── Path 2: best_single ──
         bs = sim.get("best_single") or sim.get("best_pick")
         if bs and bs.get("label"):
-            return {"market":bs.get("market","ML"),"label":bs["label"],
-                    "prob":bs.get("prob",0),"ev":bs.get("ev",0)}
-        h_prob = sim.get("home_pct",0) or 0
-        a_prob = sim.get("away_pct",0) or 0
+            _mkt = bs.get("market", "ML")
+            if not (_is_soccer and _mkt == "ML"):
+                return {"market": _mkt, "label": bs["label"],
+                        "prob": bs.get("prob", 0), "ev": bs.get("ev", 0),
+                        "ml": bs.get("ml", "")}
+
+        # ── Path 3: fallback soccer — O/U → Under → BTTS (nunca ML) ──
+        if _is_soccer:
+            p_o25  = sim.get("p_o25")  or 0
+            p_u25  = sim.get("p_u25")  or 0
+            p_btts = sim.get("p_btts") or 0
+            ou_ml  = sim.get("over_under", "") or ""
+            if p_o25 >= 48:
+                return {"market": "O/U", "label": "Over 2.5",
+                        "prob": p_o25, "ev": sim.get("o25_ev", 0) or 0, "ml": ou_ml}
+            if p_u25 >= 52:
+                return {"market": "O/U", "label": "Under 2.5",
+                        "prob": p_u25, "ev": sim.get("u25_ev", 0) or 0, "ml": ou_ml}
+            if p_btts >= 48:
+                return {"market": "BTTS", "label": "Ambos Anotan — SÍ",
+                        "prob": p_btts, "ev": sim.get("btts_ev", 0) or 0, "ml": ""}
+            # Último recurso: el O/U con mayor prob, sin importar threshold
+            if p_o25 > 0 or p_u25 > 0:
+                if p_o25 >= p_u25:
+                    return {"market": "O/U", "label": "Over 2.5",
+                            "prob": p_o25, "ev": sim.get("o25_ev", 0) or 0, "ml": ou_ml}
+                return {"market": "O/U", "label": "Under 2.5",
+                        "prob": p_u25, "ev": sim.get("u25_ev", 0) or 0, "ml": ou_ml}
+            return None  # sin datos suficientes
+
+        # ── Path 4: fallback no-soccer — ML del favorito ──
+        h_prob = sim.get("home_pct", 0) or 0
+        a_prob = sim.get("away_pct", 0) or 0
         if h_prob >= a_prob:
             return {"market":"ML","label":r.get("home_team",""),
-                    "prob":h_prob,"ev":sim.get("home_ev",0) or 0}
+                    "prob":h_prob,"ev":sim.get("home_ev",0) or 0,
+                    "ml":sim.get("home_ml","")}
         return {"market":"ML","label":r.get("away_team",""),
-                "prob":a_prob,"ev":sim.get("away_ev",0) or 0}
+                "prob":a_prob,"ev":sim.get("away_ev",0) or 0,
+                "ml":sim.get("away_ml","")}
 
     def _build_extra_panels(g, sim, bp):
         """
@@ -8051,9 +8118,21 @@ elif _active_page == "Picks":
         _prob_bp = bp.get("prob",0) or 0
         _prob_bp = _prob_bp if _prob_bp <= 1 else _prob_bp / 100
         _ev  = bp.get("ev")
+        # Calcular EV implícito si es None (sin momio ESPN de respaldo)
+        if _ev is None and _prob_bp > 0:
+            _bp_ml = bp.get("ml", "") or ""
+            if _bp_ml:
+                try:
+                    _mf2 = float(_bp_ml)
+                    _pay2 = _mf2/100 if _mf2 > 0 else 100/abs(_mf2)
+                    _ev = round(_prob_bp * _pay2 * 100 - (1 - _prob_bp) * 100, 1)
+                except: pass
+            if _ev is None:
+                # Sin momio: EV vs cuota estándar -110 (1.909)
+                _ev = round(_prob_bp * (100/1.1) - (1 - _prob_bp) * 100, 1)
         _ev_disp = f"{(_ev or 0):+.0f}" if _ev is not None else "S/L"
-        _ev_clr  = "#888" if _ev is None else ("#006600" if (_ev or 0)>0 else "#880000")
-        _kelly_bp = (bp.get("kelly",0) or 0) * 25
+        _ev_clr  = "#888" if _ev is None else ("#006600" if (_ev or 0) > 0 else "#880000")
+        _kelly_bp = (bp.get("kelly", 0) or 0) * 25
 
         # Decimals
         _h_pct = sim.get("home_pct",0) or 0
@@ -8174,7 +8253,7 @@ elif _active_page == "Picks":
 
             # Header
             '<div style="padding:8px 14px 3px;display:flex;justify-content:space-between;align-items:center">'
-            '<span style="font-size:0.65rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">' + _lg_lbl + '</span>'
+            '<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">' + _lg_lbl + '</span>'
             '<div style="display:flex;align-items:center;gap:4px">'
             + (f'<span style="font-size:0.58rem;color:{_dqc}">DQ {dq:.0f}%</span>' )
             + _live_tag +
@@ -8775,7 +8854,7 @@ elif _active_page == "Parlays":
                     'border:1px solid rgba(0,0,0,0.07);'
                     'box-shadow:0 6px 20px rgba(0,0,0,0.20),0 1px 0 rgba(255,255,255,0.85) inset>'
                     f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
-                    f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_sgi} {_sg} · {_lg}</span>'
+                    f'<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">{_sgi} {_sg} · {_lg}</span>'
                     f'<span style="font-size:0.62rem;color:#888">{_matchup[:28]}</span>'
                     f'</div>'
                     f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
@@ -8931,23 +9010,24 @@ elif _active_page == "Parlays":
             st.markdown('<div class="den-divider" style="margin:24px 0 12px"></div>',
                         unsafe_allow_html=True)
 
-            # ── Ventana estricta 6 días ───────────────────────────────────────
+            # ── Ventana: hoy + 6 días (más permisivo para no perder nada) ──────
             from datetime import timedelta as _td_son, timezone as _tz_son
             _now_son    = datetime.now(_tz_son.utc)
             _now_mx_son = _now_son - _td_son(hours=6)
             _valid_son  = set()
-            for _d in range(0, 5):  # hoy + 4 días (hoy=0, +1, +2, +3, +4)
+            for _d in range(-1, 7):  # ayer + hoy + 6 días
                 _valid_son.add((_now_mx_son + _td_son(days=_d)).strftime("%Y-%m-%d"))
 
             def _game_date_son(r_obj, g_obj=None):
-                """Busca fecha en sim_result o en game object."""
+                """Busca fecha en sim_result o en game object. Soporta Z-suffix."""
                 for _src in [r_obj, g_obj or {}]:
                     raw = _src.get("date","")
                     if not raw: continue
                     try:
+                        # Quitar sufijo Z y microsegundos antes de parsear
+                        _clean = raw.replace("Z","").replace("z","")[:19].replace("T"," ")
                         from datetime import timezone as _tz2
-                        _u = datetime.strptime(raw[:19].replace("T"," "),
-                                               "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz2.utc)
+                        _u = datetime.strptime(_clean, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz2.utc)
                         return (_u - _td_son(hours=6)).strftime("%Y-%m-%d")
                     except: continue
                 return None
@@ -9158,34 +9238,11 @@ elif _active_page == "Parlays":
 
                 # ── 1. ML del equipo favorito ─────────────────────────────────
                 # Soccer ML: solo si prob >= 65% — vig alto, edge real insuficiente < 65%
-                _fav_is_home = _hp >= _ap
-                _fav_prob    = _hp if _fav_is_home else _ap
-                _fav_ev      = _h_ev if _fav_is_home else _a_ev
-                _fav_kelly   = _h_k  if _fav_is_home else _a_k
-                _fav_team    = _home if _fav_is_home else _away
-                _fav_rank    = _h_rank_son if _fav_is_home else _a_rank_son
-                _fav_wr      = _h_wr if _fav_is_home else _a_wr
-                _fav_inj     = _h_inj if _fav_is_home else _a_inj
+                # ── Soccer: NUNCA ML en el Soñador ─────────────────────────
+                # 3 outcomes = vig muy alto. Solo O/U 2.5 y BTTS tienen EV real.
 
-                # Solo agregar ML si el favorito tiene prob >= 65%
-                if _fav_prob >= 65:
-                    _rb = _rank_bonus(_fav_rank, _conf_diff_son)
-                    _h2h_ml = _h2h_h_wins if _fav_is_home else (1 - _h2h_h_wins)
-                    _info_rec = f"Rec: {(_h_rec if _fav_is_home else _a_rec) or '?'}"
-                    _info_inj = f" 🤕{round((1-_fav_inj)*100):.0f}%" if _fav_inj < 0.95 else ""
-                    _son_raw.append({
-                        "game_id": _game_id, "league": _league,
-                        "market": "ML", "label": _fav_team,
-                        "prob": _fav_prob, "ev": _fav_ev, "kelly": _fav_kelly, "dq": _dq,
-                        "partido": _partido, "home": _home, "away": _away,
-                        "score": _son_score(_fav_prob, _fav_ev, _fav_kelly, _dq, "ML",
-                                            h2h_rate=_h2h_ml, rank_bon=_rb, **_score_params),
-                        "info": f"FIFA #{_fav_rank} {_conf_lbl} {_info_rec}{_info_inj}",
-                        "date": _gd_son or "",
-                    })
-
-                # ── 2. Over 2.5 ──────────────────────────────────────────────
-                if _p_o25 >= 48:
+                # ── 1. Over 2.5 ──────────────────────────────────────────────
+                if _p_o25 >= 40:  # threshold bajo — el score después rankea por calidad
                     _h2h_bonus_o = _over25_h2h
                     _info_lam = f"λ={_lam_tot:.1f}" if _lam_tot > 0 else ""
                     _info_h2h = f" H2H O25:{_over25_h2h*100:.0f}%" if _over25_h2h > 0 else ""
@@ -9203,7 +9260,7 @@ elif _active_page == "Parlays":
                 # ── 3. Under 2.5 ─────────────────────────────────────────────
                 _p_u25_son = 100.0 - _p_o25 if _p_o25 else 0.0
                 _u25ev_son = float(_sim_s.get("u25_ev", 0) or 0)
-                if _p_u25_son >= 52:  # threshold ligeramente más alto que Over
+                if _p_u25_son >= 45:  # threshold bajo — el score rankea por calidad
                     _info_lam_u = f"λ={_lam_tot:.1f}" if _lam_tot > 0 else ""
                     _son_raw.append({
                         "game_id": _game_id, "league": _league,
@@ -9218,7 +9275,7 @@ elif _active_page == "Parlays":
                     })
 
                 # ── 4. BTTS (Ambos Anotan) ────────────────────────────────────
-                if _p_btts >= 48:
+                if _p_btts >= 40:  # threshold bajo — el score rankea por calidad
                     _info_lam_b = f"λh={_lam_h:.1f} λa={_lam_a:.1f}" if _lam_h and _lam_a else ""
                     _info_h2h_b = f" H2H BTTS:{_btts_h2h*100:.0f}%" if _btts_h2h > 0 else ""
                     _son_raw.append({
@@ -9232,38 +9289,25 @@ elif _active_page == "Parlays":
                         "date": _gd_son or "",
                     })
 
-            # ── Sort by score, deduplicate by game con mezcla de mercados ─────
-            # Lógica: 1 candidato por partido, pero priorizando mezcla de mercados.
-            # Si ya hay 2+ patas ML en los top candidatos, el siguiente partido
-            # prefiere O/U o BTTS para reducir correlación y maximizar EV del parlay.
+            # ── Sort by score, deduplicate por partido con mezcla de mercados ─
             _son_raw.sort(key=lambda x: x["score"], reverse=True)
-            _son_seen = set()   # game_ids ya incluidos
+            _son_seen = set()
             _son_legs = []
-            _mkt_counts_son = {"ML": 0, "O/U": 0, "BTTS": 0}  # track market diversity
+            _mkt_counts_son = {"ML": 0, "O/U": 0, "BTTS": 0}
 
-            # Primera pasada: 1 pick por partido (mejor score)
-            _best_per_game = {}
-            for _c in _son_raw:
-                _gid = _c["game_id"]
-                if not _gid:  # skip entradas sin game_id válido
-                    continue
-                if _gid not in _best_per_game:
-                    _best_per_game[_gid] = _c
-                # También guardar el mejor por mercado alternativo para mezcla
-                _mkt_key = f"{_gid}_{_c['market']}"
+            def _son_key(c):
+                """Key único por partido — usa game_id o matchup como fallback."""
+                gid = c.get("game_id","")
+                if gid: return gid
+                return f"{c.get('home','')}_vs_{c.get('away','')}"
 
-            # Segunda pasada: construir legs con diversidad de mercados
-            # Prioridad: elegir el mejor candidato de cada partido, pero si un
-            # mercado ya domina (>60% de las patas), preferir el siguiente mejor
-            # mercado de ese partido para diversificar.
+            # Agrupar por partido
             _all_per_game = {}
             for _c in _son_raw:
-                _gid = _c["game_id"]
-                if not _gid:
-                    continue
-                _all_per_game.setdefault(_gid, []).append(_c)
+                _k = _son_key(_c)
+                _all_per_game.setdefault(_k, []).append(_c)
 
-            # Ordenar partidos por el score de su mejor candidato
+            # Ordenar partidos por score de su mejor candidato
             _games_ranked = sorted(
                 _all_per_game.items(),
                 key=lambda kv: kv[1][0]["score"],
@@ -9273,19 +9317,15 @@ elif _active_page == "Parlays":
             for _gid, _cands in _games_ranked:
                 if _gid in _son_seen:
                     continue
-                # Intentar elegir mercado que diversifique
                 _chosen = None
                 _n_legs_so_far = len(_son_legs)
-                for _cand in _cands:  # ya ordenados por score
+                for _cand in _cands:
                     _mkt = _cand["market"]
                     _mkt_share = _mkt_counts_son.get(_mkt, 0) / max(_n_legs_so_far, 1)
-                    # Si el mercado ya ocupa >60% de las patas Y hay alternativa buena,
-                    # saltar este y buscar el siguiente mejor de otro mercado
                     if _n_legs_so_far >= 3 and _mkt_share > 0.60:
-                        continue  # buscar alternativa
+                        continue
                     _chosen = _cand
                     break
-                # Fallback: si todos los mercados están saturados, elegir el mejor score
                 if _chosen is None and _cands:
                     _chosen = _cands[0]
                 if _chosen:
@@ -9458,10 +9498,22 @@ elif _active_page == "Parlays":
                 )
 
             elif _son_raw:
+                # Hay candidatos pero menos de 2 legs únicos — mostrar lo que hay
                 _n_son = len(_son_raw)
-                st.info(f"⚽ {_n_son} candidato{'s' if _n_son!=1 else ''} soccer en 5 días — construyendo Parlay Soñador con lo disponible... Simula más ligas en ⚙ Config para más patas.")
+                _n_unique = len({_son_key(c) for c in _son_raw})
+                if _n_unique == 1:
+                    # Solo 1 partido — mostrar igual con 1 pata
+                    _solo = _son_raw[0]
+                    st.info(f"⚽ Solo 1 partido soccer disponible: {_solo.get('partido','?')} · {_solo.get('market','')} {_solo.get('label','')} ({_solo.get('prob',0):.0f}%). Necesitas al menos 2 partidos para un parlay. Activa más ligas en ⚙ Config.")
+                else:
+                    st.info(f"⚽ {_n_son} candidatos en {_n_unique} partidos soccer — re-simula para actualizar picks.")
             else:
-                st.info("🌙 Sin candidatos soccer en los próximos 5 días. Activa más ligas en ⚙ Config.")
+                _n_total_soccer = len([r for r in st.session_state.get("sim_results",[])
+                                       if LEAGUES.get(r.get("league",""),{}).get("group","") == "Soccer"])
+                if _n_total_soccer > 0:
+                    st.info(f"⚽ {_n_total_soccer} partidos soccer simulados pero sin datos de goles. Re-simula en ⚙ o activa más ligas.")
+                else:
+                    st.info("🌙 Sin partidos soccer simulados. Activa ligas de soccer en ⚙ Config y re-simula.")
 
 
 
@@ -9949,7 +10001,7 @@ elif _active_page == "En Vivo":
 
                 # Header: league + live badge
                 f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
-                f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl_lv}</span>'
+                f'<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">{_lg_lbl_lv}</span>'
                 f'<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.3);border-radius:8px;padding:1px 6px;font-size:0.55rem;font-weight:700">🔴 EN VIVO{f" {minute}′" if minute else ""}</span>'
                 f'</div>'
 
