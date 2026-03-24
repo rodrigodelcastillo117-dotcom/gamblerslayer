@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN v2026.03.23-H
+THE GAMBLERS DEN v2026.03.23-K
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -12,7 +12,7 @@ import random
 # ── VERSION STAMP — shows on load to confirm correct file is running ──────────
 if "version_shown" not in st.session_state:
     st.session_state["version_shown"] = True
-    st.toast("✅ Gamblers Den v2026.03.23-H cargado", icon="🎰")
+    st.toast("✅ Gamblers Den v2026.03.23-K cargado", icon="🎰")
 import math
 import time
 import os
@@ -625,6 +625,110 @@ MLB_BALLPARK_FACTOR = {
     "t-mobile":     0.94,  # T-Mobile Park, Seattle (rain/cool)
     "busch":        0.97,  # Busch Stadium, St. Louis
 }
+
+
+def _make_card(
+    away, home, league_label_str, sg_icon,
+    logo_away_html, logo_home_html,
+    pills_html,
+    pick_market, pick_label, pick_decimal_str, pick_pct,
+    ev_val, kelly_val, dq_val,
+    ml_badge_html="",
+    is_fire=False,
+    # Color theme
+    cta_color1="#FFE033", cta_color2="#FFBB00",  # yellow = Rongol default
+    cta_shadow="rgba(255,185,0,0.3)",
+    cta_text_color="#111",
+    cta_sub_color="rgba(0,0,0,0.7)",
+    cta_label="APOSTAR →",
+    stats_border="rgba(0,0,0,0.1)",
+    card_bg1="#F6F6F9", card_bg2="#E9E9EE",
+    card_border="rgba(0,0,0,0.07)",
+    card_shadow="0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset",
+):
+    _fire_glow = ";box-shadow:0 0 18px rgba(255,140,0,0.35)" if is_fire else ""
+    ev_disp = f"+{ev_val:.0f}" if ev_val and ev_val > 0 else (f"{ev_val:.0f}" if ev_val else "N/A")
+    ev_clr = "#00A050" if ev_val and ev_val > 0 else ("#CC3300" if ev_val else "#888")
+    
+    return (
+        f'<div style="background:linear-gradient(160deg,{card_bg1} 0%,{card_bg2} 100%);'
+        f'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+        f'border:1px solid {card_border};'
+        f'box-shadow:{card_shadow}{_fire_glow}">'
+
+        # Header: league + fire badge
+        f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
+        f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{league_label_str}</span>'
+        f'<span style="font-size:0.65rem">{"🔥" if is_fire else ""}</span>'
+        f'</div>'
+
+        # Teams + logos VS layout
+        f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
+        f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+        + logo_away_html +
+        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
+        f'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{away[:9]}</span>'
+        f'</div>'
+        f'<div style="flex:1.2;text-align:center">'
+        f'<div style="font-size:1.6rem;font-weight:900;color:#111;'
+        f'font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+        f'<div style="font-size:0.5rem;color:#CCC;margin-top:3px">{sg_icon}</div>'
+        f'</div>'
+        f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+        + logo_home_html +
+        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
+        f'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{home[:9]}</span>'
+        f'</div></div>'
+
+        # Divider
+        f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+
+        # Odds pills
+        f'<div style="display:flex;gap:5px;padding:9px 10px 9px">{pills_html}</div>'
+
+        # CTA banner
+        f'<div style="margin:0 10px 10px;'
+        f'background:linear-gradient(160deg,{cta_color1} 0%,{cta_color2} 100%);'
+        f'border-radius:12px;padding:11px 14px;'
+        f'border:1px solid rgba(255,255,255,0.35);'
+        f'box-shadow:0 4px 14px {cta_shadow},0 1px 0 rgba(255,255,255,0.45) inset">'
+
+        # CTA row 1: label + market + pick name
+        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+        f'<span style="font-size:0.55rem;font-weight:900;color:{cta_sub_color};letter-spacing:1.5px;text-transform:uppercase">{cta_label}</span>'
+        f'<span style="font-size:0.6rem;font-weight:900;color:{cta_text_color};background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{pick_market}</span>'
+        f'<span style="font-size:0.88rem;font-weight:800;color:{cta_text_color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{pick_label}</span>'
+        + ml_badge_html +
+        f'</div>'
+
+        # CTA row 2: big decimal + prob + EV + kelly
+        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        f'<span style="font-size:2.4rem;font-weight:900;color:{cta_text_color};font-family:Barlow Condensed,sans-serif;line-height:1">{pick_decimal_str}</span>'
+        f'<div style="display:flex;flex-direction:column;gap:2px">'
+        f'<span style="font-size:0.8rem;font-weight:800;color:{cta_sub_color}">{pick_pct:.0f}% probabilidad</span>'
+        + (f'<span style="font-size:0.65rem;color:{cta_sub_color}">Ganancia: <b>${(ev_val or 0):+.0f}</b>/100</span>' if ev_val is not None else f'<span style="font-size:0.65rem;color:{cta_sub_color}">Sin línea ESPN</span>') +
+        (f'<span style="font-size:0.62rem;color:{cta_sub_color}">Kelly: <b>{kelly_val:.1f}%</b></span>' if kelly_val > 0 else '') +
+        f'</div></div>'
+
+        # Stats grid
+        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:7px;border-top:1px solid {stats_border}">'
+        + "".join(
+            f'<div style="text-align:center">'
+            f'<div style="font-size:0.48rem;color:{cta_sub_color};text-transform:uppercase;font-weight:700">{lb}</div>'
+            f'<div style="font-size:0.82rem;font-weight:900;color:{cl}">{vl}</div>'
+            f'</div>'
+            for lb, vl, cl in [
+                ("Prob",   f"{pick_pct:.0f}%",  cta_text_color),
+                ("EV/100", ev_disp,              ev_clr),
+                ("DQ",     f"{dq_val:.0f}%",     cta_text_color),
+                ("Kelly",  f"{kelly_val:.1f}%",  cta_text_color),
+            ]
+        ) +
+        f'</div>'
+        f'</div>'  # end CTA
+        f'</div>'  # end card
+    )
+
 
 def get_mlb_ballpark_factor(venue: str) -> float:
     """Return run-scoring multiplier for MLB venue. Default 1.0 (neutral)."""
@@ -1986,6 +2090,9 @@ def parse_games(data, league_name):
                 "date":          event.get("date", ""),
                 "status_detail": _sd,
                 "venue":         comp.get("venue", {}).get("fullName", ""),
+                "venue_city":    comp.get("venue", {}).get("address", {}).get("city", ""),
+                "venue_country": comp.get("venue", {}).get("address", {}).get("country", ""),
+                "neutral_site":  comp.get("neutralSite", False) or comp.get("neutral_site", False),
                 "odds":          odds_info,
                 "live_stats":    live_stats,
                 "home_team_id":  home_team_id,
@@ -2816,10 +2923,65 @@ def compute_base_prob(game):
     # ── Combine signals ───────────────────────────────────────────────────────
     home_p = sum(s * w for s, w in zip(signals, weights)) / sum(weights)
 
-    # Apply home field boost (on top of signal blend)
-    # Don't double-count if ML already includes home advantage
+    # ── Home field advantage ──────────────────────────────────────────────────
     has_ml = bool(hml and aml)
-    boost = HOME_BOOST.get(league, 0.03) * (0.3 if has_ml else 1.0)
+    _base_boost = HOME_BOOST.get(league, 0.03)
+
+    # ESPN neutral_site flag — most reliable signal
+    _is_neutral = game.get("neutral_site", False)
+
+    # Venue-based detection
+    _venue         = (game.get("venue", "") or "").lower()
+    _venue_country = (game.get("venue_country", "") or "").lower()
+    _venue_city    = (game.get("venue_city", "") or "").lower()
+    _home_team     = game.get("home_team", "")
+    _away_team     = game.get("away_team", "")
+
+    # International leagues — ESPN homeAway is based on bracket/schedule,
+    # NOT necessarily who has actual home advantage
+    _intl_leagues = {
+        "World Cup Qualifying CONMEBOL","World Cup Qualifying CONCACAF",
+        "World Cup Qualifying UEFA","World Cup Qualifying CAF",
+        "World Cup Qualifying AFC","World Cup Qualifying OFC",
+        "FIFA World Cup","FIFA Club World Cup",
+        "Copa America","Gold Cup","Euro",
+        "Nations League UEFA","Nations League CONCACAF",
+        "AFC Asian Cup","Africa Cup","International Friendly","Friendly (Club)",
+    }
+    _is_intl = league in _intl_leagues
+
+    # Tournaments always played at neutral sites
+    _always_neutral = {
+        "FIFA World Cup","Copa America","Gold Cup","Euro",
+        "AFC Asian Cup","Africa Cup","FIFA Club World Cup",
+    }
+    if league in _always_neutral:
+        _is_neutral = True
+
+    # For qualifier/friendly: check if venue country matches away team
+    # ESPN stores country names like "Turkey", "Argentina", etc.
+    if not _is_neutral and _is_intl and _venue_country:
+        # Extract key words from team names to match against venue country
+        _away_words = set(_away_team.lower().replace("ü","u").replace("ö","o")
+                          .replace("ñ","n").split())
+        _venue_ctry = _venue_country.lower().replace("ü","u").replace("ö","o").replace("ñ","n")
+        # If any meaningful word from away team appears in venue country → away is home
+        if any(w in _venue_ctry or _venue_ctry in w
+               for w in _away_words if len(w) > 3):
+            _is_neutral = False  # not neutral — away team is actually home
+            boost = -_base_boost * (0.3 if has_ml else 1.0)  # flip advantage
+        else:
+            # Qualifier where we can't tell → small neutral boost
+            boost = _base_boost * 0.2 * (0.3 if has_ml else 1.0)
+    elif _is_neutral:
+        boost = 0.0  # no home advantage at neutral sites
+    elif _is_intl:
+        # International but not always neutral — partial boost
+        boost = _base_boost * 0.25 * (0.3 if has_ml else 1.0)
+    else:
+        # Domestic league — full home boost
+        boost = _base_boost * (0.3 if has_ml else 1.0)
+
     home_p = min(0.95, max(0.05, home_p + boost))
 
     # ── Signal 6: Injury adjustment ───────────────────────────────────────────
@@ -6775,10 +6937,10 @@ if _active_page == "Rongol Picks":
         _src = "DEMO" if is_demo else "ESPN Live"
         st.markdown(f'<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.806rem;color:#444444">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
+elif _active_page == "Picks":
     # (CSS handled per-element)
     # PRÓXIMOS PARTIDOS — sport tiles + date/league expanders  (TOP of tab)
     # ══════════════════════════════════════════════════════════════════════════
-    from datetime import timedelta as _td_pt
     _now_mx_pt = datetime.now(timezone.utc) - _td_pt(hours=6)  # CDMX = UTC-6
     _meses_pt  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                   "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
@@ -7304,12 +7466,12 @@ if _active_page == "Rongol Picks":
             # Pills
             '<div style="display:flex;gap:5px;padding:8px 10px 8px">' + _pills_h + '</div>'
 
-            # Yellow CTA
+            # Green CTA
             '<div style="margin:0 10px 10px;'
-            'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+            'background:linear-gradient(160deg,#00C896 0%,#00A070 100%);'
             'border-radius:12px;padding:10px 12px;'
             'border:1px solid rgba(255,255,255,0.35);'
-            'box-shadow:0 4px 14px rgba(255,185,0,0.3)">'
+            'box-shadow:0 4px 14px rgba(0,200,150,0.3)">'
 
             '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
             '<span style="font-size:0.5rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
@@ -7883,11 +8045,11 @@ elif _active_page == "Parlays":
                     f'<span style="margin-left:auto;font-size:0.75rem;color:{_p2a};font-weight:700">{round(_l2.get("prob",0),0):.0f}%</span>'
                     f'</div>'
                     f'</div>'
-                    f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+                    f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FF8C00 0%,#E07000 100%);'
                     f'border-radius:12px;padding:10px 14px;border:1px solid rgba(255,255,255,0.35);'
-                    f'box-shadow:0 4px 14px rgba(255,185,0,0.3)">'
+                    f'box-shadow:0 4px 14px rgba(255,140,0,0.3)">'
                     f'<div style="display:flex;align-items:center;justify-content:space-between">'
-                    f'<span style="font-size:0.75rem;font-weight:800;color:#111">Pago est. <b>+${dp["payout"]:,}/100</b></span>'
+                    f'<span style="font-size:0.75rem;font-weight:800;color:#FFF">Pago est. <b>+${dp["payout"]:,}/100</b></span>'
                     f'<span style="font-size:0.7rem;font-weight:800;color:#111">{dp["combined_prob"]*100:.1f}% prob.</span>'
                     f'</div></div>'
                     f'</div>'
@@ -7944,11 +8106,11 @@ elif _active_page == "Parlays":
                     f'</div></div>'
                     f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
                     f'<div style="padding:8px 12px">{_legs_html}</div>'
-                    f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+                    f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FF8C00 0%,#E07000 100%);'
                     f'border-radius:12px;padding:10px 14px;border:1px solid rgba(255,255,255,0.35);'
-                    f'box-shadow:0 4px 14px rgba(255,185,0,0.3)">'
+                    f'box-shadow:0 4px 14px rgba(255,140,0,0.3)">'
                     f'<div style="display:flex;align-items:center;justify-content:space-between">'
-                    f'<span style="font-size:0.75rem;font-weight:800;color:#111">Pago est. <b>+${round(_multi_payout-100):,}/100</b></span>'
+                    f'<span style="font-size:0.75rem;font-weight:800;color:#FFF">Pago est. <b>+${round(_multi_payout-100):,}/100</b></span>'
                     f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">Verifica cuotas en tu casa</span>'
                     f'</div></div>'
                     f'</div>',
@@ -8108,7 +8270,7 @@ elif _active_page == "Parlays":
                 if len(_son_legs) >= 20: break
 
 
-            if len(_son_legs) >= 10:
+            if len(_son_legs) >= 4:
                 # Compute combined probability and payout
                 _son_prob = 1.0
                 for _sl in _son_legs:
@@ -8246,7 +8408,7 @@ elif _active_page == "Parlays":
                 )
 
             elif _son_raw:
-                st.info(f"⚽ Hay {len(_son_raw)} candidatos de soccer. Se necesitan al menos 10 partidos diferentes para el Parlay Soñador.")
+                st.info(f"⚽ Hoy hay {len(_son_raw)} candidatos de soccer — se necesitan al menos 4 para el Parlay Soñador. Simula más ligas en ⚙ Config.")
 
 
 
@@ -8702,49 +8864,100 @@ elif _active_page == "En Vivo":
                 + (f' <span style="font-size:0.58rem;color:#e74c3c">⚠</span>' if dq == 0 else '')
             )
 
-            return (
-                # Outer card — white with red accents
-                '<div style="background:linear-gradient(160deg,#FFF5F5 0%,#FFE8E8 100%);'
-                'border-radius:20px;overflow:hidden;margin:3px 0;'
-                'border:1.5px solid rgba(255,59,48,0.35);'
-                'box-shadow:0 6px 20px rgba(255,59,48,0.14),'
-                '0 1px 0 rgba(255,255,255,0.85) inset>'
+            # Add logos (same as Rongol)
+            _ht_id_lv = g.get("home_team_id", "")
+            _at_id_lv = g.get("away_team_id", "")
+            _logo_h_lv = _logo_img(_ht_id_lv, g["league"], 38) if "_logo_img" in dir() else ""
+            _logo_a_lv = _logo_img(_at_id_lv, g["league"], 38) if "_logo_img" in dir() else ""
+            _sg_icon_lv = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(sport_group,"🎯")
+            _lg_lbl_lv = league_label(g["league"])
 
-                # Header: team names + score + league badge
-                f'<div style="padding:10px 14px 6px;display:flex;justify-content:space-between;align-items:flex-start">'
-                f'<div style="flex:1">'
-                f'<div style="font-size:0.88rem;font-weight:800;color:#111;line-height:1.3">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div style="font-size:0.82rem;color:#CC0000;font-weight:700;margin-top:2px">{score_str}</div>'
+            # Odds pills: score if live, else std pills
+            _score_pill = f'<div style="flex:1;background:linear-gradient(160deg,#2A0A0A,#1A0000);border-radius:10px;border:1px solid rgba(255,59,48,0.3);padding:8px 4px;text-align:center"><span style="font-size:0.6rem;color:#ff6b6b;display:block;margin-bottom:2px">SCORE</span><span style="font-size:1.1rem;font-weight:900;color:#FF5555;font-family:Barlow Condensed,sans-serif">{score_str}</span></div>'
+            _pct_pill_a = f'<div style="flex:1;background:linear-gradient(160deg,#1A1A2A,#111120);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:8px 4px;text-align:center"><span style="font-size:0.6rem;color:#60a5fa;display:block;margin-bottom:2px">{g["away_team"][:6]}</span><span style="font-size:1.1rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif">{sim["away_pct"]:.0f}%</span></div>'
+            _pct_pill_h = f'<div style="flex:1;background:linear-gradient(160deg,#1A1A2A,#111120);border-radius:10px;border:1px solid rgba(255,255,255,0.08);padding:8px 4px;text-align:center"><span style="font-size:0.6rem;color:#f97316;display:block;margin-bottom:2px">{g["home_team"][:6]}</span><span style="font-size:1.1rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif">{sim["home_pct"]:.0f}%</span></div>'
+            _lv_pills = f'<div style="display:flex;gap:5px;padding:9px 10px 9px">{_score_pill}{_pct_pill_a}{_pct_pill_h}</div>'
+
+            # Best pick details
+            _best_market = best["market"]
+            _best_label  = best.get("label", "")
+            _best_prob   = best["prob"]
+            _best_dec    = "1.91"  # live pick default decimal
+            _best_ev     = best.get("ev", 0) or 0
+            _best_kelly  = best.get("kelly", 0) or 0
+            _ev_disp_lv  = f"{_best_ev:+.0f}" if _best_ev else "N/A"
+            _ev_clr_lv   = "#FFAAAA" if _best_ev <= 0 else "#AAFFCC"
+
+            return (
+                '<div style="background:linear-gradient(160deg,#FFF5F5 0%,#FFE8E8 100%);'
+                'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+                'border:1.5px solid rgba(255,59,48,0.35);'
+                'box-shadow:0 8px 24px rgba(255,59,48,0.18),0 1px 0 rgba(255,255,255,0.85) inset">'
+
+                # Header: league + live badge
+                f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
+                f'<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{_lg_lbl_lv}</span>'
+                f'<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.3);border-radius:8px;padding:1px 6px;font-size:0.55rem;font-weight:700">🔴 EN VIVO{f" {minute}′" if minute else ""}</span>'
                 f'</div>'
-                f'<div>{badges}</div>'
+
+                # Teams + logos VS
+                f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
+                f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                + _logo_a_lv +
+                f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["away_team"][:9]}</span>'
                 f'</div>'
+                f'<div style="flex:1.2;text-align:center">'
+                f'<div style="font-size:1.6rem;font-weight:900;color:#CC0000;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">{score_str}</div>'
+                f'<div style="font-size:0.5rem;color:#CCC;margin-top:3px">{_sg_icon_lv}</div>'
+                f'</div>'
+                f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                + _logo_h_lv +
+                f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["home_team"][:9]}</span>'
+                f'</div></div>'
 
                 # Divider
                 '<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 12px"></div>'
 
-                # Picks mini grid
-                f'<div style="padding:8px 12px 4px">{ph}</div>'
-                + xg_html +
+                # Prob pills
+                + _lv_pills +
+                xg_html +
 
-                # Red CTA banner — best pick
-                f'<div style="margin:6px 10px 10px;'
+                # Red CTA
+                f'<div style="margin:0 10px 10px;'
                 f'background:linear-gradient(160deg,#FF3B30 0%,#CC0000 100%);'
-                f'border-radius:14px;padding:11px 14px;'
-                f'border:1px solid rgba(255,255,255,0.2);'
-                f'box-shadow:0 4px 16px rgba(255,59,48,0.4)">'
-                f'<div style="font-size:0.52rem;font-weight:900;color:rgba(255,255,255,0.65);'
-                f'letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔴 EN VIVO → APOSTAR</div>'
-                f'<div style="display:flex;align-items:center;gap:10px">'
-                f'<div style="font-size:2rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{best["prob"]:.0f}%</div>'
-                f'<div>'
-                f'<div style="font-size:0.85rem;font-weight:800;color:#FFF">{best["market"]} {best.get("label","")[:22]}</div>'
-                f'<div style="font-size:0.6rem;color:rgba(255,255,255,0.65)">probabilidad simulada</div>'
-                f'</div></div>'
+                f'border-radius:12px;padding:11px 14px;'
+                f'border:1px solid rgba(255,255,255,0.25);'
+                f'box-shadow:0 4px 14px rgba(255,59,48,0.45),0 1px 0 rgba(255,255,255,0.3) inset">'
+
+                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                f'<span style="font-size:0.55rem;font-weight:900;color:rgba(255,255,255,0.6);letter-spacing:1.5px;text-transform:uppercase">🔴 EN VIVO →</span>'
+                f'<span style="font-size:0.6rem;font-weight:900;color:#FFF;background:rgba(255,255,255,0.2);padding:3px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_best_market}</span>'
+                f'<span style="font-size:0.88rem;font-weight:800;color:#FFF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{_best_label}</span>'
                 f'</div>'
 
-                # Prob bars
+                f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+                f'<span style="font-size:2.4rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{_best_dec}</span>'
+                f'<div style="display:flex;flex-direction:column;gap:2px">'
+                f'<span style="font-size:0.8rem;font-weight:800;color:rgba(255,255,255,0.85)">{_best_prob:.0f}% probabilidad</span>'
+                f'</div></div>'
+
+                f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:7px;border-top:1px solid rgba(255,255,255,0.2)">'
+                + "".join(
+                    f'<div style="text-align:center">'
+                    f'<div style="font-size:0.48rem;color:rgba(255,255,255,0.5);text-transform:uppercase;font-weight:700">{lb}</div>'
+                    f'<div style="font-size:0.82rem;font-weight:900;color:{cl}">{vl}</div>'
+                    f'</div>'
+                    for lb, vl, cl in [
+                        ("Prob",   f"{_best_prob:.0f}%",   "#FFF"),
+                        ("EV/100", _ev_disp_lv,             _ev_clr_lv),
+                        ("DQ",     f"{dq:.0f}%",            "#FFF"),
+                        ("Score",  score_str,                "#FFAAAA"),
+                    ]
+                ) +
+                f'</div>'
+                f'</div>'  # end CTA
                 + sh +
-                '</div>'
+                f'</div>'  # end card
             )
         # ── Render: Sport expander → League sub-expander → 3-per-row cards ──
         for _lv_sg in _LV_SPORT_ORDER:
