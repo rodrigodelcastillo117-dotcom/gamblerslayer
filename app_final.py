@@ -2003,8 +2003,9 @@ def parse_games(data, league_name):
     _now_mx     = _now_utc - _td(hours=6)
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
-    _tomorrow_cdmx  = (_now_mx + _td(days=1)).strftime("%Y-%m-%d")
-    _valid_dates = {_today_cdmx, _yesterday_cdmx, _tomorrow_cdmx}
+    _valid_dates = {_today_cdmx, _yesterday_cdmx}
+    for _d in range(1, 6):  # today+1 through today+5
+        _valid_dates.add((_now_mx + _td(days=_d)).strftime("%Y-%m-%d"))
 
     for event in data.get("events", []):
         try:
@@ -2886,6 +2887,143 @@ def compute_base_prob(game):
     signals.append(league_prior)
     weights.append(0.6)  # Low weight — just a prior, not evidence
 
+    # ── Signal 5b: National Team Ranking Model ────────────────────────────────
+    # Applied ONLY for international / national team leagues.
+    # Uses FIFA world ranking approximation via team name lookup,
+    # confederation difficulty multiplier, and qualification context.
+    #
+    # Confederation difficulty (1-5 scale → normalized win probability boost):
+    #   UEFA (Europe)    = 5  — most competitive, 55 teams, 13 WC spots
+    #   CONMEBOL (SAm)   = 4  — Brazil/Argentina tier, 10 teams, 4.5 WC spots
+    #   CONCACAF (NAm)   = 3  — Mexico/USA tier, 41 teams, 3.5 WC spots
+    #   CAF (Africa)     = 2  — large confederation, 54 teams, 9 WC spots
+    #   AFC (Asia)        = 1.5 — variable quality, 47 teams, 8.5 WC spots
+    #   OFC (Oceania)     = 1  — weakest, 11 teams, 1 WC spot
+    #
+    # FIFA ranking tiers (approximate):
+    #   Elite   (top 10):  prob_base=0.72  (Argentina, France, England…)
+    #   Strong  (11-30):   prob_base=0.65  (Mexico, USA, Colombia…)
+    #   Mid     (31-70):   prob_base=0.55
+    #   Low     (71-120):  prob_base=0.44
+    #   Weak    (120+):    prob_base=0.35
+
+    _INTL_LEAGUES_RANKING = {
+        "FIFA World Cup", "FIFA Club World Cup",
+        "World Cup Qualifying CONMEBOL", "World Cup Qualifying CONCACAF",
+        "World Cup Qualifying UEFA", "World Cup Qualifying CAF",
+        "World Cup Qualifying AFC", "World Cup Qualifying OFC",
+        "Copa America", "Gold Cup", "Euro",
+        "Nations League UEFA", "Nations League CONCACAF",
+        "AFC Asian Cup", "Africa Cup",
+        "International Friendly", "Friendly (Club)",
+    }
+
+    # Confederation of each league → difficulty multiplier 1-5
+    _LEAGUE_CONF = {
+        "World Cup Qualifying UEFA":       ("UEFA",     5),
+        "Euro":                            ("UEFA",     5),
+        "Nations League UEFA":             ("UEFA",     5),
+        "World Cup Qualifying CONMEBOL":   ("CONMEBOL", 4),
+        "Copa America":                    ("CONMEBOL", 4),
+        "World Cup Qualifying CONCACAF":   ("CONCACAF", 3),
+        "Gold Cup":                        ("CONCACAF", 3),
+        "Nations League CONCACAF":         ("CONCACAF", 3),
+        "World Cup Qualifying CAF":        ("CAF",      2),
+        "Africa Cup":                      ("CAF",      2),
+        "World Cup Qualifying AFC":        ("AFC",      1.5),
+        "AFC Asian Cup":                   ("AFC",      1.5),
+        "World Cup Qualifying OFC":        ("OFC",      1),
+        "FIFA World Cup":                  ("FIFA",     5),   # best teams qualify
+        "International Friendly":          ("INT",      2.5),
+        "Friendly (Club)":                 ("INT",      2.5),
+    }
+
+    # FIFA ranking approximate lookup by team name (top 50 + key teams)
+    # Source: FIFA rankings March 2026 approximate order
+    _FIFA_RANK = {
+        # Top 10 — Elite
+        "argentina": 1, "france": 2, "england": 3, "spain": 4,
+        "brazil": 5, "portugal": 6, "belgium": 7, "netherlands": 8,
+        "germany": 9, "croatia": 10,
+        # 11-30 — Strong
+        "italy": 11, "colombia": 12, "morocco": 13, "uruguay": 14,
+        "united states": 15, "usa": 15, "mexico": 16, "japan": 17,
+        "senegal": 18, "iran": 19, "switzerland": 20,
+        "denmark": 21, "austria": 22, "south korea": 23, "hungary": 24,
+        "ukraine": 25, "australia": 26, "nigeria": 27, "poland": 28,
+        "ecuador": 29, "chile": 30,
+        # 31-70 — Mid
+        "peru": 31, "venezuela": 32, "turkey": 33, "czech republic": 34,
+        "sweden": 35, "wales": 36, "norway": 37, "russia": 38,
+        "serbia": 39, "scotland": 40, "romania": 41, "algeria": 42,
+        "cameroon": 43, "ghana": 44, "ivory coast": 45, "cote d'ivoire": 45,
+        "egypt": 46, "mali": 47, "south africa": 48, "tunisia": 49,
+        "costa rica": 50, "panama": 51, "jamaica": 52, "canada": 53,
+        "qatar": 54, "iraq": 55, "saudi arabia": 56, "uae": 57,
+        "greece": 58, "slovakia": 59, "paraguay": 60, "bolivia": 61,
+        "guatemala": 62, "honduras": 63, "el salvador": 64,
+        "new zealand": 65, "china": 66, "india": 67, "thailand": 68,
+        # 71+ — Low/Weak — default for unknowns
+    }
+
+    def _rank_tier(rank):
+        """Convert FIFA rank to base probability."""
+        if rank <= 10:  return 0.72
+        if rank <= 30:  return 0.65
+        if rank <= 70:  return 0.55
+        if rank <= 120: return 0.44
+        return 0.35
+
+    def _get_rank(team_name):
+        """Fuzzy lookup of FIFA rank. Returns rank integer."""
+        t = team_name.lower().strip()
+        # Direct match
+        if t in _FIFA_RANK: return _FIFA_RANK[t]
+        # Partial match
+        for key, rank in _FIFA_RANK.items():
+            if key in t or t in key: return rank
+        return 90  # unknown → mid-low
+
+    if league in _INTL_LEAGUES_RANKING:
+        _home_nt = game.get("home_team", "")
+        _away_nt = game.get("away_team", "")
+        _conf_info = _LEAGUE_CONF.get(league, ("INT", 2.5))
+        _conf_diff = _conf_info[1]
+
+        _home_rank = _get_rank(_home_nt)
+        _away_rank = _get_rank(_away_nt)
+
+        _home_tier_p = _rank_tier(_home_rank)  # 0.35–0.72
+        _away_tier_p = _rank_tier(_away_rank)
+
+        # Normalize to win probability: stronger team gets higher share
+        _rank_total = _home_tier_p + _away_tier_p
+        if _rank_total > 0:
+            _home_rank_signal = _home_tier_p / _rank_total
+        else:
+            _home_rank_signal = 0.5
+
+        # Confederation difficulty scales the weight of this signal:
+        # Higher difficulty → more reliable ranking signal
+        # UEFA=5 → weight 3.0, OFC=1 → weight 0.8
+        _rank_weight = 0.6 + (_conf_diff - 1) * 0.55  # range: 0.6 → 3.0
+
+        # Only add if no strong ML signal (avoid fighting the market)
+        _has_strong_ml = bool(hml and aml)
+        if not _has_strong_ml:
+            signals.append(_home_rank_signal)
+            weights.append(_rank_weight)
+        else:
+            # With ML: add with reduced weight as tiebreaker
+            signals.append(_home_rank_signal)
+            weights.append(_rank_weight * 0.4)
+
+        # Store for display
+        game["_home_fifa_rank"] = _home_rank
+        game["_away_fifa_rank"] = _away_rank
+        game["_conf_diff"]      = _conf_diff
+        game["_conf_name"]      = _conf_info[0]
+
     # ── Combine signals ───────────────────────────────────────────────────────
     home_p = sum(s * w for s, w in zip(signals, weights)) / sum(weights)
 
@@ -2923,6 +3061,12 @@ def compute_base_prob(game):
     }
     if league in _always_neutral:
         _is_neutral = True
+        # At neutral sites ESPN home/away is bracket order, NOT real home.
+        # Strip the home-record signal entirely — rely on ML + ESPN WP only.
+        # Remove Signal 3 (season record) home-bias by re-centering home_p at 0.5
+        # before any boost when we only have record data (no ML).
+        if not (hml and aml):
+            home_p = 0.5  # pure 50/50 prior — let ML dominate when available
 
     # For qualifier/friendly: check if venue country matches away team
     # ESPN stores country names like "Turkey", "Argentina", etc.
@@ -4409,7 +4553,7 @@ def build_parlays(results):
     _now_u   = datetime.now(timezone.utc)
     _now_mx2 = _now_u - _td2(hours=6)
     _valid_parlay = set()
-    for _d in range(-1, 3):
+    for _d in range(-1, 6):  # yesterday through +5 days
         _valid_parlay.add((_now_u  + _td2(days=_d)).strftime("%Y-%m-%d"))
         _valid_parlay.add((_now_mx2 + _td2(days=_d)).strftime("%Y-%m-%d"))
 
@@ -5275,10 +5419,11 @@ else:
         if LEAGUES.get(_g.get("league",""),{}).get("group","") == "Soccer" and _g.get("state") == "pre":
             _cached_pre[_gid] = _g
 
-    # Purge old days — mantener ventana ±1 día para no perder partidos europeos
+    # Purge old days — mantener ventana 5 días para no perder partidos próximos
     _yesterday_cdmx_cache = (_now_cache - _td_cache(hours=6) - _td_cache(days=1)).strftime("%Y-%m-%d")
-    _tomorrow_cdmx_cache  = (_now_cache - _td_cache(hours=6) + _td_cache(days=1)).strftime("%Y-%m-%d")
-    _valid_cache_dates = {_yesterday_cdmx_cache, _today_cdmx_cache, _tomorrow_cdmx_cache}
+    _valid_cache_dates = {_yesterday_cdmx_cache, _today_cdmx_cache}
+    for _d in range(1, 6):
+        _valid_cache_dates.add((_now_cache - _td_cache(hours=6) + _td_cache(days=_d)).strftime("%Y-%m-%d"))
     for _gid in [k for k, v in list(_cached_pre.items())]:
         try:
             _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","")[:19]).replace("T"," "),
@@ -6126,16 +6271,14 @@ if _active_page == "Rongol Picks":
             else:  # Baseball, Football, NCAAF
                 return best_ml()
 
-        # ── Build 1 pick per sport group — ventana ±1 día CDMX ──────────────
+        # ── Build 1 pick per sport group — ventana 5 días CDMX ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
         _now_rp      = datetime.now(_tz_rp.utc)
         _now_mx_rp   = _now_rp - _td_rp(hours=6)
         _today_rp    = _now_mx_rp.strftime("%Y-%m-%d")
-        _valid_rp    = {
-            (_now_mx_rp - _td_rp(days=1)).strftime("%Y-%m-%d"),
-            _today_rp,
-            (_now_mx_rp + _td_rp(days=1)).strftime("%Y-%m-%d"),
-        }
+        _valid_rp    = {(_now_mx_rp - _td_rp(days=1)).strftime("%Y-%m-%d"), _today_rp}
+        for _d in range(1, 6):
+            _valid_rp.add((_now_mx_rp + _td_rp(days=_d)).strftime("%Y-%m-%d"))
 
         # Build id→game map for quick lookup
         _gmap_rp = {g.get("id", ""): g for g in games}
@@ -6983,10 +7126,10 @@ elif _active_page == "Picks":
     _SPORTS_ORDER_P = ["Soccer","Basketball","Hockey","Baseball","Football"]
 
     _today_mx_p    = _now_mx_pt.strftime("%Y-%m-%d")
-    _tom_mx_p      = (_now_mx_pt + _td_pt(days=1)).strftime("%Y-%m-%d")
-    _d2_mx_p       = (_now_mx_pt + _td_pt(days=2)).strftime("%Y-%m-%d")
     _yday_mx_p     = (_now_mx_pt - _td_pt(days=1)).strftime("%Y-%m-%d")
-    _valid_dates_p = {_yday_mx_p, _today_mx_p, _tom_mx_p}
+    _valid_dates_p = {_yday_mx_p, _today_mx_p}
+    for _d in range(1, 6):
+        _valid_dates_p.add((_now_mx_pt + _td_pt(days=_d)).strftime("%Y-%m-%d"))
 
     def _mx_date_p(g):
         raw = g.get("date") or ""
@@ -7351,9 +7494,7 @@ elif _active_page == "Picks":
         _h_pct = sim.get("home_pct",0) or 0
         _a_pct = sim.get("away_pct",0) or 0
         _d_pct = sim.get("draw_pct",0) or 0
-        _pick_h = (g["home_team"].strip().lower() == _lbl.strip().lower()) or \
-                  (len(g["home_team"]) > 3 and g["home_team"].strip().lower() in _lbl.strip().lower() and
-                   g["away_team"].strip().lower() not in _lbl.strip().lower())
+        _pick_h = g["home_team"] in _lbl
 
         def _sdec(v, pct=0):
             try:
@@ -7594,30 +7735,37 @@ elif _active_page == "Picks":
                 _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_')}"
                 _is_open = st.session_state.get(_exp_key, False)
 
-                # Liga header: st.columns layout — no overlay trick
+                # Liga header: HTML visual + invisible button overlay
                 _hdr_bg  = f"linear-gradient(90deg,{_smp['color']}28 0%,rgba(0,0,0,0.1) 100%)" if _is_open else "rgba(255,255,255,0.03)"
                 _hdr_bdr = f"1.5px solid {_smp['color']}99" if _is_open else f"1px solid {_smp['color']}33"
                 _arrow   = "▼" if _is_open else "▶"
                 _btn_k   = f"btn_lg_{_lg_btn_counter}"
                 _lg_btn_counter += 1
-                _col_hdr_a, _col_hdr_b = st.columns([5, 1])
-                with _col_hdr_a:
-                    st.markdown(
-                        f'<div style="background:{_hdr_bg};border:{_hdr_bdr};'
-                        f'border-radius:12px;padding:11px 16px;margin-top:6px;'
-                        f'display:flex;align-items:center;gap:8px">'
-                        f'<span style="font-size:1rem">{_flag_p}</span>'
-                        f'<span style="font-size:0.82rem;font-weight:700;color:#E8E8E8">{_lg_p}{_ctry_str}</span>'
-                        f'<span style="font-size:0.65rem;color:{_smp["color"]}">{_ev_lg_badge}</span>'
-                        f'<span style="font-size:0.65rem;color:#666">· {_n_lg} partidos</span>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-                with _col_hdr_b:
-                    if st.button(_arrow, key=_btn_k, use_container_width=True,
-                                 help=f'{"Cerrar" if _is_open else "Ver"} partidos de {_lg_p}'):
-                        st.session_state[_exp_key] = not _is_open
-                        st.rerun()
+                st.markdown(
+                    f'<div style="background:{_hdr_bg};border:{_hdr_bdr};'
+                    f'border-radius:{"12px 12px 0 0" if _is_open else "12px"};'
+                    f'padding:12px 16px;margin-top:6px;pointer-events:none;'
+                    f'display:flex;justify-content:space-between;align-items:center;margin-bottom:-46px;position:relative;z-index:0">'
+                    f'<div style="display:flex;align-items:center;gap:8px">'
+                    f'<span style="font-size:1rem">{_flag_p}</span>'
+                    f'<span style="font-size:0.82rem;font-weight:700;color:#E8E8E8">{_lg_p}{_ctry_str}</span>'
+                    f'<span style="font-size:0.65rem;color:{_smp["color"]}">{_ev_lg_badge}</span>'
+                    f'<span style="font-size:0.65rem;color:#666">· {_n_lg} partidos</span>'
+                    f'</div>'
+                    f'<span style="font-size:0.82rem;color:{_smp["color"]};font-weight:700">{_arrow}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                if st.button("​", key=_btn_k, use_container_width=True,
+                             help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"):
+                    st.session_state[_exp_key] = not _is_open
+                    st.rerun()
+                st.markdown(
+                    f'<style>button[data-testid="{_btn_k}"]{{height:46px!important;'
+                    f'background:transparent!important;border:none!important;'
+                    f'position:relative;z-index:1}}</style>',
+                    unsafe_allow_html=True
+                )
                 if _is_open:
                     st.markdown(
                         f'<div style="background:#111111;border:1px solid {_smp["color"]}33;'
@@ -7819,11 +7967,9 @@ elif _active_page == "Parlays":
         _now_par      = datetime.now(_tz_par.utc)
         _now_mx_par   = _now_par - _td_par(hours=6)
         _today_par    = _now_mx_par.strftime("%Y-%m-%d")
-        _valid_par    = {
-            (_now_mx_par - _td_par(days=1)).strftime("%Y-%m-%d"),
-            _today_par,
-            (_now_mx_par + _td_par(days=1)).strftime("%Y-%m-%d"),
-        }
+        _valid_par    = {(_now_mx_par - _td_par(days=1)).strftime("%Y-%m-%d"), _today_par}
+        for _d in range(1, 6):
+            _valid_par.add((_now_mx_par + _td_par(days=_d)).strftime("%Y-%m-%d"))
 
         def _game_date_par(gid, r_obj=None):
             """Returns CDMX date string for a game, or None if can't determine.
@@ -8089,19 +8235,41 @@ elif _active_page == "Parlays":
                     _g_name = f'{_l["game"]["away_team"]} @ {_l["game"]["home_team"]}'
                     _lg_lbl = league_label(_l["league"])
                     _sp_ico = _SG_ICONS.get(_l["sport"],"🎯")
+                    _prob_l = round(_l.get("prob",0), 0)
+                    _prob_c = "#00A050" if _prob_l >= 65 else ("#C27A00" if _prob_l >= 55 else "#666")
                     if _i > 0:
-                        _legs_html += '<div style="font-size:0.6rem;color:#FF8C0066;text-align:center;letter-spacing:3px;padding:3px 0">✕ COMBO ✕</div>'
+                        _legs_html += (
+                            '<div style="display:flex;align-items:center;gap:6px;padding:3px 8px">'
+                            '<div style="flex:1;height:1px;background:rgba(0,0,0,0.08)"></div>'
+                            '<span style="font-size:0.55rem;color:#999;font-weight:800;letter-spacing:2px">✕ COMBO ✕</span>'
+                            '<div style="flex:1;height:1px;background:rgba(0,0,0,0.08)"></div>'
+                            '</div>'
+                        )
                     _legs_html += (
                         f'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;'
-                        f'border-radius:14px;background:rgba(255,140,0,0.06);border:1px solid rgba(255,140,0,0.15);margin-bottom:2px">'
-                        f'<span style="background:{_lc}22;color:{_la};border:1.5px solid {_lc}66;'
-                        f'border-radius:8px;padding:3px 10px;font-size:0.72rem;font-weight:900;flex-shrink:0">{_l["market"]}</span>'
+                        f'border-radius:14px;'
+                        f'background:linear-gradient(160deg,#FFFFFF 0%,#F5F5FA 100%);'
+                        f'border:1px solid rgba(0,0,0,0.09);'
+                        f'box-shadow:0 2px 8px rgba(0,0,0,0.08),0 1px 0 rgba(255,255,255,1) inset;'
+                        f'margin-bottom:4px">'
+                        # Market badge
+                        f'<span style="background:{_lc};color:#fff;'
+                        f'border-radius:8px;padding:4px 10px;font-size:0.7rem;font-weight:900;'
+                        f'flex-shrink:0;letter-spacing:0.5px;'
+                        f'box-shadow:0 2px 6px {_lc}66">{_l["market"]}</span>'
+                        # Pick label + game info
                         f'<div style="flex:1;min-width:0">'
-                        f'<div style="font-size:0.95rem;color:#111;font-weight:800;line-height:1.2">{_l.get("label","")[:22]}</div>'
-                        f'<div style="font-size:0.6rem;color:#777;margin-top:2px">{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name[:28]}</div>'
+                        f'<div style="font-size:0.95rem;color:#111;font-weight:900;line-height:1.2;'
+                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_l.get("label","")[:24]}</div>'
+                        f'<div style="font-size:0.58rem;color:#888;margin-top:2px;'
+                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+                        f'{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name[:26]}</div>'
                         f'</div>'
+                        # Probability
                         f'<div style="text-align:right;flex-shrink:0">'
-                        f'<div style="font-size:1.1rem;font-weight:900;color:{_la};font-family:Barlow Condensed,sans-serif">{round(_l.get("prob",0),0):.0f}%</div>'
+                        f'<div style="font-size:1.3rem;font-weight:900;color:{_prob_c};'
+                        f'font-family:Barlow Condensed,sans-serif;line-height:1">{_prob_l:.0f}%</div>'
+                        f'<div style="font-size:0.5rem;color:#AAA;text-transform:uppercase;letter-spacing:1px">prob</div>'
                         f'</div>'
                         f'</div>'
                     )
@@ -8125,7 +8293,7 @@ elif _active_page == "Parlays":
                     # Header row: patas count + sports + combined prob
                     f'<div style="padding:10px 16px 6px;display:flex;justify-content:space-between;align-items:center">'
                     f'<div>'
-                    f'<div style="font-size:0.6rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{len(_multi_legs)} PATAS · HOY CDMX</div>'
+                    f'<div style="font-size:0.6rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{len(_multi_legs)} PATAS · PRÓXIMOS 5 DÍAS</div>'
                     f'<div style="font-size:0.72rem;color:#444;margin-top:3px;font-weight:600">{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
                     f'</div>'
                     f'<div style="text-align:right">'
@@ -8182,12 +8350,29 @@ elif _active_page == "Parlays":
 
 
             # ══════════════════════════════════════════════════════════════════
-            # 🌙 PARLAY SOÑADOR — 10-20 patas, solo soccer, scoring compuesto
+            # 🌙 PARLAY SOÑADOR — hasta 20 patas, soccer 5 días, ML + O2.5 solo (sin DC)
             # ══════════════════════════════════════════════════════════════════
             st.markdown('<div class="den-divider" style="margin:24px 0 12px"></div>',
                         unsafe_allow_html=True)
 
-            # ── Collect ALL soccer candidates (ML + O/U + BTTS + DC) ──────────
+            # ── Ventana 5 días para Soñador ───────────────────────────────────
+            from datetime import timedelta as _td_son, timezone as _tz_son
+            _now_son   = datetime.now(_tz_son.utc)
+            _now_mx_son = _now_son - _td_son(hours=6)
+            _valid_son = {(_now_mx_son - _td_son(days=1)).strftime("%Y-%m-%d")}
+            for _d in range(0, 6):
+                _valid_son.add((_now_mx_son + _td_son(days=_d)).strftime("%Y-%m-%d"))
+
+            def _game_date_son(r_obj):
+                raw = r_obj.get("date","")
+                if not raw: return None
+                try:
+                    from datetime import timezone as _tz2
+                    _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz2.utc)
+                    return (_u - _td_son(hours=6)).strftime("%Y-%m-%d")
+                except: return None
+
+            # ── Collect soccer candidates: ML + O2.5 ONLY (no DC, no BTTS) ──
             _son_raw = []
             for _sr_s in st.session_state.get("sim_results", []):
                 _sg_s  = LEAGUES.get(_sr_s.get("league",""), {}).get("group", "")
@@ -8196,9 +8381,12 @@ elif _active_page == "Parlays":
                 _g_s   = next((g for g in games if g.get("id") == _sr_s.get("id")), None)
                 if _g_s and _g_s.get("state") == "post": continue
 
+                # 5-day window filter
+                _gd_son = _game_date_son(_sr_s)
+                if _gd_son and _gd_son not in _valid_son: continue
+
                 _hp   = float(_sim_s.get("home_pct", 0) or 0)
                 _ap   = float(_sim_s.get("away_pct", 0) or 0)
-                _dp   = float(_sim_s.get("draw_pct", 0) or 0)
                 _dq   = float(_sim_s.get("data_quality", 0) or 0)
                 _h_ev = float(_sim_s.get("home_ev", 0) or 0)
                 _a_ev = float(_sim_s.get("away_ev", 0) or 0)
@@ -8206,17 +8394,10 @@ elif _active_page == "Parlays":
                 _a_k  = float(_sim_s.get("away_kelly", 0) or 0)
                 _p_o25 = float(_sim_s.get("p_o25", 0) or 0)
                 _o25ev = float(_sim_s.get("o25_ev", 0) or 0)
-                _p_u25 = float(_sim_s.get("p_u25", 0) or 0)
-                _p_btts = float(_sim_s.get("p_btts", 0) or 0)
-                _btts_ev = float(_sim_s.get("btts_ev", 0) or 0)
-                _p_dc1x = float(_sim_s.get("p_dc_1x", 0) or 0)
-                _p_dcx2 = float(_sim_s.get("p_dc_x2", 0) or 0)
-                _p_dc12 = float(_sim_s.get("p_dc_12", 0) or 0)
 
                 # H2H enrichment bonus
-                _h2h   = _sr_s.get("_h2h", {}) or {}
-                _over25_h2h = float(_h2h.get("over25_rate", 0) or 0)
-                _btts_h2h   = float(_h2h.get("btts_rate", 0) or 0)
+                _h2h         = _sr_s.get("_h2h", {}) or {}
+                _over25_h2h  = float(_h2h.get("over25_rate", 0) or 0)
 
                 # Records
                 _h_rec = _sr_s.get("home_record","") or ""
@@ -8232,13 +8413,27 @@ elif _active_page == "Parlays":
                 _h_wr = _wr(_h_rec)
                 _a_wr = _wr(_a_rec)
 
-                # ── Composite score function ──────────────────────────────────
-                def _son_score(prob, ev, kelly, dq, h2h_bonus=0):
-                    s  = prob * 0.50                          # prob weight 50%
-                    s += min(max(ev, -5), 25) * 1.2           # EV weight
-                    s += kelly * 80                           # kelly weight
-                    s += (dq / 100) * 8                      # DQ bonus
-                    s += h2h_bonus * 10                       # H2H confirmation bonus
+                # FIFA ranking bonus for national team games
+                _conf_diff_son = _sr_s.get("_conf_diff", 0) or 0
+                _h_rank_son    = _sr_s.get("_home_fifa_rank", 90) or 90
+                _a_rank_son    = _sr_s.get("_away_fifa_rank", 90) or 90
+
+                def _rank_bonus(rank, conf_diff):
+                    """Extra score boost: better ranked team in harder conf = more reliable."""
+                    if rank <= 10:  base = 12
+                    elif rank <= 30: base = 8
+                    elif rank <= 70: base = 4
+                    else:            base = 0
+                    return base * (conf_diff / 5.0)  # scale by conf difficulty
+
+                # ── Composite score ───────────────────────────────────────────
+                def _son_score(prob, ev, kelly, dq, h2h_bonus=0, rank_bonus=0):
+                    s  = prob * 0.50
+                    s += min(max(ev, -5), 25) * 1.2
+                    s += kelly * 80
+                    s += (dq / 100) * 8
+                    s += h2h_bonus * 10
+                    s += rank_bonus            # FIFA ranking + confederation bonus
                     return round(s, 3)
 
                 _game_id = _sr_s.get("id","")
@@ -8246,28 +8441,31 @@ elif _active_page == "Parlays":
                 _home    = _sr_s.get("home_team","")
                 _away    = _sr_s.get("away_team","")
                 _partido = f"{_away} vs {_home}"
+                _conf_lbl = f"[{_sr_s.get('_conf_name','?')} {_conf_diff_son:.0f}★]" if _conf_diff_son else ""
 
                 # ── 1. ML Home ────────────────────────────────────────────────
                 if _hp >= 45:
                     _h2h_conf = 1 if _h_wr > 0.55 else 0
+                    _rb = _rank_bonus(_h_rank_son, _conf_diff_son)
                     _son_raw.append({
                         "game_id":_game_id, "league":_league,
                         "market":"ML","label":_home,
                         "prob":_hp, "ev":_h_ev, "kelly":_h_k, "dq":_dq,
                         "partido":_partido, "home":_home, "away":_away,
-                        "score":_son_score(_hp, _h_ev, _h_k, _dq, _h2h_conf),
-                        "info":f"Record: {_h_rec or '?'}"
+                        "score":_son_score(_hp, _h_ev, _h_k, _dq, _h2h_conf, _rb),
+                        "info":f"FIFA #{_h_rank_son} {_conf_lbl} Rec: {_h_rec or '?'}"
                     })
                 # ── 2. ML Away ────────────────────────────────────────────────
                 if _ap >= 45:
                     _h2h_conf = 1 if _a_wr > 0.55 else 0
+                    _rb = _rank_bonus(_a_rank_son, _conf_diff_son)
                     _son_raw.append({
                         "game_id":_game_id, "league":_league,
                         "market":"ML","label":_away,
                         "prob":_ap, "ev":_a_ev, "kelly":_a_k, "dq":_dq,
                         "partido":_partido, "home":_home, "away":_away,
-                        "score":_son_score(_ap, _a_ev, _a_k, _dq, _h2h_conf),
-                        "info":f"Record: {_a_rec or '?'}"
+                        "score":_son_score(_ap, _a_ev, _a_k, _dq, _h2h_conf, _rb),
+                        "info":f"FIFA #{_a_rank_son} {_conf_lbl} Rec: {_a_rec or '?'}"
                     })
                 # ── 3. Over 2.5 ──────────────────────────────────────────────
                 if _p_o25 >= 50:
@@ -8278,20 +8476,10 @@ elif _active_page == "Parlays":
                         "prob":_p_o25, "ev":_o25ev, "kelly":0, "dq":_dq,
                         "partido":_partido, "home":_home, "away":_away,
                         "score":_son_score(_p_o25, _o25ev, 0, _dq, _h2h_bonus_o),
-                        "info":f"H2H Over25: {_over25_h2h*100:.0f}%" if _over25_h2h else "Sin H2H"
+                        "info":f"H2H Over25: {_over25_h2h*100:.0f}% {_conf_lbl}" if _over25_h2h else f"Liga avg {_conf_lbl}"
                     })
-                # ── 4. BTTS ───────────────────────────────────────────────────
-                if _p_btts >= 55:
-                    _h2h_bonus_b = 1 if _btts_h2h > 0.55 else 0
-                    _son_raw.append({
-                        "game_id":_game_id, "league":_league,
-                        "market":"BTTS","label":"Ambos Anotan",
-                        "prob":_p_btts, "ev":_btts_ev, "kelly":0, "dq":_dq,
-                        "partido":_partido, "home":_home, "away":_away,
-                        "score":_son_score(_p_btts, _btts_ev, 0, _dq, _h2h_bonus_b),
-                        "info":f"H2H BTTS: {_btts_h2h*100:.0f}%" if _btts_h2h else "Sin H2H"
-                    })
-            # ── Sort by composite score, deduplicate by game (best per game) ──
+
+            # ── Sort by score, deduplicate by game ────────────────────────────
             _son_raw.sort(key=lambda x: x["score"], reverse=True)
             _son_seen = set()
             _son_legs = []
@@ -8319,7 +8507,7 @@ elif _active_page == "Parlays":
                     '<div style="font-size:0.72rem;font-weight:900;color:#00CFFF;'
                     'letter-spacing:3px;text-transform:uppercase">PARLAY SOÑADOR</div>'
                     '<div style="font-size:0.6rem;color:#555;letter-spacing:1px">'
-                    'Soccer · ML + O2.5 + BTTS · Score compuesto: prob + EV + Kelly + DQ + H2H</div>'
+                    'Soccer · ML + Over 2.5 · Score: prob + EV + Kelly + DQ + H2H + FIFA Ranking</div>'
                     '</div></div>',
                     unsafe_allow_html=True
                 )
@@ -8328,7 +8516,6 @@ elif _active_page == "Parlays":
                 _mkt_colors = {
                     "ML":   ("#3D8EFF","#3D8EFF"),
                     "O/U":  ("#FF8C00","#FF8C00"),
-                    "BTTS": ("#00C896","#00C896"),
                 }
                 _son_legs_html = ""
                 for _si, _sl in enumerate(_son_legs):
