@@ -2163,17 +2163,12 @@ def parse_games(data, league_name):
 
             _state = event.get("status", {}).get("type", {}).get("state", "")
 
-            # Bloquear estrictamente partidos fuera de ventana
+            # Bloquear partidos con fecha conocida fuera de la ventana de 7 días
             if _ev_cdmx_date is not None:
                 if _ev_cdmx_date not in _valid_dates and _state != "in":
-                    continue  # partido futuro fuera de 7 días o pasado — descartar
-            elif _raw_date:
-                # Fecha presente pero no parseable → descartar si no está en vivo
-                if _state != "in":
-                    continue
-            # Sin fecha y no en vivo → descartar
-            elif _state != "in":
-                continue
+                    continue  # partido fuera de 7 días y no en vivo — descartar
+            # Si fecha no parseable o ausente: mantener (puede ser en vivo o hoy)
+            # ESPN a veces omite fecha en partidos del día actual
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
@@ -7014,16 +7009,7 @@ if _active_page == "Rongol Picks":
         # ── Inline debug (remove after fix confirmed) ─────────────────────────
         _dbg_leagues = list(_league_pools.keys())
         _dbg_sports  = list(_sport_best.keys()) if "_sport_best" in dir() else []
-        if len(rongol_picks) < 2:
-            st.markdown(
-                f'<div style="background:rgba(255,50,50,0.1);border:1px solid #ff5555;'
-                f'border-radius:8px;padding:8px 12px;font-size:0.7rem;color:#ff9999;margin-bottom:8px">'
-                f'⚠ Debug: sr_cur={len(sr_cur)} juegos · pools={_dbg_leagues} · '
-                f'sports={_dbg_sports} · picks={len(rongol_picks)}<br>'
-                f'_sport_best_pick None para: {_dbg_none[:5]}'
-                f'</div>',
-                unsafe_allow_html=True
-            )
+        # Debug eliminado en producción
 
         # ── STATS PANEL — accuracy from pick_history ─────────────────────────
         with st.expander("📊 Accuracy del Sistema", expanded=False):
