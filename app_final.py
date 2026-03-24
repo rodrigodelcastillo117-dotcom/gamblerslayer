@@ -6175,7 +6175,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324c"  # bump: bloquea partidos >7 días y ML soccer
+_SIM_VERSION = "v20260324d"  # fix _sport_best_pick soccer nunca ML
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -6906,20 +6906,51 @@ if _active_page == "Rongol Picks":
         #   Football:   ML (highest win%) only
 
         def _sport_best_pick(r):
-            """Best pick = highest EV (brújula). Prob shown but not used for selection."""
+            """Best pick por mercado. Soccer: NUNCA ML. No-soccer: ML permitido."""
             sim = r.get("sim") or {}
             if not sim: return None
+            _is_soc = sim.get("is_soccer", False) or \
+                      LEAGUES.get(r.get("league",""), {}).get("group","") == "Soccer"
+
+            # Path 1: _scored_candidates
             _scored = sim.get("_scored_candidates", [])
-            if _scored:
-                best = _scored[0]  # highest EV
-                return {"market":best["market"],"label":best["label"],
-                        "prob":best["prob"],"ev":best["ev"],"kelly":best.get("kelly",0)}
+            for _sc in _scored:
+                if _is_soc and _sc.get("market") == "ML":
+                    continue
+                return {"market": _sc["market"], "label": _sc["label"],
+                        "prob": _sc["prob"], "ev": _sc.get("ev", 0),
+                        "kelly": _sc.get("kelly", 0)}
+
+            # Path 2: best_single
             bs = sim.get("best_single") or sim.get("best_pick")
-            if bs and bs.get("prob",0) > 5:
-                return {"market":bs["market"],"label":bs["label"],
-                        "prob":bs["prob"],"ev":bs.get("ev",0),"kelly":bs.get("kelly",0)}
-            h_prob = sim.get("home_pct",0) or 0
-            a_prob = sim.get("away_pct",0) or 0
+            if bs and bs.get("prob", 0) > 5:
+                if not (_is_soc and bs.get("market") == "ML"):
+                    return {"market": bs["market"], "label": bs["label"],
+                            "prob": bs["prob"], "ev": bs.get("ev", 0),
+                            "kelly": bs.get("kelly", 0)}
+
+            # Path 3: soccer fallback — O/U o BTTS directo del sim
+            if _is_soc:
+                p_o25  = sim.get("p_o25")  or 0
+                p_u25  = sim.get("p_u25")  or 0
+                p_btts = sim.get("p_btts") or 0
+                ou_ml  = sim.get("over_under", "") or ""
+                if p_u25 == 0 and p_o25 > 0:
+                    p_u25 = round(100.0 - p_o25, 1)
+                # Elegir el mercado con mayor prob
+                opts = []
+                if p_o25 > 0:  opts.append(("O/U", "Over 2.5",  p_o25, sim.get("o25_ev") or 0, ou_ml))
+                if p_u25 > 0:  opts.append(("O/U", "Under 2.5", p_u25, sim.get("u25_ev") or 0, ou_ml))
+                if p_btts > 0: opts.append(("BTTS","Ambos Anotan — SÍ", p_btts, sim.get("btts_ev") or 0, ""))
+                if opts:
+                    best_opt = max(opts, key=lambda x: x[2])  # mayor prob
+                    return {"market": best_opt[0], "label": best_opt[1],
+                            "prob": best_opt[2], "ev": best_opt[3], "kelly": 0}
+                return None  # sin datos de goles
+
+            # Path 4: no-soccer fallback — ML del favorito
+            h_prob = sim.get("home_pct", 0) or 0
+            a_prob = sim.get("away_pct", 0) or 0
             if h_prob >= a_prob:
                 return {"market":"ML","label":r.get("home_team",""),
                         "prob":h_prob,"ev":sim.get("home_ev",0) or 0,"kelly":0}
