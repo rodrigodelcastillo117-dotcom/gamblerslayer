@@ -2023,17 +2023,14 @@ def enrich_game_with_form(game):
 def fetch_scoreboard(sport, league, tournament_id=None):
     """
     Fetch ESPN scoreboard.
-    Tennis requires ?dates=YYYYMMDD to get today's matches.
-    Also tries tournament-specific endpoints.
+    Strategy: fetch today first (fast), add future dates only for soccer
+    which needs the 6-day window. All requests run in parallel.
     """
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    base  = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+    import concurrent.futures, threading
 
-    if False:  # tennis removed
-        urls = [None,
-            f"{base}?limit=100",                         # no date filter fallback
-        ]
-    elif tournament_id:
+    base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+
+    if tournament_id:
         urls = [
             f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/tournament/{tournament_id}/scoreboard",
             f"{base}?tournamentId={tournament_id}",
@@ -2041,52 +2038,66 @@ def fetch_scoreboard(sport, league, tournament_id=None):
         ]
     else:
         from datetime import timedelta
-        _now      = datetime.now(timezone.utc)
-        _now_mx   = _now - timedelta(hours=6)
-        today_utc = _now.strftime("%Y%m%d")
+        _now    = datetime.now(timezone.utc)
+        _now_mx = _now - timedelta(hours=6)
         today_mx  = _now_mx.strftime("%Y%m%d")
-        sched_base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
-        # Pedir los próximos 6 días explícitamente a ESPN
-        urls = [f"{sched_base}?dates={today_mx}&limit=100"]
-        for _d in range(1, 7):
-            _date = (_now_mx + timedelta(days=_d)).strftime("%Y%m%d")
-            urls.append(f"{sched_base}?dates={_date}&limit=100")
-        urls.append(f"{sched_base}?limit=100")  # fallback sin fecha
+        today_utc = _now.strftime("%Y%m%d")
 
-    all_events = []
+        # Always fetch today
+        urls = [
+            f"{base}?dates={today_mx}&limit=100",
+            f"{base}?dates={today_utc}&limit=100",
+            f"{base}?limit=100",  # no-date fallback (ESPN returns current day)
+        ]
+
+        # Future dates: only for soccer leagues (NBA/NHL/MLB scoreboard returns today only anyway)
+        _is_soccer = sport == "soccer"
+        if _is_soccer:
+            for _d in range(1, 7):  # tomorrow through +6 days
+                _date = (_now_mx + timedelta(days=_d)).strftime("%Y%m%d")
+                urls.append(f"{base}?dates={_date}&limit=100")
+
+    # Fetch ALL urls in parallel
+    all_events = {}
     returned_data = {}
-    for url in urls:
-        if not url: continue
+    _lock = threading.Lock()
+
+    def _fetch_url(url):
+        if not url: return
         try:
-            r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
-            if r.status_code == 200:
-                data = r.json()
-                # Scoreboard: data.events
-                # Schedule: data.events OR data[date].games[].event OR nested
-                evts = data.get("events", [])
-                # Also check schedule format: {"20260312": {"games": [...]}}
-                if not evts:
-                    for _k, _v in data.items():
-                        if isinstance(_v, dict):
-                            for _g in _v.get("games", []):
-                                _ev = _g.get("event") or _g
-                                if isinstance(_ev, dict) and _ev.get("id"):
-                                    evts.append(_ev)
-                        elif isinstance(_v, list):
-                            for _item in _v:
-                                if isinstance(_item, dict) and _item.get("id") and _item.get("competitions"):
-                                    evts.append(_item)
-                if isinstance(evts, list) and evts:
-                    existing_ids = {e.get("id") for e in all_events}
-                    for e in evts:
-                        if e.get("id") not in existing_ids:
-                            all_events.append(e)
-                            existing_ids.add(e.get("id"))
-                    if not returned_data:
-                        returned_data = data
-        except: continue
+            r = requests.get(url, timeout=5,
+                             headers={"User-Agent": "Mozilla/5.0",
+                                      "Accept": "application/json"})
+            if r.status_code != 200: return
+            data = r.json()
+            evts = data.get("events", [])
+            if not evts:
+                for _k, _v in data.items():
+                    if isinstance(_v, dict):
+                        for _g in _v.get("games", []):
+                            _ev = _g.get("event") or _g
+                            if isinstance(_ev, dict) and _ev.get("id"):
+                                evts.append(_ev)
+                    elif isinstance(_v, list):
+                        for _item in _v:
+                            if isinstance(_item, dict) and _item.get("id") and _item.get("competitions"):
+                                evts.append(_item)
+            with _lock:
+                for e in evts:
+                    if isinstance(e, dict) and e.get("id"):
+                        all_events[e["id"]] = e
+                if evts and not returned_data:
+                    returned_data.update(data)
+        except:
+            pass
+
+    max_workers = min(len(urls), 8)  # max 8 parallel requests
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(_fetch_url, u) for u in urls]
+        concurrent.futures.wait(futures, timeout=12)  # 12s total max
+
     if all_events:
-        returned_data["events"] = all_events
+        returned_data["events"] = list(all_events.values())
         return returned_data
     return {}
 
