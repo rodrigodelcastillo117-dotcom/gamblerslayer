@@ -458,6 +458,11 @@ def _norm_team(name):
 # Momios reales de casas de apuestas europeas (cuotas decimales)
 # Clave: (home_norm, away_norm) — nombres en inglés normalizados
 _REAL_ODDS_DEC = {
+    # ── FIFA World Cup 2026 (partidos conocidos) ─────────────────────────────
+    # Sede neutral — momios aproximados basados en ranking FIFA
+    # México #16 vs Sudáfrica #68 → México debería ser ~-200 fav
+    ("mexico",    "south africa"):   (1.65, 3.50, 4.50),
+    ("south africa", "mexico"):      (4.50, 3.50, 1.65),  # invertido por si ESPN asigna al revés
     # ── CM Clasificación UEFA (26 Mar 2026) ──────────────────────────────────
     ("turkey",   "romania"):        (1.41, 4.90, 7.00),
     ("denmark",  "north macedonia"):(1.32, 5.20, 9.00),
@@ -2129,9 +2134,11 @@ def parse_games(data, league_name):
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
                     if _ev_cdmx_date not in _valid_dates:
-                        continue
+                        continue  # fuera de ventana → descartar
                 except Exception:
-                    pass
+                    continue  # fecha no parseable → descartar (antes hacía pass = dejaba pasar todo)
+            else:
+                continue  # sin fecha → descartar
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
@@ -2976,11 +2983,20 @@ def compute_base_prob(game):
     }
     _is_always_neutral = league in _ALWAYS_NEUTRAL_LEAGUES
     if _is_always_neutral:
-        # Borrar records de ESPN — son del bracket, no de forma real
+        # Borrar records/form de ESPN — son del bracket, no reflejan calidad real
         game["home_record"] = ""
         game["away_record"] = ""
         game["home_form"]   = None
         game["away_form"]   = None
+        # Si ESPN no tiene ML, intentar inyectar odds reales del diccionario
+        _h_name = game.get("home_team","")
+        _a_name = game.get("away_team","")
+        if not game.get("odds",{}).get("home_ml"):
+            _real_wc = _get_real_odds(_h_name, _a_name)
+            if _real_wc:
+                game.setdefault("odds",{})
+                game["odds"]["home_ml"] = _real_wc["home_ml"]
+                game["odds"]["away_ml"] = _real_wc["away_ml"]
 
     # ── Real 2025-26 team strength priors by sport ────────────────────────────
     # Used as Signal 3b when season record from ESPN is unreliable (national teams,
@@ -7571,13 +7587,14 @@ if _active_page == "Rongol Picks":
             for r in sr_cur_filtrado:
                 g_state = next((g["state"] for g in games if g.get("id") == r.get("id")), "pre")
                 if g_state == "post": continue
-                sim = r["sim"]
+                sim = r.get("sim") or {}
+                if not sim: continue
                 bs  = sim.get("best_single",{}) or {}
                 if bs.get("market") == "DO" and bs.get("ev",0) > 0:
                     _companion = None
-                    if sim.get("btts_ev",0) > 0:
+                    if (sim.get("btts_ev") or 0) > 0:
                         _companion = {"market":"BTTS","label":"Ambos Anotan","prob":sim.get("p_btts",0),"ev":sim["btts_ev"]}
-                    elif sim.get("o25_ev",0) > 0:
+                    elif (sim.get("o25_ev") or 0) > 0:
                         _companion = {"market":"O/U","label":"Over 2.5","prob":sim.get("p_o25",0),"ev":sim["o25_ev"]}
                     if _companion:
                         _do_parlays.append({"game":r,"do_pick":bs,"goals_pick":_companion})
