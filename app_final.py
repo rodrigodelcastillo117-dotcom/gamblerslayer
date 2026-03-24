@@ -6963,6 +6963,7 @@ elif _active_page == "Picks":
     # (CSS handled per-element)
     # PRÓXIMOS PARTIDOS — sport tiles + date/league expanders  (TOP of tab)
     # ══════════════════════════════════════════════════════════════════════════
+    from datetime import timedelta as _td_pt
     _now_mx_pt = datetime.now(timezone.utc) - _td_pt(hours=6)  # CDMX = UTC-6
     _meses_pt  = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                   "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
