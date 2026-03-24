@@ -7351,7 +7351,9 @@ elif _active_page == "Picks":
         _h_pct = sim.get("home_pct",0) or 0
         _a_pct = sim.get("away_pct",0) or 0
         _d_pct = sim.get("draw_pct",0) or 0
-        _pick_h = g["home_team"] in _lbl
+        _pick_h = (g["home_team"].strip().lower() == _lbl.strip().lower()) or \
+                  (len(g["home_team"]) > 3 and g["home_team"].strip().lower() in _lbl.strip().lower() and
+                   g["away_team"].strip().lower() not in _lbl.strip().lower())
 
         def _sdec(v, pct=0):
             try:
@@ -7592,37 +7594,30 @@ elif _active_page == "Picks":
                 _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_')}"
                 _is_open = st.session_state.get(_exp_key, False)
 
-                # Liga header: HTML visual + invisible button overlay
+                # Liga header: st.columns layout — no overlay trick
                 _hdr_bg  = f"linear-gradient(90deg,{_smp['color']}28 0%,rgba(0,0,0,0.1) 100%)" if _is_open else "rgba(255,255,255,0.03)"
                 _hdr_bdr = f"1.5px solid {_smp['color']}99" if _is_open else f"1px solid {_smp['color']}33"
                 _arrow   = "▼" if _is_open else "▶"
                 _btn_k   = f"btn_lg_{_lg_btn_counter}"
                 _lg_btn_counter += 1
-                st.markdown(
-                    f'<div style="background:{_hdr_bg};border:{_hdr_bdr};'
-                    f'border-radius:{"12px 12px 0 0" if _is_open else "12px"};'
-                    f'padding:12px 16px;margin-top:6px;pointer-events:none;'
-                    f'display:flex;justify-content:space-between;align-items:center;margin-bottom:-46px;position:relative;z-index:0">'
-                    f'<div style="display:flex;align-items:center;gap:8px">'
-                    f'<span style="font-size:1rem">{_flag_p}</span>'
-                    f'<span style="font-size:0.82rem;font-weight:700;color:#E8E8E8">{_lg_p}{_ctry_str}</span>'
-                    f'<span style="font-size:0.65rem;color:{_smp["color"]}">{_ev_lg_badge}</span>'
-                    f'<span style="font-size:0.65rem;color:#666">· {_n_lg} partidos</span>'
-                    f'</div>'
-                    f'<span style="font-size:0.82rem;color:{_smp["color"]};font-weight:700">{_arrow}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-                if st.button("​", key=_btn_k, use_container_width=True,
-                             help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"):
-                    st.session_state[_exp_key] = not _is_open
-                    st.rerun()
-                st.markdown(
-                    f'<style>button[data-testid="{_btn_k}"]{{height:46px!important;'
-                    f'background:transparent!important;border:none!important;'
-                    f'position:relative;z-index:1}}</style>',
-                    unsafe_allow_html=True
-                )
+                _col_hdr_a, _col_hdr_b = st.columns([5, 1])
+                with _col_hdr_a:
+                    st.markdown(
+                        f'<div style="background:{_hdr_bg};border:{_hdr_bdr};'
+                        f'border-radius:12px;padding:11px 16px;margin-top:6px;'
+                        f'display:flex;align-items:center;gap:8px">'
+                        f'<span style="font-size:1rem">{_flag_p}</span>'
+                        f'<span style="font-size:0.82rem;font-weight:700;color:#E8E8E8">{_lg_p}{_ctry_str}</span>'
+                        f'<span style="font-size:0.65rem;color:{_smp["color"]}">{_ev_lg_badge}</span>'
+                        f'<span style="font-size:0.65rem;color:#666">· {_n_lg} partidos</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                with _col_hdr_b:
+                    if st.button(_arrow, key=_btn_k, use_container_width=True,
+                                 help=f'{"Cerrar" if _is_open else "Ver"} partidos de {_lg_p}'):
+                        st.session_state[_exp_key] = not _is_open
+                        st.rerun()
                 if _is_open:
                     st.markdown(
                         f'<div style="background:#111111;border:1px solid {_smp["color"]}33;'
@@ -8296,18 +8291,6 @@ elif _active_page == "Parlays":
                         "score":_son_score(_p_btts, _btts_ev, 0, _dq, _h2h_bonus_b),
                         "info":f"H2H BTTS: {_btts_h2h*100:.0f}%" if _btts_h2h else "Sin H2H"
                     })
-                # ── 5. Doble Oportunidad (best DC) ────────────────────────────
-                _dc_best = max((_p_dc1x,"1X",_home[:8]),(_p_dcx2,"X2",_away[:8]),(_p_dc12,"12","Ambos"),key=lambda x:x[0])
-                if _dc_best[0] >= 70:
-                    _son_raw.append({
-                        "game_id":_game_id, "league":_league,
-                        "market":"DC","label":f"DC {_dc_best[1]}",
-                        "prob":_dc_best[0], "ev":0, "kelly":0, "dq":_dq,
-                        "partido":_partido, "home":_home, "away":_away,
-                        "score":_son_score(_dc_best[0], 0, 0, _dq),
-                        "info":f"Doble oportunidad {_dc_best[1]}"
-                    })
-
             # ── Sort by composite score, deduplicate by game (best per game) ──
             _son_raw.sort(key=lambda x: x["score"], reverse=True)
             _son_seen = set()
@@ -8336,7 +8319,7 @@ elif _active_page == "Parlays":
                     '<div style="font-size:0.72rem;font-weight:900;color:#00CFFF;'
                     'letter-spacing:3px;text-transform:uppercase">PARLAY SOÑADOR</div>'
                     '<div style="font-size:0.6rem;color:#555;letter-spacing:1px">'
-                    'Soccer · ML + O2.5 + BTTS + DC · Score compuesto: prob + EV + Kelly + DQ + H2H</div>'
+                    'Soccer · ML + O2.5 + BTTS · Score compuesto: prob + EV + Kelly + DQ + H2H</div>'
                     '</div></div>',
                     unsafe_allow_html=True
                 )
@@ -8346,7 +8329,6 @@ elif _active_page == "Parlays":
                     "ML":   ("#3D8EFF","#3D8EFF"),
                     "O/U":  ("#FF8C00","#FF8C00"),
                     "BTTS": ("#00C896","#00C896"),
-                    "DC":   ("#9B6DFF","#9B6DFF"),
                 }
                 _son_legs_html = ""
                 for _si, _sl in enumerate(_son_legs):
