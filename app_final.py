@@ -2019,12 +2019,12 @@ def enrich_game_with_form(game):
         game["line_movement"] = get_line_movement(_gid)
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)
 def fetch_scoreboard(sport, league, tournament_id=None):
     """
     Fetch ESPN scoreboard.
-    Strategy: fetch today first (fast), add future dates only for soccer
-    which needs the 6-day window. All requests run in parallel.
+    Strategy: fetch today (CDMX + UTC + ET) in parallel. Soccer gets +6 days extra.
+    ESPN uses Eastern Time for NBA/NHL/MLB scheduling.
     """
     import concurrent.futures, threading
 
@@ -2039,21 +2039,35 @@ def fetch_scoreboard(sport, league, tournament_id=None):
     else:
         from datetime import timedelta
         _now    = datetime.now(timezone.utc)
-        _now_mx = _now - timedelta(hours=6)
+        _now_mx = _now - timedelta(hours=6)   # CDMX = UTC-6
+        _now_et = _now - timedelta(hours=4)   # Eastern = UTC-4 (DST)
+        _now_ct = _now - timedelta(hours=5)   # Central = UTC-5 (DST)
         today_mx  = _now_mx.strftime("%Y%m%d")
         today_utc = _now.strftime("%Y%m%d")
+        today_et  = _now_et.strftime("%Y%m%d")
+        today_ct  = _now_ct.strftime("%Y%m%d")
 
-        # Always fetch today
-        urls = [
+        # Fetch today in all timezone variants + no-date fallback
+        # ESPN NBA/NHL use ET, MLB uses ET, NFL uses ET
+        url_set = {
             f"{base}?dates={today_mx}&limit=100",
             f"{base}?dates={today_utc}&limit=100",
-            f"{base}?limit=100",  # no-date fallback (ESPN returns current day)
-        ]
+            f"{base}?dates={today_et}&limit=100",
+            f"{base}?dates={today_ct}&limit=100",
+            f"{base}?limit=100",   # ESPN default = returns today's active games
+        }
+        urls = list(url_set)
 
-        # Future dates: only for soccer leagues (NBA/NHL/MLB scoreboard returns today only anyway)
+        # Also fetch tomorrow for late-night games that ESPN puts on next day
+        tom_et = (_now_et + timedelta(days=1)).strftime("%Y%m%d")
+        tom_mx = (_now_mx + timedelta(days=1)).strftime("%Y%m%d")
+        urls.append(f"{base}?dates={tom_et}&limit=100")
+        urls.append(f"{base}?dates={tom_mx}&limit=100")
+
+        # Future dates: only for soccer (needs 6-day window for classificatorias)
         _is_soccer = sport == "soccer"
         if _is_soccer:
-            for _d in range(1, 7):  # tomorrow through +6 days
+            for _d in range(2, 7):  # day+2 through day+6
                 _date = (_now_mx + timedelta(days=_d)).strftime("%Y%m%d")
                 urls.append(f"{base}?dates={_date}&limit=100")
 
@@ -2253,7 +2267,7 @@ def parse_games(data, league_name):
     return games
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=90, show_spinner=False)
 def get_all_games(leagues):
     from datetime import timedelta as _td_g
     _now_g        = datetime.now(timezone.utc)
@@ -2312,8 +2326,9 @@ def get_all_games(leagues):
             slugs_to_try = [league] + slugs_to_try
         slugs_to_try = slugs_to_try[:2]  # max 2 slugs
 
-        # Construir fechas: hoy + 6 días adelante
-        _dates_6d = [_today_mx]
+        # Construir fechas: hoy (CDMX + UTC) + 6 días adelante
+        _today_utc_g = _now_g.strftime("%Y%m%d")
+        _dates_6d = list({_today_mx, _today_utc_g})  # deduplicate
         for _d in range(1, 7):
             _dates_6d.append((_now_mx_g + _td_g(days=_d)).strftime("%Y%m%d"))
 
@@ -2391,12 +2406,15 @@ def get_all_games(leagues):
     # Fetch all leagues in parallel (max 12 workers)
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         futures = {executor.submit(_fetch_one, name): name for name in _all_to_fetch}
-        for fut in concurrent.futures.as_completed(futures, timeout=30):
-            parsed, err = fut.result()
-            if err:
-                errors.append(err)
-            else:
-                result.extend(parsed)
+        for fut in concurrent.futures.as_completed(futures, timeout=45):
+            try:
+                parsed, err = fut.result()
+                if err:
+                    errors.append(err)
+                else:
+                    result.extend(parsed)
+            except Exception:
+                pass
 
     return result, errors
 
@@ -5027,63 +5045,52 @@ def run_monte_carlo(game, n=10_000):
     # ═══════════════════════════════════════════════════════════════════════
     # PIPELINE CORRECTO — 3 FASES SECUENCIALES
     #
-    # FASE 1 (ya completada arriba): Monte Carlo calcula probabilidades reales.
-    #   Todos los modificadores (lesiones, fatiga, H2H, forma, ranking FIFA,
-    #   lambda real) ya fueron aplicados ANTES de correr las simulaciones.
-    #   Las probabilidades sh/sa/p_btts/p_o25 etc. ya los incorporan.
-    #   NO se deben sumar de nuevo en la selección del pick.
+    # ═══════════════════════════════════════════════════════════════════════
+    # SELECCIÓN DE PICK — EXPECTED VALUE (EV) como brújula
     #
-    # FASE 2: Identificar Valor (EV = Edge)
-    #   EV = prob_real × cuota_decimal - 1
-    #   Pick válido si EV > 0. Si EV ≤ 0, el mercado tiene mejor info que nosotros.
-    #   Data Quality actúa como filtro: baja DQ = exigir EV mínimo más alto.
+    # La probabilidad es el MOTOR (qué tan fuerte es un equipo).
+    # La cuota del mercado es el COMBUSTIBLE (cuánto pagan).
+    # EV = prob × cuota - 1  es la BRÚJULA (¿vale la pena arrancar el coche?).
     #
-    # FASE 3: Kelly Criterion
-    #   Una vez identificado el pick con mayor EV, Kelly dice cuánto apostar.
-    #   NO se usa para elegir el pick — se usa para el tamaño de la apuesta.
+    # Regla: elegir el mercado con mayor EV positivo, no la mayor probabilidad.
+    # Ejemplo: ML 60% a 1.60 → EV=-4% (descartar)
+    #          O2.5 45% a 2.40 → EV=+8% (¡apostar esto!)
+    #
+    # Protección Kelly contra underdogs extremos:
+    # Si el pick tiene prob < 20%, Kelly automáticamente reduce el stake
+    # al mínimo — el modelo da el pick pero la banca queda protegida.
+    #
+    # BTTS/O2.5 reciben un bonus de +1.5% EV para compensar la mayor
+    # varianza de los mercados de resultado (H/D/A tienen 3 outcomes).
     # ═══════════════════════════════════════════════════════════════════════
 
-    # DQ mínimo requerido: más datos = más confianza = EV mínimo más bajo
-    # DQ=0%  → exigir EV > +8  (sin datos duros, necesitamos edge grande)
-    # DQ=30% → exigir EV > +5
-    # DQ=60% → exigir EV > +2
-    # DQ=100%→ exigir EV > +0  (datos completos, cualquier edge vale)
-    _dq_pct = dq * 100
-    _ev_min_threshold = max(0.0, 8.0 - (_dq_pct / 100.0) * 8.0)
-
-    # Pre-filter: excluir DO cuando hay candidatos de goles con EV+
-    _has_pos_goals = any(mt in ("BTTS","O/U") and ev is not None and ev > 0
-                         for mt,lb,pr,ev,ml,k in candidates)
+    # Pre-filter: excluir DO (EV ficticio por DC_ML hardcoded)
     candidates_main = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
-                       if not (mt == "DO" and _has_pos_goals)]
+                       if mt != "DO"]
 
-    # FASE 2: Elegir el pick con MAYOR EV que supere el umbral mínimo de DQ
+    # Selección por mayor EV
+    # Bonus de estabilidad para mercados de 2 outcomes (O/U, BTTS) vs 3 (H/D/A)
+    MARKET_EV_BONUS = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
+
     best_single = None
-    best_ev_v   = -999
+    best_ev_adj = -9999
 
     for mtype, label, prob, ev, ml, kelly in candidates_main:
-        if prob is None or ev is None:
-            continue
-        # Solo picks con EV positivo y que superen el filtro de DQ
-        if ev <= _ev_min_threshold:
-            continue
-        if ev > best_ev_v:
-            best_ev_v = ev
+        if prob is None or ev is None: continue
+        # EV ajustado: EV real + bonus de estabilidad por tipo de mercado
+        ev_adj = (ev or 0) + MARKET_EV_BONUS.get(mtype, 0)
+        if ev_adj > best_ev_adj:
+            best_ev_adj = ev_adj
             best_single = {"market":mtype, "label":label, "prob":prob,
-                           "ev":ev, "ml":ml, "kelly":kelly or 0}
+                           "ev":ev or 0, "ml":ml, "kelly":kelly or 0}
 
-    # Si no hay ningún pick con EV+, elegir el de mayor probabilidad como fallback
-    # (útil para mostrar análisis aunque no haya edge real)
+    # Si ningún candidato tiene datos de EV → fallback por mayor prob
     if best_single is None:
-        _best_prob = -1
         for mtype, label, prob, ev, ml, kelly in candidates_main:
             if prob is None: continue
-            if mtype == "DO": continue  # nunca como fallback
-            if prob > _best_prob:
-                _best_prob = prob
+            if best_single is None or (prob or 0) > best_single.get("prob", 0):
                 best_single = {"market":mtype, "label":label, "prob":prob,
-                               "ev":ev or 0, "ml":ml, "kelly":kelly or 0,
-                               "_no_edge":True}  # marcar que no hay edge real
+                               "ev":ev or 0, "ml":ml, "kelly":kelly or 0}
 
     # intra-parlay candidates stored for use by build_parlays()
     best_parlay=None  # will be set by build_parlays() in run_all_simulations
@@ -5136,14 +5143,15 @@ def run_monte_carlo(game, n=10_000):
         "score_freq": sorted(_score_freq.items(), key=lambda x: x[1], reverse=True)[:10] if _score_freq else [],
     }
     sim["best_pick"] = best_single or {}
-    # Store EV-ranked candidates for Rongol, Picks, Parlay, Soñador
-    # Fase 2: solo picks con EV > umbral DQ, ordenados por EV descendente
+    # EV-sorted candidates for all tabs — brújula correcta
+    _ev_bonus = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
     sim["_scored_candidates"] = sorted([
         {"market":mt, "label":lb, "prob":prob, "ev":ev or 0,
-         "ml":ml, "kelly":k or 0, "score": ev or 0}
+         "ml":ml, "kelly":k or 0,
+         "score": (ev or 0) + _ev_bonus.get(mt, 0)}  # EV + stability bonus
         for mt,lb,prob,ev,ml,k in candidates_main
-        if prob is not None and (ev or 0) > _ev_min_threshold
-    ], key=lambda x: x["ev"], reverse=True)
+        if prob is not None
+    ], key=lambda x: x["score"], reverse=True)
     compute_consensus(game, sim)
     return sim
 
@@ -6835,37 +6843,25 @@ if _active_page == "Rongol Picks":
         #   Football:   ML (highest win%) only
 
         def _sport_best_pick(r):
-            """Best pick using 3-phase pipeline: EV-first, prob fallback."""
+            """Best pick = highest EV (brújula). Prob shown but not used for selection."""
             sim = r.get("sim") or {}
             if not sim: return None
-
-            # Fase 2: candidatos con EV positivo, ordenados por EV
             _scored = sim.get("_scored_candidates", [])
             if _scored:
-                best = _scored[0]
-                return {"market": best["market"], "label": best["label"],
-                        "prob": best["prob"], "ev": best["ev"],
-                        "kelly": best.get("kelly", 0)}
-
-            # Sin EV+: usar best_single (mayor probabilidad, puede ser EV negativo)
-            # Esto es informativo — se mostrará con indicador visual de "sin edge"
+                best = _scored[0]  # highest EV
+                return {"market":best["market"],"label":best["label"],
+                        "prob":best["prob"],"ev":best["ev"],"kelly":best.get("kelly",0)}
             bs = sim.get("best_single") or sim.get("best_pick")
-            if bs and bs.get("prob", 0) > 5:
-                return {"market": bs["market"], "label": bs["label"],
-                        "prob": bs["prob"], "ev": bs.get("ev", 0),
-                        "kelly": bs.get("kelly", 0)}
-
-            # Último fallback: ML del equipo con mayor prob
-            h_prob = sim.get("home_pct", 0) or 0
-            a_prob = sim.get("away_pct", 0) or 0
+            if bs and bs.get("prob",0) > 5:
+                return {"market":bs["market"],"label":bs["label"],
+                        "prob":bs["prob"],"ev":bs.get("ev",0),"kelly":bs.get("kelly",0)}
+            h_prob = sim.get("home_pct",0) or 0
+            a_prob = sim.get("away_pct",0) or 0
             if h_prob >= a_prob:
-                team, prob = r.get("home_team",""), h_prob
-            else:
-                team, prob = r.get("away_team",""), a_prob
-            if prob < 5: return None
-            return {"market":"ML", "label":team, "prob":prob,
-                    "ev": sim.get("home_ev",0) if h_prob >= a_prob else sim.get("away_ev",0),
-                    "kelly": 0}
+                return {"market":"ML","label":r.get("home_team",""),
+                        "prob":h_prob,"ev":sim.get("home_ev",0) or 0,"kelly":0}
+            return {"market":"ML","label":r.get("away_team",""),
+                    "prob":a_prob,"ev":sim.get("away_ev",0) or 0,"kelly":0}
 
         # ── Build 1 pick per sport group — ventana 5 días CDMX ──────────────
         from datetime import timezone as _tz_rp, timedelta as _td_rp
@@ -7878,31 +7874,25 @@ elif _active_page == "Picks":
     _sim_map = {r.get("id", ""): r for r in st.session_state.get("sim_results", [])}
 
     def _oracle_pick(r):
-        """Best pick using 3-phase pipeline: EV-first (Fase 2), prob fallback."""
+        """Best pick = highest EV. Kelly protects against extreme underdogs."""
         sim = r.get("sim") or {}
         if not sim: return None
-
-        # Fase 2: mayor EV entre candidatos con EV positivo
         _scored = sim.get("_scored_candidates", [])
         if _scored:
-            best = _scored[0]
-            return {"market": best["market"], "label": best["label"],
-                    "prob": best["prob"], "ev": best["ev"]}
-
-        # Sin EV+: usar best_single (mayor prob, informativo)
+            best = _scored[0]  # highest EV
+            return {"market":best["market"],"label":best["label"],
+                    "prob":best["prob"],"ev":best["ev"]}
         bs = sim.get("best_single") or sim.get("best_pick")
         if bs and bs.get("label"):
-            return {"market": bs.get("market","ML"), "label": bs["label"],
-                    "prob": bs.get("prob", 0), "ev": bs.get("ev", 0)}
-
-        # Último fallback: ML del equipo con mayor prob
-        h_prob = sim.get("home_pct", 0) or 0
-        a_prob = sim.get("away_pct", 0) or 0
+            return {"market":bs.get("market","ML"),"label":bs["label"],
+                    "prob":bs.get("prob",0),"ev":bs.get("ev",0)}
+        h_prob = sim.get("home_pct",0) or 0
+        a_prob = sim.get("away_pct",0) or 0
         if h_prob >= a_prob:
-            return {"market":"ML", "label": r.get("home_team",""),
-                    "prob": h_prob, "ev": sim.get("home_ev", 0) or 0}
-        return {"market":"ML", "label": r.get("away_team",""),
-                "prob": a_prob, "ev": sim.get("away_ev", 0) or 0}
+            return {"market":"ML","label":r.get("home_team",""),
+                    "prob":h_prob,"ev":sim.get("home_ev",0) or 0}
+        return {"market":"ML","label":r.get("away_team",""),
+                "prob":a_prob,"ev":sim.get("away_ev",0) or 0}
 
     def _build_extra_panels(g, sim, bp):
         """
@@ -8322,9 +8312,14 @@ elif _active_page == "Picks":
                     st.session_state[_exp_key] = not _is_open
                     st.rerun()
                 st.markdown(
-                    f'<style>button[data-testid="{_btn_k}"]{{height:46px!important;'
-                    f'background:transparent!important;border:none!important;'
-                    f'position:relative;z-index:1}}</style>',
+                    f'<style>'
+                    f'div[data-testid="stHorizontalBlock"] button[kind="secondary"],'
+                    f'div[data-testid="column"] button[kind="secondary"],'
+                    f'[data-testid="baseButton-secondary"]'
+                    f'{{background:transparent!important;border:none!important;'
+                    f'box-shadow:none!important;color:transparent!important;height:46px!important;'
+                    f'position:relative!important;z-index:1!important;margin-top:-46px!important}}'
+                    f'</style>',
                     unsafe_allow_html=True
                 )
                 if _is_open:
@@ -8992,11 +8987,23 @@ elif _active_page == "Parlays":
                 _sim_s  = _sr_s.get("sim", {}) or {}
                 _h2h    = _sr_s.get("_h2h", {}) or {}
 
+                # --- Extraer probabilidades y mercados del sim ---
+                _hp      = float(_sim_s.get("home_pct", 0) or 0)
+                _ap      = float(_sim_s.get("away_pct", 0) or 0)
+                _h_ev    = float(_sim_s.get("home_ev", 0) or 0)
+                _a_ev    = float(_sim_s.get("away_ev", 0) or 0)
+                _h_k     = float(_sim_s.get("home_kelly", 0) or 0)
+                _a_k     = float(_sim_s.get("away_kelly", 0) or 0)
+                _p_o25   = float(_sim_s.get("p_o25", 0) or 0)
+                _o25ev   = float(_sim_s.get("o25_ev", 0) or 0)
+                _p_btts  = float(_sim_s.get("p_btts", 0) or 0)
+                _btts_ev = float(_sim_s.get("btts_ev", 0) or 0)
+
                 # --- Extraer todos los signals disponibles ---
                 _dq       = float(_sim_s.get("data_quality", 0) or 0)
                 _lam_h    = float(_sim_s.get("lam_real_h") or 0)
                 _lam_a    = float(_sim_s.get("lam_real_a") or 0)
-                _lam_tot  = _lam_h + _lam_a  # goles esperados totales
+                _lam_tot  = _lam_h + _lam_a
 
                 _h_inj    = float(_sim_s.get("home_injury_factor", 1.0) or 1.0)
                 _a_inj    = float(_sim_s.get("away_injury_factor", 1.0) or 1.0)
