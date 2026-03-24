@@ -6170,7 +6170,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324d"  # fix _sport_best_pick soccer nunca ML
+_SIM_VERSION = "v20260324e"  # fix Soñador TypeError + Poisson fallback O/U
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -6932,13 +6932,27 @@ if _active_page == "Rongol Picks":
                 ou_ml  = sim.get("over_under", "") or ""
                 if p_u25 == 0 and p_o25 > 0:
                     p_u25 = round(100.0 - p_o25, 1)
-                # Elegir el mercado con mayor prob
+                # Calcular desde lambda si todo es 0
+                if p_o25 == 0:
+                    import math as _ms
+                    _lhs = float(sim.get("lam_real_h") or 0)
+                    _las = float(sim.get("lam_real_a") or 0)
+                    if _lhs == 0 or _las == 0:
+                        _llgs = float(sim.get("lam_league") or 0)
+                        _lhs = _llgs * 0.55 if _llgs > 0 else 1.4
+                        _las = _llgs * 0.45 if _llgs > 0 else 1.1
+                    _mus  = _lhs + _las
+                    _ples = sum(_ms.exp(-_mus) * (_mus**k) / _ms.factorial(k) for k in range(3))
+                    p_o25 = round((1 - _ples) * 100, 1)
+                    p_u25 = round(_ples * 100, 1)
+                    if p_btts == 0:
+                        p_btts = round((1-_ms.exp(-_lhs))*(1-_ms.exp(-_las))*100, 1)
                 opts = []
                 if p_o25 > 0:  opts.append(("O/U", "Over 2.5",  p_o25, sim.get("o25_ev") or 0, ou_ml))
                 if p_u25 > 0:  opts.append(("O/U", "Under 2.5", p_u25, sim.get("u25_ev") or 0, ou_ml))
                 if p_btts > 0: opts.append(("BTTS","Ambos Anotan — SÍ", p_btts, sim.get("btts_ev") or 0, ""))
                 if opts:
-                    best_opt = max(opts, key=lambda x: x[2])  # mayor prob
+                    best_opt = max(opts, key=lambda x: x[2])
                     return {"market": best_opt[0], "label": best_opt[1],
                             "prob": best_opt[2], "ev": best_opt[3], "kelly": 0}
                 return None  # sin datos de goles
@@ -8025,22 +8039,31 @@ elif _active_page == "Picks":
             p_u25  = sim.get("p_u25")  or 0
             p_btts = sim.get("p_btts") or 0
             ou_ml  = sim.get("over_under", "") or ""
-            if p_o25 >= 48:
-                return {"market": "O/U", "label": "Over 2.5",
-                        "prob": p_o25, "ev": sim.get("o25_ev", 0) or 0, "ml": ou_ml}
-            if p_u25 >= 52:
-                return {"market": "O/U", "label": "Under 2.5",
-                        "prob": p_u25, "ev": sim.get("u25_ev", 0) or 0, "ml": ou_ml}
-            if p_btts >= 48:
-                return {"market": "BTTS", "label": "Ambos Anotan — SÍ",
-                        "prob": p_btts, "ev": sim.get("btts_ev", 0) or 0, "ml": ""}
-            # Último recurso: el O/U con mayor prob, sin importar threshold
-            if p_o25 > 0 or p_u25 > 0:
-                if p_o25 >= p_u25:
-                    return {"market": "O/U", "label": "Over 2.5",
-                            "prob": p_o25, "ev": sim.get("o25_ev", 0) or 0, "ml": ou_ml}
-                return {"market": "O/U", "label": "Under 2.5",
-                        "prob": p_u25, "ev": sim.get("u25_ev", 0) or 0, "ml": ou_ml}
+            if p_u25 == 0 and p_o25 > 0: p_u25 = round(100.0 - p_o25, 1)
+            # Calcular desde lambda si todo es 0
+            if p_o25 == 0:
+                import math as _m2
+                _lh2 = float(sim.get("lam_real_h") or 0)
+                _la2 = float(sim.get("lam_real_a") or 0)
+                if _lh2 == 0 or _la2 == 0:
+                    _llg2 = float(sim.get("lam_league") or 0)
+                    _lh2 = _llg2 * 0.55 if _llg2 > 0 else 1.4
+                    _la2 = _llg2 * 0.45 if _llg2 > 0 else 1.1
+                _mu2  = _lh2 + _la2
+                _ple2 = sum(_m2.exp(-_mu2) * (_mu2**k) / _m2.factorial(k) for k in range(3))
+                p_o25 = round((1 - _ple2) * 100, 1)
+                p_u25 = round(_ple2 * 100, 1)
+                if p_btts == 0:
+                    p_btts = round((1-_m2.exp(-_lh2))*(1-_m2.exp(-_la2))*100, 1)
+            # Seleccionar el mercado con mayor prob
+            opts = []
+            if p_o25 > 0:  opts.append(("O/U","Over 2.5",  p_o25, sim.get("o25_ev",0) or 0, ou_ml))
+            if p_u25 > 0:  opts.append(("O/U","Under 2.5", p_u25, sim.get("u25_ev",0) or 0, ou_ml))
+            if p_btts > 0: opts.append(("BTTS","Ambos Anotan — SÍ", p_btts, sim.get("btts_ev",0) or 0, ""))
+            if opts:
+                best_opt = max(opts, key=lambda x: x[2])
+                return {"market": best_opt[0], "label": best_opt[1],
+                        "prob": best_opt[2], "ev": best_opt[3], "ml": best_opt[4]}
             return None  # sin datos suficientes
 
         # ── Path 4: fallback no-soccer — ML del favorito ──
@@ -8198,6 +8221,20 @@ elif _active_page == "Picks":
             _p_u25  = sim.get("p_u25")  or 0
             _p_btts = sim.get("p_btts") or 0
             if _p_u25 == 0 and _p_o25 > 0: _p_u25 = round(100.0 - _p_o25, 1)
+            # Si p_o25=0, calcular desde lambda
+            if _p_o25 == 0:
+                import math as _m
+                _lh = float(sim.get("lam_real_h") or 0)
+                _la = float(sim.get("lam_real_a") or 0)
+                if _lh == 0 or _la == 0:
+                    _llg = float(sim.get("lam_league") or 0)
+                    _lh = _llg * 0.55 if _llg > 0 else 1.4
+                    _la = _llg * 0.45 if _llg > 0 else 1.1
+                _mu = _lh + _la
+                _p_le2 = sum(_m.exp(-_mu) * (_mu**k) / _m.factorial(k) for k in range(3))
+                _p_o25 = round((1 - _p_le2) * 100, 1)
+                _p_u25 = round(_p_le2 * 100, 1)
+                _p_btts = round((1-_m.exp(-_lh)) * (1-_m.exp(-_la)) * 100, 1)
             _ou_ml = sim.get("over_under","") or ""
             if _p_o25 > 0 or _p_u25 > 0 or _p_btts > 0:
                 _best = max(
@@ -8208,7 +8245,6 @@ elif _active_page == "Picks":
                 )
                 bp = {"market":_best[0],"label":_best[1],"prob":_best[2],"ev":_best[3],"ml":_best[4]}
             else:
-                # Sin ningún dato — card mínima
                 _h_pct2 = sim.get("home_pct",0) or 0
                 _a_pct2 = sim.get("away_pct",0) or 0
                 return (
@@ -8218,7 +8254,7 @@ elif _active_page == "Picks":
                     'box-shadow:0 4px 12px rgba(0,0,0,0.15)">'
                     f'<div style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">{league_label(g.get("league",""))}</div>'
                     f'<div style="font-size:0.78rem;font-weight:700;color:#333">{g["away_team"]} @ {g["home_team"]}</div>'
-                    f'<div style="font-size:0.65rem;color:#888;margin-top:5px">Sin datos de goles · {_a_pct2:.0f}% / {_h_pct2:.0f}%</div>'
+                    f'<div style="font-size:0.65rem;color:#888;margin-top:5px">Sin datos · {_a_pct2:.0f}% / {_h_pct2:.0f}%</div>'
                     '</div>'
                 )
         _mkt = bp.get("market","")
@@ -9377,7 +9413,7 @@ elif _active_page == "Parlays":
 
                 # Parámetros comunes para todos los scores
                 _score_params = dict(
-                    dq=_dq, lam_tot=_lam_tot,
+                    lam_tot=_lam_tot,
                     inj_h=_h_inj, inj_a=_a_inj,
                     fat_h=_h_fat, fat_a=_a_fat,
                     h2h_n=_h2h_games,
