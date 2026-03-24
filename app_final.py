@@ -405,6 +405,121 @@ _selected = st.radio(
 _active_page = st.session_state["active_page"]
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MOMIOS REALES — Casas de apuestas europeas (cuotas decimales)
+# Fuente: capturas de pantalla verificadas. Se usan como fallback cuando ESPN
+# no tiene ML para partidos de selecciones nacionales.
+# Formato: (equipo_local_norm, equipo_visitante_norm) → (dec_home, dec_draw, dec_away)
+# ═══════════════════════════════════════════════════════════════════════════════
+def _dec_to_american(dec):
+    """Cuota decimal → momio americano string."""
+    try:
+        d = float(dec)
+        if d <= 1.0: return ""
+        if d >= 2.0: return f"+{round((d-1)*100)}"
+        else:        return str(round(-100/(d-1)))
+    except: return ""
+
+def _norm_team(name):
+    """Normalizar nombre de equipo para lookup."""
+    t = name.lower().strip()
+    _aliases = {
+        "turquía":"turkey","turquia":"turkey","türkiye":"turkey",
+        "rumanía":"romania","rumania":"romania",
+        "dinamarca":"denmark","italia":"italy","irlanda del norte":"northern ireland",
+        "irlanda":"ireland","macedonia del norte":"north macedonia",
+        "países bajos":"netherlands","paises bajos":"netherlands","holanda":"netherlands",
+        "noruega":"norway","escocia":"scotland","japón":"japan","japon":"japan",
+        "suiza":"switzerland","alemania":"germany","polonia":"poland",
+        "hungría":"hungary","hungria":"hungary","eslovaquia":"slovakia",
+        "república checa":"czech republic","republica checa":"czech republic",
+        "ucrania":"ukraine","suecia":"sweden","grecia":"greece",
+        "bélgica":"belgium","belgica":"belgium","estados unidos":"united states",
+        "marruecos":"morocco","colombia":"colombia","croacia":"croatia",
+        "brasil":"brazil","francia":"france","holanda":"netherlands",
+        "corea del sur":"south korea","serbia":"serbia","argentina":"argentina",
+        "españa":"spain","espana":"spain","albania":"albania",
+        "bosnia y herzegovina":"bosnia","mauritania":"mauritania",
+        "costa de marfil":"ivory coast","gales":"wales","portugal":"portugal",
+        "perú":"peru","venezuela":"venezuela","ecuador":"ecuador","uruguay":"uruguay",
+        "paraguay":"paraguay","bolivia":"bolivia","costa rica":"costa rica",
+        "inglaterra":"england","túnez":"tunisia","tunez":"tunisia",
+        "senegal":"senegal","nigeria":"nigeria","ghana":"ghana",
+        "egipto":"egypt","argelia":"algeria","camerún":"cameroon","camerun":"cameroon",
+        "sudáfrica":"south africa","sudafrica":"south africa",
+        "corea del norte":"north korea","canada":"canada","canadá":"canada",
+        "panamá":"panama","jamaica":"jamaica","méxico":"mexico","mexico":"mexico",
+        "irak":"iraq","irán":"iran","iran":"iran","china":"china",
+        "kosovo":"kosovo","eslovenia":"slovenia","finlandia":"finland",
+    }
+    return _aliases.get(t, t)
+
+# Momios reales de casas de apuestas europeas (cuotas decimales)
+# Clave: (home_norm, away_norm) — nombres en inglés normalizados
+_REAL_ODDS_DEC = {
+    # ── CM Clasificación UEFA (26 Mar 2026) ──────────────────────────────────
+    ("turkey",   "romania"):        (1.41, 4.90, 7.00),
+    ("denmark",  "north macedonia"):(1.32, 5.20, 9.00),
+    ("wales",    "bosnia"):         (1.92, 3.35, 4.20),
+    ("italy",    "northern ireland"):(1.29,5.40,10.00),
+    ("ukraine",  "sweden"):         (2.85, 3.20, 2.55),
+    ("slovakia", "kosovo"):         (2.09, 3.20, 3.75),
+    ("czech republic","ireland"):   (2.03, 3.35, 3.70),
+    ("poland",   "albania"):        (1.67, 3.55, 5.60),
+    # ── Amistosos Internacionales (26-28 Mar 2026) ───────────────────────────
+    ("brazil",   "france"):         (2.85, 3.55, 2.25),
+    ("croatia",  "colombia"):       (2.90, 3.20, 2.36),
+    ("greece",   "paraguay"):       (2.22, 3.40, 2.95),
+    ("switzerland","germany"):      (3.10, 3.50, 2.13),
+    ("england",  "uruguay"):        (1.52, 4.10, 5.60),
+    ("netherlands","norway"):       (1.69, 3.85, 4.40),
+    ("argentina","mauritania"):     (1.02,17.00,40.00),
+    ("south korea","ivory coast"):  (2.39, 3.00, 3.05),
+    ("scotland", "japan"):          (3.30, 3.20, 2.16),
+    ("united states","belgium"):    (2.85, 3.40, 2.28),
+}
+
+def _get_real_odds(home_name, away_name):
+    """
+    Busca momios reales para el partido. Retorna dict con home_ml/away_ml o None.
+    Intenta (home,away) y también (away,home) invertido.
+    """
+    h = _norm_team(home_name)
+    a = _norm_team(away_name)
+    # Búsqueda directa
+    key = (h, a)
+    if key in _REAL_ODDS_DEC:
+        dh, dd, da = _REAL_ODDS_DEC[key]
+        return {
+            "home_ml": _dec_to_american(dh),
+            "away_ml": _dec_to_american(da),
+            "draw_dec": str(dd),
+            "home_dec": str(dh),
+            "away_dec": str(da),
+        }
+    # Búsqueda invertida (si ESPN asignó home/away al revés)
+    key_inv = (a, h)
+    if key_inv in _REAL_ODDS_DEC:
+        dh_r, dd_r, da_r = _REAL_ODDS_DEC[key_inv]
+        # Invertir: lo que era "home" en la tabla es ahora "away"
+        return {
+            "home_ml": _dec_to_american(da_r),  # away de tabla = home real
+            "away_ml": _dec_to_american(dh_r),  # home de tabla = away real
+            "draw_dec": str(dd_r),
+            "home_dec": str(da_r),
+            "away_dec": str(dh_r),
+        }
+    # Partial match
+    for (th, ta), (dh, dd, da) in _REAL_ODDS_DEC.items():
+        if (th in h or h in th) and (ta in a or a in ta):
+            return {"home_ml":_dec_to_american(dh),"away_ml":_dec_to_american(da),
+                    "draw_dec":str(dd),"home_dec":str(dh),"away_dec":str(da)}
+        if (ta in h or h in ta) and (th in a or a in th):
+            return {"home_ml":_dec_to_american(da),"away_ml":_dec_to_american(dh),
+                    "draw_dec":str(dd),"home_dec":str(da),"away_dec":str(dh)}
+    return None
+
 LEAGUES = {
     "NBA":              {"sport":"basketball","league":"nba",                    "group":"Basketball"},
     "MLB":              {"sport":"baseball",  "league":"mlb",                    "group":"Baseball"},
@@ -1924,18 +2039,14 @@ def fetch_scoreboard(sport, league, tournament_id=None):
         _now      = datetime.now(timezone.utc)
         _now_mx   = _now - timedelta(hours=6)
         today_utc = _now.strftime("%Y%m%d")
-        tom_utc   = (_now + timedelta(days=1)).strftime("%Y%m%d")
         today_mx  = _now_mx.strftime("%Y%m%d")
-        base_url  = ESPN_URL.format(sport=sport, league=league)
         sched_base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
-        urls = [
-            f"{sched_base}?dates={today_mx}&limit=100",       # MX today — most reliable
-            f"{sched_base}?dates={today_utc}&limit=100",      # UTC today
-            f"{sched_base}?dates={tom_utc}&limit=100",        # UTC tomorrow (CDMX evening)
-            base_url,                                          # default fallback
-            f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/schedule?dates={today_mx}",  # schedule endpoint
-            f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/schedule?dates={today_utc}",
-        ]
+        # Pedir los próximos 6 días explícitamente a ESPN
+        urls = [f"{sched_base}?dates={today_mx}&limit=100"]
+        for _d in range(1, 7):
+            _date = (_now_mx + timedelta(days=_d)).strftime("%Y%m%d")
+            urls.append(f"{sched_base}?dates={_date}&limit=100")
+        urls.append(f"{sched_base}?limit=100")  # fallback sin fecha
 
     all_events = []
     returned_data = {}
@@ -2002,9 +2113,11 @@ def parse_games(data, league_name):
     _now_utc    = datetime.now(timezone.utc)
     _now_mx     = _now_utc - _td(hours=6)
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
+    _today_cdmx     = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
-    _valid_dates = {_today_cdmx, _yesterday_cdmx}
-    for _d in range(1, 6):  # today+1 through today+5
+    # Ventana ESTRICTA: ayer + hoy + 6 días adelante. Nada más.
+    _valid_dates = {_yesterday_cdmx, _today_cdmx}
+    for _d in range(1, 7):  # today+1 … today+6
         _valid_dates.add((_now_mx + _td(days=_d)).strftime("%Y-%m-%d"))
 
     for event in data.get("events", []):
@@ -2055,6 +2168,23 @@ def parse_games(data, league_name):
             hr = home.get("records", [{}])
             ar = away.get("records", [{}])
             live_stats = _parse_live_stats(comp, home, away)
+
+            home_team_id = str(home.get("team", {}).get("id", "") or home.get("id", ""))
+            away_team_id = str(away.get("team", {}).get("id", "") or away.get("id", ""))
+
+            # ── Inject real odds when ESPN has no ML ──────────────────────────
+            # Para partidos de selecciones, ESPN frecuentemente no tiene ML.
+            # Usamos el diccionario de momios reales de casas de apuestas europeas.
+            _home_name = home.get("team", {}).get("displayName", "")
+            _away_name = away.get("team", {}).get("displayName", "")
+            if not odds_info.get("home_ml") or not odds_info.get("away_ml"):
+                _real = _get_real_odds(_home_name, _away_name)
+                if _real:
+                    odds_info["home_ml"]  = _real["home_ml"]
+                    odds_info["away_ml"]  = _real["away_ml"]
+                    odds_info["home_dec"] = _real.get("home_dec","")
+                    odds_info["away_dec"] = _real.get("away_dec","")
+                    odds_info["_odds_source"] = "real_bookmaker"
 
             home_team_id = str(home.get("team", {}).get("id", "") or home.get("id", ""))
             away_team_id = str(away.get("team", {}).get("id", "") or away.get("id", ""))
@@ -2153,7 +2283,7 @@ def get_all_games(leagues):
     }
 
     def _fetch_soccer(sport, league):
-        """Hit ESPN endpoints for soccer — FAST: stop on first hit, parallel dates."""
+        """Hit ESPN endpoints for soccer — pide los próximos 6 días explícitamente."""
         import concurrent.futures, threading
         all_evts = {}
         _lock = threading.Lock()
@@ -2161,12 +2291,16 @@ def get_all_games(leagues):
         slugs_to_try = _EXTRA_SLUGS.get(league, [league])
         if league not in slugs_to_try:
             slugs_to_try = [league] + slugs_to_try
-        # Only try first 2 slugs max
-        slugs_to_try = slugs_to_try[:2]
+        slugs_to_try = slugs_to_try[:2]  # max 2 slugs
+
+        # Construir fechas: hoy + 6 días adelante
+        _dates_6d = [_today_mx]
+        for _d in range(1, 7):
+            _dates_6d.append((_now_mx_g + _td_g(days=_d)).strftime("%Y%m%d"))
 
         def _try_url(url):
             try:
-                r = requests.get(url, timeout=4,
+                r = requests.get(url, timeout=5,
                                  headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"})
                 if r.status_code != 200: return False
                 data = r.json()
@@ -2180,20 +2314,16 @@ def get_all_games(leagues):
 
         for _slug in slugs_to_try:
             base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{_slug}/scoreboard"
-            # Build URLs: today CDMX + today UTC only, no season types
-            urls = [
-                f"{base}?dates={_today_mx}&limit=100",
-                f"{base}?dates={_today_utc}&limit=100",
-                f"{base}?limit=100",
-            ]
-            # Fetch in parallel, stop early if we find events
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+            # Pedir cada fecha del rango 6 días + fallback sin fecha
+            urls = [f"{base}?dates={_dt}&limit=100" for _dt in _dates_6d]
+            urls.append(f"{base}?limit=100")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
                 futs = {ex.submit(_try_url, u): u for u in urls}
-                for fut in concurrent.futures.as_completed(futs, timeout=8):
-                    pass  # collect all
+                for fut in concurrent.futures.as_completed(futs, timeout=12):
+                    pass
 
             if all_evts:
-                break  # found events with this slug — no need to try next
+                break  # slug correcto encontrado
 
         return {"events": list(all_evts.values())}
 
@@ -2834,6 +2964,24 @@ def compute_base_prob(game):
     is_soccer = LEAGUES.get(league, {}).get("group") == "Soccer"
     sport_grp = LEAGUES.get(league, {}).get("group", "Soccer")
 
+    # ── PRE-CHECK: torneos siempre en sede neutral ─────────────────────────────
+    # Para FIFA World Cup, Copa América, Euro, etc.:
+    # ESPN asigna home/away por sorteo del bracket — NO por geografía.
+    # Sudáfrica puede aparecer como "home" aunque el partido sea en México.
+    # Solución: para estos torneos, anular los records de ESPN como signal
+    # y usar SOLO el ML del mercado + el ranking FIFA.
+    _ALWAYS_NEUTRAL_LEAGUES = {
+        "FIFA World Cup", "Copa America", "Gold Cup", "Euro",
+        "AFC Asian Cup", "Africa Cup", "FIFA Club World Cup",
+    }
+    _is_always_neutral = league in _ALWAYS_NEUTRAL_LEAGUES
+    if _is_always_neutral:
+        # Borrar records de ESPN — son del bracket, no de forma real
+        game["home_record"] = ""
+        game["away_record"] = ""
+        game["home_form"]   = None
+        game["away_form"]   = None
+
     # ── Real 2025-26 team strength priors by sport ────────────────────────────
     # Used as Signal 3b when season record from ESPN is unreliable (national teams,
     # cup/tournament draws where ESPN assigns home/away arbitrarily).
@@ -3454,12 +3602,9 @@ def compute_base_prob(game):
     }
     if league in _always_neutral:
         _is_neutral = True
-        # At neutral sites ESPN home/away is bracket order, NOT real home.
-        # Strip the home-record signal entirely — rely on ML + ESPN WP only.
-        # Remove Signal 3 (season record) home-bias by re-centering home_p at 0.5
-        # before any boost when we only have record data (no ML).
-        if not (hml and aml):
-            home_p = 0.5  # pure 50/50 prior — let ML dominate when available
+        # Bracket home ≠ real home. Forzar prior 50/50 siempre.
+        # El ML del mercado (peso 6.0) ya corregirá si existe.
+        home_p = 0.5
 
     # For qualifier/friendly: check if venue country matches away team
     # ESPN stores country names like "Turkey", "Argentina", etc.
@@ -4946,7 +5091,7 @@ def build_parlays(results):
     _now_u   = datetime.now(timezone.utc)
     _now_mx2 = _now_u - _td2(hours=6)
     _valid_parlay = set()
-    for _d in range(-1, 6):  # yesterday through +5 days
+    for _d in range(-1, 7):  # yesterday through +6 days
         _valid_parlay.add((_now_u  + _td2(days=_d)).strftime("%Y-%m-%d"))
         _valid_parlay.add((_now_mx2 + _td2(days=_d)).strftime("%Y-%m-%d"))
 
@@ -5815,7 +5960,7 @@ else:
     # Purge old days — mantener ventana 5 días para no perder partidos próximos
     _yesterday_cdmx_cache = (_now_cache - _td_cache(hours=6) - _td_cache(days=1)).strftime("%Y-%m-%d")
     _valid_cache_dates = {_yesterday_cdmx_cache, _today_cdmx_cache}
-    for _d in range(1, 6):
+    for _d in range(1, 7):
         _valid_cache_dates.add((_now_cache - _td_cache(hours=6) + _td_cache(days=_d)).strftime("%Y-%m-%d"))
     for _gid in [k for k, v in list(_cached_pre.items())]:
         try:
@@ -6622,10 +6767,10 @@ if _active_page == "Rongol Picks":
                     _btts_pb = sim.get("p_btts") or 0
                     if _btts_ev > 0 and _btts_pb > 0:
                         cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev,"kelly":0})
-                    # O/U: only Over 2.5 (never Under anything), only if EV+
+                    # O/U: Over 2.5 si prob >= 52% (con o sin EV explícito)
                     _o25_ev = sim.get("o25_ev") or 0
                     _o25_pb = sim.get("p_o25") or 0
-                    if _o25_ev > 0 and _o25_pb > 0:
+                    if _o25_pb >= 52:
                         cands.append({"market":"O/U","label":"Over 2.5 goles","prob":_o25_pb,"ev":_o25_ev,"kelly":0})
                 # Add ML (always, highest win%)
                 _ml = best_ml()
@@ -6670,7 +6815,7 @@ if _active_page == "Rongol Picks":
         _now_mx_rp   = _now_rp - _td_rp(hours=6)
         _today_rp    = _now_mx_rp.strftime("%Y-%m-%d")
         _valid_rp    = {(_now_mx_rp - _td_rp(days=1)).strftime("%Y-%m-%d"), _today_rp}
-        for _d in range(1, 6):
+        for _d in range(1, 7):
             _valid_rp.add((_now_mx_rp + _td_rp(days=_d)).strftime("%Y-%m-%d"))
 
         # Build id→game map for quick lookup
@@ -7521,7 +7666,7 @@ elif _active_page == "Picks":
     _today_mx_p    = _now_mx_pt.strftime("%Y-%m-%d")
     _yday_mx_p     = (_now_mx_pt - _td_pt(days=1)).strftime("%Y-%m-%d")
     _valid_dates_p = {_yday_mx_p, _today_mx_p}
-    for _d in range(1, 6):
+    for _d in range(1, 7):
         _valid_dates_p.add((_now_mx_pt + _td_pt(days=_d)).strftime("%Y-%m-%d"))
 
     def _mx_date_p(g):
@@ -7697,10 +7842,10 @@ elif _active_page == "Picks":
         cands = [ml_pick]
 
         if sg == "Soccer":
-            # Soccer picks: ML only + Over 2.5 (EV+). No BTTS, no DC.
+            # Soccer picks: ML + Over 2.5. Mostrar O2.5 si prob > 52% (con o sin EV+)
             _o25_ev  = sim.get("o25_ev")  or 0
             _o25_pb  = sim.get("p_o25")   or 0
-            if _o25_ev > 0 and _o25_pb > 0:
+            if _o25_pb >= 52:  # mostrar si prob es suficiente, independiente del EV
                 cands.append({"market":"O/U","label":"Over 2.5","prob":_o25_pb,"ev":_o25_ev})
         else:
             _ou_line = sim.get("ou_line") or ""
@@ -8361,7 +8506,7 @@ elif _active_page == "Parlays":
         _now_mx_par   = _now_par - _td_par(hours=6)
         _today_par    = _now_mx_par.strftime("%Y-%m-%d")
         _valid_par    = {(_now_mx_par - _td_par(days=1)).strftime("%Y-%m-%d"), _today_par}
-        for _d in range(1, 6):
+        for _d in range(1, 7):
             _valid_par.add((_now_mx_par + _td_par(days=_d)).strftime("%Y-%m-%d"))
 
         def _game_date_par(gid, r_obj=None):
@@ -8743,27 +8888,31 @@ elif _active_page == "Parlays":
 
 
             # ══════════════════════════════════════════════════════════════════
-            # 🌙 PARLAY SOÑADOR — hasta 20 patas, soccer 5 días, ML + O2.5 solo (sin DC)
+            # 🌙 PARLAY SOÑADOR — hasta 20 patas, soccer 6 días, ML + O2.5 (sin DC)
             # ══════════════════════════════════════════════════════════════════
             st.markdown('<div class="den-divider" style="margin:24px 0 12px"></div>',
                         unsafe_allow_html=True)
 
-            # ── Ventana 5 días para Soñador ───────────────────────────────────
+            # ── Ventana estricta 6 días ───────────────────────────────────────
             from datetime import timedelta as _td_son, timezone as _tz_son
-            _now_son   = datetime.now(_tz_son.utc)
+            _now_son    = datetime.now(_tz_son.utc)
             _now_mx_son = _now_son - _td_son(hours=6)
-            _valid_son = {(_now_mx_son - _td_son(days=1)).strftime("%Y-%m-%d")}
-            for _d in range(0, 6):
+            _valid_son  = {(_now_mx_son - _td_son(days=1)).strftime("%Y-%m-%d")}
+            for _d in range(0, 7):  # hoy + 6 días
                 _valid_son.add((_now_mx_son + _td_son(days=_d)).strftime("%Y-%m-%d"))
 
-            def _game_date_son(r_obj):
-                raw = r_obj.get("date","")
-                if not raw: return None
-                try:
-                    from datetime import timezone as _tz2
-                    _u = datetime.strptime(raw[:19].replace("T"," "),"%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz2.utc)
-                    return (_u - _td_son(hours=6)).strftime("%Y-%m-%d")
-                except: return None
+            def _game_date_son(r_obj, g_obj=None):
+                """Busca fecha en sim_result o en game object."""
+                for _src in [r_obj, g_obj or {}]:
+                    raw = _src.get("date","")
+                    if not raw: continue
+                    try:
+                        from datetime import timezone as _tz2
+                        _u = datetime.strptime(raw[:19].replace("T"," "),
+                                               "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz2.utc)
+                        return (_u - _td_son(hours=6)).strftime("%Y-%m-%d")
+                    except: continue
+                return None
 
             # ── Collect soccer candidates: ML + O2.5 ONLY (no DC, no BTTS) ──
             _son_raw = []
@@ -8774,8 +8923,8 @@ elif _active_page == "Parlays":
                 _g_s   = next((g for g in games if g.get("id") == _sr_s.get("id")), None)
                 if _g_s and _g_s.get("state") == "post": continue
 
-                # 5-day window filter
-                _gd_son = _game_date_son(_sr_s)
+                # 6-day window filter — busca en sim_result y en game object
+                _gd_son = _game_date_son(_sr_s, _g_s)
                 if _gd_son and _gd_son not in _valid_son: continue
 
                 _hp   = float(_sim_s.get("home_pct", 0) or 0)
