@@ -2121,16 +2121,70 @@ def fetch_scoreboard(sport, league, tournament_id=None):
 def _parse_live_stats(comp, home, away):
     """Extract live match stats from ESPN competition block."""
     try:
-        clock = comp.get("status", {}).get("displayClock", "")
-        period = comp.get("status", {}).get("period", 0)
+        clock    = comp.get("status", {}).get("displayClock", "")
+        period   = comp.get("status", {}).get("period", 0)
         situation = comp.get("situation", {})
+        h_sit    = situation.get("homeTeam", {})
+        a_sit    = situation.get("awayTeam", {})
+
+        # Parse team stats from ESPN statistics array
+        h_sot = h_shots = h_corners = h_attacks = h_red = 0
+        a_sot = a_shots = a_corners = a_attacks = a_red = 0
+
+        for comp_item in [comp]:
+            for team_stat in comp_item.get("statistics", []):
+                _name = (team_stat.get("name","") or "").lower()
+                _val  = team_stat.get("displayValue","0") or "0"
+                try: _v = int(str(_val).split("-")[0])
+                except: _v = 0
+                _home_stat = team_stat.get("homeTeam", True)
+                if "shot on" in _name or "shotsontarget" in _name:
+                    if _home_stat: h_sot = _v
+                    else: a_sot = _v
+                elif "shot" in _name:
+                    if _home_stat: h_shots = _v
+                    else: a_shots = _v
+                elif "corner" in _name:
+                    if _home_stat: h_corners = _v
+                    else: a_corners = _v
+                elif "attack" in _name:
+                    if _home_stat: h_attacks = _v
+                    else: a_attacks = _v
+                elif "red" in _name and "card" in _name:
+                    if _home_stat: h_red = _v
+                    else: a_red = _v
+
         return {
-            "clock": clock,
-            "period": period,
-            "home_possession": situation.get("homeTeam", {}).get("possession", ""),
-            "away_possession": situation.get("awayTeam", {}).get("possession", ""),
-            "home_shots": situation.get("homeTeam", {}).get("shots", ""),
-            "away_shots": situation.get("awayTeam", {}).get("shots", ""),
+            "clock":            clock,
+            "period":           period,
+            "home_possession":  h_sit.get("possession", ""),
+            "away_possession":  a_sit.get("possession", ""),
+            "home_shots":       h_sit.get("shots", h_shots) or h_shots,
+            "away_shots":       a_sit.get("shots", a_shots) or a_shots,
+            "shots": {
+                "home": h_shots or h_sit.get("shots", 0),
+                "away": a_shots or a_sit.get("shots", 0),
+            },
+            "shots_on_target": {
+                "home": h_sot,
+                "away": a_sot,
+            },
+            "corners": {
+                "home": h_corners or h_sit.get("corners", 0),
+                "away": a_corners or a_sit.get("corners", 0),
+            },
+            "attacks": {
+                "home": h_attacks,
+                "away": a_attacks,
+            },
+            "possession": {
+                "home": float(str(h_sit.get("possession","50")).replace("%","") or 50),
+                "away": float(str(a_sit.get("possession","50")).replace("%","") or 50),
+            },
+            "red_cards": {
+                "home": h_red,
+                "away": a_red,
+            },
         }
     except:
         return {}
@@ -4008,6 +4062,21 @@ LEAGUE_OU_PRIORS = {
     "Primeira Liga":         (0.268, 0.502, 0.725, 0.732, 0.498, 0.275, 0.510),
     "Eliteserien":           (0.228, 0.458, 0.678, 0.772, 0.542, 0.322, 0.548),
     "Allsvenskan":           (0.252, 0.485, 0.705, 0.748, 0.515, 0.295, 0.528),
+    # Selecciones nacionales — fuente: Opta/StatsBomb WCQ/Friendlies 2022-25
+    "World Cup Qualifying UEFA":     (0.285, 0.520, 0.738, 0.715, 0.480, 0.262, 0.490),
+    "World Cup Qualifying CONMEBOL": (0.265, 0.500, 0.722, 0.735, 0.500, 0.278, 0.510),
+    "World Cup Qualifying CONCACAF": (0.245, 0.475, 0.700, 0.755, 0.525, 0.300, 0.520),
+    "World Cup Qualifying CAF":      (0.260, 0.495, 0.718, 0.740, 0.505, 0.282, 0.500),
+    "World Cup Qualifying AFC":      (0.268, 0.505, 0.725, 0.732, 0.495, 0.275, 0.495),
+    "World Cup Qualifying OFC":      (0.272, 0.508, 0.728, 0.728, 0.492, 0.272, 0.492),
+    "International Friendly":        (0.205, 0.430, 0.650, 0.795, 0.570, 0.350, 0.555),
+    "Friendly (Club)":               (0.215, 0.440, 0.658, 0.785, 0.560, 0.342, 0.548),
+    "Nations League UEFA":           (0.278, 0.512, 0.730, 0.722, 0.488, 0.270, 0.495),
+    "Nations League CONCACAF":       (0.255, 0.488, 0.710, 0.745, 0.512, 0.290, 0.510),
+    "Gold Cup":                      (0.242, 0.472, 0.695, 0.758, 0.528, 0.305, 0.525),
+    "FIFA World Cup":                (0.298, 0.535, 0.748, 0.702, 0.465, 0.252, 0.478),
+    "Copa America":                  (0.278, 0.515, 0.732, 0.722, 0.485, 0.268, 0.490),
+    "Euro":                          (0.282, 0.518, 0.735, 0.718, 0.482, 0.265, 0.488),
 }
 
 # Minimum deviation from league prior to qualify as a valid O/U or BTTS pick.
@@ -6117,6 +6186,36 @@ else:
             _cg_copy = dict(_cg); _cg_copy["state"] = "pre"
             games.append(_cg_copy)
 
+    # ── FILTRO HARD: descartar partidos con fecha > 7 días desde hoy ─────────
+    # Esto es la última línea de defensa contra partidos del Mundial de junio
+    # que se cuelen por cache viejo o por ESPN devolviendo el torneo completo.
+    if not is_demo:
+        from datetime import timedelta as _td_hf, timezone as _tz_hf
+        _now_hf   = datetime.now(_tz_hf.utc)
+        _now_mx_hf = _now_hf - _td_hf(hours=6)
+        _max_date_hf = (_now_mx_hf + _td_hf(days=7)).strftime("%Y-%m-%d")
+        _min_date_hf = (_now_mx_hf - _td_hf(days=1)).strftime("%Y-%m-%d")
+        _games_filtered = []
+        for _g in games:
+            _gstate = _g.get("state","")
+            if _gstate == "in":  # en vivo: siempre mantener
+                _games_filtered.append(_g)
+                continue
+            _gdate_raw = _g.get("date","")
+            if not _gdate_raw:  # sin fecha: mantener (puede ser hoy)
+                _games_filtered.append(_g)
+                continue
+            try:
+                _gdt = datetime.strptime(_gdate_raw[:19].replace("T"," ").replace("Z",""),
+                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_hf.utc)
+                _gdate_mx = (_gdt - _td_hf(hours=6)).strftime("%Y-%m-%d")
+                if _min_date_hf <= _gdate_mx <= _max_date_hf:
+                    _games_filtered.append(_g)
+                # else: partido fuera de ventana → descartar silenciosamente
+            except:
+                _games_filtered.append(_g)  # no parseable → mantener
+        games = _games_filtered
+
     if not games:
         # Try to auto-switch to demo so the app is usable
         col_a, col_b = st.columns(2)
@@ -6170,7 +6269,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324e"  # fix Soñador TypeError + Poisson fallback O/U
+_SIM_VERSION = "v20260324f"  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -6932,21 +7031,28 @@ if _active_page == "Rongol Picks":
                 ou_ml  = sim.get("over_under", "") or ""
                 if p_u25 == 0 and p_o25 > 0:
                     p_u25 = round(100.0 - p_o25, 1)
-                # Calcular desde lambda si todo es 0
+                # Calcular desde prior de liga o lambda si todo es 0
                 if p_o25 == 0:
-                    import math as _ms
-                    _lhs = float(sim.get("lam_real_h") or 0)
-                    _las = float(sim.get("lam_real_a") or 0)
-                    if _lhs == 0 or _las == 0:
-                        _llgs = float(sim.get("lam_league") or 0)
-                        _lhs = _llgs * 0.55 if _llgs > 0 else 1.4
-                        _las = _llgs * 0.45 if _llgs > 0 else 1.1
-                    _mus  = _lhs + _las
-                    _ples = sum(_ms.exp(-_mus) * (_mus**k) / _ms.factorial(k) for k in range(3))
-                    p_o25 = round((1 - _ples) * 100, 1)
-                    p_u25 = round(_ples * 100, 1)
-                    if p_btts == 0:
-                        p_btts = round((1-_ms.exp(-_lhs))*(1-_ms.exp(-_las))*100, 1)
+                    _lgn_s = r.get("league","")
+                    _prior_s = LEAGUE_OU_PRIORS.get(_lgn_s)
+                    if _prior_s:
+                        p_o25  = round(_prior_s[4] * 100, 1)
+                        p_u25  = round(_prior_s[1] * 100, 1)
+                        p_btts = round(_prior_s[6] * 100, 1)
+                    else:
+                        import math as _ms
+                        _lhs = float(sim.get("lam_real_h") or 0)
+                        _las = float(sim.get("lam_real_a") or 0)
+                        if _lhs == 0 or _las == 0:
+                            _llgs = float(sim.get("lam_league") or 0)
+                            _lhs = _llgs * 0.55 if _llgs > 0 else 1.45
+                            _las = _llgs * 0.45 if _llgs > 0 else 1.05
+                        _mus  = _lhs + _las
+                        _ples = sum(_ms.exp(-_mus) * (_mus**k) / _ms.factorial(k) for k in range(3))
+                        p_o25 = round((1 - _ples) * 100, 1)
+                        p_u25 = round(_ples * 100, 1)
+                        if p_btts == 0:
+                            p_btts = round((1-_ms.exp(-_lhs))*(1-_ms.exp(-_las))*100, 1)
                 opts = []
                 if p_o25 > 0:  opts.append(("O/U", "Over 2.5",  p_o25, sim.get("o25_ev") or 0, ou_ml))
                 if p_u25 > 0:  opts.append(("O/U", "Under 2.5", p_u25, sim.get("u25_ev") or 0, ou_ml))
@@ -7553,7 +7659,17 @@ if _active_page == "Rongol Picks":
                     _logo_h = _logo_img(_ht_id, _league, 44)
 
                     # ── Odds pills ───────────────────────────────────────────────
-                    def _mk_pill(lbl, dec, highlight=False):
+                    def _mk_pill(lbl, dec, highlight=False, diamond=False):
+                        if diamond:
+                            return (
+                                '<div style="flex:1;background:linear-gradient(160deg,#1a0a2e 0%,#0d0618 100%);'
+                                'border-radius:10px;border:1px solid rgba(167,139,250,0.5);'
+                                'border-top:1px solid rgba(196,181,253,0.3);'
+                                'box-shadow:0 3px 8px rgba(139,92,246,0.3);padding:10px 4px;text-align:center">'
+                                '<span style="font-size:0.65rem;color:#a78bfa;display:block;margin-bottom:3px;font-weight:700">' + str(lbl) + '</span>'
+                                '<span style="font-size:1.2rem;font-weight:900;color:#c4b5fd;font-family:Barlow Condensed,sans-serif;line-height:1">💎</span>'
+                                '</div>'
+                            )
                         lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else ("#FFE066" if highlight else "#A0A0A8")
                         bg = "linear-gradient(160deg,#2A2A3A 0%,#1E1E2A 100%)" if highlight else "linear-gradient(160deg,#1E1E24 0%,#141418 100%)"
                         bdr = "rgba(255,224,102,0.4)" if highlight else "rgba(255,255,255,0.1)"
@@ -7567,26 +7683,56 @@ if _active_page == "Rongol Picks":
                             '</div>'
                         )
 
+                    def _pill_is_dia(d):
+                        try: return float(str(d).replace(">","")) > 15
+                        except: return str(d).startswith(">")
+
+                    def _hcap_lbl(fp, dp, sp):
+                        import math
+                        try:
+                            lo = math.log(fp / dp)
+                            sc = {"Basketball":4.5,"Hockey":1.0,"Baseball":1.0,"Football":7.0}.get(sp,2.0)
+                            sp_v = round(lo * sc / 0.5) * 0.5
+                            return f"-{max(0.5,min(sp_v,25.0)):.1f}".rstrip("0").rstrip(".")
+                        except: return None
+
                     if _sg == "Soccer":
                         _pills = _mk_pill("1x",_a_dec) + _mk_pill("x",_d_dec) + _mk_pill("2x",_h_dec)
                     else:
                         _ou_v = _sim_r.get("ou_line","") or ""
                         _p_o  = _sim_r.get("p_o_total",0) or 0
                         _p_u  = _sim_r.get("p_u_total",0) or 0
+                        _a_dia = _pill_is_dia(_a_dec)
+                        _h_dia = _pill_is_dia(_h_dec)
+                        _hcap_v = _hcap_lbl(_h_pct if _h_pct>=_a_pct else _a_pct,
+                                             _a_pct if _h_pct>=_a_pct else _h_pct, _sg)
                         if _ou_v and not str(_ou_v).startswith("~"):
                             try:
                                 _ou_f = float(str(_ou_v).lstrip("~"))
                                 _ou_lbl = ("O" if _p_o >= _p_u else "U") + f"{_ou_f:.1f}"
-                                _ou_prob = max(_p_o, _p_u)
                                 _ou_dec_v = "1.91"
                                 _is_ou_pick = _mkt == "O/U"
-                                _pills = (_mk_pill(_away[:6], _a_dec) +
-                                          _mk_pill(_ou_lbl, _ou_dec_v, highlight=_is_ou_pick) +
-                                          _mk_pill(_home[:6], _h_dec))
+                                if _a_dia:
+                                    _dl = f"H{_hcap_v}" if _hcap_v else "💎FAV"
+                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_ou_lbl,_ou_dec_v,highlight=_is_ou_pick) + _mk_pill(_home[:6],_h_dec)
+                                elif _h_dia:
+                                    _dl = f"A{_hcap_v}" if _hcap_v else "💎FAV"
+                                    _pills = _mk_pill(_away[:6],_a_dec) + _mk_pill(_ou_lbl,_ou_dec_v,highlight=_is_ou_pick) + _mk_pill(_dl,">15",diamond=True)
+                                else:
+                                    _pills = (_mk_pill(_away[:6], _a_dec) +
+                                              _mk_pill(_ou_lbl, _ou_dec_v, highlight=_is_ou_pick) +
+                                              _mk_pill(_home[:6], _h_dec))
                             except:
                                 _pills = _mk_pill(_away[:7], _a_dec) + _mk_pill(_home[:7], _h_dec)
                         else:
-                            _pills = _mk_pill(_away[:7], _a_dec) + _mk_pill(_home[:7], _h_dec)
+                            if _a_dia or _h_dia:
+                                _dl = f"H/C {_hcap_v}" if _hcap_v else "💎"
+                                if _a_dia:
+                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_home[:7],_h_dec,highlight=True)
+                                else:
+                                    _pills = _mk_pill(_away[:7],_a_dec,highlight=True) + _mk_pill(_dl,">15",diamond=True)
+                            else:
+                                _pills = _mk_pill(_away[:7], _a_dec) + _mk_pill(_home[:7], _h_dec)
 
                     # ── Spread pill (non-soccer with ESPN spread) ────────────────
                     _spr_line_str = _rp.get("odds",{}).get("spread_line","") or _sim_r.get("spread_line","") or ""
@@ -8040,21 +8186,29 @@ elif _active_page == "Picks":
             p_btts = sim.get("p_btts") or 0
             ou_ml  = sim.get("over_under", "") or ""
             if p_u25 == 0 and p_o25 > 0: p_u25 = round(100.0 - p_o25, 1)
-            # Calcular desde lambda si todo es 0
+            # Calcular desde lambda o prior de liga si todo es 0
             if p_o25 == 0:
-                import math as _m2
-                _lh2 = float(sim.get("lam_real_h") or 0)
-                _la2 = float(sim.get("lam_real_a") or 0)
-                if _lh2 == 0 or _la2 == 0:
-                    _llg2 = float(sim.get("lam_league") or 0)
-                    _lh2 = _llg2 * 0.55 if _llg2 > 0 else 1.4
-                    _la2 = _llg2 * 0.45 if _llg2 > 0 else 1.1
-                _mu2  = _lh2 + _la2
-                _ple2 = sum(_m2.exp(-_mu2) * (_mu2**k) / _m2.factorial(k) for k in range(3))
-                p_o25 = round((1 - _ple2) * 100, 1)
-                p_u25 = round(_ple2 * 100, 1)
-                if p_btts == 0:
-                    p_btts = round((1-_m2.exp(-_lh2))*(1-_m2.exp(-_la2))*100, 1)
+                # Intentar usar prior de liga primero (más preciso que lambda genérico)
+                _league_name = r.get("league","")
+                _prior_fb = LEAGUE_OU_PRIORS.get(_league_name)
+                if _prior_fb:
+                    p_o25  = round(_prior_fb[4] * 100, 1)  # P_O25
+                    p_u25  = round(_prior_fb[1] * 100, 1)  # P_U25
+                    p_btts = round(_prior_fb[6] * 100, 1)  # P_BTTS
+                else:
+                    import math as _m2
+                    _lh2 = float(sim.get("lam_real_h") or 0)
+                    _la2 = float(sim.get("lam_real_a") or 0)
+                    if _lh2 == 0 or _la2 == 0:
+                        _llg2 = float(sim.get("lam_league") or 0)
+                        _lh2 = _llg2 * 0.55 if _llg2 > 0 else 1.45
+                        _la2 = _llg2 * 0.45 if _llg2 > 0 else 1.05
+                    _mu2  = _lh2 + _la2
+                    _ple2 = sum(_m2.exp(-_mu2) * (_mu2**k) / _m2.factorial(k) for k in range(3))
+                    p_o25 = round((1 - _ple2) * 100, 1)
+                    p_u25 = round(_ple2 * 100, 1)
+                    if p_btts == 0:
+                        p_btts = round((1-_m2.exp(-_lh2))*(1-_m2.exp(-_la2))*100, 1)
             # Seleccionar el mercado con mayor prob
             opts = []
             if p_o25 > 0:  opts.append(("O/U","Over 2.5",  p_o25, sim.get("o25_ev",0) or 0, ou_ml))
@@ -8221,20 +8375,27 @@ elif _active_page == "Picks":
             _p_u25  = sim.get("p_u25")  or 0
             _p_btts = sim.get("p_btts") or 0
             if _p_u25 == 0 and _p_o25 > 0: _p_u25 = round(100.0 - _p_o25, 1)
-            # Si p_o25=0, calcular desde lambda
             if _p_o25 == 0:
-                import math as _m
-                _lh = float(sim.get("lam_real_h") or 0)
-                _la = float(sim.get("lam_real_a") or 0)
-                if _lh == 0 or _la == 0:
-                    _llg = float(sim.get("lam_league") or 0)
-                    _lh = _llg * 0.55 if _llg > 0 else 1.4
-                    _la = _llg * 0.45 if _llg > 0 else 1.1
-                _mu = _lh + _la
-                _p_le2 = sum(_m.exp(-_mu) * (_mu**k) / _m.factorial(k) for k in range(3))
-                _p_o25 = round((1 - _p_le2) * 100, 1)
-                _p_u25 = round(_p_le2 * 100, 1)
-                _p_btts = round((1-_m.exp(-_lh)) * (1-_m.exp(-_la)) * 100, 1)
+                # Usar prior de liga primero
+                _lgn_oc = g.get("league","")
+                _prior_oc = LEAGUE_OU_PRIORS.get(_lgn_oc)
+                if _prior_oc:
+                    _p_o25  = round(_prior_oc[4] * 100, 1)
+                    _p_u25  = round(_prior_oc[1] * 100, 1)
+                    _p_btts = round(_prior_oc[6] * 100, 1)
+                else:
+                    import math as _m
+                    _lh = float(sim.get("lam_real_h") or 0)
+                    _la = float(sim.get("lam_real_a") or 0)
+                    if _lh == 0 or _la == 0:
+                        _llg = float(sim.get("lam_league") or 0)
+                        _lh = _llg * 0.55 if _llg > 0 else 1.45
+                        _la = _llg * 0.45 if _llg > 0 else 1.05
+                    _mu = _lh + _la
+                    _p_le2 = sum(_m.exp(-_mu) * (_mu**k) / _m.factorial(k) for k in range(3))
+                    _p_o25 = round((1 - _p_le2) * 100, 1)
+                    _p_u25 = round(_p_le2 * 100, 1)
+                    _p_btts = round((1-_m.exp(-_lh)) * (1-_m.exp(-_la)) * 100, 1)
             _ou_ml = sim.get("over_under","") or ""
             if _p_o25 > 0 or _p_u25 > 0 or _p_btts > 0:
                 _best = max(
@@ -8336,7 +8497,17 @@ elif _active_page == "Picks":
             _live_tag = '<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.4);border-radius:12px;padding:1px 5px;font-size:0.6rem;font-weight:700;margin-left:4px">🔴 VIVO</span>'
 
         # Odds pills
-        def _opill(lbl, dec, hi=False):
+        def _opill(lbl, dec, hi=False, diamond=False):
+            if diamond:
+                # Pick diamante — cuota imposible reemplazada por badge especial
+                return (
+                    '<div style="flex:1;background:linear-gradient(160deg,#1a0a2e 0%,#0d0618 100%);'
+                    'border-radius:10px;border:1px solid rgba(167,139,250,0.4);'
+                    'padding:8px 4px;text-align:center">'
+                    '<span style="font-size:0.55rem;color:#a78bfa;display:block;margin-bottom:2px;font-weight:700">' + str(lbl) + '</span>'
+                    '<span style="font-size:1.1rem;font-weight:900;color:#c4b5fd;font-family:Barlow Condensed,sans-serif;line-height:1">💎</span>'
+                    '</div>'
+                )
             lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else ("#FFE066" if hi else "#A0A0A8")
             bg = "linear-gradient(160deg,#2A2A3A 0%,#1E1E2A 100%)" if hi else "linear-gradient(160deg,#1E1E24 0%,#141418 100%)"
             return (
@@ -8348,22 +8519,66 @@ elif _active_page == "Picks":
                 '</div>'
             )
 
+        def _is_diamond(dec_str):
+            """True cuando la cuota decimal es >15 (underdog extremo, cuota inútil)."""
+            try: return float(str(dec_str).replace(">","").replace("<","")) > 15
+            except: return str(dec_str).startswith(">")
+
+        def _handicap_label(fav_pct, dog_pct, sport):
+            """Estima un handicap/spread para el favorito basado en la diferencia de prob."""
+            if fav_pct <= 0 or dog_pct <= 0: return None
+            import math
+            try:
+                log_odds = math.log(fav_pct / dog_pct)
+                # Escala por deporte: NBA ~4pts por unidad log_odds, NHL ~1, MLB ~1
+                scale = {"Basketball": 4.5, "Hockey": 1.0, "Baseball": 1.0,
+                         "Football": 7.0, "Soccer": 0.0}.get(sport, 2.0)
+                if scale == 0: return None
+                spread = round(log_odds * scale / 0.5) * 0.5  # redondear a 0.5
+                spread = max(0.5, min(spread, 25.0))  # clamp 0.5–25
+                return f"-{spread:.1f}".rstrip("0").rstrip(".")
+            except: return None
+
         if _sg == "Soccer":
             _pills_h = _opill("1x",_a_dec) + _opill("x",_d_dec) + _opill("2x",_h_dec)
         else:
             _ou_v = sim.get("ou_line","") or ""
             _p_o  = sim.get("p_o_total",0) or 0
             _p_u  = sim.get("p_u_total",0) or 0
+            # Detectar si alguna cuota es >15 y reemplazar con diamante + handicap
+            _a_is_dia = _is_diamond(_a_dec)
+            _h_is_dia = _is_diamond(_h_dec)
+            _fav_pct  = _h_pct if _h_pct >= _a_pct else _a_pct
+            _dog_pct  = _a_pct if _h_pct >= _a_pct else _h_pct
+            _hcap     = _handicap_label(_fav_pct, _dog_pct, _sg)
             if _ou_v and not str(_ou_v).startswith("~"):
                 try:
-                    _ou_f = float(str(_ou_v).lstrip("~"))
+                    _ou_f   = float(str(_ou_v).lstrip("~"))
                     _ou_lbl = ("O" if _p_o >= _p_u else "U") + f"{_ou_f:.1f}"
-                    _is_ou = _mkt == "O/U"
-                    _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(g["home_team"][:6],_h_dec)
+                    _is_ou  = _mkt == "O/U"
+                    if _a_is_dia:
+                        # Away es underdog extremo — pill diamante con handicap del home
+                        _dia_lbl = f"H{_hcap}" if _hcap else "FAV"
+                        _pills_h = _opill(_dia_lbl, ">15", diamond=True) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(g["home_team"][:6],_h_dec)
+                    elif _h_is_dia:
+                        # Home es underdog extremo — pill diamante
+                        _dia_lbl = f"A{_hcap}" if _hcap else "FAV"
+                        _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(_dia_lbl, ">15", diamond=True)
+                    else:
+                        _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(g["home_team"][:6],_h_dec)
                 except:
                     _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
             else:
-                _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
+                if _a_is_dia or _h_is_dia:
+                    _fav_team = g["home_team"][:6] if _h_pct >= _a_pct else g["away_team"][:6]
+                    _fav_d    = _h_dec if _h_pct >= _a_pct else _a_dec
+                    _dia_lbl  = f"H/C {_hcap}" if _hcap else "💎 FAV"
+                    if _a_is_dia:
+                        _pills_h = _opill(_dia_lbl, ">15", diamond=True) + _opill(_fav_team, _fav_d, hi=True)
+                    else:
+                        _pills_h = _opill(_fav_team, _fav_d, hi=True) + _opill(_dia_lbl, ">15", diamond=True)
+                else:
+                    _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
 
         # Spread pill
         _spr_line_o = g.get("odds",{}).get("spread_line","") or ""
@@ -9154,7 +9369,7 @@ elif _active_page == "Parlays":
 
 
             # ══════════════════════════════════════════════════════════════════
-            # 🌙 PARLAY SOÑADOR — hasta 20 patas, soccer HOY+4 días, ML + O2.5 (sin DC)
+            # 🌙 PARLAY SOÑADOR — hasta 20 patas, soccer esta semana (7 días), O/U + BTTS (sin ML, sin DC)
             # ══════════════════════════════════════════════════════════════════
             st.markdown('<div class="den-divider" style="margin:24px 0 12px"></div>',
                         unsafe_allow_html=True)
@@ -9251,30 +9466,29 @@ elif _active_page == "Parlays":
                     _p_u25 = round(100.0 - _p_o25, 1)
                 _p_btts  = float(_sim_s.get("p_btts") or 0)
                 _btts_ev = float(_sim_s.get("btts_ev") or 0)
-                # Si p_o25 es 0 pero hay lambda, estimar p_o25 via Poisson simple
+                # Si p_o25 es 0, usar prior de liga primero, luego lambda
                 if _p_o25 == 0:
-                    _lam_h0 = float(_sim_s.get("lam_real_h") or 0)
-                    _lam_a0 = float(_sim_s.get("lam_real_a") or 0)
-                    # Fallback: usar lambda de liga si no hay lambdas reales
-                    if (_lam_h0 == 0 or _lam_a0 == 0):
-                        _lam_lg = float(_sim_s.get("lam_league") or 0)
-                        if _lam_lg > 0:
-                            _lam_h0 = _lam_lg * 0.55  # home share
-                            _lam_a0 = _lam_lg * 0.45
-                        else:
-                            # Último recurso: usar promedio global de soccer (2.5 goles/partido)
-                            _lam_h0, _lam_a0 = 1.4, 1.1
-                    if _lam_h0 > 0 and _lam_a0 > 0:
-                        import math as _math
-                        _mu = _lam_h0 + _lam_a0
-                        _p_le2 = sum(_math.exp(-_mu) * (_mu**k) / _math.factorial(k) for k in range(3))
-                        _p_o25 = round((1 - _p_le2) * 100, 1)
-                        _p_u25 = round(_p_le2 * 100, 1)
-                        # Estimar BTTS via Poisson independiente
+                    _prior_son = LEAGUE_OU_PRIORS.get(_league)
+                    if _prior_son:
+                        _p_o25  = round(_prior_son[4] * 100, 1)
+                        _p_u25  = round(_prior_son[1] * 100, 1)
                         if _p_btts == 0:
-                            _p_h_score = 1 - _math.exp(-_lam_h0)  # P(home scores >= 1)
-                            _p_a_score = 1 - _math.exp(-_lam_a0)  # P(away scores >= 1)
-                            _p_btts = round(_p_h_score * _p_a_score * 100, 1)
+                            _p_btts = round(_prior_son[6] * 100, 1)
+                    else:
+                        _lam_h0 = float(_sim_s.get("lam_real_h") or 0)
+                        _lam_a0 = float(_sim_s.get("lam_real_a") or 0)
+                        if (_lam_h0 == 0 or _lam_a0 == 0):
+                            _lam_lg = float(_sim_s.get("lam_league") or 0)
+                            _lam_h0 = _lam_lg * 0.55 if _lam_lg > 0 else 1.45
+                            _lam_a0 = _lam_lg * 0.45 if _lam_lg > 0 else 1.05
+                        if _lam_h0 > 0 and _lam_a0 > 0:
+                            import math as _math
+                            _mu = _lam_h0 + _lam_a0
+                            _p_le2 = sum(_math.exp(-_mu) * (_mu**k) / _math.factorial(k) for k in range(3))
+                            _p_o25 = round((1 - _p_le2) * 100, 1)
+                            _p_u25 = round(_p_le2 * 100, 1)
+                            if _p_btts == 0:
+                                _p_btts = round((1-_math.exp(-_lam_h0))*(1-_math.exp(-_lam_a0))*100, 1)
 
                 # --- Extraer todos los signals disponibles ---
                 _dq       = float(_sim_s.get("data_quality", 0) or 0)
@@ -9544,7 +9758,7 @@ elif _active_page == "Parlays":
                     '<div style="font-size:0.72rem;font-weight:900;color:#00CFFF;'
                     'letter-spacing:3px;text-transform:uppercase">PARLAY SOÑADOR</div>'
                     f'<div style="font-size:0.6rem;color:#555;letter-spacing:1px">'
-                    f'{len(_son_legs)} patas · Soccer HOY+4 días · {_son_date_range} · ML + Over 2.5</div>'
+                    f'{len(_son_legs)} patas · Soccer esta semana · {_son_date_range} · O/U + BTTS</div>'
                     '</div></div>',
                     unsafe_allow_html=True
                 )
