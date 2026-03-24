@@ -2144,27 +2144,36 @@ def parse_games(data, league_name):
     _now_mx     = _now_utc - _td(hours=6)
     _today_cdmx = _now_mx.strftime("%Y-%m-%d")
     _yesterday_cdmx = (_now_mx - _td(days=1)).strftime("%Y-%m-%d")
-    # Ventana: ayer + hoy + 6 días adelante
+    # Ventana estricta: ayer + hoy + 7 días adelante
     _valid_dates = {_yesterday_cdmx, _today_cdmx}
-    for _d in range(1, 7):
+    for _d in range(1, 8):
         _valid_dates.add((_now_mx + _td(days=_d)).strftime("%Y-%m-%d"))
 
     for event in data.get("events", []):
         try:
             _raw_date = event.get("date", "").replace("Z", "").replace("+00:00", "")
+            _ev_cdmx_date = None
             if _raw_date:
                 try:
                     _ev_utc       = datetime.strptime(_raw_date[:19].replace("T", " "),
                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                     _ev_cdmx_date = (_ev_utc - _td(hours=6)).strftime("%Y-%m-%d")
-                    if _ev_cdmx_date not in _valid_dates:
-                        # Allow live/in-progress games regardless of date
-                        _state = event.get("status", {}).get("type", {}).get("state", "")
-                        if _state != "in":
-                            continue  # drop only pre/post games outside window
                 except Exception:
-                    pass  # if date can't be parsed, keep the event (might be live)
-            # No date = keep (ESPN sometimes omits date for live games)
+                    _ev_cdmx_date = None
+
+            _state = event.get("status", {}).get("type", {}).get("state", "")
+
+            # Bloquear estrictamente partidos fuera de ventana
+            if _ev_cdmx_date is not None:
+                if _ev_cdmx_date not in _valid_dates and _state != "in":
+                    continue  # partido futuro fuera de 7 días o pasado — descartar
+            elif _raw_date:
+                # Fecha presente pero no parseable → descartar si no está en vivo
+                if _state != "in":
+                    continue
+            # Sin fecha y no en vivo → descartar
+            elif _state != "in":
+                continue
             comp  = event.get("competitions", [{}])[0]
             comps = comp.get("competitors", [])
             if len(comps) < 2:
@@ -6166,10 +6175,14 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324b"  # bump para invalidar cache con fix de ML soccer
+_SIM_VERSION = "v20260324c"  # bump: bloquea partidos >7 días y ML soccer
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
+# Invalidar cache de games si versión cambió
+if _prev_key and _SIM_VERSION not in _prev_key:
+    st.session_state.pop("_games_fetched", None)
+    st.session_state.pop("_soccer_pre_cache", None)
 
 # ── AUTO-REFRESH DIARIO a las 6am CDMX ──────────────────────────────────────
 # Cada vez que carga la página, verifica si hay datos nuevos del día
