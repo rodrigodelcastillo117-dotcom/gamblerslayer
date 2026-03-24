@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN v2026.03.23-B
+THE GAMBLERS DEN v2026.03.23-E
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -12,7 +12,7 @@ import random
 # ── VERSION STAMP — shows on load to confirm correct file is running ──────────
 if "version_shown" not in st.session_state:
     st.session_state["version_shown"] = True
-    st.toast("✅ Gamblers Den v2026.03.23-B cargado", icon="🎰")
+    st.toast("✅ Gamblers Den v2026.03.23-E cargado", icon="🎰")
 import math
 import time
 import os
@@ -432,6 +432,24 @@ LEAGUES = {
     "Primeira Liga":          {"sport":"soccer",    "league":"POR.1",                  "group":"Soccer", "hidden":True},
     "Eliteserien":            {"sport":"soccer",    "league":"NOR.1",                  "group":"Soccer", "hidden":True},
     "Allsvenskan":            {"sport":"soccer",    "league":"SWE.1",                  "group":"Soccer", "hidden":True},
+    # ── FIFA / Selecciones Nacionales ──────────────────────────────────────────
+    "World Cup Qualifying CONMEBOL": {"sport":"soccer","league":"fifa.worldq.conmebol","group":"Soccer"},
+    "World Cup Qualifying CONCACAF": {"sport":"soccer","league":"concacaf.qualifying","group":"Soccer"},
+    "World Cup Qualifying UEFA":     {"sport":"soccer","league":"fifa.worldq.uefa","group":"Soccer"},
+    "World Cup Qualifying CAF":      {"sport":"soccer","league":"fifa.worldq.caf","group":"Soccer"},
+    "World Cup Qualifying AFC":      {"sport":"soccer","league":"fifa.worldq.afc","group":"Soccer"},
+    "World Cup Qualifying OFC":      {"sport":"soccer","league":"fifa.worldq.ofc","group":"Soccer"},
+    "FIFA World Cup":                {"sport":"soccer","league":"fifa.world","group":"Soccer"},
+    "FIFA Club World Cup":           {"sport":"soccer","league":"fifa.cwc","group":"Soccer"},
+    "Copa America":                  {"sport":"soccer","league":"conmebol.copa_america","group":"Soccer"},
+    "Gold Cup":                      {"sport":"soccer","league":"concacaf.gold_cup","group":"Soccer"},
+    "Euro":                          {"sport":"soccer","league":"UEFA.EURO","group":"Soccer"},
+    "Nations League UEFA":           {"sport":"soccer","league":"UEFA.NATIONS","group":"Soccer"},
+    "Nations League CONCACAF":       {"sport":"soccer","league":"concacaf.league","group":"Soccer"},
+    "AFC Asian Cup":                 {"sport":"soccer","league":"afc.cup","group":"Soccer"},
+    "Africa Cup":                    {"sport":"soccer","league":"caf.nations","group":"Soccer"},
+    "International Friendly":        {"sport":"soccer","league":"fifa.friendly","group":"Soccer"},
+    "Friendly (Club)":               {"sport":"soccer","league":"friendly","group":"Soccer"},
 }
 
 # ── Equipos favoritos de ligas ocultas ──────────────────────────────────────
@@ -499,6 +517,24 @@ LEAGUE_FLAG = {
     "Primeira Liga":          "🇵🇹",
     "Eliteserien":            "🇳🇴",
     "Allsvenskan":            "🇸🇪",
+    # FIFA / Selecciones Nacionales
+    "World Cup Qualifying CONMEBOL": "🌎",
+    "World Cup Qualifying CONCACAF": "🌎",
+    "World Cup Qualifying UEFA":     "🇪🇺",
+    "World Cup Qualifying CAF":      "🌍",
+    "World Cup Qualifying AFC":      "🌏",
+    "World Cup Qualifying OFC":      "🌊",
+    "FIFA World Cup":                "🏆",
+    "FIFA Club World Cup":           "🏆",
+    "Copa America":                  "🌎",
+    "Gold Cup":                      "🏆",
+    "Euro":                          "🇪🇺",
+    "Nations League UEFA":           "🇪🇺",
+    "Nations League CONCACAF":       "🌎",
+    "AFC Asian Cup":                 "🌏",
+    "Africa Cup":                    "🌍",
+    "International Friendly":        "🤝",
+    "Friendly (Club)":               "🤝",
 }
 
 def league_label(name):
@@ -1975,6 +2011,22 @@ def get_all_games(leagues):
         "mex.1":  ["mex.1", "mex.clausura", "mex.apertura"],
         "sau.1":  ["sau.1", "sau.pro", "sau.league", "sau.professional"],
         "ned.1":  ["ned.1", "ned.eredivisie"],
+        # FIFA / Selecciones Nacionales
+        "fifa.worldq.conmebol":  ["fifa.worldq.conmebol","conmebol.qualifying"],
+        "concacaf.qualifying":   ["concacaf.qualifying","concacaf.worldq","fifa.worldq.concacaf"],
+        "fifa.worldq.uefa":      ["fifa.worldq.uefa","uefa.qualifying"],
+        "fifa.worldq.caf":       ["fifa.worldq.caf","caf.qualifying"],
+        "fifa.worldq.afc":       ["fifa.worldq.afc","afc.qualifying"],
+        "fifa.world":            ["fifa.world","FIFA.WORLD"],
+        "conmebol.copa_america": ["conmebol.copa_america","CONMEBOL.COPA_AMERICA"],
+        "concacaf.gold_cup":     ["concacaf.gold_cup","CONCACAF.GOLD_CUP"],
+        "UEFA.EURO":             ["UEFA.EURO","uefa.euro"],
+        "UEFA.NATIONS":          ["UEFA.NATIONS","uefa.nations","UEFA.NATIONS_LEAGUE"],
+        "concacaf.league":       ["concacaf.league","concacaf.nations"],
+        "afc.cup":               ["afc.cup","AFC.ASIAN_Q","afc.asian.q"],
+        "caf.nations":           ["caf.nations","CAF.NATIONS"],
+        "fifa.friendly":         ["fifa.friendly","FIFA.FRIENDLY","friendly.international"],
+        "friendly":              ["friendly","club.friendly","friendly.m"],
         "bel.1":  ["bel.1", "bel.pro", "bel.jupiler"],
         "UEFA.CHAMPIONS": ["UEFA.CHAMPIONS", "uefa.champions"],
         "UEFA.EUROPA":    ["UEFA.EUROPA",    "uefa.europa"],
@@ -6723,29 +6775,7 @@ if _active_page == "Rongol Picks":
         _src = "DEMO" if is_demo else "ESPN Live"
         st.markdown(f'<div style="text-align:center;font-family:\'Inter\',sans-serif;font-size:0.806rem;color:#444444">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
-elif _active_page == "Picks":
-    # ── Global CSS for Picks tab ──────────────────────────────────────────────
-    st.markdown("""<style>
-/* Liga expand buttons — styled rows */
-div[data-testid="stButton"] button[kind="secondary"] {
-    background:rgba(255,255,255,0.03)!important;
-    border:1px solid rgba(255,255,255,0.10)!important;
-    border-radius:12px!important;
-    color:#E8E8E8!important;
-    font-weight:600!important;
-    text-align:left!important;
-    padding:10px 16px!important;
-}
-/* Sport tile buttons */
-div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button[kind="secondary"] {
-    border-radius:18px!important;
-    font-weight:700!important;
-    white-space:pre-line!important;
-    min-height:90px!important;
-    font-size:0.75rem!important;
-}
-</style>""", unsafe_allow_html=True)
-    # ══════════════════════════════════════════════════════════════════════════
+    # (CSS handled per-element)
     # PRÓXIMOS PARTIDOS — sport tiles + date/league expanders  (TOP of tab)
     # ══════════════════════════════════════════════════════════════════════════
     from datetime import timedelta as _td_pt
@@ -6882,20 +6912,35 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button[kind="se
             _smp    = _SPORT_META_P[_sp_p]
             _n_p    = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
             _is_sel = (_sel_sp == _sp_p)
-            _op     = "1" if (_sel_sp is None or _is_sel) else "0.35"
-            _bg_t   = _smp["color"] + ("44" if _is_sel else "18")
-            _bdr_t  = f'2.5px solid {_smp["color"]}' if _is_sel else f'1px solid {_smp["color"]}44'
-            _tick   = " ✓" if _is_sel else ""
+            _op     = "1" if (_sel_sp is None or _is_sel) else "0.38"
+            _bg_t   = f"linear-gradient(160deg,{_smp['color']}33 0%,{_smp['color']}11 100%)" if _is_sel else f"linear-gradient(160deg,{_smp['color']}18 0%,rgba(0,0,0,0.2) 100%)"
+            _bdr_t  = f"2px solid {_smp['color']}BB" if _is_sel else f"1px solid {_smp['color']}44"
+            _tick   = "  ✓" if _is_sel else ""
             _sp_key = f"btn_sp_{_sp_p.replace(' ','_')}"
             with _sp_cols_p[_ci_p]:
-                if st.button(
-                    f"{_smp['emoji']}\n{_sp_p.upper()}{_tick}\n{_n_p} juegos",
-                    key=_sp_key,
-                    use_container_width=True,
-                    help=f"{'Quitar filtro' if _is_sel else 'Solo ' + _sp_p}"
-                ):
+                # HTML tile visual
+                st.markdown(
+                    f'<div style="background:{_bg_t};border:{_bdr_t};border-radius:18px;'
+                    f'padding:16px 10px 12px;text-align:center;opacity:{_op};'
+                    f'box-shadow:{"0 0 20px " + _smp["color"] + "33" if _is_sel else "none"};'
+                    f'pointer-events:none;margin-bottom:-58px;position:relative;z-index:0">'
+                    f'<div style="font-size:1.8rem;line-height:1;margin-bottom:6px">{_smp["emoji"]}</div>'
+                    f'<div style="font-size:0.72rem;font-weight:800;color:{_smp["color"]};letter-spacing:1.5px;text-transform:uppercase">{_sp_p}{_tick}</div>'
+                    f'<div style="font-size:0.62rem;color:#888;margin-top:3px">{_n_p} juegos</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                # Invisible clickable button on top
+                if st.button("​", key=_sp_key, use_container_width=True,
+                             help=f"{'Quitar filtro' if _is_sel else 'Solo ' + _sp_p}"):
                     st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
                     st.rerun()
+                st.markdown(
+                    f'<style>div[data-testid="stButton"]:has(button[key="{_sp_key}"]) button{{'
+                    f'height:90px!important;background:transparent!important;'
+                    f'border:none!important;position:relative;z-index:1}}</style>',
+                    unsafe_allow_html=True
+                )
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
 
@@ -7355,20 +7400,37 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] button[kind="se
                 _exp_key = f"_lg_open_{_lg_p.replace(' ','_').replace('/','_')}"
                 _is_open = st.session_state.get(_exp_key, False)
 
-                # Single clickable button for league header (no separate ▶)
-                _hdr_bg  = f"rgba({','.join(str(int(_smp['color'][i:i+2],16)) for i in (1,3,5))},0.12)" if _is_open else "rgba(255,255,255,0.03)"
-                _hdr_bdr = f"1.5px solid {_smp['color']}88" if _is_open else f"1px solid {_smp['color']}33"
+                # Liga header: HTML visual + invisible button overlay
+                _hdr_bg  = f"linear-gradient(90deg,{_smp['color']}28 0%,rgba(0,0,0,0.1) 100%)" if _is_open else "rgba(255,255,255,0.03)"
+                _hdr_bdr = f"1.5px solid {_smp['color']}99" if _is_open else f"1px solid {_smp['color']}33"
                 _arrow   = "▼" if _is_open else "▶"
                 _btn_k   = f"btn_lg_{_lg_btn_counter}"
                 _lg_btn_counter += 1
-                if st.button(
-                    f"{_arrow}  {_flag_p} {_lg_p}{_ctry_str}  ·  {_n_lg} partidos{_ev_lg_badge}",
-                    key=_btn_k,
-                    use_container_width=True,
-                    help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"
-                ):
+                st.markdown(
+                    f'<div style="background:{_hdr_bg};border:{_hdr_bdr};'
+                    f'border-radius:{"12px 12px 0 0" if _is_open else "12px"};'
+                    f'padding:12px 16px;margin-top:6px;pointer-events:none;'
+                    f'display:flex;justify-content:space-between;align-items:center;margin-bottom:-46px;position:relative;z-index:0">'
+                    f'<div style="display:flex;align-items:center;gap:8px">'
+                    f'<span style="font-size:1rem">{_flag_p}</span>'
+                    f'<span style="font-size:0.82rem;font-weight:700;color:#E8E8E8">{_lg_p}{_ctry_str}</span>'
+                    f'<span style="font-size:0.65rem;color:{_smp["color"]}">{_ev_lg_badge}</span>'
+                    f'<span style="font-size:0.65rem;color:#666">· {_n_lg} partidos</span>'
+                    f'</div>'
+                    f'<span style="font-size:0.82rem;color:{_smp["color"]};font-weight:700">{_arrow}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                if st.button("​", key=_btn_k, use_container_width=True,
+                             help=f"{'Cerrar' if _is_open else 'Ver'} partidos de {_lg_p}"):
                     st.session_state[_exp_key] = not _is_open
                     st.rerun()
+                st.markdown(
+                    f'<style>button[data-testid="{_btn_k}"]{{height:46px!important;'
+                    f'background:transparent!important;border:none!important;'
+                    f'position:relative;z-index:1}}</style>',
+                    unsafe_allow_html=True
+                )
                 if _is_open:
                     st.markdown(
                         f'<div style="background:#111111;border:1px solid {_smp["color"]}33;'
@@ -7841,17 +7903,19 @@ elif _active_page == "Parlays":
                     _lg_lbl = league_label(_l["league"])
                     _sp_ico = _SG_ICONS.get(_l["sport"],"🎯")
                     if _i > 0:
-                        _legs_html += '<div style="font-size:0.694rem;color:#999;text-align:center;letter-spacing:3px;margin:4px 0">✕ COMBO ✕</div>'
+                        _legs_html += '<div style="font-size:0.62rem;color:#AAA;text-align:center;letter-spacing:3px;padding:3px 0">✕ COMBO ✕</div>'
                     _legs_html += (
-                        f'<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;'
-                        f'border-radius:12px;background:rgba(0,0,0,0.04);border:1px solid rgba(0,0,0,0.08)">'
-                        f'<span style="background:{_lc}28;color:{_la};border:1px solid {_lc}66;'
-                        f'border-radius:12px;padding:2px 9px;font-size:0.739rem;font-weight:800;flex-shrink:0">{_ll}</span>'
+                        f'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;'
+                        f'border-radius:14px;background:rgba(0,0,0,0.05);border:1px solid rgba(0,0,0,0.08);margin-bottom:2px">'
+                        f'<span style="background:{_lc}22;color:{_la};border:1.5px solid {_lc}66;'
+                        f'border-radius:8px;padding:3px 10px;font-size:0.72rem;font-weight:900;flex-shrink:0">{_l["market"]}</span>'
                         f'<div style="flex:1;min-width:0">'
-                        f'<div style="font-size:0.986rem;color:#111;font-weight:700">{_l["label"]}</div>'
-                        f'<div style="font-size:0.65rem;color:#6B7280">{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name}</div>'
+                        f'<div style="font-size:0.95rem;color:#111;font-weight:800;line-height:1.2">{_l.get("label","")[:22]}</div>'
+                        f'<div style="font-size:0.6rem;color:#777;margin-top:2px">{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name[:28]}</div>'
                         f'</div>'
-                        f'<span style="font-size:0.694rem;color:{_la};font-weight:700;flex-shrink:0">{_l["prob"]:.0f}%</span>'
+                        f'<div style="text-align:right;flex-shrink:0">'
+                        f'<div style="font-size:1.1rem;font-weight:900;color:{_la};font-family:Barlow Condensed,sans-serif">{round(_l.get("prob",0),0):.0f}%</div>'
+                        f'</div>'
                         f'</div>'
                     )
                 _multi_ev = round((_multi_prob_pct/100 * (_multi_payout/100) - (1 - _multi_prob_pct/100)) * 100, 1)
@@ -8369,7 +8433,7 @@ elif _active_page == "En Vivo":
                 f'<div style="padding:8px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
                 f'<div>'
                 f'<div style="font-size:0.85rem;font-weight:800;color:#111;line-height:1.2">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div style="font-size:0.78rem;color:#CC0000;font-weight:700">{score_disp}</div>'
+                f'<div style="font-size:0.78rem;color:#CC0000;font-weight:700">{score_str}</div>'
                 f'</div>'
                 f'<div>{badges}</div>'
                 f'</div>'
@@ -9646,43 +9710,10 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
         return False
 
     def _sv_get_daily_reto(today):
-        """
-        Return today's reto type based on day-of-year rotation.
-        Uses a 14-day cycle of different bet types.
-        Returns dict with: tipo, label, icon, descripcion, espn_stat_key
-        """
-        day_n = today.timetuple().tm_yday  # 1-365
-        # 14-type rotation — varies every day
-        retos_cycle = [
-            # (tipo, label, icon, descripcion, espn_stat_key)
-            ("ML_home",     "ML Local Gana",       "🏠", "El equipo LOCAL gana el partido",                    "moneyLine"),
-            ("ML_away",     "ML Visitante Gana",   "✈️", "El equipo VISITANTE gana el partido",                "moneyLine"),
-            ("over_goles",  "Over Goles",          "⚽", "El partido tiene MÁS goles que la línea ESPN O/U",   "overUnder"),
-            ("under_goles", "Under Goles",         "🔒", "El partido tiene MENOS goles que la línea ESPN O/U", "overUnder"),
-            ("btts",        "Ambos Anotan SÍ",     "🥅", "AMBOS equipos marcan al menos 1 gol (solo soccer)",  "btts"),
-            ("over_pts",    "Over Puntos NBA/NHL",  "🏀", "El partido tiene MÁS puntos/goles que el O/U ESPN",  "overUnder"),
-            ("under_pts",   "Under Puntos NBA/NHL", "🧱", "El partido tiene MENOS puntos que el O/U ESPN",      "overUnder"),
-            ("ML_fav",      "ML Favorito Gana",    "👑", "El FAVORITO de momio gana (menor momio decimal)",    "moneyLine"),
-            ("ML_dog",      "ML Underdog Gana",    "🐕", "El UNDERDOG (mayor momio) gana el partido",          "moneyLine"),
-            ("over_corner", "Over Corners",        "🚩", "El partido tiene más de 9.5 corners (soccer)",       "corners"),
-            ("clean_sheet", "Portería a 0",        "🧤", "Un equipo cierra el partido SIN recibir goles",      "cleanSheet"),
-            ("over_shots",  "Over Tiros a Puerta", "🎯", "Un equipo dispara más de 5.5 veces a puerta",       "shotsOnTarget"),
-            ("draw",        "Empate",              "⚖️", "El partido termina en EMPATE (solo soccer)",         "draw"),
-            ("first_half",  "1er Tiempo Gana",     "⏱️", "Tu equipo va GANANDO al descanso del 1er tiempo",   "halfTime"),
-        ]
-        idx = (day_n - 1) % len(retos_cycle)
-        t, label, icon, desc, stat = retos_cycle[idx]
-        return {
-            "tipo":      t,
-            "label":     label,
-            "icon":      icon,
-            "desc":      desc,
-            "stat_key":  stat,
-            "day_n":     day_n,
-            "cycle_pos": idx + 1,
-            "cycle_len": len(retos_cycle),
-        }
-
+        """Always ML — pick a team to win."""
+        return {"tipo":"ML","label":"Equipo Ganador","icon":"🏆",
+                "descripcion":"Elige un equipo que gane hoy. No puedes repetir equipos.",
+                "espn_stat_key":"moneyLine","cycle_pos":1,"cycle_len":1}
     def _sv_fetch_espn_stat(game_id, sport, league, stat_key):
         """Fetch a specific stat from ESPN summary for auto-resolve."""
         try:
@@ -9851,33 +9882,20 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
                 unsafe_allow_html=True
             )
 
-    # ── RETO DEL DÍA — card destacada ───────────────────────────────────────────
-    st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
-    _cycle_bar = round(_reto_hoy["cycle_pos"] / _reto_hoy["cycle_len"] * 100)
+    # ── Encabezado semana ────────────────────────────────────────────────────────
     st.markdown(
         f'<div style="background:linear-gradient(135deg,#1A1A2E 0%,#16213E 100%);'
         f'border:1px solid rgba(201,168,76,0.4);border-top:2px solid #C9A84C;'
-        f'border-radius:16px;padding:16px;margin-bottom:14px">'
-        f'<div style="font-size:0.58rem;color:#C9A84C;font-weight:800;letter-spacing:3px;'
-        f'text-transform:uppercase;margin-bottom:8px">🎲 RETO DE HOY · {_day_sv}</div>'
-        f'<div style="display:flex;align-items:center;gap:12px">'
-        f'<span style="font-size:2.5rem;line-height:1">{_reto_hoy["icon"]}</span>'
-        f'<div style="flex:1">'
-        f'<div style="font-size:1.2rem;font-weight:900;color:#FFE066;font-family:Barlow Condensed,sans-serif">'
-        f'{_reto_hoy["label"].upper()}</div>'
-        f'<div style="font-size:0.75rem;color:#AEAEB2;margin-top:3px">{_reto_hoy["desc"]}</div>'
-        f'</div>'
-        f'<div style="text-align:right">'
-        f'<div style="font-size:0.55rem;color:#555;text-transform:uppercase">ciclo</div>'
-        f'<div style="font-size:0.78rem;font-weight:700;color:#C9A84C">'
-        f'{_reto_hoy["cycle_pos"]}/{_reto_hoy["cycle_len"]}</div>'
-        f'<div style="width:48px;height:4px;background:#222;border-radius:4px;margin-top:3px">'
-        f'<div style="width:{_cycle_bar}%;height:100%;background:#C9A84C;border-radius:4px"></div>'
-        f'</div></div></div>'
+        f'border-radius:16px;padding:14px 18px;margin-bottom:14px">'
+        f'<div style="font-size:0.6rem;color:#C9A84C;font-weight:800;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px">'
+        f'🏆 SUPERVIVENCIA SEMANAL · {_week_sv}</div>'
+        f'<div style="font-size:1rem;font-weight:800;color:#FFE066">⚽ Elige UN equipo de soccer que gane hoy</div>'
+        f'<div style="font-size:0.75rem;color:#AEAEB2;margin-top:4px">'
+        f'Incluye Liga MX, Premier League, Champions, Eliminatorias, Copa América, Amistosos FIFA y más. '
+        f'Cada semana un equipo diferente — no puedes repetir. Si gana ✅ sobrevives, si pierde ❌ eliminado.</div>'
         f'</div>',
         unsafe_allow_html=True
     )
-
     # ── Registrar pick de esta semana ────────────────────────────────────────────
     if not _my_ap:
         st.info("🔐 Inicia sesión arriba para participar en Supervivencia Semanal.")
@@ -9898,100 +9916,58 @@ font-weight:700;color:#f0c040;letter-spacing:1px">🏆 Supervivencia Semanal</di
             unsafe_allow_html=True
         )
     else:
-        # ── Game selector based on reto type ─────────────────────────────────────
+        # ── Game selector — SOLO SOCCER (clubes + selecciones nacionales) ────────
         _sv_sr  = st.session_state.get("sim_results", [])
-        _tipo   = _reto_hoy["tipo"]
-        _sv_game_opts = {}  # display_label → (pick_valor, partido_str, linea_espn)
+        _sv_game_opts = {}  # display_label → (pick_valor, partido_str, linea)
+
+        # Soccer league flags for display
+        _sv_flags = {
+            "Liga MX":"🇲🇽","MLS":"🇺🇸","Premier League":"🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+            "La Liga":"🇪🇸","Bundesliga":"🇩🇪","Serie A":"🇮🇹","Ligue 1":"🇫🇷",
+            "Champions League":"⭐","Europa League":"🟠","Conference League":"🟣",
+            "Copa America":"🌎","Gold Cup":"🏆","Euro":"🇪🇺",
+            "Nations League UEFA":"🇪🇺","Nations League CONCACAF":"🌎",
+            "World Cup Qualifying CONMEBOL":"🌎","World Cup Qualifying CONCACAF":"🌎",
+            "World Cup Qualifying UEFA":"🇪🇺","World Cup Qualifying CAF":"🌍",
+            "World Cup Qualifying AFC":"🌏","FIFA World Cup":"🏆",
+            "International Friendly":"🤝","Friendly (Club)":"🤝",
+            "AFC Asian Cup":"🌏","Africa Cup":"🌍",
+        }
 
         for _rv in _sv_sr:
-            _sim_v  = _rv.get("sim", {})
-            _g_rv   = next((g for g in games if g.get("id") == _rv.get("id")), None)
-            _state  = (_g_rv["state"] if _g_rv else _rv.get("state","pre"))
+            _sim_v   = _rv.get("sim", {})
+            _lg_rv   = _rv.get("league", "")
+            _sg_rv   = LEAGUES.get(_lg_rv, {}).get("group", "")
+
+            # ── ONLY SOCCER ──────────────────────────────────────────────────────
+            if _sg_rv != "Soccer":
+                continue
+
+            _g_rv    = next((g for g in games if g.get("id") == _rv.get("id")), None)
+            _state   = (_g_rv["state"] if _g_rv else _rv.get("state","pre"))
             if _state == "post": continue
-            _home_v = _rv.get("home_team","")
-            _away_v = _rv.get("away_team","")
-            _sg_v   = LEAGUES.get(_rv.get("league",""),{}).get("group","Soccer")
-            _lg_lbl = league_label(_rv.get("league",""))
-            _h_pct  = _sim_v.get("home_pct",0) or 0
-            _a_pct  = _sim_v.get("away_pct",0) or 0
-            _ou     = str(_sim_v.get("ou_line","") or "")
-            _ou_implied = _ou.startswith("~")
-            _ou_real    = _ou.lstrip("~") if _ou else ""
+
+            _home_v  = _rv.get("home_team","")
+            _away_v  = _rv.get("away_team","")
+            _h_pct   = _sim_v.get("home_pct",0) or 0
+            _a_pct   = _sim_v.get("away_pct",0) or 0
+            _d_pct   = _sim_v.get("draw_pct",0) or 0
+            _h_ml    = _sim_v.get("home_ml","") or ""
+            _a_ml    = _sim_v.get("away_ml","") or ""
             _partido_str = f"{_away_v} vs {_home_v}"
-            _h_ml   = _sim_v.get("home_ml","") or ""
-            _a_ml   = _sim_v.get("away_ml","") or ""
+            _flag    = _sv_flags.get(_lg_rv, "⚽")
+            _lg_lbl  = league_label(_lg_rv)
 
-            # Filter by reto type
-            if _tipo == "ML_home":
-                if _home_v.lower() not in _used_teams:
-                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  LOCAL {_home_v} ({_h_pct:.0f}%){' ESPN '+_h_ml if _h_ml else ''}"
-                    _sv_game_opts[_lbl] = (_home_v, _partido_str, _h_ml)
-            elif _tipo == "ML_away":
-                if _away_v.lower() not in _used_teams:
-                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  VISIT {_away_v} ({_a_pct:.0f}%){' ESPN '+_a_ml if _a_ml else ''}"
-                    _sv_game_opts[_lbl] = (_away_v, _partido_str, _a_ml)
-            elif _tipo == "ML_fav":
-                # Favorito = menor momio absoluto (más cercano a -∞ americano)
-                try:
-                    _hf = float(_h_ml) if _h_ml else 999
-                    _af = float(_a_ml) if _a_ml else 999
-                    _fav_team = _home_v if abs(_hf) < abs(_af) else _away_v
-                    _fav_ml   = _h_ml if abs(_hf) < abs(_af) else _a_ml
-                    _fav_pct  = _h_pct if abs(_hf) < abs(_af) else _a_pct
-                except: _fav_team, _fav_ml, _fav_pct = _home_v, _h_ml, _h_pct
-                if _fav_team.lower() not in _used_teams:
-                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  FAV {_fav_team} ({_fav_pct:.0f}%){' '+_fav_ml if _fav_ml else ''}"
-                    _sv_game_opts[_lbl] = (_fav_team, _partido_str, _fav_ml)
-            elif _tipo == "ML_dog":
-                try:
-                    _hf = float(_h_ml) if _h_ml else 0
-                    _af = float(_a_ml) if _a_ml else 0
-                    _dog_team = _home_v if abs(_hf) > abs(_af) else _away_v
-                    _dog_ml   = _h_ml if abs(_hf) > abs(_af) else _a_ml
-                    _dog_pct  = _h_pct if abs(_hf) > abs(_af) else _a_pct
-                except: _dog_team, _dog_ml, _dog_pct = _away_v, _a_ml, _a_pct
-                if _dog_team.lower() not in _used_teams:
-                    _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  DOG {_dog_team} ({_dog_pct:.0f}%){' '+_dog_ml if _dog_ml else ''}"
-                    _sv_game_opts[_lbl] = (_dog_team, _partido_str, _dog_ml)
-            elif _tipo in ("over_goles","under_goles") and _sg_v == "Soccer":
-                if _ou_real:
-                    _dir  = "OVER" if _tipo == "over_goles" else "UNDER"
-                    _p_ou = _sim_v.get("p_o25",0) if _tipo == "over_goles" else 100 - (_sim_v.get("p_o25",0) or 0)
-                    _lbl  = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  {_dir} {_ou_real} goles ({_p_ou:.0f}%)"
-                    _sv_game_opts[_lbl] = (f"{_dir} {_ou_real}", _partido_str, _ou_real)
-            elif _tipo == "btts" and _sg_v == "Soccer":
-                _p_btts = _sim_v.get("p_btts",0) or 0
-                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  BTTS SÍ ({_p_btts:.0f}%)"
-                _sv_game_opts[_lbl] = ("BTTS SÍ", _partido_str, "")
-            elif _tipo in ("over_pts","under_pts") and _sg_v in ("Basketball","Hockey"):
-                if _ou_real and not _ou_implied:
-                    _dir  = "OVER" if _tipo == "over_pts" else "UNDER"
-                    _p_ou = (_sim_v.get("p_o_total",0) or 0) if _tipo == "over_pts" else 100 - (_sim_v.get("p_o_total",0) or 0)
-                    _lbl  = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  {_dir} {_ou_real} ({_p_ou:.0f}%)"
-                    _sv_game_opts[_lbl] = (f"{_dir} {_ou_real}", _partido_str, _ou_real)
-            elif _tipo == "draw" and _sg_v == "Soccer":
-                _p_draw = _sim_v.get("draw_pct",0) or 0
-                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  EMPATE ({_p_draw:.0f}%)"
-                _sv_game_opts[_lbl] = ("Empate", _partido_str, "")
-            elif _tipo == "clean_sheet" and _sg_v == "Soccer":
-                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}  →  Portería a 0"
-                _sv_game_opts[_lbl] = ("Portería a 0", _partido_str, "")
-            elif _tipo in ("over_corner","over_shots","first_half"):
-                # Less common — show all sports
-                _lbl = f"{_lg_lbl} · {_away_v} @ {_home_v}"
-                if _lbl not in _sv_game_opts:
-                    _sv_game_opts[_lbl] = (_home_v, _partido_str, "")
-
-        # ── Render selector ───────────────────────────────────────────────────────
-        st.markdown(
-            f'<div style="font-size:0.75rem;color:#AEAEB2;margin-bottom:8px">'
-            f'Semana <b>{_week_sv}</b> · Elige tu pick para el reto de hoy <b>{_reto_hoy["icon"]} {_reto_hoy["label"]}</b>:'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
+            # Add home team (if not already used)
+            if _home_v and _home_v.lower() not in _used_teams:
+                _lbl = f"{_flag} {_home_v} ({_h_pct:.0f}%) · {_lg_lbl} · vs {_away_v}"
+                _sv_game_opts[_lbl] = (_home_v, _partido_str, _h_ml)
+            # Add away team (if not already used)
+            if _away_v and _away_v.lower() not in _used_teams:
+                _lbl = f"{_flag} {_away_v} ({_a_pct:.0f}%) · {_lg_lbl} @ {_home_v}"
+                _sv_game_opts[_lbl] = (_away_v, _partido_str, _a_ml)
         if not _sv_game_opts:
-            st.warning(f"⚠ No hay partidos disponibles para el reto '{_reto_hoy['label']}' de hoy. Simula partidos en ⚡ Rongol o 🎯 Picks primero.")
+            st.warning("⚠ No hay partidos de soccer disponibles hoy. Simula partidos en ⚡ Rongol o 🎯 Picks primero. Los partidos de selecciones nacionales aparecen en fechas FIFA.")
             # Fallback manual
             _cv1, _cv2 = st.columns([2,3])
             with _cv1:
