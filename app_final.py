@@ -4793,12 +4793,24 @@ def run_monte_carlo(game, n=10_000):
     u35_ev=calc_ev(p_u35,OU_ML) if p_u35 is not None else None
     dc_1x_ev=calc_ev(p_dc_1x,DC_ML); dc_x2_ev=calc_ev(p_dc_x2,DC_ML); dc_12_ev=calc_ev(p_dc_12,DC_ML)
 
-    candidates=[
-        ("ML",game["home_team"]+" ML",sh,home_ev,hml,hk),
-        ("ML",game["away_team"]+" ML",sa,away_ev,aml,ak),
-    ]
+    _sport_group_early = LEAGUES.get(game["league"], {}).get("group", "")
+    # Soccer ML: solo incluir si prob ≥ 65% — líneas ML de soccer tienen vig alto
+    # y con prob < 65% el edge real raramente justifica el riesgo.
+    # No-soccer: incluir siempre (NBA/NHL/NFL tienen 2 outcomes, vig más justo).
+    _ML_MIN_SOCCER = 0.65
+    if _sport_group_early == "Soccer":
+        candidates = []
+        if sh >= _ML_MIN_SOCCER:
+            candidates.append(("ML", game["home_team"]+" ML", sh, home_ev, hml, hk))
+        if sa >= _ML_MIN_SOCCER:
+            candidates.append(("ML", game["away_team"]+" ML", sa, away_ev, aml, ak))
+    else:
+        candidates = [
+            ("ML", game["home_team"]+" ML", sh, home_ev, hml, hk),
+            ("ML", game["away_team"]+" ML", sa, away_ev, aml, ak),
+        ]
 
-    sport_group = LEAGUES.get(game["league"], {}).get("group", "")
+    sport_group = _sport_group_early
 
     # ── NBA / NHL / MLB O/U ─────────────────────────────────────────────────
     # Show probabilities at ESPN line AND adjacent lines (±0.5/1.0)
@@ -4879,11 +4891,10 @@ def run_monte_carlo(game, n=10_000):
         # This prevents U3.5 from always winning just because it's "likely" by default
         if _ou_edge(p_o25, _po25_pr):
             candidates.append(("O/U","Over 2.5", p_o25, o25_ev, str(OU_ML), quarter_kelly(p_o25,OU_ML)))
-        if _ou_edge(p_o35, _po35_pr):
-            candidates.append(("O/U","Over 3.5", p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35,OU_ML)))
+        # Over 3.5 eliminado — mercado secundario, ruido en la selección principal
         if _ou_edge(p_u25, _pu25_pr):
             candidates.append(("O/U","Under 2.5",p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25,OU_ML)))
-        # U3.5 eliminated — always wins by default %, useless noise
+        # U3.5 eliminado — siempre gana por default ~80%, sin valor
 
     # DC only meaningful for soccer WITH real ESPN moneyline (DC_ML is fictitious otherwise)
     # Without real ML odds, DO EV is calculated vs a made-up -200 → always looks positive
@@ -4965,11 +4976,10 @@ def run_monte_carlo(game, n=10_000):
             ]
         if _edge2(p_o25, _pv2[4]):
             candidates.append(("O/U","Over 2.5",  p_o25, o25_ev, str(OU_ML), quarter_kelly(p_o25, OU_ML)))
-        if _edge2(p_o35, _pv2[5]):
-            candidates.append(("O/U","Over 3.5",  p_o35, o35_ev, str(OU_ML), quarter_kelly(p_o35, OU_ML)))
+        # Over 3.5 eliminado — mercado secundario, ruido en la selección principal
         if _edge2(p_u25, _pv2[1]):
             candidates.append(("O/U","Under 2.5", p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25, OU_ML)))
-        # U3.5 eliminated — always wins by default %, useless noise (profile blend block)
+        # U3.5 eliminado — siempre gana por default ~80%, sin valor (profile blend block)
 
     # ── No-signal guard: block O/U and BTTS when all signals are blind ──────────
     # Without moneyline + form + scoring trend, O/U probs are pure Poisson league avg
@@ -5065,8 +5075,12 @@ def run_monte_carlo(game, n=10_000):
     # ═══════════════════════════════════════════════════════════════════════
 
     # Pre-filter: excluir DO (EV ficticio por DC_ML hardcoded)
-    candidates_main = [(mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
-                       if mt != "DO"]
+    # Para soccer: excluir también ML con prob < 65% — vig alto, edge real insuficiente
+    candidates_main = [
+        (mt,lb,pr,ev,ml,k) for mt,lb,pr,ev,ml,k in candidates
+        if mt != "DO"
+        and not (sport_group == "Soccer" and mt == "ML" and (pr or 0) < 0.65)
+    ]
 
     # Selección por mayor EV
     # Bonus de estabilidad para mercados de 2 outcomes (O/U, BTTS) vs 3 (H/D/A)
@@ -9143,7 +9157,7 @@ elif _active_page == "Parlays":
                 )
 
                 # ── 1. ML del equipo favorito ─────────────────────────────────
-                # Elegir el equipo con mayor prob (no siempre el home)
+                # Soccer ML: solo si prob >= 65% — vig alto, edge real insuficiente < 65%
                 _fav_is_home = _hp >= _ap
                 _fav_prob    = _hp if _fav_is_home else _ap
                 _fav_ev      = _h_ev if _fav_is_home else _a_ev
@@ -9153,8 +9167,8 @@ elif _active_page == "Parlays":
                 _fav_wr      = _h_wr if _fav_is_home else _a_wr
                 _fav_inj     = _h_inj if _fav_is_home else _a_inj
 
-                # Solo agregar ML si el favorito tiene prob >= 50%
-                if _fav_prob >= 50:
+                # Solo agregar ML si el favorito tiene prob >= 65%
+                if _fav_prob >= 65:
                     _rb = _rank_bonus(_fav_rank, _conf_diff_son)
                     _h2h_ml = _h2h_h_wins if _fav_is_home else (1 - _h2h_h_wins)
                     _info_rec = f"Rec: {(_h_rec if _fav_is_home else _a_rec) or '?'}"
@@ -9186,7 +9200,24 @@ elif _active_page == "Parlays":
                         "date": _gd_son or "",
                     })
 
-                # ── 3. BTTS (Ambos Anotan) ────────────────────────────────────
+                # ── 3. Under 2.5 ─────────────────────────────────────────────
+                _p_u25_son = 100.0 - _p_o25 if _p_o25 else 0.0
+                _u25ev_son = float(_sim_s.get("u25_ev", 0) or 0)
+                if _p_u25_son >= 52:  # threshold ligeramente más alto que Over
+                    _info_lam_u = f"λ={_lam_tot:.1f}" if _lam_tot > 0 else ""
+                    _son_raw.append({
+                        "game_id": _game_id, "league": _league,
+                        "market": "O/U", "label": "Under 2.5",
+                        "prob": _p_u25_son, "ev": _u25ev_son, "kelly": 0, "dq": _dq,
+                        "partido": _partido, "home": _home, "away": _away,
+                        "score": _son_score(_p_u25_son, _u25ev_son, 0, _dq, "O/U",
+                                            h2h_rate=(1 - _over25_h2h) if _over25_h2h else 0,
+                                            rank_bon=0, **_score_params),
+                        "info": f"{_info_lam_u} {_conf_lbl}".strip(),
+                        "date": _gd_son or "",
+                    })
+
+                # ── 4. BTTS (Ambos Anotan) ────────────────────────────────────
                 if _p_btts >= 48:
                     _info_lam_b = f"λh={_lam_h:.1f} λa={_lam_a:.1f}" if _lam_h and _lam_a else ""
                     _info_h2h_b = f" H2H BTTS:{_btts_h2h*100:.0f}%" if _btts_h2h > 0 else ""
@@ -9201,15 +9232,68 @@ elif _active_page == "Parlays":
                         "date": _gd_son or "",
                     })
 
-            # ── Sort by score, deduplicate by game ────────────────────────────
+            # ── Sort by score, deduplicate by game con mezcla de mercados ─────
+            # Lógica: 1 candidato por partido, pero priorizando mezcla de mercados.
+            # Si ya hay 2+ patas ML en los top candidatos, el siguiente partido
+            # prefiere O/U o BTTS para reducir correlación y maximizar EV del parlay.
             _son_raw.sort(key=lambda x: x["score"], reverse=True)
-            _son_seen = set()
+            _son_seen = set()   # game_ids ya incluidos
             _son_legs = []
+            _mkt_counts_son = {"ML": 0, "O/U": 0, "BTTS": 0}  # track market diversity
+
+            # Primera pasada: 1 pick por partido (mejor score)
+            _best_per_game = {}
             for _c in _son_raw:
-                if _c["game_id"] in _son_seen: continue
-                _son_seen.add(_c["game_id"])
-                _son_legs.append(_c)
-                if len(_son_legs) >= 20: break
+                _gid = _c["game_id"]
+                if not _gid:  # skip entradas sin game_id válido
+                    continue
+                if _gid not in _best_per_game:
+                    _best_per_game[_gid] = _c
+                # También guardar el mejor por mercado alternativo para mezcla
+                _mkt_key = f"{_gid}_{_c['market']}"
+
+            # Segunda pasada: construir legs con diversidad de mercados
+            # Prioridad: elegir el mejor candidato de cada partido, pero si un
+            # mercado ya domina (>60% de las patas), preferir el siguiente mejor
+            # mercado de ese partido para diversificar.
+            _all_per_game = {}
+            for _c in _son_raw:
+                _gid = _c["game_id"]
+                if not _gid:
+                    continue
+                _all_per_game.setdefault(_gid, []).append(_c)
+
+            # Ordenar partidos por el score de su mejor candidato
+            _games_ranked = sorted(
+                _all_per_game.items(),
+                key=lambda kv: kv[1][0]["score"],
+                reverse=True
+            )
+
+            for _gid, _cands in _games_ranked:
+                if _gid in _son_seen:
+                    continue
+                # Intentar elegir mercado que diversifique
+                _chosen = None
+                _n_legs_so_far = len(_son_legs)
+                for _cand in _cands:  # ya ordenados por score
+                    _mkt = _cand["market"]
+                    _mkt_share = _mkt_counts_son.get(_mkt, 0) / max(_n_legs_so_far, 1)
+                    # Si el mercado ya ocupa >60% de las patas Y hay alternativa buena,
+                    # saltar este y buscar el siguiente mejor de otro mercado
+                    if _n_legs_so_far >= 3 and _mkt_share > 0.60:
+                        continue  # buscar alternativa
+                    _chosen = _cand
+                    break
+                # Fallback: si todos los mercados están saturados, elegir el mejor score
+                if _chosen is None and _cands:
+                    _chosen = _cands[0]
+                if _chosen:
+                    _son_seen.add(_gid)
+                    _son_legs.append(_chosen)
+                    _mkt_counts_son[_chosen["market"]] = _mkt_counts_son.get(_chosen["market"], 0) + 1
+                if len(_son_legs) >= 20:
+                    break
 
 
             if len(_son_legs) >= 2:
