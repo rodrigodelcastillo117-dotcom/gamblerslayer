@@ -4997,54 +4997,39 @@ def run_monte_carlo(game, n=10_000):
 
     if is_soccer and not _has_real_signal:
         # Sin ML, sin forma reciente, sin scoring trend de ESPN.
-        # Pero podemos usar:
-        #   A) team_profiles (Google Sheets) — historial acumulado real
-        #   B) season record (win_pct) — calidad relativa equipos
-        # Si hay alguna de estas, generamos picks con edge reducido y los marcamos
-        # como "⚠ Modelo" para que el usuario sepa que no hay cuotas de respaldo.
+        # Usamos probs Poisson de la liga como baseline — siempre generamos picks
+        # marcados como baja confianza. Sin datos externos el modelo usa promedios
+        # de la liga, que son mejor que nada para O/U y BTTS.
         _profile_signal = _has_profile or _has_record
-        if not _profile_signal:
-            # Sin ninguna señal: vaciar todo — no hay nada útil que decir
-            candidates = []
-        else:
-            # Tenemos perfil o récord: relajar el edge mínimo (priors menos estrictos)
-            # y marcar los picks con bandera de baja confianza
-            # El λ ya fue ajustado por team_profiles en get_lambda() arriba.
-            # Solo necesitamos dejar pasar candidatos BTTS/O/U con edge más bajo.
-            # Reducimos OU_MIN_EDGE a 0.05 para este partido (más permisivo)
-            _edge_low = 0.05
-            _prior = LEAGUE_OU_PRIORS.get(game["league"])
-            _pv    = _prior if _prior else (0.23,0.47,0.68,0.77,0.53,0.32,0.57)
-            # Reconstruir candidatos BTTS/O/U con edge relajado
-            # (los candidatos ya fueron construidos arriba con OU_MIN_EDGE=0.08,
-            #  pero con _bypass=False y sin ML podrían haber sido filtrados)
-            if p_btts is not None:
-                _btts_pr = _pv[6] if len(_pv)>6 else 0.57
-                if abs(p_btts - _btts_pr) >= _edge_low:
-                    # Asegurarnos de que BTTS está en candidates
-                    _btts_in = any(mt=="BTTS" for mt,*_ in candidates)
-                    if not _btts_in:
-                        _bev  = calc_ev(p_btts, BTTS_ML)
-                        _nbev = calc_ev(1-p_btts, BTTS_ML)
-                        candidates += [
-                            ("BTTS","Ambos Anotan — SÍ",p_btts,  _bev,  str(BTTS_ML),quarter_kelly(p_btts,  BTTS_ML)),
-                            ("BTTS","Ambos Anotan — NO",1-p_btts,_nbev, str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
-                        ]
-            if p_o25 is not None:
-                if abs(p_o25 - _pv[4]) >= _edge_low:
-                    _ou_in = any(mt=="O/U" and "2.5" in lb for mt,lb,*_ in candidates)
-                    if not _ou_in:
-                        candidates.append(("O/U","Over 2.5", p_o25,
-                                           calc_ev(p_o25,OU_ML), str(OU_ML),
-                                           quarter_kelly(p_o25,OU_ML)))
-                if abs(1-p_o25 - _pv[1]) >= _edge_low:
-                    _uu_in = any(mt=="O/U" and "Under 2.5" in lb for mt,lb,*_ in candidates)
-                    if not _uu_in:
-                        candidates.append(("O/U","Under 2.5", 1-p_o25,
-                                           calc_ev(1-p_o25,OU_ML), str(OU_ML),
-                                           quarter_kelly(1-p_o25,OU_ML)))
-            # Marcar el partido con baja confianza para que el display lo indique
-            game["_low_confidence"] = True
+        _edge_low = 0.03  # muy permisivo — aceptar cualquier desviación del prior
+        _prior = LEAGUE_OU_PRIORS.get(game["league"])
+        _pv    = _prior if _prior else (0.23,0.47,0.68,0.77,0.53,0.32,0.57)
+
+        # Reconstruir candidatos BTTS/O/U con edge relajado
+        if p_btts is not None:
+            _btts_pr = _pv[6] if len(_pv)>6 else 0.57
+            if abs(p_btts - _btts_pr) >= _edge_low or not _profile_signal:
+                _btts_in = any(mt=="BTTS" for mt,*_ in candidates)
+                if not _btts_in:
+                    _bev  = calc_ev(p_btts, BTTS_ML)
+                    _nbev = calc_ev(1-p_btts, BTTS_ML)
+                    candidates += [
+                        ("BTTS","Ambos Anotan — SÍ",p_btts,  _bev,  str(BTTS_ML),quarter_kelly(p_btts,  BTTS_ML)),
+                        ("BTTS","Ambos Anotan — NO",1-p_btts,_nbev, str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
+                    ]
+        if p_o25 is not None:
+            _ou_in = any(mt=="O/U" and "2.5" in lb for mt,lb,*_ in candidates)
+            if not _ou_in:
+                candidates.append(("O/U","Over 2.5", p_o25,
+                                   calc_ev(p_o25,OU_ML), str(OU_ML),
+                                   quarter_kelly(p_o25,OU_ML)))
+            _uu_in = any(mt=="O/U" and "Under 2.5" in lb for mt,lb,*_ in candidates)
+            if not _uu_in:
+                candidates.append(("O/U","Under 2.5", 1-p_o25,
+                                   calc_ev(1-p_o25,OU_ML), str(OU_ML),
+                                   quarter_kelly(1-p_o25,OU_ML)))
+        # Marcar baja confianza para que el display lo indique
+        game["_low_confidence"] = True
 
     # Detect "partido parejo" — requires real ML signal to be meaningful
     _spread = abs(sh - sa) * 100
