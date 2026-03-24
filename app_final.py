@@ -6071,14 +6071,29 @@ if use_demo:
 else:
     _leagues_key = tuple(sorted(sel_leagues))
     _already_cached = _leagues_key in st.session_state.get("_games_fetched", set())
+
+    # Re-fetch si hay ligas soccer activas pero no hay partidos soccer pre/in en cache
+    if _already_cached:
+        _prev_games = st.session_state.get("_cached_games_data", [])
+        _has_soccer_leagues = any(LEAGUES.get(l,{}).get("group")=="Soccer" for l in sel_leagues)
+        _has_soccer_pre = any(
+            LEAGUES.get(g.get("league",""),{}).get("group")=="Soccer"
+            and g.get("state") in ("pre","in")
+            for g in _prev_games
+        )
+        if _has_soccer_leagues and not _has_soccer_pre:
+            _already_cached = False  # forzar re-fetch — ESPN puede tener partidos nuevos
+
     if not _already_cached:
         with st.spinner("Consultando ESPN..."):
             games,fetch_errors=get_all_games(_leagues_key)
         _fetched = st.session_state.get("_games_fetched", set())
         _fetched.add(_leagues_key)
         st.session_state["_games_fetched"] = _fetched
+        st.session_state["_cached_games_data"] = games
     else:
         games,fetch_errors=get_all_games(_leagues_key)
+        st.session_state["_cached_games_data"] = games
 
     # ── Persist pre-game soccer matches across refreshes ─────────────────────
     # ESPN soccer API often only returns active games. We cache pre-game soccer
