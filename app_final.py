@@ -7664,48 +7664,51 @@ if _active_page == "Rongol Picks":
                         '<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
 
                         # Odds pills
-                        '<div style="display:flex;gap:5px;padding:9px 10px 9px">' + _pills + '</div>'
+                        '<div style="display:flex;gap:6px;padding:10px 12px">' + _pills + '</div>'
 
-                        # Yellow CTA
-                        '<div style="margin:0 10px 10px;'
-                        'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
-                        'border-radius:12px;padding:11px 14px;'
-                        'border:1px solid rgba(255,255,255,0.35);'
-                        'box-shadow:0 4px 14px rgba(255,185,0,0.3),0 1px 0 rgba(255,255,255,0.45) inset">'
+                        # Divider
+                        '<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+
+                        # Green CTA — Picks tab
+                        '<div style="margin:10px 12px 12px;'
+                        'background:linear-gradient(160deg,#00C896 0%,#00A070 100%);'
+                        'border-radius:14px;padding:14px 16px;'
+                        'border:1px solid rgba(255,255,255,0.3);'
+                        'box-shadow:0 4px 18px rgba(0,200,150,0.35),0 1px 0 rgba(255,255,255,0.25) inset">'
 
                         # CTA row 1: market badge + pick label
-                        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-                        '<span style="font-size:0.55rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
-                        '<span style="font-size:0.6rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">' + _mkt + '</span>'
-                        '<span style="font-size:0.88rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
+                        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+                        '<span style="font-size:0.52rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
+                        '<span style="font-size:0.62rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:3px 9px;border-radius:6px;letter-spacing:1px;text-transform:uppercase">' + _mkt + '</span>'
+                        '<span style="font-size:1rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
                         + _ml_badge +
                         '</div>'
 
                         # CTA row 2: big decimal + stats
-                        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
-                        '<span style="font-size:2.4rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
-                        '<div style="display:flex;flex-direction:column;gap:2px">'
-                        '<span style="font-size:0.8rem;font-weight:800;color:rgba(0,0,0,0.7)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
-                        + (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Ganancia: <b>${(_ev_v or 0):+.0f}</b>/100</span>' if _ev_v is not None else '<span style="font-size:0.65rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
-                        (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">Kelly sugerido: <b>{_kelly_v:.1f}%</b></span>' if _kelly_v > 0 else '') +
+                        '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
+                        '<span style="font-size:3rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
+                        '<div style="display:flex;flex-direction:column;gap:4px">'
+                        '<span style="font-size:0.95rem;font-weight:800;color:rgba(0,0,0,0.75)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
+                        + (f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.6)">Ganancia: <b>${(_ev_v or 0):+.0f}/100</b></span>' if _ev_v is not None else '<span style="font-size:0.7rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
+                        (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Kelly: <b>{_kelly_v:.1f}%</b></span>' if _kelly_v > 0 else '') +
                         '</div></div>'
 
-                        # Stats grid: 4 metrics
-                        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:7px;border-top:1px solid rgba(0,0,0,0.1)">'
+                        # Stats grid
+                        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-top:10px;border-top:1.5px solid rgba(0,0,0,0.12)">'
                         + "".join(
                             '<div style="text-align:center">'
-                            '<div style="font-size:0.48rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">' + lb + '</div>'
-                            '<div style="font-size:0.82rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
+                            '<div style="font-size:0.55rem;color:rgba(0,0,0,0.45);text-transform:uppercase;font-weight:700;margin-bottom:3px">' + lb + '</div>'
+                            '<div style="font-size:0.95rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
                             '</div>'
                             for lb, vl, cl in [
-                                ("Prob",   f"{_pick_pct:.0f}%",   "#000"),
+                                ("PROB",   f"{_pick_pct:.0f}%",   "#000"),
                                 ("EV/100", _ev_disp,               _ev_clr),
                                 ("DQ",     f"{_dq_v:.0f}%",        "#000"),
-                                ("Kelly",  f"{_kelly_v:.1f}%",     "#000"),
+                                ("KELLY",  f"{_kelly_v:.1f}%",     "#000"),
                             ]
                         ) +
                         '</div>'
-                        '</div>'   # end yellow CTA
+                        '</div>'   # end green CTA
                         '</div>'   # end card
                     )
 
@@ -8190,19 +8193,34 @@ elif _active_page == "Picks":
 
         bp   = _oracle_pick(_r)
         if not bp:
-            # Soccer sin datos suficientes — mostrar card básica con probs
-            _h_pct = sim.get("home_pct", 0) or 0
-            _a_pct = sim.get("away_pct", 0) or 0
-            return (
-                '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
-                'border-radius:20px;overflow:hidden;margin-bottom:3px;'
-                'border:1px solid rgba(0,0,0,0.07);padding:12px 14px;'
-                'box-shadow:0 4px 12px rgba(0,0,0,0.15)">'
-                f'<div style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">{league_label(g.get("league",""))}</div>'
-                f'<div style="font-size:0.75rem;font-weight:700;color:#333">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div style="font-size:0.65rem;color:#888;margin-top:4px">Sin datos de mercado · {_a_pct:.0f}% / {_h_pct:.0f}%</div>'
-                '</div>'
-            )
+            # Intentar construir pick directo desde probs del sim
+            _p_o25  = sim.get("p_o25")  or 0
+            _p_u25  = sim.get("p_u25")  or 0
+            _p_btts = sim.get("p_btts") or 0
+            if _p_u25 == 0 and _p_o25 > 0: _p_u25 = round(100.0 - _p_o25, 1)
+            _ou_ml = sim.get("over_under","") or ""
+            if _p_o25 > 0 or _p_u25 > 0 or _p_btts > 0:
+                _best = max(
+                    [("O/U","Over 2.5",_p_o25,sim.get("o25_ev") or 0,_ou_ml),
+                     ("O/U","Under 2.5",_p_u25,sim.get("u25_ev") or 0,_ou_ml),
+                     ("BTTS","Ambos Anotan — SÍ",_p_btts,sim.get("btts_ev") or 0,"")],
+                    key=lambda x: x[2]
+                )
+                bp = {"market":_best[0],"label":_best[1],"prob":_best[2],"ev":_best[3],"ml":_best[4]}
+            else:
+                # Sin ningún dato — card mínima
+                _h_pct2 = sim.get("home_pct",0) or 0
+                _a_pct2 = sim.get("away_pct",0) or 0
+                return (
+                    '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
+                    'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+                    'border:1px solid rgba(0,0,0,0.07);padding:14px 16px;'
+                    'box-shadow:0 4px 12px rgba(0,0,0,0.15)">'
+                    f'<div style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">{league_label(g.get("league",""))}</div>'
+                    f'<div style="font-size:0.78rem;font-weight:700;color:#333">{g["away_team"]} @ {g["home_team"]}</div>'
+                    f'<div style="font-size:0.65rem;color:#888;margin-top:5px">Sin datos de goles · {_a_pct2:.0f}% / {_h_pct2:.0f}%</div>'
+                    '</div>'
+                )
         _mkt = bp.get("market","")
         _lbl = bp.get("label","")
         _prob_bp = bp.get("prob",0) or 0
@@ -8337,76 +8355,82 @@ elif _active_page == "Picks":
 
         return (
             '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
-            'border-radius:20px;overflow:hidden;margin-bottom:6px;'
+            'border-radius:22px;overflow:hidden;margin-bottom:8px;'
             'border:1px solid rgba(0,0,0,0.07);'
-            'box-shadow:0 6px 20px rgba(0,0,0,0.20),0 1px 0 rgba(255,255,255,0.85) inset">'
+            'box-shadow:0 8px 28px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset">'
 
             # Header
-            '<div style="padding:8px 14px 3px;display:flex;justify-content:space-between;align-items:center">'
+            '<div style="padding:10px 16px 4px;display:flex;justify-content:space-between;align-items:center">'
             '<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">' + _lg_lbl + '</span>'
-            '<div style="display:flex;align-items:center;gap:4px">'
-            + (f'<span style="font-size:0.58rem;color:{_dqc}">DQ {dq:.0f}%</span>' )
+            '<div style="display:flex;align-items:center;gap:6px">'
+            + (f'<span style="font-size:0.6rem;color:{_dqc};font-weight:700">DQ {dq:.0f}%</span>' )
             + _live_tag +
-            '<span style="font-size:0.58rem;color:#888">' + _sd + '</span>'
+            '<span style="font-size:0.6rem;color:#888">' + _sd + '</span>'
             '</div></div>'
 
             # Teams + logos
-            '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 14px 4px">'
+            '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 8px">'
             '<div style="text-align:center;flex:1">'
             + _logo_a +
-            '<div style="font-size:0.68rem;font-weight:800;color:#111;text-transform:uppercase;'
-            'margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:68px">' + g["away_team"][:9] + '</div>'
+            '<div style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;'
+            'margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px">' + g["away_team"][:9] + '</div>'
             '</div>'
             '<div style="flex:1;text-align:center">'
-            '<div style="font-size:1.8rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
-            '<div style="font-size:0.5rem;color:#CCC;margin-top:2px">' + _sg_icon + '</div>'
+            '<div style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+            '<div style="font-size:0.55rem;color:#BBB;margin-top:4px">' + _sg_icon + '</div>'
             '</div>'
             '<div style="text-align:center;flex:1">'
             + _logo_h +
-            '<div style="font-size:0.58rem;font-weight:800;color:#111;text-transform:uppercase;'
-            'margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:68px">' + g["home_team"][:9] + '</div>'
+            '<div style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;'
+            'margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px">' + g["home_team"][:9] + '</div>'
             '</div></div>'
 
             # Divider
-            '<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
+            '<div style="height:1px;background:rgba(0,0,0,0.07);margin:0 14px"></div>'
 
             # Pills
-            '<div style="display:flex;gap:5px;padding:8px 10px 8px">' + _pills_h + '</div>'
+            '<div style="display:flex;gap:6px;padding:10px 12px 10px">' + _pills_h + '</div>'
 
-            # Green CTA
-            '<div style="margin:0 10px 10px;'
-            'background:linear-gradient(160deg,#00C896 0%,#00A070 100%);'
-            'border-radius:12px;padding:10px 12px;'
-            'border:1px solid rgba(255,255,255,0.35);'
-            'box-shadow:0 4px 14px rgba(0,200,150,0.3)">'
+            # Divider
+            '<div style="height:1px;background:rgba(0,0,0,0.07);margin:0 14px 0"></div>'
 
-            '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
-            '<span style="font-size:0.5rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
-            '<span style="font-size:0.58rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:2px 7px;border-radius:5px;text-transform:uppercase">' + _mkt + '</span>'
-            '<span style="font-size:0.96rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
+            # CTA
+            '<div style="margin:10px 12px 12px;'
+            'background:linear-gradient(160deg,#FFE033 0%,#FFBB00 100%);'
+            'border-radius:14px;padding:14px 16px;'
+            'border:1px solid rgba(255,255,255,0.4);'
+            'box-shadow:0 4px 18px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">'
+
+            # CTA row 1: market + label
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+            '<span style="font-size:0.52rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
+            '<span style="font-size:0.62rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:3px 9px;border-radius:6px;text-transform:uppercase;letter-spacing:1px">' + _mkt + '</span>'
+            '<span style="font-size:1rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
             + _ml_badge +
             '</div>'
 
-            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-            '<span style="font-size:2.6rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
-            '<div style="flex:1;display:flex;flex-direction:column;gap:2px">'
-            '<span style="font-size:0.88rem;font-weight:800;color:rgba(0,0,0,0.7)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
-            + (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">EV: <b>${(_ev or 0):+.0f}/100</b></span>' if _ev is not None else '<span style="font-size:0.62rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
+            # CTA row 2: decimal + prob + EV
+            '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
+            '<span style="font-size:3rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
+            '<div style="flex:1;display:flex;flex-direction:column;gap:4px">'
+            '<span style="font-size:0.95rem;font-weight:800;color:rgba(0,0,0,0.75)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
+            + (f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.6)">Ganancia: <b>${(_ev or 0):+.0f}/100</b></span>' if _ev is not None else '<span style="font-size:0.7rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
+            (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Kelly: <b>{_kelly_bp:.1f}%</b></span>' if _kelly_bp > 0 else '') +
             '</div></div>'
 
-            # Stats
-            '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px;'
-            'padding-top:6px;border-top:1px solid rgba(0,0,0,0.1)">'
+            # Stats grid
+            '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;'
+            'padding-top:10px;border-top:1.5px solid rgba(0,0,0,0.12)">'
             + "".join(
                 '<div style="text-align:center">'
-                '<div style="font-size:0.45rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">' + lb + '</div>'
-                '<div style="font-size:0.88rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
+                '<div style="font-size:0.55rem;color:rgba(0,0,0,0.45);text-transform:uppercase;font-weight:700;margin-bottom:3px">' + lb + '</div>'
+                '<div style="font-size:0.95rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
                 '</div>'
                 for lb, vl, cl in [
-                    ("Prob",   f"{_pick_pct:.0f}%",   "#000"),
-                    ("EV",     _ev_disp,               _ev_clr),
-                    ("DQ",     f"{dq:.0f}%",            "#000"),
-                    ("Kelly",  f"{_kelly_bp:.1f}%",    "#000"),
+                    ("PROB",  f"{_pick_pct:.0f}%",  "#000"),
+                    ("EV/100", _ev_disp,              _ev_clr),
+                    ("DQ",    f"{dq:.0f}%",           "#000"),
+                    ("KELLY", f"{_kelly_bp:.1f}%",   "#000"),
                 ]
             ) +
             '</div>'
@@ -9195,13 +9219,26 @@ elif _active_page == "Parlays":
                 if _p_o25 == 0:
                     _lam_h0 = float(_sim_s.get("lam_real_h") or 0)
                     _lam_a0 = float(_sim_s.get("lam_real_a") or 0)
+                    # Fallback: usar lambda de liga si no hay lambdas reales
+                    if (_lam_h0 == 0 or _lam_a0 == 0):
+                        _lam_lg = float(_sim_s.get("lam_league") or 0)
+                        if _lam_lg > 0:
+                            _lam_h0 = _lam_lg * 0.55  # home share
+                            _lam_a0 = _lam_lg * 0.45
+                        else:
+                            # Último recurso: usar promedio global de soccer (2.5 goles/partido)
+                            _lam_h0, _lam_a0 = 1.4, 1.1
                     if _lam_h0 > 0 and _lam_a0 > 0:
                         import math as _math
                         _mu = _lam_h0 + _lam_a0
-                        # P(goals <= 2) via Poisson
                         _p_le2 = sum(_math.exp(-_mu) * (_mu**k) / _math.factorial(k) for k in range(3))
                         _p_o25 = round((1 - _p_le2) * 100, 1)
                         _p_u25 = round(_p_le2 * 100, 1)
+                        # Estimar BTTS via Poisson independiente
+                        if _p_btts == 0:
+                            _p_h_score = 1 - _math.exp(-_lam_h0)  # P(home scores >= 1)
+                            _p_a_score = 1 - _math.exp(-_lam_a0)  # P(away scores >= 1)
+                            _p_btts = round(_p_h_score * _p_a_score * 100, 1)
 
                 # --- Extraer todos los signals disponibles ---
                 _dq       = float(_sim_s.get("data_quality", 0) or 0)
@@ -9811,33 +9848,71 @@ elif _active_page == "En Vivo":
         return None
 
     def live_pick_other(g, sim):
-        """For Basketball/NFL/NHL/MLB/Tennis — pick best probability candidate regardless of EV."""
+        """MLB/NBA/NHL en vivo — picks contextuales con O/U y ML reales."""
         try:
-            hs = int(g.get("home_score") or 0)
+            hs  = int(g.get("home_score") or 0)
             as_ = int(g.get("away_score") or 0)
         except:
             hs, as_ = 0, 0
-        home_pct = sim.get("home_pct", 50)
-        away_pct = sim.get("away_pct", 50)
+        total_score = hs + as_
+        home_pct    = sim.get("home_pct", 50)
+        away_pct    = sim.get("away_pct", 50)
         sport_group = LEAGUES.get(g["league"], {}).get("group", "")
-        status = g.get("status_detail", "")
-        # Pick team with highest probability
-        if home_pct >= away_pct:
-            label, prob, team = f"{g['home_team']} gana", home_pct, g["home_team"]
-        else:
-            label, prob, team = g["away_team"] + " gana", away_pct, g["away_team"]
-        rationale = f"{team} con {prob:.0f}% de probabilidad simulada. Marcador actual: {as_}-{hs}."
-        if sport_group == "Basketball":
-            diff = abs(hs - as_)
-            if diff <= 5:
-                rationale = f"Partido cerrado ({as_}-{hs}). {team} tiene ligera ventaja de {prob:.0f}% según simulación — considera ML o spread reducido."
-            elif diff >= 15:
-                rationale = f"{team} con ventaja de {diff} pts. Probabilidad alta de mantener resultado: {prob:.0f}%."
+        status      = g.get("status_detail", "")
 
-        return {
-            "picks": [{"label": label, "prob": prob, "market": "ML", "rationale": rationale}],
-            "headline": f"{as_}-{hs} · {status}"
-        }
+        if home_pct >= away_pct:
+            fav_label = f"{g['home_team']} gana"; fav_prob = home_pct; fav_team = g["home_team"]
+        else:
+            fav_label = f"{g['away_team']} gana"; fav_prob = away_pct; fav_team = g["away_team"]
+
+        p_o_total = float(sim.get("p_o_total") or 0)
+        p_u_total = float(sim.get("p_u_total") or 0)
+        ou_line   = sim.get("ou_line") or ""
+        picks     = []
+
+        if sport_group == "Baseball":
+            if ou_line and (p_o_total > 0 or p_u_total > 0):
+                try:
+                    _ou_f = float(str(ou_line).lstrip("~"))
+                    if p_u_total >= p_o_total:
+                        picks.append({"label": f"Under {_ou_f:.1f} carreras", "prob": p_u_total,
+                                      "market": "O/U", "rationale": f"Marcador {as_}-{hs} ({total_score} carreras). Under {_ou_f:.1f} con {p_u_total:.0f}% según modelo."})
+                    else:
+                        picks.append({"label": f"Over {_ou_f:.1f} carreras", "prob": p_o_total,
+                                      "market": "O/U", "rationale": f"Marcador {as_}-{hs}. Over {_ou_f:.1f} con {p_o_total:.0f}%."})
+                except: pass
+            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
+                           "rationale": f"{fav_team} {fav_prob:.0f}% · Marcador {as_}-{hs}"})
+
+        elif sport_group == "Basketball":
+            diff = abs(hs - as_)
+            if ou_line and (p_o_total > 0 or p_u_total > 0):
+                try:
+                    _ou_f = float(str(ou_line).lstrip("~"))
+                    best_ou = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
+                    picks.append({"label": f"{best_ou[0]} {_ou_f:.1f} pts", "prob": best_ou[1],
+                                  "market": "O/U", "rationale": f"{as_}-{hs} ({total_score} pts). {best_ou[0]} {_ou_f:.1f} con {best_ou[1]:.0f}%."})
+                except: pass
+            note = f"{diff} pts diferencia" if diff > 0 else "igualado"
+            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
+                           "rationale": f"{fav_team} {fav_prob:.0f}% · {note} · {status}"})
+
+        elif sport_group == "Hockey":
+            if ou_line and (p_o_total > 0 or p_u_total > 0):
+                try:
+                    _ou_f = float(str(ou_line).lstrip("~"))
+                    best_ou = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
+                    picks.append({"label": f"{best_ou[0]} {_ou_f:.1f} goles", "prob": best_ou[1],
+                                  "market": "O/U", "rationale": f"{as_}-{hs} en hockey. {best_ou[0]} {_ou_f:.1f} con {best_ou[1]:.0f}%."})
+                except: pass
+            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
+                           "rationale": f"{fav_team} {fav_prob:.0f}% · {status}"})
+
+        else:
+            picks.append({"label": fav_label, "prob": fav_prob, "market": "ML",
+                           "rationale": f"{fav_team} con {fav_prob:.0f}%."})
+
+        return {"picks": picks[:2], "headline": f"{as_}–{hs} · {status}"}
 
     def xg_live_validator(g, ou_line, base_prob, minute):
         """
@@ -10097,7 +10172,8 @@ elif _active_page == "En Vivo":
             _best_market = best["market"]
             _best_label  = best.get("label", "")
             _best_prob   = best["prob"]
-            _best_dec    = "1.91"  # live pick default decimal
+            # Mostrar prob% como número principal en vez de 1.91 genérico
+            _best_prob_disp = f"{_best_prob:.0f}%"
             _best_ev     = best.get("ev", 0) or 0
             _best_kelly  = best.get("kelly", 0) or 0
             _ev_disp_lv  = f"{_best_ev:+.0f}" if _best_ev else "N/A"
@@ -10105,68 +10181,72 @@ elif _active_page == "En Vivo":
 
             return (
                 '<div style="background:linear-gradient(160deg,#FFF5F5 0%,#FFE8E8 100%);'
-                'border-radius:20px;overflow:hidden;margin-bottom:3px;'
+                'border-radius:22px;overflow:hidden;margin-bottom:8px;'
                 'border:1.5px solid rgba(255,59,48,0.35);'
-                'box-shadow:0 8px 24px rgba(255,59,48,0.18),0 1px 0 rgba(255,255,255,0.85) inset">'
+                'box-shadow:0 8px 28px rgba(255,59,48,0.18),0 1px 0 rgba(255,255,255,0.85) inset">'
 
                 # Header: league + live badge
-                f'<div style="padding:9px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
+                f'<div style="padding:10px 16px 4px;display:flex;justify-content:space-between;align-items:center">'
                 f'<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">{_lg_lbl_lv}</span>'
-                f'<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.3);border-radius:8px;padding:1px 6px;font-size:0.55rem;font-weight:700">🔴 EN VIVO{f" {minute}′" if minute else ""}</span>'
+                f'<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.3);border-radius:8px;padding:2px 8px;font-size:0.6rem;font-weight:800">🔴 EN VIVO{f" {minute}′" if minute else ""}</span>'
                 f'</div>'
 
                 # Teams + logos VS
-                f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
+                f'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 8px">'
                 f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
                 + _logo_a_lv +
-                f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["away_team"][:9]}</span>'
+                f'<span style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["away_team"][:9]}</span>'
                 f'</div>'
                 f'<div style="flex:1.2;text-align:center">'
-                f'<div style="font-size:1.6rem;font-weight:900;color:#CC0000;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">{score_str}</div>'
-                f'<div style="font-size:0.5rem;color:#CCC;margin-top:3px">{_sg_icon_lv}</div>'
+                f'<div style="font-size:2rem;font-weight:900;color:#CC0000;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">{score_str}</div>'
+                f'<div style="font-size:0.55rem;color:#BBB;margin-top:4px">{_sg_icon_lv}</div>'
                 f'</div>'
                 f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
                 + _logo_h_lv +
-                f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["home_team"][:9]}</span>'
+                f'<span style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["home_team"][:9]}</span>'
                 f'</div></div>'
 
                 # Divider
-                '<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 12px"></div>'
+                '<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 14px"></div>'
 
                 # Prob pills
                 + _lv_pills +
                 xg_html +
 
-                # Red CTA
-                f'<div style="margin:0 10px 10px;'
-                f'background:linear-gradient(160deg,#FF3B30 0%,#CC0000 100%);'
-                f'border-radius:12px;padding:11px 14px;'
-                f'border:1px solid rgba(255,255,255,0.25);'
-                f'box-shadow:0 4px 14px rgba(255,59,48,0.45),0 1px 0 rgba(255,255,255,0.3) inset">'
+                # Divider
+                '<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 14px"></div>'
 
-                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-                f'<span style="font-size:0.55rem;font-weight:900;color:rgba(255,255,255,0.6);letter-spacing:1.5px;text-transform:uppercase">🔴 EN VIVO →</span>'
-                f'<span style="font-size:0.6rem;font-weight:900;color:#FFF;background:rgba(255,255,255,0.2);padding:3px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_best_market}</span>'
-                f'<span style="font-size:0.88rem;font-weight:800;color:#FFF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{_best_label}</span>'
+                # Red CTA
+                f'<div style="margin:10px 12px 12px;'
+                f'background:linear-gradient(160deg,#FF3B30 0%,#CC0000 100%);'
+                f'border-radius:14px;padding:14px 16px;'
+                f'border:1px solid rgba(255,255,255,0.25);'
+                f'box-shadow:0 4px 18px rgba(255,59,48,0.45),0 1px 0 rgba(255,255,255,0.3) inset">'
+
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+                f'<span style="font-size:0.52rem;font-weight:900;color:rgba(255,255,255,0.6);letter-spacing:1.5px;text-transform:uppercase">🔴 EN VIVO →</span>'
+                f'<span style="font-size:0.62rem;font-weight:900;color:#FFF;background:rgba(255,255,255,0.2);padding:3px 9px;border-radius:6px;letter-spacing:1px;text-transform:uppercase">{_best_market}</span>'
+                f'<span style="font-size:1rem;font-weight:800;color:#FFF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{_best_label}</span>'
                 f'</div>'
 
-                f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
-                f'<span style="font-size:2.4rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{_best_dec}</span>'
-                f'<div style="display:flex;flex-direction:column;gap:2px">'
-                f'<span style="font-size:0.8rem;font-weight:800;color:rgba(255,255,255,0.85)">{_best_prob:.0f}% probabilidad</span>'
+                f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
+                f'<span style="font-size:3rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{_best_prob_disp}</span>'
+                f'<div style="display:flex;flex-direction:column;gap:4px">'
+                f'<span style="font-size:0.95rem;font-weight:800;color:rgba(255,255,255,0.9)">probabilidad</span>'
+                f'<span style="font-size:0.65rem;color:rgba(255,255,255,0.65)">Marcador: {score_str}</span>'
                 f'</div></div>'
 
-                f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:7px;border-top:1px solid rgba(255,255,255,0.2)">'
+                f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-top:10px;border-top:1.5px solid rgba(255,255,255,0.2)">'
                 + "".join(
                     f'<div style="text-align:center">'
-                    f'<div style="font-size:0.48rem;color:rgba(255,255,255,0.5);text-transform:uppercase;font-weight:700">{lb}</div>'
-                    f'<div style="font-size:0.82rem;font-weight:900;color:{cl}">{vl}</div>'
+                    f'<div style="font-size:0.55rem;color:rgba(255,255,255,0.5);text-transform:uppercase;font-weight:700;margin-bottom:3px">{lb}</div>'
+                    f'<div style="font-size:0.95rem;font-weight:900;color:{cl}">{vl}</div>'
                     f'</div>'
                     for lb, vl, cl in [
-                        ("Prob",   f"{_best_prob:.0f}%",   "#FFF"),
+                        ("PROB",   f"{_best_prob:.0f}%",   "#FFF"),
                         ("EV/100", _ev_disp_lv,             _ev_clr_lv),
                         ("DQ",     f"{dq:.0f}%",            "#FFF"),
-                        ("Score",  score_str,                "#FFAAAA"),
+                        ("SCORE",  score_str,                "#FFAAAA"),
                     ]
                 ) +
                 f'</div>'
