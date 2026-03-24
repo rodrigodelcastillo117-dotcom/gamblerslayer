@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN v2026.03.23-E
+THE GAMBLERS DEN v2026.03.23-G
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -12,7 +12,7 @@ import random
 # ── VERSION STAMP — shows on load to confirm correct file is running ──────────
 if "version_shown" not in st.session_state:
     st.session_state["version_shown"] = True
-    st.toast("✅ Gamblers Den v2026.03.23-E cargado", icon="🎰")
+    st.toast("✅ Gamblers Den v2026.03.23-G cargado", icon="🎰")
 import math
 import time
 import os
@@ -7973,6 +7973,283 @@ elif _active_page == "Parlays":
                 'Parlays = alta varianza — usa máx 1-2% del bankroll.</div>',
                 unsafe_allow_html=True
             )
+
+
+            # ══════════════════════════════════════════════════════════════════
+            # 🌙 PARLAY SOÑADOR — 10-20 patas, solo soccer, scoring compuesto
+            # ══════════════════════════════════════════════════════════════════
+            st.markdown('<div class="den-divider" style="margin:24px 0 12px"></div>',
+                        unsafe_allow_html=True)
+
+            # ── Collect ALL soccer candidates (ML + O/U + BTTS + DC) ──────────
+            _son_raw = []
+            for _sr_s in st.session_state.get("sim_results", []):
+                _sg_s  = LEAGUES.get(_sr_s.get("league",""), {}).get("group", "")
+                if _sg_s != "Soccer": continue
+                _sim_s = _sr_s.get("sim", {})
+                _g_s   = next((g for g in games if g.get("id") == _sr_s.get("id")), None)
+                if _g_s and _g_s.get("state") == "post": continue
+
+                _hp   = float(_sim_s.get("home_pct", 0) or 0)
+                _ap   = float(_sim_s.get("away_pct", 0) or 0)
+                _dp   = float(_sim_s.get("draw_pct", 0) or 0)
+                _dq   = float(_sim_s.get("data_quality", 0) or 0)
+                _h_ev = float(_sim_s.get("home_ev", 0) or 0)
+                _a_ev = float(_sim_s.get("away_ev", 0) or 0)
+                _h_k  = float(_sim_s.get("home_kelly", 0) or 0)
+                _a_k  = float(_sim_s.get("away_kelly", 0) or 0)
+                _p_o25 = float(_sim_s.get("p_o25", 0) or 0)
+                _o25ev = float(_sim_s.get("o25_ev", 0) or 0)
+                _p_u25 = float(_sim_s.get("p_u25", 0) or 0)
+                _p_btts = float(_sim_s.get("p_btts", 0) or 0)
+                _btts_ev = float(_sim_s.get("btts_ev", 0) or 0)
+                _p_dc1x = float(_sim_s.get("p_dc_1x", 0) or 0)
+                _p_dcx2 = float(_sim_s.get("p_dc_x2", 0) or 0)
+                _p_dc12 = float(_sim_s.get("p_dc_12", 0) or 0)
+
+                # H2H enrichment bonus
+                _h2h   = _sr_s.get("_h2h", {}) or {}
+                _over25_h2h = float(_h2h.get("over25_rate", 0) or 0)
+                _btts_h2h   = float(_h2h.get("btts_rate", 0) or 0)
+
+                # Records
+                _h_rec = _sr_s.get("home_record","") or ""
+                _a_rec = _sr_s.get("away_record","") or ""
+                def _wr(rec):
+                    try:
+                        p = rec.split("-")
+                        w,l = int(p[0]),int(p[1])
+                        d = int(p[2]) if len(p)>2 else 0
+                        tot = w+l+d
+                        return (w+d*0.4)/tot if tot>=3 else 0.5
+                    except: return 0.5
+                _h_wr = _wr(_h_rec)
+                _a_wr = _wr(_a_rec)
+
+                # ── Composite score function ──────────────────────────────────
+                def _son_score(prob, ev, kelly, dq, h2h_bonus=0):
+                    s  = prob * 0.50                          # prob weight 50%
+                    s += min(max(ev, -5), 25) * 1.2           # EV weight
+                    s += kelly * 80                           # kelly weight
+                    s += (dq / 100) * 8                      # DQ bonus
+                    s += h2h_bonus * 10                       # H2H confirmation bonus
+                    return round(s, 3)
+
+                _game_id = _sr_s.get("id","")
+                _league  = _sr_s.get("league","")
+                _home    = _sr_s.get("home_team","")
+                _away    = _sr_s.get("away_team","")
+                _partido = f"{_away} vs {_home}"
+
+                # ── 1. ML Home ────────────────────────────────────────────────
+                if _hp >= 45:
+                    _h2h_conf = 1 if _h_wr > 0.55 else 0
+                    _son_raw.append({
+                        "game_id":_game_id, "league":_league,
+                        "market":"ML","label":_home,
+                        "prob":_hp, "ev":_h_ev, "kelly":_h_k, "dq":_dq,
+                        "partido":_partido, "home":_home, "away":_away,
+                        "score":_son_score(_hp, _h_ev, _h_k, _dq, _h2h_conf),
+                        "info":f"Record: {_h_rec or '?'}"
+                    })
+                # ── 2. ML Away ────────────────────────────────────────────────
+                if _ap >= 45:
+                    _h2h_conf = 1 if _a_wr > 0.55 else 0
+                    _son_raw.append({
+                        "game_id":_game_id, "league":_league,
+                        "market":"ML","label":_away,
+                        "prob":_ap, "ev":_a_ev, "kelly":_a_k, "dq":_dq,
+                        "partido":_partido, "home":_home, "away":_away,
+                        "score":_son_score(_ap, _a_ev, _a_k, _dq, _h2h_conf),
+                        "info":f"Record: {_a_rec or '?'}"
+                    })
+                # ── 3. Over 2.5 ──────────────────────────────────────────────
+                if _p_o25 >= 50:
+                    _h2h_bonus_o = 1 if _over25_h2h > 0.55 else 0
+                    _son_raw.append({
+                        "game_id":_game_id, "league":_league,
+                        "market":"O/U","label":"Over 2.5",
+                        "prob":_p_o25, "ev":_o25ev, "kelly":0, "dq":_dq,
+                        "partido":_partido, "home":_home, "away":_away,
+                        "score":_son_score(_p_o25, _o25ev, 0, _dq, _h2h_bonus_o),
+                        "info":f"H2H Over25: {_over25_h2h*100:.0f}%" if _over25_h2h else "Sin H2H"
+                    })
+                # ── 4. BTTS ───────────────────────────────────────────────────
+                if _p_btts >= 55:
+                    _h2h_bonus_b = 1 if _btts_h2h > 0.55 else 0
+                    _son_raw.append({
+                        "game_id":_game_id, "league":_league,
+                        "market":"BTTS","label":"Ambos Anotan",
+                        "prob":_p_btts, "ev":_btts_ev, "kelly":0, "dq":_dq,
+                        "partido":_partido, "home":_home, "away":_away,
+                        "score":_son_score(_p_btts, _btts_ev, 0, _dq, _h2h_bonus_b),
+                        "info":f"H2H BTTS: {_btts_h2h*100:.0f}%" if _btts_h2h else "Sin H2H"
+                    })
+                # ── 5. Doble Oportunidad (best DC) ────────────────────────────
+                _dc_best = max((_p_dc1x,"1X",_home[:8]),(_p_dcx2,"X2",_away[:8]),(_p_dc12,"12","Ambos"),key=lambda x:x[0])
+                if _dc_best[0] >= 70:
+                    _son_raw.append({
+                        "game_id":_game_id, "league":_league,
+                        "market":"DC","label":f"DC {_dc_best[1]}",
+                        "prob":_dc_best[0], "ev":0, "kelly":0, "dq":_dq,
+                        "partido":_partido, "home":_home, "away":_away,
+                        "score":_son_score(_dc_best[0], 0, 0, _dq),
+                        "info":f"Doble oportunidad {_dc_best[1]}"
+                    })
+
+            # ── Sort by composite score, deduplicate by game (best per game) ──
+            _son_raw.sort(key=lambda x: x["score"], reverse=True)
+            _son_seen = set()
+            _son_legs = []
+            for _c in _son_raw:
+                if _c["game_id"] in _son_seen: continue
+                _son_seen.add(_c["game_id"])
+                _son_legs.append(_c)
+                if len(_son_legs) >= 20: break
+
+
+            if len(_son_legs) >= 10:
+                # Compute combined probability and payout
+                _son_prob = 1.0
+                for _sl in _son_legs:
+                    _son_prob *= (_sl["prob"] / 100)
+                _son_prob_pct = round(_son_prob * 100, 4)
+                _son_dec = 1.909 ** len(_son_legs)
+                _son_payout = round((_son_dec - 1) * 100)
+
+                # ── Header ────────────────────────────────────────────────────
+                st.markdown(
+                    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+                    '<span style="font-size:1.5rem;filter:drop-shadow(0 0 8px #00CFFF)">🌙</span>'
+                    '<div>'
+                    '<div style="font-size:0.72rem;font-weight:900;color:#00CFFF;'
+                    'letter-spacing:3px;text-transform:uppercase">PARLAY SOÑADOR</div>'
+                    '<div style="font-size:0.6rem;color:#555;letter-spacing:1px">'
+                    'Soccer · ML + O2.5 + BTTS + DC · Score compuesto: prob + EV + Kelly + DQ + H2H</div>'
+                    '</div></div>',
+                    unsafe_allow_html=True
+                )
+
+                # ── Build legs HTML ───────────────────────────────────────────
+                _mkt_colors = {
+                    "ML":   ("#3D8EFF","#3D8EFF"),
+                    "O/U":  ("#FF8C00","#FF8C00"),
+                    "BTTS": ("#00C896","#00C896"),
+                    "DC":   ("#9B6DFF","#9B6DFF"),
+                }
+                _son_legs_html = ""
+                for _si, _sl in enumerate(_son_legs):
+                    _mc, _ma = _mkt_colors.get(_sl["market"], ("#00CFFF","#00CFFF"))
+                    _flag_s  = LEAGUE_FLAG.get(_sl["league"], "⚽")
+                    _lg_s    = league_label(_sl["league"])
+                    if _si > 0:
+                        _son_legs_html += (
+                            '<div style="display:flex;align-items:center;gap:4px;padding:2px 0">'
+                            '<div style="flex:1;height:1px;background:rgba(0,207,255,0.12)"></div>'
+                            '<span style="font-size:0.5rem;color:rgba(0,207,255,0.3)">✕</span>'
+                            '<div style="flex:1;height:1px;background:rgba(0,207,255,0.12)"></div>'
+                            '</div>'
+                        )
+                    _son_legs_html += (
+                        f'<div style="display:flex;align-items:center;gap:8px;'
+                        f'padding:8px 10px;border-radius:11px;'
+                        f'background:rgba(0,207,255,0.05);border:1px solid rgba(0,207,255,0.13)">'
+                        # Market badge
+                        f'<span style="background:{_mc}22;color:{_ma};border:1.5px solid {_mc}55;'
+                        f'border-radius:7px;padding:2px 7px;font-size:0.65rem;font-weight:900;'
+                        f'flex-shrink:0">{_sl["market"]}</span>'
+                        # Team + league
+                        f'<div style="flex:1;min-width:0">'
+                        f'<div style="font-size:0.82rem;color:#111;font-weight:800;line-height:1.2">'
+                        f'{_flag_s} {_sl["label"]}</div>'
+                        f'<div style="font-size:0.55rem;color:#888;margin-top:1px">'
+                        f'{_lg_s} · {_sl["partido"][:30]} · {_sl["info"]}</div>'
+                        f'</div>'
+                        # Prob + score
+                        f'<div style="text-align:right;flex-shrink:0">'
+                        f'<div style="font-size:1rem;font-weight:900;color:#0099BB;'
+                        f'font-family:Barlow Condensed,sans-serif;line-height:1">{_sl["prob"]:.0f}%</div>'
+                        f'<div style="font-size:0.5rem;color:#AAA">score {_sl["score"]:.1f}</div>'
+                        f'</div></div>'
+                    )
+
+                # ── Stats row ─────────────────────────────────────────────────
+                _mkt_counts = {}
+                for _sl in _son_legs:
+                    _mkt_counts[_sl["market"]] = _mkt_counts.get(_sl["market"], 0) + 1
+                _mkt_summary = " · ".join(f"{v}× {k}" for k,v in sorted(_mkt_counts.items()))
+
+                # ── Full card ─────────────────────────────────────────────────
+                st.markdown(
+                    '<div style="background:linear-gradient(160deg,#F0FAFF 0%,#E8F6FF 50%,#F5FDFF 100%);'
+                    'border-radius:22px;overflow:hidden;'
+                    'border:1.5px solid rgba(0,180,255,0.35);'
+                    'box-shadow:0 0 50px rgba(0,200,255,0.15),0 8px 28px rgba(0,0,0,0.14),'
+                    '0 1px 0 rgba(255,255,255,0.9) inset">'
+
+                    # Top cyan stripe
+                    '<div style="height:3px;background:linear-gradient(90deg,'
+                    'transparent,#00CFFF,#0088FF,#00CFFF,transparent)"></div>'
+
+                    # Header
+                    '<div style="padding:12px 18px 8px;display:flex;justify-content:space-between;align-items:flex-start">'
+                    f'<div>'
+                    f'<div style="display:flex;align-items:center;gap:6px">'
+                    f'<span style="font-size:1.2rem">🌙</span>'
+                    f'<div style="font-size:0.62rem;font-weight:900;color:#00AACC;'
+                    f'letter-spacing:2.5px;text-transform:uppercase">PARLAY SOÑADOR</div>'
+                    f'</div>'
+                    f'<div style="font-size:0.6rem;color:#777;margin-top:3px">'
+                    f'{len(_son_legs)} patas · {_mkt_summary}</div>'
+                    f'</div>'
+                    f'<div style="text-align:right">'
+                    f'<div style="font-size:1.8rem;font-weight:900;color:#0099BB;'
+                    f'font-family:Barlow Condensed,sans-serif;line-height:1">'
+                    f'{_son_prob_pct:.4f}%</div>'
+                    f'<div style="font-size:0.52rem;color:#999">prob. combinada</div>'
+                    f'</div></div>'
+
+                    # Divider
+                    '<div style="height:1px;background:rgba(0,180,255,0.2);margin:0 14px"></div>'
+
+                    # Legs
+                    f'<div style="padding:10px 14px">{_son_legs_html}</div>'
+
+                    # Blue CTA
+                    '<div style="margin:0 12px 12px;'
+                    'background:linear-gradient(160deg,#00CFFF 0%,#0077CC 100%);'
+                    'border-radius:14px;padding:12px 16px;'
+                    'border:1px solid rgba(255,255,255,0.3);'
+                    'box-shadow:0 4px 20px rgba(0,150,255,0.4),0 1px 0 rgba(255,255,255,0.25) inset">'
+                    '<div style="display:flex;align-items:center;justify-content:space-between">'
+                    f'<div>'
+                    f'<div style="font-size:0.58rem;font-weight:900;color:rgba(255,255,255,0.65);'
+                    f'letter-spacing:2px;text-transform:uppercase;margin-bottom:3px">💰 PAGO ESTIMADO</div>'
+                    f'<div style="font-size:2rem;font-weight:900;color:#FFF;'
+                    f'font-family:Barlow Condensed,sans-serif;line-height:1">+${_son_payout:,}/100</div>'
+                    f'</div>'
+                    f'<div style="text-align:right">'
+                    f'<div style="font-size:0.58rem;color:rgba(255,255,255,0.6);margin-bottom:2px">'
+                    f'Cuota acumulada</div>'
+                    f'<div style="font-size:1.4rem;font-weight:900;color:#FFF;'
+                    f'font-family:Barlow Condensed,sans-serif">{_son_dec:.0f}×</div>'
+                    f'</div></div>'
+                    # Footer warning
+                    '<div style="margin-top:8px;padding-top:8px;'
+                    'border-top:1px solid rgba(255,255,255,0.15);'
+                    'font-size:0.56rem;color:rgba(255,255,255,0.5)">'
+                    '⚠ Prob. combinada muy baja. Usa $1-5 por ticket. '
+                    'Picks ordenados por score: probabilidad + EV + Kelly + DQ + H2H.'
+                    '</div></div>'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
+
+            elif _son_candidates:
+                st.info(f"⚽ Hay {len(_son_candidates)} candidatos de soccer. Se necesitan al menos 10 partidos diferentes para el Parlay Soñador.")
+
+
+
         elif pending_games:
             st.info("Simulando partidos de hoy\u2026 Regresa pronto o re-simula en el Tab de Picks.")
         else:
