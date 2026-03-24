@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN v2026.03.23-L
+THE GAMBLERS DEN v2026.03.23-O
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -12,7 +12,7 @@ import random
 # ── VERSION STAMP — shows on load to confirm correct file is running ──────────
 if "version_shown" not in st.session_state:
     st.session_state["version_shown"] = True
-    st.toast("✅ Gamblers Den v2026.03.23-L cargado", icon="🎰")
+    st.toast("✅ Gamblers Den v2026.03.23-O cargado", icon="🎰")
 import math
 import time
 import os
@@ -2152,62 +2152,63 @@ def get_all_games(leagues):
     }
 
     def _fetch_soccer(sport, league):
-        """Hit every known ESPN endpoint for soccer to collect all day's events."""
+        """Hit ESPN endpoints for soccer — FAST: stop on first hit, parallel dates."""
+        import concurrent.futures, threading
         all_evts = {}
+        _lock = threading.Lock()
+
         slugs_to_try = _EXTRA_SLUGS.get(league, [league])
         if league not in slugs_to_try:
             slugs_to_try = [league] + slugs_to_try
+        # Only try first 2 slugs max
+        slugs_to_try = slugs_to_try[:2]
+
+        def _try_url(url):
+            try:
+                r = requests.get(url, timeout=4,
+                                 headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"})
+                if r.status_code != 200: return False
+                data = r.json()
+                found = False
+                with _lock:
+                    for e in data.get("events", []):
+                        if isinstance(e, dict) and e.get("id"):
+                            all_evts[e["id"]] = e; found = True
+                return found
+            except: return False
 
         for _slug in slugs_to_try:
             base = f"https://site.api.espn.com/apis/site/v2/sports/{sport}/{_slug}/scoreboard"
-            core = f"https://sports.core.api.espn.com/v2/sports/{sport}/leagues/{_slug}/events"
+            # Build URLs: today CDMX + today UTC only, no season types
+            urls = [
+                f"{base}?dates={_today_mx}&limit=100",
+                f"{base}?dates={_today_utc}&limit=100",
+                f"{base}?limit=100",
+            ]
+            # Fetch in parallel, stop early if we find events
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+                futs = {ex.submit(_try_url, u): u for u in urls}
+                for fut in concurrent.futures.as_completed(futs, timeout=8):
+                    pass  # collect all
 
-            urls = []
-            # All dates × all season types
-            for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
-                for _st in ["1", "2", "3", "4"]:
-                    urls.append(f"{base}?dates={_d}&limit=100&seasontype={_st}")
-                urls.append(f"{base}?dates={_d}&limit=100")
-            # Core API
-            for _d in [_today_mx, _today_utc, _tom_utc, _yday_utc]:
-                urls.append(f"{core}?dates={_d}&limit=100")
-            # Plain (no date — ESPN default = current week)
-            urls.append(base)
-            urls.append(f"{base}?limit=100")
-
-            for _url in urls:
-                try:
-                    _r = requests.get(_url, timeout=7,
-                                      headers={"User-Agent": "Mozilla/5.0",
-                                               "Accept": "application/json"})
-                    if _r.status_code != 200:
-                        continue
-                    _data = _r.json()
-                    _found = False
-                    for _e in _data.get("events", []):
-                        if isinstance(_e, dict) and _e.get("id"):
-                            all_evts[_e["id"]] = _e
-                            _found = True
-                    for _e in _data.get("items", []):
-                        if isinstance(_e, dict) and _e.get("id") and _e.get("competitions"):
-                            all_evts[_e["id"]] = _e
-                            _found = True
-                except Exception:
-                    continue
+            if all_evts:
+                break  # found events with this slug — no need to try next
 
         return {"events": list(all_evts.values())}
 
+
     result = []
     errors = []
-    # Siempre incluir ligas ocultas (equipos favoritos) además de las seleccionadas
+    import concurrent.futures, threading
+
     _hidden_leagues = [n for n, cfg in LEAGUES.items() if cfg.get("hidden")]
     _all_to_fetch = list(leagues) + [l for l in _hidden_leagues if l not in leagues]
+    _result_lock  = threading.Lock()
 
-    for name in _all_to_fetch:
+    def _fetch_one(name):
         cfg = LEAGUES.get(name)
         if not cfg:
-            errors.append(f"{name}: liga no configurada")
-            continue
+            return [], f"{name}: no configurada"
         try:
             if cfg["sport"] == "soccer":
                 data = _fetch_soccer(cfg["sport"], cfg["league"])
@@ -2215,59 +2216,24 @@ def get_all_games(leagues):
                 data = fetch_scoreboard(cfg["sport"], cfg["league"],
                                         tournament_id=cfg.get("tournament_id"))
             parsed = parse_games(data, name)
-            # ── Ligas ocultas: solo mostrar partidos de equipos favoritos ──────
             if cfg.get("hidden"):
-                parsed = [
-                    g for g in parsed
-                    if g.get("home_team") in WATCHED_TEAMS
-                    or g.get("away_team") in WATCHED_TEAMS
-                ]
-                # Si el scoreboard no devolvió partidos, buscar por equipo directamente
-                if not parsed:
-                    _sport_s = cfg["sport"]
-                    _league_s = cfg["league"]
-                    _extra_evts = []
-                    for _wt in WATCHED_TEAMS:
-                        # Solo equipos de esta liga
-                        try:
-                            _teams_url = (f"https://site.api.espn.com/apis/site/v2/sports/"
-                                         f"{_sport_s}/{_league_s}/teams?limit=50")
-                            _tr = requests.get(_teams_url, timeout=5,
-                                               headers={"User-Agent":"Mozilla/5.0"})
-                            if _tr.status_code != 200:
-                                break
-                            _tdata = _tr.json()
-                            _teams = (_tdata.get("sports",[{}])[0]
-                                           .get("leagues",[{}])[0]
-                                           .get("teams",[]))
-                            for _t in _teams:
-                                _ti = _t.get("team",{})
-                                if _ti.get("displayName","") in WATCHED_TEAMS:
-                                    _tid = _ti.get("id","")
-                                    if _tid:
-                                        _sched_url = (f"https://site.api.espn.com/apis/site/v2/sports/"
-                                                      f"{_sport_s}/{_league_s}/teams/{_tid}/schedule")
-                                        _sr2 = requests.get(_sched_url, timeout=6,
-                                                           headers={"User-Agent":"Mozilla/5.0"})
-                                        if _sr2.status_code == 200:
-                                            for _ev in _sr2.json().get("events",[]):
-                                                if isinstance(_ev, dict) and _ev.get("id"):
-                                                    _extra_evts.append(_ev)
-                            break  # solo necesitamos buscar una vez
-                        except Exception:
-                            break
-                    if _extra_evts:
-                        _extra_data = {"events": _extra_evts}
-                        _extra_parsed = parse_games(_extra_data, name)
-                        parsed = [g for g in _extra_parsed
-                                  if g.get("home_team") in WATCHED_TEAMS
-                                  or g.get("away_team") in WATCHED_TEAMS]
-            result.extend(parsed)
-            print(f"[ESPN] {name}: {len(parsed)} partidos HOY CDMX")
-            if not parsed and not cfg.get("hidden"):
-                errors.append(f"{name}: sin partidos hoy")
-        except Exception as e:
-            errors.append(f"{name}: {type(e).__name__} — {e}")
+                parsed = [g for g in parsed
+                          if g.get("home_team") in WATCHED_TEAMS
+                          or g.get("away_team") in WATCHED_TEAMS]
+            return parsed, None
+        except Exception as ex:
+            return [], str(ex)
+
+    # Fetch all leagues in parallel (max 12 workers)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+        futures = {executor.submit(_fetch_one, name): name for name in _all_to_fetch}
+        for fut in concurrent.futures.as_completed(futures, timeout=30):
+            parsed, err = fut.result()
+            if err:
+                errors.append(err)
+            else:
+                result.extend(parsed)
+
     return result, errors
 
 
@@ -5369,6 +5335,41 @@ _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo)
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
 
+# ── AUTO-REFRESH DIARIO a las 6am CDMX ──────────────────────────────────────
+# Cada vez que carga la página, verifica si hay datos nuevos del día
+from datetime import datetime as _dt_ar, timezone as _tz_ar, timedelta as _td_ar
+_now_ar      = _dt_ar.now(_tz_ar.utc) - _td_ar(hours=6)  # hora CDMX
+_today_cdmx  = _now_ar.strftime("%Y-%m-%d")
+_hour_cdmx   = _now_ar.hour
+_last_sim_dt = st.session_state.get("_last_sim_date", "")
+
+# Condiciones para auto-re-simular:
+# 1. Es un día nuevo (distinto al último sim)
+# 2. Son las 6am o más (datos de ESPN ya actualizados)
+_is_new_day  = _today_cdmx != _last_sim_dt
+_after_6am   = _hour_cdmx >= 6
+_auto_refresh = _is_new_day and _after_6am and _already_simulated and not run_sidebar
+
+if _auto_refresh:
+    st.session_state["_sim_key"] = ""  # fuerza re-sim
+    _leagues_changed = True
+    # Clear game cache so ESPN is re-fetched
+    st.session_state["_games_fetched"] = set()
+
+# Auto-countdown: si son las 5am-6am, refrescar en background cada minuto
+if _hour_cdmx == 5 and _already_simulated:
+    _mins_left = 60 - _now_ar.minute
+    st.markdown(
+        f'<div style="font-size:0.6rem;color:#444;text-align:center;padding:2px">'
+        f'⏰ Datos del día a las 6:00 AM CDMX (en ~{_mins_left} min)</div>',
+        unsafe_allow_html=True
+    )
+    # Auto-refresh each minute until 6am
+    st.markdown(
+        '<script>setTimeout(function(){window.location.reload()},60000)</script>',
+        unsafe_allow_html=True
+    )
+
 if (not _already_simulated or _leagues_changed or run_sidebar) and games:
     with st.spinner("🔮 El Oráculo está analizando los partidos..."):
         import time as _time
@@ -5378,6 +5379,10 @@ if (not _already_simulated or _leagues_changed or run_sidebar) and games:
     st.session_state["sim_results"] = _sr
     st.session_state["last_sim_demo"] = is_demo
     st.session_state["_sim_key"] = _leagues_key
+    # Save today's date so auto-refresh knows when data is fresh
+    from datetime import datetime as _dt_sv2, timezone as _tz_sv2, timedelta as _td_sv2
+    _today_save = (_dt_sv2.now(_tz_sv2.utc) - _td_sv2(hours=6)).strftime("%Y-%m-%d")
+    st.session_state["_last_sim_date"] = _today_save
     _n_pos = len([r for r in _sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
     # ── AUTO-SAVE picks to pick_history (skip demo mode) ──────────────────
     if not is_demo and _gsheets_available():
@@ -7092,40 +7097,40 @@ elif _active_page == "Picks":
             _sel_sp = None
             st.session_state["_picks_sel_sport"] = None
 
+        # Sport tiles — pure CSS styled buttons, no overlay trick
+        _tile_css = ""
+        for _sp_p in _sports_p:
+            _smp  = _SPORT_META_P[_sp_p]
+            _is_s = (_sel_sp == _sp_p)
+            _key  = f"btn_sp_{_sp_p.replace(' ','_')}"
+            _bg   = f"{_smp['color']}33" if _is_s else f"{_smp['color']}14"
+            _bdr  = f"2px solid {_smp['color']}CC" if _is_s else f"1px solid {_smp['color']}44"
+            _shad = f"0 0 18px {_smp['color']}44" if _is_s else "none"
+            _tile_css += (
+                f'div[data-testid="stButton"]:has(button[data-testid="{_key}"]) button{{'
+                f'background:{_bg}!important;border:{_bdr}!important;border-radius:18px!important;'
+                f'box-shadow:{_shad}!important;min-height:100px!important;'
+                f'white-space:pre-wrap!important;font-size:0.75rem!important;'
+                f'font-weight:700!important;color:{_smp["color"]}!important;'
+                f'opacity:{"1" if (_sel_sp is None or _is_s) else "0.4"}!important}}'
+            )
+        st.markdown(f'<style>{_tile_css}</style>', unsafe_allow_html=True)
+
         _sp_cols_p = st.columns(len(_sports_p))
         for _ci_p, _sp_p in enumerate(_sports_p):
             _smp    = _SPORT_META_P[_sp_p]
             _n_p    = sum(len(gs) for dmap in _tree_p[_sp_p].values() for gs in dmap.values())
             _is_sel = (_sel_sp == _sp_p)
-            _op     = "1" if (_sel_sp is None or _is_sel) else "0.38"
-            _bg_t   = f"linear-gradient(160deg,{_smp['color']}33 0%,{_smp['color']}11 100%)" if _is_sel else f"linear-gradient(160deg,{_smp['color']}18 0%,rgba(0,0,0,0.2) 100%)"
-            _bdr_t  = f"2px solid {_smp['color']}BB" if _is_sel else f"1px solid {_smp['color']}44"
-            _tick   = "  ✓" if _is_sel else ""
+            _tick   = " ✓" if _is_sel else ""
             _sp_key = f"btn_sp_{_sp_p.replace(' ','_')}"
             with _sp_cols_p[_ci_p]:
-                # HTML tile visual
-                st.markdown(
-                    f'<div style="background:{_bg_t};border:{_bdr_t};border-radius:18px;'
-                    f'padding:16px 10px 12px;text-align:center;opacity:{_op};'
-                    f'box-shadow:{"0 0 20px " + _smp["color"] + "33" if _is_sel else "none"};'
-                    f'pointer-events:none;margin-bottom:-58px;position:relative;z-index:0">'
-                    f'<div style="font-size:1.8rem;line-height:1;margin-bottom:6px">{_smp["emoji"]}</div>'
-                    f'<div style="font-size:0.72rem;font-weight:800;color:{_smp["color"]};letter-spacing:1.5px;text-transform:uppercase">{_sp_p}{_tick}</div>'
-                    f'<div style="font-size:0.62rem;color:#888;margin-top:3px">{_n_p} juegos</div>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-                # Invisible clickable button on top
-                if st.button("​", key=_sp_key, use_container_width=True,
-                             help=f"{'Quitar filtro' if _is_sel else 'Solo ' + _sp_p}"):
+                if st.button(
+                    _smp['emoji'] + "\n" + _sp_p.upper() + _tick + "\n" + str(_n_p) + " juegos",
+                    key=_sp_key, use_container_width=True,
+                    help=("Quitar filtro" if _is_sel else "Solo " + _sp_p)
+                ):
                     st.session_state["_picks_sel_sport"] = None if _is_sel else _sp_p
                     st.rerun()
-                st.markdown(
-                    f'<style>div[data-testid="stButton"]:has(button[key="{_sp_key}"]) button{{'
-                    f'height:90px!important;background:transparent!important;'
-                    f'border:none!important;position:relative;z-index:1}}</style>',
-                    unsafe_allow_html=True
-                )
     if is_demo:
         st.markdown('<div class="demo-banner">Modo demo activo.</div>', unsafe_allow_html=True)
 
@@ -7143,7 +7148,12 @@ elif _active_page == "Picks":
         h_prob = sim.get("home_pct",0) or 0
         a_prob = sim.get("away_pct",0) or 0
         h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
-        if h_prob >= a_prob:
+        _dq_op = sim.get("data_quality", 0) or 0
+        # DQ=0 means no real data — default to home team (safest prior)
+        # DQ>0 means we have real signals, trust the model
+        if _dq_op == 0:
+            _ml_t, _ml_p, _ml_ev = r["home_team"], h_prob, sim.get("home_ev") or 0
+        elif h_prob >= a_prob:
             _ml_t, _ml_p, _ml_ev = r["home_team"], h_prob, sim.get("home_ev") or 0
         else:
             _ml_t, _ml_p, _ml_ev = r["away_team"], a_prob, sim.get("away_ev") or 0
@@ -7151,12 +7161,9 @@ elif _active_page == "Picks":
         cands = [ml_pick]
 
         if sg == "Soccer":
-            _btts_ev = sim.get("btts_ev") or 0
-            _btts_pb = sim.get("p_btts") or 0
+            # Soccer picks: ML only + Over 2.5 (EV+). No BTTS, no DC.
             _o25_ev  = sim.get("o25_ev")  or 0
             _o25_pb  = sim.get("p_o25")   or 0
-            if _btts_ev > 0 and _btts_pb > 0:
-                cands.append({"market":"BTTS","label":"Ambos Anotan","prob":_btts_pb,"ev":_btts_ev})
             if _o25_ev > 0 and _o25_pb > 0:
                 cands.append({"market":"O/U","label":"Over 2.5","prob":_o25_pb,"ev":_o25_ev})
         else:
@@ -7453,13 +7460,13 @@ elif _active_page == "Picks":
 
         return (
             '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
-            'border-radius:18px;overflow:hidden;margin-bottom:3px;'
+            'border-radius:20px;overflow:hidden;margin-bottom:6px;'
             'border:1px solid rgba(0,0,0,0.07);'
             'box-shadow:0 6px 20px rgba(0,0,0,0.20),0 1px 0 rgba(255,255,255,0.85) inset">'
 
             # Header
             '<div style="padding:8px 14px 3px;display:flex;justify-content:space-between;align-items:center">'
-            '<span style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">' + _lg_lbl + '</span>'
+            '<span style="font-size:0.65rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">' + _lg_lbl + '</span>'
             '<div style="display:flex;align-items:center;gap:4px">'
             + (f'<span style="font-size:0.58rem;color:{_dqc}">DQ {dq:.0f}%</span>' )
             + _live_tag +
@@ -7470,11 +7477,11 @@ elif _active_page == "Picks":
             '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 14px 4px">'
             '<div style="text-align:center;flex:1">'
             + _logo_a +
-            '<div style="font-size:0.58rem;font-weight:800;color:#111;text-transform:uppercase;'
+            '<div style="font-size:0.68rem;font-weight:800;color:#111;text-transform:uppercase;'
             'margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:68px">' + g["away_team"][:9] + '</div>'
             '</div>'
             '<div style="flex:1;text-align:center">'
-            '<div style="font-size:1.4rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
+            '<div style="font-size:1.8rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
             '<div style="font-size:0.5rem;color:#CCC;margin-top:2px">' + _sg_icon + '</div>'
             '</div>'
             '<div style="text-align:center;flex:1">'
@@ -7499,14 +7506,14 @@ elif _active_page == "Picks":
             '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
             '<span style="font-size:0.5rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
             '<span style="font-size:0.58rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:2px 7px;border-radius:5px;text-transform:uppercase">' + _mkt + '</span>'
-            '<span style="font-size:0.82rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
+            '<span style="font-size:0.96rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
             + _ml_badge +
             '</div>'
 
             '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-            '<span style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
+            '<span style="font-size:2.6rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
             '<div style="flex:1;display:flex;flex-direction:column;gap:2px">'
-            '<span style="font-size:0.75rem;font-weight:800;color:rgba(0,0,0,0.7)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
+            '<span style="font-size:0.88rem;font-weight:800;color:rgba(0,0,0,0.7)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
             + (f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.55)">EV: <b>${(_ev or 0):+.0f}/100</b></span>' if _ev is not None else '<span style="font-size:0.62rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
             '</div></div>'
 
@@ -7516,7 +7523,7 @@ elif _active_page == "Picks":
             + "".join(
                 '<div style="text-align:center">'
                 '<div style="font-size:0.45rem;color:rgba(0,0,0,0.4);text-transform:uppercase;font-weight:700">' + lb + '</div>'
-                '<div style="font-size:0.78rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
+                '<div style="font-size:0.88rem;font-weight:900;color:' + cl + '">' + vl + '</div>'
                 '</div>'
                 for lb, vl, cl in [
                     ("Prob",   f"{_pick_pct:.0f}%",   "#000"),
@@ -8088,10 +8095,10 @@ elif _active_page == "Parlays":
                     _lg_lbl = league_label(_l["league"])
                     _sp_ico = _SG_ICONS.get(_l["sport"],"🎯")
                     if _i > 0:
-                        _legs_html += '<div style="font-size:0.62rem;color:#AAA;text-align:center;letter-spacing:3px;padding:3px 0">✕ COMBO ✕</div>'
+                        _legs_html += '<div style="font-size:0.6rem;color:#FF8C0066;text-align:center;letter-spacing:3px;padding:3px 0">✕ COMBO ✕</div>'
                     _legs_html += (
                         f'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;'
-                        f'border-radius:14px;background:rgba(0,0,0,0.05);border:1px solid rgba(0,0,0,0.08);margin-bottom:2px">'
+                        f'border-radius:14px;background:rgba(255,140,0,0.06);border:1px solid rgba(255,140,0,0.15);margin-bottom:2px">'
                         f'<span style="background:{_lc}22;color:{_la};border:1.5px solid {_lc}66;'
                         f'border-radius:8px;padding:3px 10px;font-size:0.72rem;font-weight:900;flex-shrink:0">{_l["market"]}</span>'
                         f'<div style="flex:1;min-width:0">'
@@ -8105,37 +8112,56 @@ elif _active_page == "Parlays":
                     )
                 _multi_ev = round((_multi_prob_pct/100 * (_multi_payout/100) - (1 - _multi_prob_pct/100)) * 100, 1)
                 _ev_clr = "#00C896" if _multi_ev > 0 else "#ef4444"
+                # ── Card header label
                 st.markdown(
-                    '<div style="font-size:0.762rem;color:#C9A84C;letter-spacing:2px;'
-                    'text-transform:uppercase;margin:4px 0 6px 0">'
+                    '<div style="font-size:0.72rem;color:#FF8C00;letter-spacing:2px;'
+                    'text-transform:uppercase;margin:4px 0 6px 0;font-weight:800">'
                     '🎰 PARLAY DEL DÍA · MULTI-DEPORTE</div>',
                     unsafe_allow_html=True
                 )
+                # ── Full Rongol-format card with orange CTA
                 st.markdown(
-                    f'<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
-                    f'border-radius:20px;overflow:hidden;margin:0 0 8px;'
-                    f'border:1px solid rgba(0,0,0,0.07);'
-                    f'box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.85) inset'
-                    f'>'
-                    f'<div style="padding:10px 16px 5px;display:flex;justify-content:space-between;align-items:center">'
+                    # Outer card — white
+                    '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#EFEFF4 100%);'
+                    'border-radius:20px;overflow:hidden;margin:0 0 8px;'
+                    'border:1px solid rgba(0,0,0,0.07);'
+                    'box-shadow:0 8px 24px rgba(0,0,0,0.22),0 1px 0 rgba(255,255,255,0.9) inset>'
+
+                    # Header row: patas count + sports + combined prob
+                    f'<div style="padding:10px 16px 6px;display:flex;justify-content:space-between;align-items:center">'
                     f'<div>'
-                    f'<div style="font-size:0.58rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{len(_multi_legs)} PATAS · HOY CDMX</div>'
-                    f'<div style="font-size:0.7rem;color:#333;margin-top:2px">{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
+                    f'<div style="font-size:0.6rem;font-weight:700;color:#999;letter-spacing:1.5px;text-transform:uppercase">{len(_multi_legs)} PATAS · HOY CDMX</div>'
+                    f'<div style="font-size:0.72rem;color:#444;margin-top:3px;font-weight:600">{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
                     f'</div>'
                     f'<div style="text-align:right">'
-                    f'<div style="font-size:1.6rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_multi_prob_pct:.1f}%</div>'
-                    f'<div style="font-size:0.55rem;color:#888">prob. combinada</div>'
-                    f'<div style="font-size:0.7rem;color:{_ev_clr};font-weight:700">EV {_multi_ev:+.1f}</div>'
+                    f'<div style="font-size:1.8rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_multi_prob_pct:.1f}%</div>'
+                    f'<div style="font-size:0.52rem;color:#888">prob. combinada</div>'
+                    f'<div style="font-size:0.68rem;color:{_ev_clr};font-weight:800">EV {_multi_ev:+.1f}</div>'
                     f'</div></div>'
-                    f'<div style="height:1px;background:rgba(0,0,0,0.06);margin:0 12px"></div>'
-                    f'<div style="padding:8px 12px">{_legs_html}</div>'
-                    f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FF8C00 0%,#E07000 100%);'
-                    f'border-radius:12px;padding:10px 14px;border:1px solid rgba(255,255,255,0.35);'
-                    f'box-shadow:0 4px 14px rgba(255,140,0,0.3)">'
+
+                    # Divider
+                    '<div style="height:1px;background:rgba(0,0,0,0.07);margin:0 12px"></div>'
+
+                    # Legs — clean light background
+                    f'<div style="padding:10px 14px">{_legs_html}</div>'
+
+                    # Orange CTA — same as Rongol yellow but orange
+                    f'<div style="margin:0 10px 12px;'
+                    f'background:linear-gradient(160deg,#FF8C00 0%,#E07000 100%);'
+                    f'border-radius:14px;padding:12px 16px;'
+                    f'border:1px solid rgba(255,255,255,0.35);'
+                    f'box-shadow:0 4px 14px rgba(255,140,0,0.4),0 1px 0 rgba(255,255,255,0.4) inset">'
                     f'<div style="display:flex;align-items:center;justify-content:space-between">'
-                    f'<span style="font-size:0.75rem;font-weight:800;color:#FFF">Pago est. <b>+${round(_multi_payout-100):,}/100</b></span>'
-                    f'<span style="font-size:0.62rem;color:rgba(0,0,0,0.5)">Verifica cuotas en tu casa</span>'
+                    f'<div>'
+                    f'<div style="font-size:0.55rem;font-weight:900;color:rgba(255,255,255,0.65);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px">💰 PAGO ESTIMADO</div>'
+                    f'<div style="font-size:2rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">+${round(_multi_payout-100):,}/100</div>'
+                    f'</div>'
+                    f'<div style="text-align:right">'
+                    f'<div style="font-size:0.52rem;color:rgba(255,255,255,0.6);margin-bottom:2px">Cuota acumulada</div>'
+                    f'<div style="font-size:1.3rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif">{round(_multi_payout/100,1)}×</div>'
                     f'</div></div>'
+                    f'<div style="font-size:0.55rem;color:rgba(255,255,255,0.5);margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.15)">Verifica cuotas en tu casa de apuestas antes de apostar.</div>'
+                    f'</div>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
