@@ -1,5 +1,5 @@
 """
-THE GAMBLERS DEN v2026.03.23-G
+THE GAMBLERS DEN v2026.03.23-H
 Monte Carlo Sports Betting Analyzer
 BTTS · O/U · Parlays · Doble Oportunidad
 """
@@ -12,7 +12,7 @@ import random
 # ── VERSION STAMP — shows on load to confirm correct file is running ──────────
 if "version_shown" not in st.session_state:
     st.session_state["version_shown"] = True
-    st.toast("✅ Gamblers Den v2026.03.23-G cargado", icon="🎰")
+    st.toast("✅ Gamblers Den v2026.03.23-H cargado", icon="🎰")
 import math
 import time
 import os
@@ -8245,8 +8245,8 @@ elif _active_page == "Parlays":
                     unsafe_allow_html=True
                 )
 
-            elif _son_candidates:
-                st.info(f"⚽ Hay {len(_son_candidates)} candidatos de soccer. Se necesitan al menos 10 partidos diferentes para el Parlay Soñador.")
+            elif _son_raw:
+                st.info(f"⚽ Hay {len(_son_raw)} candidatos de soccer. Se necesitan al menos 10 partidos diferentes para el Parlay Soñador.")
 
 
 
@@ -8639,13 +8639,13 @@ elif _active_page == "En Vivo":
             best     = max(picks, key=lambda p: p["prob"])
             prob_color = "#00C896" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
 
-            # Picks mini-grid (up to 3 cols) — light bg
+            # Picks mini-grid — red accents matching card theme
             _cols = min(len(picks), 3)
             ph = f'<div style="display:grid;grid-template-columns:repeat({_cols},1fr);gap:6px;padding:8px 0">'
             for i, pk in enumerate(picks):
-                pc = "#006600" if pk["prob"] >= 70 else "#664400" if pk["prob"] >= 55 else "#880000"
-                _bg = "rgba(255,224,50,0.18)" if i == 0 else "rgba(0,0,0,0.05)"
-                _bd = "rgba(255,185,0,0.5)" if i == 0 else "rgba(0,0,0,0.1)"
+                pc = "#CC0000" if pk["prob"] >= 70 else "#993300" if pk["prob"] >= 55 else "#660000"
+                _bg = "rgba(255,59,48,0.12)" if i == 0 else "rgba(255,59,48,0.05)"
+                _bd = "rgba(255,59,48,0.4)" if i == 0 else "rgba(255,59,48,0.15)"
                 ph += (
                     f'<div style="background:{_bg};border:1px solid {_bd};border-radius:10px;padding:7px 8px">'
                     f'<div style="font-size:0.68rem;font-weight:800;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{pk["market"]} {pk.get("label","")[:15]}</div>'
@@ -8682,15 +8682,15 @@ elif _active_page == "En Vivo":
 
             # Stats row
             def _sp(val, lbl, clr):
-                return f'<span style="font-size:0.68rem;color:{clr};font-weight:700">{val}</span><span style="font-size:0.60rem;color:#6B7280;margin:0 6px 0 2px">{lbl}</span>'
+                return f'<span style="font-size:0.68rem;color:{clr};font-weight:700">{val}</span><span style="font-size:0.58rem;color:#999;margin:0 6px 0 2px">{lbl}</span>'
             sh = (
-                f'<div style="display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid rgba(255,255,255,0.04);padding-top:5px;margin-top:4px">'
+                f'<div style="display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid rgba(255,59,48,0.15);padding-top:5px;margin-top:4px">'
                 + _sp(f'{sim["away_pct"]:.0f}%', g["away_team"][:9], "#60a5fa")
                 + (_sp(f'{sim["draw_pct"]:.0f}%', "X", "#a78bfa") if sim["is_soccer"] else "")
                 + _sp(f'{sim["home_pct"]:.0f}%', g["home_team"][:9], "#f97316")
                 + (_sp(f'{sim["p_btts"]}%', "BTTS", "#00C896") if sim.get("p_btts") and sport_group=="Soccer" else "")
                 + (_sp(f'{sim["p_o25"]}%', "O2.5", "#C9A84C") if sim.get("p_o25") and sport_group=="Soccer" else "")
-                + f'<span style="margin-left:auto;font-size:0.58rem;color:#444444">DQ{dq:.0f}%</span>'
+                + f'<span style="margin-left:auto;font-size:0.58rem;color:#999">DQ{dq:.0f}%</span>'
                 + f'</div>'
             )
 
@@ -8703,31 +8703,49 @@ elif _active_page == "En Vivo":
             )
 
             return (
+                # Outer card — white with red accents
                 '<div style="background:linear-gradient(160deg,#FFF5F5 0%,#FFE8E8 100%);'
                 'border-radius:20px;overflow:hidden;margin:3px 0;'
                 'border:1.5px solid rgba(255,59,48,0.35);'
-                'box-shadow:0 6px 20px rgba(255,59,48,0.12),0 1px 0 rgba(255,255,255,0.85) inset>'
-                f'<div style="padding:8px 14px 4px;display:flex;justify-content:space-between;align-items:center">'
-                f'<div>'
-                f'<div style="font-size:0.85rem;font-weight:800;color:#111;line-height:1.2">{g["away_team"]} @ {g["home_team"]}</div>'
-                f'<div style="font-size:0.78rem;color:#CC0000;font-weight:700">{score_str}</div>'
+                'box-shadow:0 6px 20px rgba(255,59,48,0.14),'
+                '0 1px 0 rgba(255,255,255,0.85) inset>'
+
+                # Header: team names + score + league badge
+                f'<div style="padding:10px 14px 6px;display:flex;justify-content:space-between;align-items:flex-start">'
+                f'<div style="flex:1">'
+                f'<div style="font-size:0.88rem;font-weight:800;color:#111;line-height:1.3">{g["away_team"]} @ {g["home_team"]}</div>'
+                f'<div style="font-size:0.82rem;color:#CC0000;font-weight:700;margin-top:2px">{score_str}</div>'
                 f'</div>'
                 f'<div>{badges}</div>'
                 f'</div>'
-                f'<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 12px"></div>'
-                + ph + xg_html
-                + f'<div style="margin:0 10px 10px;background:linear-gradient(160deg,#FF3B30 0%,#CC0000 100%);'
-                  f'border-radius:12px;padding:10px 14px;'
-                  f'border:1px solid rgba(255,255,255,0.2);'
-                  f'box-shadow:0 4px 14px rgba(255,59,48,0.35)">'
-                  f'<div style="font-size:0.55rem;font-weight:900;color:rgba(255,255,255,0.7);letter-spacing:2px;text-transform:uppercase">🔴 EN VIVO → APOSTAR</div>'
-                  f'<div style="font-size:0.9rem;font-weight:800;color:#FFF;margin-top:4px">{best["market"]} {best.get("label","")}</div>'
-                  f'<div style="font-size:1.8rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{best["prob"]:.0f}%</div>'
-                  f'</div>'
-                + sh
-                + '</div>'
-            )
 
+                # Divider
+                '<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 12px"></div>'
+
+                # Picks mini grid
+                f'<div style="padding:8px 12px 4px">{ph}</div>'
+                + xg_html +
+
+                # Red CTA banner — best pick
+                f'<div style="margin:6px 10px 10px;'
+                f'background:linear-gradient(160deg,#FF3B30 0%,#CC0000 100%);'
+                f'border-radius:14px;padding:11px 14px;'
+                f'border:1px solid rgba(255,255,255,0.2);'
+                f'box-shadow:0 4px 16px rgba(255,59,48,0.4)">'
+                f'<div style="font-size:0.52rem;font-weight:900;color:rgba(255,255,255,0.65);'
+                f'letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔴 EN VIVO → APOSTAR</div>'
+                f'<div style="display:flex;align-items:center;gap:10px">'
+                f'<div style="font-size:2rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{best["prob"]:.0f}%</div>'
+                f'<div>'
+                f'<div style="font-size:0.85rem;font-weight:800;color:#FFF">{best["market"]} {best.get("label","")[:22]}</div>'
+                f'<div style="font-size:0.6rem;color:rgba(255,255,255,0.65)">probabilidad simulada</div>'
+                f'</div></div>'
+                f'</div>'
+
+                # Prob bars
+                + sh +
+                '</div>'
+            )
         # ── Render: Sport expander → League sub-expander → 3-per-row cards ──
         for _lv_sg in _LV_SPORT_ORDER:
             if _lv_sg not in _lv_tree: continue
