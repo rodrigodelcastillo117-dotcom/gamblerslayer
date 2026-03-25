@@ -7966,9 +7966,11 @@ if _active_page == "Rongol Picks":
         # Group by sport group, keep best by prob
         _sport_best = {}
         for _cand in _all_candidates:
+            if not _cand.get("_pick") or not isinstance(_cand["_pick"], dict):
+                continue
             _sg_c = LEAGUES.get(_cand.get("league",""),{}).get("group","Soccer")
-            _p_c  = _cand["_pick"]["prob"]
-            if _sg_c not in _sport_best or _p_c > _sport_best[_sg_c]["_pick"]["prob"]:
+            _p_c  = _cand["_pick"].get("prob", 0)
+            if _sg_c not in _sport_best or _p_c > _sport_best[_sg_c]["_pick"].get("prob", 0):
                 _sport_best[_sg_c] = _cand
 
         # Order by sport group
