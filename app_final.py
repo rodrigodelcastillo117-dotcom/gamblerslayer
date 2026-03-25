@@ -7941,6 +7941,13 @@ if _active_page == "Rongol Picks":
                 ou_ml  = sim.get("over_under", "") or ""
                 if p_u25 == 0 and p_o25 > 0:
                     p_u25 = round(100.0 - p_o25, 1)
+                # Inicializar lambdas siempre para evitar UnboundLocalError
+                _lhs = float(sim.get("lam_real_h") or 0)
+                _las = float(sim.get("lam_real_a") or 0)
+                if _lhs == 0 or _las == 0:
+                    _llgs = float(sim.get("lam_league") or 0)
+                    _lhs = _llgs * 0.55 if _llgs > 0 else 1.45
+                    _las = _llgs * 0.45 if _llgs > 0 else 1.05
                 # Calcular desde prior de liga o lambda si todo es 0
                 if p_o25 == 0:
                     _lgn_s = r.get("league","")
@@ -7951,22 +7958,12 @@ if _active_page == "Rongol Picks":
                         p_btts = round(_prior_s[6] * 100, 1)
                     else:
                         import math as _ms
-                        _lhs = float(sim.get("lam_real_h") or 0)
-                        _las = float(sim.get("lam_real_a") or 0)
-                        if _lhs == 0 or _las == 0:
-                            _llgs = float(sim.get("lam_league") or 0)
-                            _lhs = _llgs * 0.55 if _llgs > 0 else 1.45
-                            _las = _llgs * 0.45 if _llgs > 0 else 1.05
                         _mus  = _lhs + _las
                         _ples = sum(_ms.exp(-_mus) * (_mus**k) / _ms.factorial(k) for k in range(3))
                         p_o25 = round((1 - _ples) * 100, 1)
                         p_u25 = round(_ples * 100, 1)
                         if p_btts == 0:
                             p_btts = round((1-_ms.exp(-_lhs))*(1-_ms.exp(-_las))*100, 1)
-                # Asegurar que _lhs/_las siempre estén definidas para best_soccer_market
-                if '_lhs' not in dir():
-                    _lhs = float(sim.get("lam_real_h") or 0)
-                    _las = float(sim.get("lam_real_a") or 0)
                 _bsm2 = best_soccer_market(p_o25, p_u25, p_btts,
                                              sim.get("o25_ev") or 0,
                                              sim.get("u25_ev") or 0,
