@@ -2903,6 +2903,8 @@ def parse_games(data, league_name):
                 "state":         status.get("type", {}).get("state", "pre"),
                 "date":          event.get("date", ""),
                 "status_detail": _sd,
+                "live_period":   status.get("period", 0) or 0,           # periodo/cuarto ESPN directo
+                "live_clock":    status.get("displayClock", "") or "",    # reloj ESPN "19:04"
                 # Venue: usar diccionario si disponible (más confiable que ESPN para intl)
                 "venue":         _kv["venue"] if _kv else comp.get("venue", {}).get("fullName", ""),
                 "venue_city":    comp.get("venue", {}).get("address", {}).get("city", ""),
@@ -11290,27 +11292,38 @@ elif _active_page == "En Vivo":
         # 🏒 NHL — línea ajustada en vivo, proyección de goles, ML
         # ══════════════════════════════════════════════════════════════
         elif sport_group == "Hockey":
-            _per_m   = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
-            _time_m  = _re.search(r"(\d+):(\d+)", status)
-            period   = int(_per_m.group(1)) if (_per_m and _per_m.group(1)) else 2
-            is_ot    = "OT" in status.upper() or "overtime" in status.lower()
+            _per_m  = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
+            _time_m = _re.search(r"(\d+):(\d+)", status)
+
+            # Prioridad: live_period/live_clock de ESPN (campo directo) > regex en status_detail
+            _espn_period = int(g.get("live_period") or 0)
+            _espn_clock  = g.get("live_clock") or ""
+            _clock_m     = _re.search(r"(\d+):(\d+)", _espn_clock)
+
+            if _espn_period > 0:
+                period = _espn_period
+            elif _per_m:
+                period = int(_per_m.group(1))
+            else:
+                # ESPN: "19:04 - 1st", "End of 2nd" — buscar ordinal en status
+                _per_sd = _re.search(r"(\d)(?:st|nd|rd|th)", status, _re.IGNORECASE)
+                period = int(_per_sd.group(1)) if _per_sd else 1
+
+            is_ot = "OT" in status.upper() or "overtime" in status.lower() or period > 3
             if is_ot: period = 4
 
-            # Tiempo jugado en este periodo (de 20 min)
-            if _time_m:
-                _min_in_per = int(_time_m.group(1))
-                _sec_in_per = int(_time_m.group(2))
-                # ESPN muestra tiempo RESTANTE en el periodo
-                mins_left_in_period  = _min_in_per + _sec_in_per / 60
-                mins_played_in_period = max(0, 20 - mins_left_in_period)
+            # Tiempo restante en el periodo (ESPN manda tiempo RESTANTE, no jugado)
+            if _clock_m:
+                mins_left_in_period = int(_clock_m.group(1)) + int(_clock_m.group(2)) / 60
+            elif _time_m:
+                mins_left_in_period = int(_time_m.group(1)) + int(_time_m.group(2)) / 60
             else:
-                mins_left_in_period  = 10
-                mins_played_in_period = 10
+                mins_left_in_period = 10
 
-            # Tiempo total jugado y restante (regulation = 60 min)
-            periods_played = max(period - 1, 0)
-            mins_played    = periods_played * 20 + mins_played_in_period
-            mins_left_reg  = max(60 - mins_played, 0)
+            mins_played_in_period = max(0, 20 - mins_left_in_period)
+            periods_played        = max(period - 1, 0)
+            mins_played           = periods_played * 20 + mins_played_in_period
+            mins_left_reg         = max(60 - mins_played, 0)
 
             # ── Tasa de goles: blend entre observada y promedio NHL ───────────
             # NHL: ~6.0 goles/60min promedio de liga (2024-25)
