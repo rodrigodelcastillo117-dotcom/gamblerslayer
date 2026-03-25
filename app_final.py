@@ -3629,20 +3629,58 @@ def _pick_from_real_data(r, for_rongol=False):
                 return _ret(best[0], best[1], best[2], best[3], best[4])
 
         else:
-            # SIN datos reales (DQ=0): usar prior de liga directamente
-            # Prior refleja el comportamiento REAL histórico de cada competencia
+            # SIN datos directos de equipo — usar score_freq de la simulación
+            # score_freq tiene los marcadores simulados del Monte Carlo para ESTE partido
+            # Esto da varianza real entre partidos aunque DQ=0
+            _sf = sim.get("score_freq") or []
+            if _sf:
+                # Recalcular BTTS, O25, U25 desde los marcadores simulados
+                _total_sim = sum(cnt for _, cnt in _sf)
+                if _total_sim > 0:
+                    _btts_sim = sum(cnt for (h,a), cnt in _sf if h > 0 and a > 0) / _total_sim
+                    _o25_sim  = sum(cnt for (h,a), cnt in _sf if h+a > 2.5)       / _total_sim
+                    _u25_sim  = sum(cnt for (h,a), cnt in _sf if h+a < 2.5)       / _total_sim
+                    _o35_sim  = sum(cnt for (h,a), cnt in _sf if h+a > 3.5)       / _total_sim
+                    # Estas son las probs REALES de la simulación para ESTE partido
+                    p_btts_sf = round(_btts_sim * 100, 1)
+                    p_o25_sf  = round(_o25_sim  * 100, 1)
+                    p_u25_sf  = round(_u25_sim  * 100, 1)
+
+                    # Mezclar con prior de liga (70% sim, 30% prior)
+                    if _prior:
+                        p_btts_sf = round(0.7*p_btts_sf + 0.3*_prior[6]*100, 1)
+                        p_o25_sf  = round(0.7*p_o25_sf  + 0.3*_prior[4]*100, 1)
+                        p_u25_sf  = round(0.7*p_u25_sf  + 0.3*_prior[1]*100, 1)
+
+                    # Decisión por scores — varían partido a partido
+                    s_btts = p_btts_sf
+                    s_o25  = p_o25_sf
+                    s_u25  = p_u25_sf
+
+                    # Bonus por señales del partido
+                    # Si la sim dice partido de pocos goles → bonus Under
+                    if p_u25_sf > 52: s_u25 += 5
+                    # Si la sim dice ofensivo → bonus Over/BTTS
+                    if p_o25_sf > 55: s_o25 += 5
+                    if p_btts_sf > 53: s_btts += 4
+
+                    opts_sf = []
+                    if p_btts_sf > 0: opts_sf.append(("BTTS","Ambos Anotan — SÍ",p_btts_sf,btts_ev,"",s_btts))
+                    if p_o25_sf  > 0: opts_sf.append(("O/U","Over 2.5",p_o25_sf,o25_ev,ou_ml,s_o25))
+                    if p_u25_sf  > 0: opts_sf.append(("O/U","Under 2.5",p_u25_sf,u25_ev,ou_ml,s_u25))
+                    if opts_sf:
+                        best_sf = max(opts_sf, key=lambda x: x[5])
+                        return _ret(best_sf[0], best_sf[1], best_sf[2], best_sf[3], best_sf[4])
+
+            # Sin score_freq: usar prior directamente
             if _prior:
                 _pb = _prior[6]; _po = _prior[4]; _pu = _prior[1]
-                # BTTS si liga ofensiva (BTTS>52%)
                 if _pb >= 0.52 and p_btts > 0:
                     return _ret("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"")
-                # Over 2.5 si liga muy ofensiva (O25>55%)
                 if _po >= 0.55 and p_o25 > 0:
                     return _ret("O/U","Over 2.5",p_o25,o25_ev,ou_ml)
-                # Under 2.5 si liga defensiva (U25>52%)
                 if _pu >= 0.52 and p_u25 > 0:
                     return _ret("O/U","Under 2.5",p_u25,u25_ev,ou_ml)
-                # Neutral: mejor por prob bruta del sim
                 best_opts = []
                 if p_btts > 0: best_opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,""))
                 if p_o25 > 0:  best_opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml))
@@ -6331,48 +6369,17 @@ def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
 
     _SPORT_ORDER_PH = ["Soccer","Basketball","Hockey","Baseball","Football"]
 
-    # ── RONGOL picks (1 per sport, same logic as tab) ────────────────────────
+    # ── RONGOL picks — usa _pick_from_real_data (misma lógica que Picks tab) ──
     def _sport_best_ph(r):
-        sim = r["sim"]
-        sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
-        h_prob = sim.get("home_pct",0) or 0
-        a_prob = sim.get("away_pct",0) or 0
-        h_ml = sim.get("home_ml"); a_ml = sim.get("away_ml")
-
-        def best_ml():
-            if h_prob >= a_prob:
-                t,p,ml = r["home_team"],h_prob,h_ml
-            else:
-                t,p,ml = r["away_team"],a_prob,a_ml
-            return {"mercado":"ML","pick_label":t,"prob_pct":round(p,1)} if ml else None
-
-        if sg == "Soccer":
-            cands = []
-            _btts_ev = sim.get("btts_ev") or 0
-            _btts_pb = sim.get("p_btts") or 0
-            if _btts_ev > 0 and _btts_pb > 0:
-                cands.append({"mercado":"BTTS","pick_label":"Ambos Anotan","prob_pct":round(_btts_pb,1)})
-            _o25_ev = sim.get("o25_ev") or 0
-            _o25_pb = sim.get("p_o25") or 0
-            if _o25_ev > 0 and _o25_pb > 0:
-                cands.append({"mercado":"O/U","pick_label":"Over 2.5","prob_pct":round(_o25_pb,1)})
-            _ml = best_ml()
-            if _ml: cands.append(_ml)
-            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
-        elif sg in ("Basketball","Hockey"):
-            cands = []
-            _ml = best_ml()
-            if _ml: cands.append(_ml)
-            _ou_line = sim.get("ou_line") or ""
-            _p_over  = sim.get("p_o_total") or 0
-            if _ou_line and _p_over > 45:
-                try: _line = float(_ou_line.lstrip("~"))
-                except: _line = None
-                if _line:
-                    cands.append({"mercado":"O/U","pick_label":f"Over {_line:.1f}","prob_pct":round(_p_over,1)})
-            return max(cands, key=lambda x: x["prob_pct"]) if cands else None
-        else:
-            return best_ml()
+        """Wrap _pick_from_real_data para el formato pick_history."""
+        bp = _pick_from_real_data(r, for_rongol=False)
+        if not bp:
+            return None
+        return {
+            "mercado":   bp["market"],
+            "pick_label": bp["label"],
+            "prob_pct":  bp["prob"],
+        }
 
     # Group by sport, take best per sport
     sport_pools = {}
@@ -6389,7 +6396,9 @@ def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
         pool.sort(key=lambda x: x[1]["prob_pct"], reverse=True)
         r, bp = pool[0]
         partido  = f'{r["away_team"]} vs {r["home_team"]}'
-        pick_id  = hashlib.md5(f'{fecha[:10]}|{partido}|{bp["mercado"]}|{bp["pick_label"]}'.encode()).hexdigest()[:12]
+        # pick_id estable: no incluir número de línea para evitar duplicados
+        _pid_lbl = bp["pick_label"].split()[0]  # "Over", "Under", "BTTS", o nombre equipo
+        pick_id  = hashlib.md5(f'{fecha[:10]}|{partido}|{bp["mercado"]}|{_pid_lbl}'.encode()).hexdigest()[:12]
         picks.append({
             "pick_id":   pick_id,
             "fecha":     fecha,
@@ -6421,8 +6430,46 @@ def _ph_auto_resolve(picks):
     except:
         return {}
     resolved = {}
+    import re as _re_ph
     for p in pending:
         partido = p.get("partido","")
+
+        # Si el pick_label ya tiene el score entre paréntesis — resolver directo
+        # Ej: "Over 239.5 (131-136)" → ya tenemos home/away score
+        _lbl_with_score = p.get("pick_label","")
+        _score_in_label = _re_ph.search(r'\((\d+)[-–](\d+)\)', _lbl_with_score)
+        if _score_in_label:
+            _s1, _s2 = int(_score_in_label.group(1)), int(_score_in_label.group(2))
+            # El formato es (away_score-home_score) o (home_score-away_score)?
+            # En el label guardamos away vs home, score es home-away en ESPN
+            # Determinar usando el partido guardado
+            _fake_with_score = {
+                "partido": partido,
+                "pick":    _lbl_with_score.split("(")[0].strip(),
+                "mercado": p["mercado"],
+                "league":  p.get("liga",""),
+            }
+            # Intentar ambas orientaciones
+            for _hs_try, _as_try in [(_s1, _s2), (_s2, _s1)]:
+                _g_try = {
+                    "state": "post",
+                    "home_score": _hs_try,
+                    "away_score": _as_try,
+                    "home_team": partido.split(" vs ")[-1].strip() if " vs " in partido else "",
+                    "away_team": partido.split(" vs ")[0].strip() if " vs " in partido else "",
+                    "league": p.get("liga",""),
+                }
+                _res_try = _evaluate_pick(_fake_with_score, _g_try)
+                if _res_try:
+                    resolved[p["pick_id"]] = {
+                        "resultado":  _res_try,
+                        "home_score": str(_hs_try),
+                        "away_score": str(_as_try),
+                    }
+                    break
+            if p["pick_id"] in resolved:
+                continue  # ya resuelto desde el label
+
         sep = " vs " if " vs " in partido else (" @ " if " @ " in partido else None)
         if sep:
             parts = partido.split(sep, 1)
