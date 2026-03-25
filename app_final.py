@@ -9109,6 +9109,8 @@ elif _active_page == "Picks":
             ou_ml  = sim.get("over_under", "") or ""
             if p_u25 == 0 and p_o25 > 0: p_u25 = round(100.0 - p_o25, 1)
             # Calcular desde lambda o prior de liga si todo es 0
+            _lh2 = float(sim.get("lam_real_h") or 0)  # inicializar siempre
+            _la2 = float(sim.get("lam_real_a") or 0)
             if p_o25 == 0:
                 # Intentar usar prior de liga primero (más preciso que lambda genérico)
                 _league_name = r.get("league","")
@@ -9117,10 +9119,13 @@ elif _active_page == "Picks":
                     p_o25  = round(_prior_fb[4] * 100, 1)  # P_O25
                     p_u25  = round(_prior_fb[1] * 100, 1)  # P_U25
                     p_btts = round(_prior_fb[6] * 100, 1)  # P_BTTS
+                    # Estimar lambdas desde prior si no hay datos reales
+                    if _lh2 == 0 or _la2 == 0:
+                        _llg2 = float(sim.get("lam_league") or 0) or 2.5
+                        _lh2 = _llg2 * 0.55
+                        _la2 = _llg2 * 0.45
                 else:
                     import math as _m2
-                    _lh2 = float(sim.get("lam_real_h") or 0)
-                    _la2 = float(sim.get("lam_real_a") or 0)
                     if _lh2 == 0 or _la2 == 0:
                         _llg2 = float(sim.get("lam_league") or 0)
                         _lh2 = _llg2 * 0.55 if _llg2 > 0 else 1.45
@@ -11401,26 +11406,38 @@ elif _active_page == "En Vivo":
         # 🏀 NBA — señales: pace derivado del marcador y tiempo
         # ════════════════════════════════════════════════════════
         elif sport_group == "Basketball":
-            # Sin stats ESPN directas — usar pace derivado
+            # Sin stats ESPN directas — usar pace derivado con sanity check
             _status = g.get("status_detail","") or ""
+            _espn_p = int(g.get("live_period") or 0)
+            _espn_c = g.get("live_clock") or ""
             import re as _re_ctx
-            _qtr_m = _re_ctx.search(r"(\d+)(?:st|nd|rd|th)", _status, _re_ctx.IGNORECASE)
-            _time_m = _re_ctx.search(r"(\d+):(\d+)", _status)
-            qtr = int(_qtr_m.group(1)) if _qtr_m else 2
-            mins_in_qtr = (int(_time_m.group(1)) + int(_time_m.group(2))/60) if _time_m else 6
-            mins_played = (qtr-1)*12 + max(0, 12-mins_in_qtr)
-            total_pts   = hs + as_
-            if mins_played > 5:
-                pace = total_pts / mins_played  # pts/min
-                proj = round(total_pts + pace * max(48-mins_played, 0))
-                ou_line = float(str(sim.get("ou_line") or "220").lstrip("~") or "220")
-                if pace > 2.4:
+            _qtr_m  = _re_ctx.search(r"(\d+)(?:st|nd|rd|th)", _status, _re_ctx.IGNORECASE)
+            qtr_ctx = _espn_p if _espn_p > 0 else (int(_qtr_m.group(1)) if _qtr_m else 2)
+            _clk_m  = _re_ctx.search(r"(\d+):(\d{2})", _espn_c or _status)
+            if _clk_m:
+                _mins_left_qtr = int(_clk_m.group(1)) + int(_clk_m.group(2)) / 60
+                if _mins_left_qtr > 12: _mins_left_qtr = 6.0  # sanity: no puede ser hora del reloj
+            else:
+                _mins_left_qtr = 6.0
+            _mins_played = (qtr_ctx - 1) * 12 + max(0, 12 - _mins_left_qtr)
+            if _mins_played < 1 and (hs + as_) > 0:
+                _mins_played = max(1.0, (qtr_ctx - 1) * 12 + 1.0)
+            total_pts = hs + as_
+            if _mins_played >= 2:
+                pace = total_pts / _mins_played
+                # Sanity: NBA pace real es 2.0-2.5 pts/min — si es muy diferente, blend
+                NBA_AVG = 2.25
+                if pace > 4.0 or pace < 0.5:
+                    pace = 0.2 * pace + 0.8 * NBA_AVG  # blend fuerte hacia promedio
+                _mins_left_total = max(48 - _mins_played, 0)
+                proj = round(total_pts + pace * _mins_left_total)
+                if pace > 2.6:
                     ctx["offensive_game"] = True
-                    ctx["ou_adjustment"] += round((pace - 2.25) * 20)
-                    ctx["signals"].append(f"🏀 Pace muy alto: {pace:.1f} pts/min → proy. {proj} pts")
-                elif pace < 2.0:
+                    ctx["ou_adjustment"] += round((pace - NBA_AVG) * 15)
+                    ctx["signals"].append(f"🏀 Pace alto: {pace:.1f} pts/min → proy. {proj} pts")
+                elif pace < 1.9:
                     ctx["defensive_game"] = True
-                    ctx["ou_adjustment"] -= round((2.25 - pace) * 20)
+                    ctx["ou_adjustment"] -= round((NBA_AVG - pace) * 15)
                     ctx["signals"].append(f"🛡️ Pace lento: {pace:.1f} pts/min → proy. {proj} pts")
 
         # ════════════════════════════════════════════════════════
@@ -11582,54 +11599,114 @@ elif _active_page == "En Vivo":
                     "rationale": f"Inning {inning}, {fav_team} favorito ({fav_prob:.0f}%)."})
 
         # ══════════════════════════════════════════════════════════════
-        # 🏀 NBA — pace, proyección, cuarto
+        # 🏀 NBA — pace real, proyección, cuarto
+        # ESPN formato: "3rd Qtr 4:22" — 4:22 = tiempo RESTANTE en el cuarto
         # ══════════════════════════════════════════════════════════════
         elif sport_group == "Basketball":
-            _qtr_m   = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
-            _ot      = "OT" in status.upper()
-            qtr      = int(_qtr_m.group(1)) if _qtr_m else (5 if _ot else 2)
-            if _ot: qtr = 5
-            _time_m  = _re.search(r"(\d+):(\d+)", status)
-            mins_in_qtr = (int(_time_m.group(1)) + int(_time_m.group(2))/60) if _time_m else 6.0
-            mins_played = (qtr - 1)*12 + max(0, 12 - mins_in_qtr)
-            mins_left   = max(48 - mins_played, 0) if not _ot else 5.0
-            pace        = total_score / max(mins_played, 1)
-            proj_total  = round(total_score + pace * mins_left, 1)
+            # ── Cuarto: ESPN directo > regex status ───────────────────────────
+            _espn_period_nba = int(g.get("live_period") or 0)
+            _espn_clock_nba  = g.get("live_clock") or ""  # "4:22" = restante en cuarto
 
-            if ou_line > 0:
-                pts_needed     = ou_line - total_score
-                rate_needed    = pts_needed / max(mins_left, 0.1)
-                avg_pace       = 2.25  # ~270 pts/60min NBA
-                if rate_needed > avg_pace * 1.3 and mins_left < 12:
-                    u_prob = min(85, (p_u_total + 12) if p_u_total > 0 else 70)
-                    picks.append({"label": f"Under {ou_line:.1f} pts", "prob": round(u_prob,1),
-                        "market": "O/U",
-                        "rationale": f"Q{qtr}, {as_}-{hs} ({total_score} pts). Necesitan {pts_needed:.0f} pts en {mins_left:.0f} min a {rate_needed:.1f}/min — pace muy alto. Proyección: {proj_total:.0f}."})
-                elif proj_total > ou_line + 5:
-                    o_prob = min(82, (p_o_total + 8) if p_o_total > 0 else 65)
-                    picks.append({"label": f"Over {ou_line:.1f} pts", "prob": round(o_prob,1),
-                        "market": "O/U",
-                        "rationale": f"Pace {pace:.1f} pts/min, proyección {proj_total:.0f} pts vs línea {ou_line:.1f}."})
-                else:
-                    best = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
-                    if best[1] > 0:
-                        picks.append({"label": f"{best[0]} {ou_line:.1f} pts", "prob": best[1],
-                            "market": "O/U",
-                            "rationale": f"Q{qtr}, pace {pace:.1f}/min, proy. {proj_total:.0f}. {best[0]}: {best[1]:.0f}%."})
+            _ot = "OT" in status.upper() or (_espn_period_nba > 4)
 
-            if qtr >= 4 and diff > 0:
-                w_adj = min(97, fav_prob + diff * 2.5)
-                picks.append({"label": f"{fav_team} gana", "prob": round(w_adj,1),
-                    "market": "ML",
-                    "rationale": f"Q{qtr}, {fav_team} +{diff} pts ({fav_score}-{dog_score}), {mins_left:.0f} min. Prob. ajustada: {w_adj:.0f}%."})
-            elif abs(diff) <= 3:
-                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
-                    "market": "ML",
-                    "rationale": f"Q{qtr}, partido cerrado {as_}-{hs}. {fav_team} ({fav_prob:.0f}%)."})
+            if _espn_period_nba > 0:
+                qtr = _espn_period_nba
             else:
-                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
+                _qtr_m = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
+                qtr    = int(_qtr_m.group(1)) if _qtr_m else 2
+            if _ot: qtr = 5
+
+            # ── Tiempo restante en el cuarto actual (ESPN = tiempo RESTANTE) ──
+            _clock_nba_m = _re.search(r"(\d+):(\d{2})", _espn_clock_nba or status)
+            if _clock_nba_m:
+                mins_left_in_qtr = int(_clock_nba_m.group(1)) + int(_clock_nba_m.group(2)) / 60
+            else:
+                mins_left_in_qtr = 6.0  # asumir mitad del cuarto
+
+            # Sanity check: si el número es > 12 probablemente es hora del reloj, no del partido
+            if mins_left_in_qtr > 12:
+                mins_left_in_qtr = 6.0
+
+            mins_played_in_qtr = max(0.0, 12.0 - mins_left_in_qtr)
+            qtrs_played        = max(qtr - 1, 0)
+            mins_played        = qtrs_played * 12 + mins_played_in_qtr
+            mins_left          = max(48 - mins_played, 0) if not _ot else max(5.0 - mins_played_in_qtr, 0)
+
+            # Sanity check mínimo: no puede haber 0 min jugados si ya hay puntos
+            if mins_played < 1 and total_score > 0:
+                mins_played = max(1.0, qtrs_played * 12 + 1.0)
+
+            # ── Pace con sanidad ─────────────────────────────────────────────
+            # NBA promedia ~2.25 pts/min (~108 pts/equipo por 48 min)
+            NBA_AVG_PACE = 2.25  # pts/min totales de ambos equipos
+            obs_pace     = total_score / max(mins_played, 1)
+
+            # Si el pace observado es absurdo (>5 pts/min), blend fuerte con promedio
+            if obs_pace > 5.0 or mins_played < 3:
+                # Muy poca muestra — confiar casi todo en promedio de liga
+                obs_weight = min(0.2, mins_played / 48)
+            else:
+                obs_weight = min(0.85, mins_played / 48)
+
+            blended_pace = obs_weight * obs_pace + (1 - obs_weight) * NBA_AVG_PACE
+            proj_total   = round(total_score + blended_pace * mins_left, 0)
+
+            # Aplicar ajuste contextual del pace (de _live_context)
+            if _ou_adj != 0:
+                blended_pace = max(1.5, blended_pace + _ou_adj / 100 * NBA_AVG_PACE)
+                proj_total   = round(total_score + blended_pace * mins_left, 0)
+
+            # ── O/U en vivo ───────────────────────────────────────────────────
+            if ou_line > 0:
+                pts_needed  = ou_line - total_score
+                rate_needed = pts_needed / max(mins_left, 0.1)
+
+                if pts_needed <= 0:
+                    # Over ya cubierto
+                    picks.append({"label": f"Over {ou_line:.1f} ✓", "prob": 97,
+                        "market": "O/U",
+                        "rationale": f"Over {ou_line:.1f} ya cubierto con {total_score} pts.{_ctx_note}",
+                        "notes": f"cubierto Q{qtr}"})
+                elif proj_total > ou_line + 8:
+                    # Pace sugiere Over fuerte
+                    o_prob = min(82, 55 + round((proj_total - ou_line) / ou_line * 80))
+                    picks.append({"label": f"Over {ou_line:.1f} pts", "prob": o_prob,
+                        "market": "O/U",
+                        "rationale": (
+                            f"Q{qtr} ({mins_left:.0f} min restantes). "
+                            f"Pace blend: {blended_pace:.1f} pts/min → proy. {proj_total:.0f} vs línea {ou_line:.1f}.{_ctx_note}"
+                        ),
+                        "notes": f"proy. {proj_total:.0f} pts"})
+                elif rate_needed > NBA_AVG_PACE * 1.4 and mins_left < 10:
+                    # Necesitan demasiado en poco tiempo → Under
+                    u_prob = min(82, 55 + round((rate_needed - NBA_AVG_PACE) / NBA_AVG_PACE * 40))
+                    picks.append({"label": f"Under {ou_line:.1f} pts", "prob": u_prob,
+                        "market": "O/U",
+                        "rationale": (
+                            f"Q{qtr} ({mins_left:.0f} min). Necesitan {pts_needed:.0f} pts "
+                            f"a {rate_needed:.1f} pts/min — pace promedio {NBA_AVG_PACE}. "
+                            f"Proy. {proj_total:.0f}.{_ctx_note}"
+                        ),
+                        "notes": f"proy. {proj_total:.0f} pts"})
+                # Si el partido está "en línea" → solo ML
+
+            # ── ML ajustado por diferencia y tiempo ──────────────────────────
+            if qtr >= 4 and diff > 0 and mins_left < 8:
+                w_adj = min(97, fav_prob + diff * 2.5 * (1 - mins_left / 12))
+                picks.append({"label": f"{fav_team} gana", "prob": round(w_adj, 1),
                     "market": "ML",
-                    "rationale": f"Q{qtr}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}"})
+                    "rationale": (
+                        f"Q{qtr}, {fav_team} +{diff} pts ({fav_score}-{dog_score}), "
+                        f"{mins_left:.0f} min. Prob. ajustada: {w_adj:.0f}%.{_ctx_note}"
+                    )})
+            elif abs(diff) <= 5:
+                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob, 1),
+                    "market": "ML",
+                    "rationale": f"Q{qtr}, partido cerrado {as_}-{hs}. {fav_team} ({fav_prob:.0f}%).{_ctx_note}"})
+            else:
+                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob, 1),
+                    "market": "ML",
+                    "rationale": f"Q{qtr}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}.{_ctx_note}"})
 
         # ══════════════════════════════════════════════════════════════
         # 🏒 NHL — línea dinámica por goles+periodo, ML ajustado
