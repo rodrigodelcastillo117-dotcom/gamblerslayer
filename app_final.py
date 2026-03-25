@@ -1091,6 +1091,35 @@ if "_tp_cache_loaded" not in st.session_state:
         pass
     st.session_state["_tp_cache_loaded"] = True
 
+def run_all_simulations(games, n=10_000):
+    results=[]; pb=st.progress(0); st_txt=st.empty()
+    for i,game in enumerate(games):
+        st_txt.markdown(
+            f'<div style="font-family:Inter,sans-serif;font-size:0.896rem;color:#6B7280;">'
+            f'⚙ Simulando [{i+1}/{len(games)}] — {game["away_team"]} @ {game["home_team"]}</div>',
+            unsafe_allow_html=True)
+        # Enrich with recent form before simulation (cached 30min)
+        try:
+            enrich_game_with_form(game)
+        except Exception:
+            pass
+        results.append({**game,"sim":run_monte_carlo(game,n)})
+        pb.progress((i+1)/len(games))
+    pb.empty(); st_txt.empty()
+    results = build_parlays(results)
+    return results
+# ══════════════════════════════════════════════════════════════════════════════
+# PICK HISTORY — Auto-save & track system picks accuracy
+# Pestaña Google Sheets: pick_history
+# Columns: pick_id | fecha | partido | liga | deporte | mercado | pick_label |
+#          prob_pct | resultado | home_score | away_score | fuente
+# ══════════════════════════════════════════════════════════════════════════════
+_PH_TAB     = "pick_history"
+_PH_HEADERS = [
+    "pick_id","fecha","partido","liga","deporte","mercado",
+    "pick_label","prob_pct","resultado","home_score","away_score","fuente"
+]
+
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
     games=st.session_state.get("_cached_games_data",[])
@@ -11764,36 +11793,6 @@ def build_parlays(results):
     return results
 
 
-def run_all_simulations(games, n=10_000):
-    results=[]; pb=st.progress(0); st_txt=st.empty()
-    for i,game in enumerate(games):
-        st_txt.markdown(
-            f'<div style="font-family:Inter,sans-serif;font-size:0.896rem;color:#6B7280;">'
-            f'⚙ Simulando [{i+1}/{len(games)}] — {game["away_team"]} @ {game["home_team"]}</div>',
-            unsafe_allow_html=True)
-        # Enrich with recent form before simulation (cached 30min)
-        try:
-            enrich_game_with_form(game)
-        except Exception:
-            pass
-        results.append({**game,"sim":run_monte_carlo(game,n)})
-        pb.progress((i+1)/len(games))
-    pb.empty(); st_txt.empty()
-    results = build_parlays(results)
-    return results
-# ══════════════════════════════════════════════════════════════════════════════
-# PICK HISTORY — Auto-save & track system picks accuracy
-# Pestaña Google Sheets: pick_history
-# Columns: pick_id | fecha | partido | liga | deporte | mercado | pick_label |
-#          prob_pct | resultado | home_score | away_score | fuente
-# ══════════════════════════════════════════════════════════════════════════════
-_PH_TAB     = "pick_history"
-_PH_HEADERS = [
-    "pick_id","fecha","partido","liga","deporte","mercado",
-    "pick_label","prob_pct","resultado","home_score","away_score","fuente"
-]
-
-@st.cache_data(ttl=120)
 def _ph_load():
     """Load all rows from pick_history sheet. Returns list of dicts."""
     if not _gsheets_available():
@@ -12663,7 +12662,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260325b"  # Fix: games definida en todos los tabs, font-family OK  # priors por liga, filtro 7 días hard, sin Mundial
+_SIM_VERSION = "v20260325c"  # Fix: run_all_simulations antes del routing, games tabs  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
