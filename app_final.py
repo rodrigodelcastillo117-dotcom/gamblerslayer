@@ -6222,13 +6222,13 @@ def _ph_load():
         rows = ws.get_all_values()
         if len(rows) < 2:
             return []
-        picks = []
+        picks_raw = []
         for row in rows[1:]:
             if not row or not row[0]:
                 continue
             def _c(i, d=""):
                 return row[i] if i < len(row) else d
-            picks.append({
+            picks_raw.append({
                 "pick_id":   _c(0),
                 "fecha":     _c(1),
                 "partido":   _c(2),
@@ -6242,6 +6242,19 @@ def _ph_load():
                 "away_score":_c(10),
                 "fuente":    _c(11,"RONGOL"),
             })
+        # Deduplicar por pick_id — si hay duplicados, preferir el resuelto
+        _seen = {}
+        for p in picks_raw:
+            pid = p["pick_id"]
+            if pid not in _seen:
+                _seen[pid] = p
+            else:
+                # Preferir el que tiene resultado resuelto
+                existing_res = _seen[pid].get("resultado","pendiente")
+                new_res = p.get("resultado","pendiente")
+                if existing_res == "pendiente" and new_res != "pendiente":
+                    _seen[pid] = p
+        picks = list(_seen.values())
         return picks
     except Exception as e:
         return []
@@ -6417,17 +6430,38 @@ def _ph_auto_resolve(picks):
         else:
             t1, t2 = partido.strip(), ""
         for g in finished:
+            # Match: cualquiera de los dos equipos debe estar en el partido guardado
             m1 = _team_match(t1, g["home_team"], g["away_team"])
             m2 = _team_match(t2, g["home_team"], g["away_team"]) if t2 else None
+            # También intentar match parcial por nombre truncado
+            if not (m1 or m2) and t1 and t2:
+                _h = g["home_team"].lower()
+                _a = g["away_team"].lower()
+                _t1l = t1.lower(); _t2l = t2.lower()
+                # Match si al menos 4 chars coinciden al inicio
+                m1 = any(_h.startswith(_t1l[:6]) or _t1l.startswith(_h[:6]) or
+                         _a.startswith(_t1l[:6]) or _t1l.startswith(_a[:6])
+                         for _ in [1])
+                m2 = any(_h.startswith(_t2l[:6]) or _t2l.startswith(_h[:6]) or
+                         _a.startswith(_t2l[:6]) or _t2l.startswith(_a[:6])
+                         for _ in [1])
             if not (m1 or m2):
                 continue
-            # Build a fake pick dict for _evaluate_pick
+            # Necesitamos que AMBOS equipos coincidan para evitar falsos positivos
+            if t2 and not (m1 and m2):
+                continue
+            # Build fake pick dict for _evaluate_pick
             fake_pick = {
                 "partido": partido,
                 "pick":    p["pick_label"],
                 "mercado": p["mercado"],
+                "league":  p.get("liga",""),
             }
-            res = _evaluate_pick(fake_pick, g)
+            # Inyectar liga al game para que _evaluate_pick detecte el deporte
+            g_copy = dict(g)
+            if not g_copy.get("league") and p.get("liga"):
+                g_copy["league"] = p["liga"]
+            res = _evaluate_pick(fake_pick, g_copy)
             if res:
                 resolved[p["pick_id"]] = {
                     "resultado":  res,
