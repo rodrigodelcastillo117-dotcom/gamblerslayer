@@ -7010,6 +7010,756 @@ def _rango_for_bank(bank):
 
 
 # ── ROUTING ──
+
+# ── Constants & Setup (moved before routing) ──
+SOCCER_STD_LINE = {
+    "Bundesliga":       3.0,   # avg 3.24 → line typically opens at 3.0 or 3.5
+    "Premier League":   2.5,
+    "La Liga":          2.5,
+    "Serie A":          2.5,
+    "Ligue 1":          2.5,
+    "Champions League": 2.5,
+    "Europa League":    2.5,
+    "Conference League":2.5,
+    "MLS":              2.5,
+    "Liga MX":          2.5,
+    "CONCACAF Champions Cup": 2.5,
+    "Saudi Pro League":  2.5,
+    "Belgian Pro League":3.0,
+    "Eredivisie":        3.0,
+}
+_TP_TAB       = "team_profiles"
+_TP_MAX_GAMES = 10
+_TP_HEADERS   = [
+    "team_id","team_name","league","sport_group","last_updated",
+    "games_json","n_games","avg_scored","avg_conceded",
+    "avg_scored_home","avg_conceded_home","avg_scored_away","avg_conceded_away",
+    "rate_o15","rate_o25","rate_o35","rate_btts",
+    "rate_o15_home","rate_o25_home","rate_o35_home","rate_btts_home",
+    "rate_o15_away","rate_o25_away","rate_o35_away","rate_btts_away",
+    "thresholds_json","red_card_rate",
+]
+_TP_THRESHOLDS = {
+    "Soccer":     [("o15",1.5),("o25",2.5),("o35",3.5)],
+    "Basketball": [("o100",100),("o105",105),("o110",110),("o115",115),("o120",120),("o125",125)],
+    "Hockey":     [("o3",3.0),("o4",4.0),("o5",5.0),("o6",6.0),("o7",7.0)],
+    "Baseball":   [("o6",6.0),("o7",7.0),("o8",8.0),("o9",9.0),("o10",10.0)],
+    "Football":   [("o17",17),("o21",21),("o24",24),("o28",28),("o35",35),("o42",42)],
+}
+
+ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+
+_ALL_LEAGUE_SLUGS = {
+    "NBA":                  ("basketball", "nba"),
+    "NFL":                  ("football",   "nfl"),
+    "NCAAF":                ("football",   "college-football"),
+    "MLB":                  ("baseball",   "mlb"),
+    "NHL":                  ("hockey",     "nhl"),
+    "MLS":                  ("soccer",     "usa.1"),
+    "Liga MX":              ("soccer",     "mex.1"),
+    "Premier League":       ("soccer",     "eng.1"),
+    "La Liga":              ("soccer",     "esp.1"),
+    "Bundesliga":           ("soccer",     "ger.1"),
+    "Serie A":              ("soccer",     "ita.1"),
+    "Ligue 1":              ("soccer",     "fra.1"),
+    "Champions League":     ("soccer",     "uefa.champions"),
+    "Europa League":        ("soccer",     "uefa.europa"),
+    "Conference League":    ("soccer",     "uefa.europa.conf"),
+    "CONCACAF Champions Cup":("soccer",    "concacaf.champions"),
+    "Saudi Pro League":      ("soccer",    "sau.1"),
+    "Belgian Pro League":    ("soccer",    "bel.1"),
+    "Eredivisie":            ("soccer",    "ned.1"),
+    # Ligas ocultas (para poblar memoria de equipos favoritos)
+    "Superliga":             ("soccer",    "DEN.1"),
+    "Süper Lig":             ("soccer",    "TUR.1"),
+    "Super League Greece":   ("soccer",    "GRE.1"),
+    "Primeira Liga":         ("soccer",    "POR.1"),
+    "Eliteserien":           ("soccer",    "NOR.1"),
+    "Allsvenskan":           ("soccer",    "SWE.1"),
+}
+
+INJURY_POS_WEIGHTS = {
+    "Soccer": {
+        "F": 0.35, "FW": 0.35, "ATT": 0.35,           # forwards
+        "M": 0.20, "MF": 0.20, "MID": 0.20,            # midfielders
+        "D": 0.12, "DF": 0.12, "DEF": 0.12,            # defenders
+        "G": 0.18, "GK": 0.18, "GKP": 0.18,            # goalkeeper
+    },
+    "Basketball": {
+        "G": 0.35, "PG": 0.35, "SG": 0.35,             # guards
+        "F": 0.30, "SF": 0.30, "PF": 0.30,             # forwards
+        "C": 0.20,                                       # center
+    },
+    "Hockey": {
+        "F": 0.30, "LW": 0.30, "RW": 0.30, "C": 0.30, # forwards
+        "D": 0.20,                                       # defense
+        "G": 0.22,                                       # goalie
+    },
+    "Baseball": {
+        "SP": 0.40, "RP": 0.10,                         # pitchers (if available)
+        "C": 0.12, "1B": 0.14, "2B": 0.12, "3B": 0.14,
+        "SS": 0.14, "OF": 0.14, "DH": 0.14,
+    },
+    "Football": {
+        "QB": 0.45,
+        "WR": 0.20, "TE": 0.20,
+        "RB": 0.12, "FB": 0.12,
+        "OL": 0.08, "OT": 0.08, "OG": 0.08, "C": 0.08,
+        "DE": 0.10, "DT": 0.10, "LB": 0.10, "CB": 0.10, "S": 0.10,
+    },
+}
+
+# Status multiplier: how much of the position weight to apply
+INJURY_STATUS_MULT = {
+    "Out":          1.00,
+    "Injured Reserve":  1.00,
+    "IR":           1.00,
+    "Doubtful":     0.65,
+    "Questionable": 0.30,
+    "Day-To-Day":   0.20,
+    "Probable":     0.05,
+}
+
+# Max total impact per team (cap to avoid absurd values with many injuries)
+INJURY_MAX_IMPACT = {
+    "Soccer": 0.55, "Basketball": 0.50, "Hockey": 0.40,
+    "Baseball": 0.30, "Football": 0.60,
+}
+
+
+SPORT_SYSTEM_PROMPTS = {
+    "Basketball": """You are an elite NBA/basketball betting analyst with 15 years of experience.
+You specialize in: pace-adjusted metrics, rest/travel disadvantage, home-court factor in playoffs vs regular season,
+back-to-back fatigue, point differential trends, ATS (against the spread) patterns, and total points (O/U) analysis.
+Key edge areas: teams playing 2nd game of back-to-back, large home favorites covering less than 60%, pace mismatches.
+Respond in 2-3 sharp sentences. Lead with the single most important insight. Be direct, no fluff.""",
+
+    "Soccer": """You are a sharp soccer betting analyst covering global leagues (Liga MX, Premier League, UCL, La Liga, Bundesliga, Serie A, Ligue 1, Eredivisie, Belgian Pro League, Saudi Pro League, etc.).
+You specialize in: xG (expected goals) patterns, home/away form splits, European competition fatigue, 
+managerial tactics, set-piece efficiency, clean sheet rates, and value in BTTS and Asian handicap markets.
+Key edge areas: mid-table teams in dead rubbers, massive underdogs in cup ties, draw value in evenly matched derbies.
+Respond in 2-3 sharp sentences. Lead with the single most important factor affecting the market. Be direct.""",
+
+    "Football": """You are a sharp NFL/college football betting analyst.
+You specialize in: DVOA efficiency metrics, quarterback matchups, offensive line vs defensive front performance,
+weather impact on totals, division games (tighter spreads), home field primetime effect, and playoff seeding motivation.
+Key edge areas: home dogs in divisional games, bad weather collapsing totals, public money inflating favorites.
+Respond in 2-3 sharp sentences. Lead with the single biggest factor. Be direct, no fluff.""",
+
+    "Hockey": """You are a sharp NHL betting analyst.
+You specialize in: goaltender matchup quality, 5-on-5 expected goals differential, power play efficiency,
+back-to-back and travel fatigue, home ice advantage in divisional games, and puck line vs moneyline value.
+Key edge areas: elite goalie starting after rest vs tired starter, low total games under 5.5, home dogs with top-10 goalie.
+Respond in 2-3 sharp sentences. Lead with the most important factor. Be direct.""",
+
+    "Baseball": """You are a sharp MLB betting analyst.
+You specialize in: starting pitcher ERA/FIP/xFIP differential, bullpen availability (recent workload),
+platoon advantages (L vs R matchups), park factors, day/night splits, and run line vs moneyline value.
+Key edge areas: elite SP heavy favorite where the bullpen becomes a liability, road dogs with ace starters, 
+high totals in launching pad parks.
+Respond in 2-3 sharp sentences. Lead with the pitching matchup insight. Be direct.""",
+}
+
+LEAGUE_HOME_RATE = {
+    "NBA": 0.595,
+    "MLB": 0.540,
+    "NFL": 0.570, "NCAAF": 0.610,
+    "NHL": 0.550,
+    "MLS": 0.470, "Liga MX": 0.470,
+    "Premier League": 0.440, "La Liga": 0.455, "Bundesliga": 0.460,
+    "Serie A": 0.455, "Ligue 1": 0.455,
+    "Champions League": 0.475, "Europa League": 0.465,
+    "Conference League": 0.460, "CONCACAF Champions Cup": 0.480,
+    "Saudi Pro League": 0.465, "Belgian Pro League": 0.455, "Eredivisie": 0.450,
+    }
+
+SOCCER_LEAGUES = {
+    "MLS","Liga MX","Premier League","La Liga","Bundesliga",
+    "Serie A","Ligue 1","Champions League","Europa League","Conference League",
+    "CONCACAF Champions Cup","Saudi Pro League","Belgian Pro League","Eredivisie",
+}
+
+LEAGUE_OU_PRIORS = {
+    # Format: (P_U15, P_U25, P_U35, P_O15, P_O25, P_O35, P_BTTS)
+    # Fuente: Sofascore/FootyStats/FBref — Temporada 2025-26 (en curso ~Jornada 26)
+    # Bundesliga 2025-26: O2.5=62%, O3.5=40%, BTTS=57% (Sofascore)
+    # PL 2025-26:  O2.5=56%, O3.5=31%, BTTS=56%
+    # La Liga:     O2.5=51%, O3.5=28%, BTTS=52%
+    # Serie A:     O2.5=51%, O3.5=27%, BTTS=51%
+    # Ligue 1:     O2.5=56%, O3.5=30%, BTTS=54%
+    # MLS 2025:    O2.5=58%, O3.5=35%, BTTS=55%
+    # Liga MX:     O2.5=52%, O3.5=30%, BTTS=51%
+    "MLS":                   (0.215, 0.420, 0.650, 0.785, 0.580, 0.350, 0.550),
+    "Liga MX":               (0.250, 0.480, 0.700, 0.750, 0.520, 0.300, 0.510),
+    "Premier League":        (0.240, 0.440, 0.690, 0.760, 0.560, 0.310, 0.560),
+    "La Liga":               (0.265, 0.490, 0.720, 0.735, 0.510, 0.280, 0.520),
+    "Bundesliga":            (0.175, 0.380, 0.600, 0.825, 0.620, 0.400, 0.570),
+    "Serie A":               (0.265, 0.490, 0.730, 0.735, 0.510, 0.270, 0.510),
+    "Ligue 1":               (0.245, 0.440, 0.700, 0.755, 0.560, 0.300, 0.540),
+    "Champions League":      (0.185, 0.400, 0.625, 0.815, 0.600, 0.375, 0.610),
+    "Europa League":         (0.225, 0.455, 0.680, 0.775, 0.545, 0.320, 0.580),
+    "Conference League":     (0.255, 0.500, 0.720, 0.745, 0.500, 0.280, 0.550),
+    "CONCACAF Champions Cup":(0.225, 0.460, 0.685, 0.775, 0.540, 0.315, 0.575),
+    "Saudi Pro League":      (0.230, 0.465, 0.690, 0.770, 0.535, 0.310, 0.570),
+    "Belgian Pro League":    (0.195, 0.415, 0.635, 0.805, 0.585, 0.365, 0.615),
+    "Eredivisie":            (0.188, 0.400, 0.622, 0.812, 0.600, 0.378, 0.625),
+    # Ligas ocultas
+    "Superliga":             (0.218, 0.445, 0.665, 0.782, 0.555, 0.335, 0.560),
+    "Süper Lig":             (0.255, 0.488, 0.710, 0.745, 0.512, 0.290, 0.525),
+    "Super League Greece":   (0.262, 0.495, 0.720, 0.738, 0.505, 0.280, 0.515),
+    "Primeira Liga":         (0.268, 0.502, 0.725, 0.732, 0.498, 0.275, 0.510),
+    "Eliteserien":           (0.228, 0.458, 0.678, 0.772, 0.542, 0.322, 0.548),
+    "Allsvenskan":           (0.252, 0.485, 0.705, 0.748, 0.515, 0.295, 0.528),
+    # Selecciones nacionales — fuente: Opta/StatsBomb WCQ/Friendlies 2022-25
+    "World Cup Qualifying UEFA":     (0.285, 0.520, 0.738, 0.715, 0.480, 0.262, 0.490),
+    "World Cup Qualifying CONMEBOL": (0.265, 0.500, 0.722, 0.735, 0.500, 0.278, 0.510),
+    "World Cup Qualifying CONCACAF": (0.245, 0.475, 0.700, 0.755, 0.525, 0.300, 0.520),
+    "World Cup Qualifying CAF":      (0.260, 0.495, 0.718, 0.740, 0.505, 0.282, 0.500),
+    "World Cup Qualifying AFC":      (0.268, 0.505, 0.725, 0.732, 0.495, 0.275, 0.495),
+    "World Cup Qualifying OFC":      (0.272, 0.508, 0.728, 0.728, 0.492, 0.272, 0.492),
+    "International Friendly":        (0.205, 0.430, 0.650, 0.795, 0.570, 0.350, 0.555),
+    "Friendly (Club)":               (0.215, 0.440, 0.658, 0.785, 0.560, 0.342, 0.548),
+    "Nations League UEFA":           (0.278, 0.512, 0.730, 0.722, 0.488, 0.270, 0.495),
+    "Nations League CONCACAF":       (0.255, 0.488, 0.710, 0.745, 0.512, 0.290, 0.510),
+    "Gold Cup":                      (0.242, 0.472, 0.695, 0.758, 0.528, 0.305, 0.525),
+    "FIFA World Cup":                (0.298, 0.535, 0.748, 0.702, 0.465, 0.252, 0.478),
+    "Copa America":                  (0.278, 0.515, 0.732, 0.722, 0.485, 0.268, 0.490),
+    "Euro":                          (0.282, 0.518, 0.735, 0.718, 0.482, 0.265, 0.488),
+}
+
+# Minimum deviation from league prior to qualify as a valid O/U or BTTS pick.
+OU_MIN_EDGE = 0.05  # Reducido: selecciones con lambdas calibradas necesitan menor edge
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SOCCER O/U CALIBRATION — post-simulation correction per league
+# Source: FBref / Understat / Football-Data.co.uk 2022-23 to 2024-25 (3-year avg)
+# Format: (Δ_u25, Δ_u35, Δ_btts)
+# Positive Δ = model underestimates Under → shift up. Negative → shift down.
+# Rule enforced: Δ_u35 >= Δ_u25 always (keeps O3.5 ≤ O2.5 after calibration)
+#
+# Real 3yr averages vs Poisson model output:
+# PL:    O2.5=54%, O3.5=30%, BTTS=55%  | Model raw: ~53%, ~31%, ~57% → small fixes
+# LaLiga:O2.5=51%, O3.5=28%, BTTS=52%  | Model raw: ~49%, ~27%, ~54% → push toward real
+# Bund:  O2.5=58%, O3.5=37%, BTTS=57%  | Model raw: ~63%, ~41%, ~64% → reduce Over
+# SerieA:O2.5=52%, O3.5=28%, BTTS=52%  | Model raw: ~51%, ~29%, ~55% → small
+# Ligue1:O2.5=50%, O3.5=27%, BTTS=51%  | Model raw: ~50%, ~28%, ~53% → small
+# LigaMX:O2.5=52%, O3.5=32%, BTTS=51%  | Model raw: ~51%, ~29%, ~55% → small
+# UCL:   O2.5=59%, O3.5=36%, BTTS=59%  | Model raw: ~61%, ~38%, ~63% → reduce
+# MLS:   O2.5=53%, O3.5=32%, BTTS=54%  | Model raw: ~57%, ~34%, ~60% → reduce
+# ═══════════════════════════════════════════════════════════════════════════════
+SOCCER_CALIB = {
+    # (Δ_U2.5, Δ_U3.5, Δ_BTTS)  — positive = more Under = less Over
+    # Premier League: model ~accurate, tiny BTTS over-pred
+    "Premier League":         ( +0.010,  +0.020, -0.020),
+    # La Liga: model under-predicts Under slightly
+    "La Liga":                ( +0.020,  +0.030, -0.020),
+    # Bundesliga: biggest correction — Poisson over-predicts high scores heavily
+    "Bundesliga":             ( +0.060,  +0.080, -0.080),
+    # Serie A: model over-predicts BTTS, O/U close
+    "Serie A":                ( +0.020,  +0.035, -0.030),
+    # Ligue 1: model over-predicts Over and BTTS
+    "Ligue 1":                ( +0.025,  +0.040, -0.025),
+    # Liga MX: model over-predicts BTTS significantly
+    "Liga MX":                ( +0.010,  +0.035, -0.040),
+    # Champions League: slight over-pred of Over/BTTS
+    "Champions League":       ( +0.020,  +0.030, -0.040),
+    # Europa League
+    "Europa League":          ( +0.015,  +0.025, -0.035),
+    # Conference League: lower scoring than model predicts
+    "Conference League":      ( +0.025,  +0.040, -0.035),
+    # CONCACAF: erratic, higher variance — push Under hard
+    "CONCACAF Champions Cup": ( +0.060,  +0.080, -0.100),
+    # Saudi Pro League: ~avg scoring, similar to MLS
+    "Saudi Pro League":       ( +0.025,  +0.040, -0.045),
+    # Belgian Pro League: high-scoring but model over-predicts
+    "Belgian Pro League":     ( +0.030,  +0.045, -0.030),
+    # Eredivisie: also high-scoring but model over-predicts
+    "Eredivisie":             ( +0.030,  +0.045, -0.035),
+    # MLS: clear Over over-prediction by Poisson
+    "MLS":                    ( +0.040,  +0.055, -0.060),
+    # Ligas ocultas
+    "Superliga":              ( +0.025,  +0.040, -0.030),
+    "Süper Lig":              ( +0.020,  +0.035, -0.035),
+    "Super League Greece":    ( +0.015,  +0.030, -0.025),
+    "Primeira Liga":          ( +0.020,  +0.035, -0.025),
+    "Eliteserien":            ( +0.030,  +0.045, -0.035),
+    "Allsvenskan":            ( +0.025,  +0.040, -0.030),
+}
+
+PUBLIC_BIAS_PTS = {
+    "Basketball": 0.8,   # NBA: strong public Over bias → shift effective line down 0.8 pts
+    "Baseball":   0.3,   # MLB: mild Over bias
+    "Hockey":     0.4,   # NHL: moderate Under-friendly → shift line down 0.4
+    "Football":   0.3,   # NFL: mild public Over bias
+}
+
+# Standard market lines per sport — analyzed for EVERY game regardless of ESPN line
+SPORT_STD_LINES = {
+    "Hockey":   [5.5, 6.5],
+    "Baseball": [7.5, 8.5, 9.5],
+}
+
+run_sidebar = st.session_state.pop("trigger_analyze", False)
+
+# Valores de configuración persistentes (antes estaban en sidebar / panel hamburguesa)
+n_sims     = st.session_state.get("n_sims_val", 10_000)
+sel_groups = st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"])
+_avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups and not cfg.get("hidden")]
+_saved_leagues = st.session_state.get("sel_leagues_val", None)
+if _saved_leagues is None:
+    sel_leagues = _avail
+    st.session_state["sel_leagues_val"] = _avail
+else:
+    _new_leagues = [l for l in _avail if l not in _saved_leagues]
+    if _new_leagues:
+        _saved_leagues = _saved_leagues + _new_leagues
+        st.session_state["sel_leagues_val"] = _saved_leagues
+    sel_leagues = [l for l in _saved_leagues if l in _avail]
+use_demo   = st.session_state.get("use_demo_val", False)
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+
+
+st.markdown("""
+<div class="den-header">
+  <div class="den-logo">The Gamblers Den</div>
+  <div class="den-subtitle">Monte Carlo · Expected Value · Sports Intelligence</div>
+  <div style="margin-top:10px">
+    <span class="den-corner">♠</span>
+    <span class="den-corner">♣</span>
+    <span class="den-corner">♥</span>
+    <span class="den-corner">♦</span>
+  </div>
+</div>
+<div class="den-divider"></div>
+""", unsafe_allow_html=True)
+
+if not sel_leagues:
+    st.warning("Selecciona al menos una liga en el sidebar.")
+    st.stop()
+
+# Load games
+is_demo=False
+if use_demo:
+    games=get_demo_games(); is_demo=True
+else:
+    _leagues_key = tuple(sorted(sel_leagues))
+    _already_cached = _leagues_key in st.session_state.get("_games_fetched", set())
+
+    # Re-fetch si hay ligas soccer activas pero no hay partidos soccer pre/in en cache
+    if _already_cached:
+        _prev_games = st.session_state.get("_cached_games_data", [])
+        _has_soccer_leagues = any(LEAGUES.get(l,{}).get("group")=="Soccer" for l in sel_leagues)
+        _has_soccer_pre = any(
+            LEAGUES.get(g.get("league",""),{}).get("group")=="Soccer"
+            and g.get("state") in ("pre","in")
+            for g in _prev_games
+        )
+        if _has_soccer_leagues and not _has_soccer_pre:
+            _already_cached = False  # forzar re-fetch — ESPN puede tener partidos nuevos
+
+    if not _already_cached:
+        with st.spinner("Consultando ESPN..."):
+            games,fetch_errors=get_all_games(_leagues_key)
+        _fetched = st.session_state.get("_games_fetched", set())
+        _fetched.add(_leagues_key)
+        st.session_state["_games_fetched"] = _fetched
+        st.session_state["_cached_games_data"] = games
+    else:
+        games,fetch_errors=get_all_games(_leagues_key)
+        st.session_state["_cached_games_data"] = games
+
+    # ── Persist pre-game soccer matches across refreshes ─────────────────────
+    # ESPN soccer API often only returns active games. We cache pre-game soccer
+    # matches so they keep appearing in PICKS even after ESPN drops them.
+    from datetime import timedelta as _td_cache
+    _now_cache = datetime.now(timezone.utc)
+    _today_cdmx_cache = (_now_cache - _td_cache(hours=6)).strftime("%Y-%m-%d")
+    _cached_pre = st.session_state.get("_soccer_pre_cache", {})
+
+    # Store new pre-game soccer matches
+    for _g in games:
+        _gid = _g.get("id","")
+        if not _gid: continue
+        if LEAGUES.get(_g.get("league",""),{}).get("group","") == "Soccer" and _g.get("state") == "pre":
+            _cached_pre[_gid] = _g
+
+    # Purge old days — mantener ventana 5 días para no perder partidos próximos
+    _yesterday_cdmx_cache = (_now_cache - _td_cache(hours=6) - _td_cache(days=1)).strftime("%Y-%m-%d")
+    _valid_cache_dates = {_yesterday_cdmx_cache, _today_cdmx_cache}
+    for _d in range(1, 7):
+        _valid_cache_dates.add((_now_cache - _td_cache(hours=6) + _td_cache(days=_d)).strftime("%Y-%m-%d"))
+    for _gid in [k for k, v in list(_cached_pre.items())]:
+        try:
+            _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","")[:19]).replace("T"," "),
+                        "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) - _td_cache(hours=6)).strftime("%Y-%m-%d")
+            if _ev_cdmx not in _valid_cache_dates:
+                _cached_pre.pop(_gid, None)
+        except: pass
+
+    st.session_state["_soccer_pre_cache"] = _cached_pre
+
+    # Re-inject cached pre-game soccer that ESPN dropped (now showing as live or missing)
+    _current_ids = {_g.get("id","") for _g in games}
+    for _gid, _cg in _cached_pre.items():
+        if _gid not in _current_ids:
+            _cg_copy = dict(_cg); _cg_copy["state"] = "pre"
+            games.append(_cg_copy)
+
+    # ── FILTRO HARD: descartar partidos con fecha > 7 días desde hoy ─────────
+    # Esto es la última línea de defensa contra partidos del Mundial de junio
+    # que se cuelen por cache viejo o por ESPN devolviendo el torneo completo.
+    if not is_demo:
+        from datetime import timedelta as _td_hf, timezone as _tz_hf
+        _now_hf   = datetime.now(_tz_hf.utc)
+        _now_mx_hf = _now_hf - _td_hf(hours=6)
+        _max_date_hf = (_now_mx_hf + _td_hf(days=7)).strftime("%Y-%m-%d")
+        _min_date_hf = (_now_mx_hf - _td_hf(days=1)).strftime("%Y-%m-%d")
+        _games_filtered = []
+        for _g in games:
+            _gstate = _g.get("state","")
+            if _gstate == "in":  # en vivo: siempre mantener
+                _games_filtered.append(_g)
+                continue
+            _gdate_raw = _g.get("date","")
+            if not _gdate_raw:  # sin fecha: mantener (puede ser hoy)
+                _games_filtered.append(_g)
+                continue
+            try:
+                _gdt = datetime.strptime(_gdate_raw[:19].replace("T"," ").replace("Z",""),
+                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_hf.utc)
+                _gdate_mx = (_gdt - _td_hf(hours=6)).strftime("%Y-%m-%d")
+                if _min_date_hf <= _gdate_mx <= _max_date_hf:
+                    _games_filtered.append(_g)
+                # else: partido fuera de ventana → descartar silenciosamente
+            except:
+                _games_filtered.append(_g)  # no parseable → mantener
+        games = _games_filtered
+
+    if not games:
+        # Try to auto-switch to demo so the app is usable
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("↺ Reintentar ESPN", use_container_width=True):
+                st.cache_data.clear()
+                st.session_state.pop("_games_fetched", None)
+                st.rerun()
+        with col_b:
+            if st.button("🧪 Usar demo", use_container_width=True):
+                st.session_state["force_demo"] = True
+                st.rerun()
+
+        leagues_str = ", ".join(sel_leagues[:6])
+
+        # Build more helpful error with ESPN test links
+        _now_mx_err = datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=6)
+        _today_str  = _now_mx_err.strftime("%Y%m%d")
+
+        st.markdown(
+            f'<div class="warn-banner">'
+            f'⚠️ ESPN no devolvió partidos para: <b>{leagues_str}</b>.<br><br>'
+            f'<b>Posibles causas:</b><br>'
+            f'• No hay partidos programados para hoy en esas ligas<br>'
+            f'• ESPN está tardando — presiona "Reintentar ESPN"<br>'
+            f'• Hoy es día de descanso (lunes/martes en NBA, etc.)<br><br>'
+            f'<b>Verifica manualmente:</b> '
+            f'<a href="https://www.espn.com/nba/scoreboard/_/date/{_today_str}" target="_blank" style="color:#FF8C00">NBA</a> · '
+            f'<a href="https://www.espn.com/mlb/scoreboard/_/date/{_today_str}" target="_blank" style="color:#FF8C00">MLB</a> · '
+            f'<a href="https://www.espn.com/soccer/scoreboard" target="_blank" style="color:#FF8C00">Soccer</a>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        # Show fetch errors if any
+        if fetch_errors:
+            with st.expander("🔍 Detalle de errores de API"):
+                for err in fetch_errors[:10]:
+                    st.caption(f"• {err}")
+
+        st.stop()
+    else:
+        sel_set=set(sel_leagues)
+        games=[g for g in games if g["league"] in sel_set] or games
+
+if st.session_state.get("force_demo"):
+    games=get_demo_games(); is_demo=True; st.session_state.pop("force_demo",None)
+
+if is_demo:
+    st.markdown('<div class="demo-banner">⚠ MODO DEMO — Datos ilustrativos. Desactiva el toggle en el sidebar para datos reales de ESPN.</div>',unsafe_allow_html=True)
+
+# ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
+_already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
+_SIM_VERSION = "v20260325f"  # FIX: constantes + funciones antes del routing  # priors por liga, filtro 7 días hard, sin Mundial
+_leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
+_prev_key = st.session_state.get("_sim_key", "")
+_leagues_changed = _leagues_key != _prev_key
+# Invalidar cache de games si versión cambió
+if _prev_key and _SIM_VERSION not in _prev_key:
+    st.session_state.pop("_games_fetched", None)
+    st.session_state.pop("_soccer_pre_cache", None)
+
+# ── AUTO-REFRESH DIARIO a las 6am CDMX ──────────────────────────────────────
+# Cada vez que carga la página, verifica si hay datos nuevos del día
+from datetime import datetime as _dt_ar, timezone as _tz_ar, timedelta as _td_ar
+_now_ar      = _dt_ar.now(_tz_ar.utc) - _td_ar(hours=6)  # hora CDMX
+_today_cdmx  = _now_ar.strftime("%Y-%m-%d")
+_hour_cdmx   = _now_ar.hour
+_last_sim_dt = st.session_state.get("_last_sim_date", "")
+
+# Condiciones para auto-re-simular:
+# 1. Es un día nuevo (distinto al último sim)
+# 2. Son las 6am o más (datos de ESPN ya actualizados)
+_is_new_day  = _today_cdmx != _last_sim_dt
+_after_6am   = _hour_cdmx >= 6
+_auto_refresh = _is_new_day and _after_6am and _already_simulated and not run_sidebar
+
+if _auto_refresh:
+    st.session_state["_sim_key"] = ""  # fuerza re-sim
+    _leagues_changed = True
+    # Clear game cache so ESPN is re-fetched
+    st.session_state["_games_fetched"] = set()
+
+# Auto-countdown: si son las 5am-6am, refrescar en background cada minuto
+if _hour_cdmx == 5 and _already_simulated:
+    _mins_left = 60 - _now_ar.minute
+    st.markdown(
+        f'<div style="font-size:0.6rem;color:#444;text-align:center;padding:2px">'
+        f'⏰ Datos del día a las 6:00 AM CDMX (en ~{_mins_left} min)</div>',
+        unsafe_allow_html=True
+    )
+    # Auto-refresh each minute until 6am
+    st.markdown(
+        '<script>setTimeout(function(){window.location.reload()},60000)</script>',
+        unsafe_allow_html=True
+    )
+
+if (not _already_simulated or _leagues_changed or run_sidebar) and games:
+    with st.spinner("🔮 El Oráculo está analizando los partidos..."):
+        import time as _time
+        _t0 = _time.time()
+        _sr = run_all_simulations(games, n=n_sims)
+        _elapsed = _time.time() - _t0
+    st.session_state["sim_results"] = _sr
+    st.session_state["last_sim_demo"] = is_demo
+    st.session_state["_sim_key"] = _leagues_key
+    # Save today's date so auto-refresh knows when data is fresh
+    from datetime import datetime as _dt_sv2, timezone as _tz_sv2, timedelta as _td_sv2
+    _today_save = (_dt_sv2.now(_tz_sv2.utc) - _td_sv2(hours=6)).strftime("%Y-%m-%d")
+    st.session_state["_last_sim_date"] = _today_save
+    _n_pos = len([r for r in _sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
+    # ── AUTO-SAVE picks to pick_history (skip demo mode) ──────────────────
+    if not is_demo and _gsheets_available():
+        try:
+            _ph_new = _ph_build_picks_from_sim(_sr, fuente="RONGOL")
+            _ph_saved = _ph_save_picks(_ph_new)
+            _ph_load.clear()  # invalidate cache
+            if _ph_saved and _ph_saved > 0:
+                _ph_labels = " · ".join(
+                    f'{p["deporte"]} {p["mercado"]} {p["pick_label"][:12]}'
+                    for p in _ph_new[:3]
+                )
+                st.toast(f"📋 {_ph_saved} pick(s) guardados → {_ph_labels}", icon="📋")
+            elif run_sidebar and _ph_new:
+                st.toast(f"📋 Historial al día ({len(_ph_new)} picks ya registrados)", icon="📋")
+        except Exception as _ph_err:
+            pass  # never block the main flow
+
+    # ── AUTO-RESOLVE: update pendiente → ganado/perdido for finished games ──
+    if not is_demo and _gsheets_available():
+        try:
+            _post_games = [g for g in games if g.get("state") == "post"]
+            if _post_games:
+                _all_ph = _ph_load()
+                _resolved = _ph_auto_resolve(_all_ph)
+                if _resolved:
+                    _n_resolved = _ph_update_results(_resolved)
+                    if _n_resolved and _n_resolved > 0:
+                        _win  = sum(1 for v in _resolved.values() if v["resultado"] == "ganado")
+                        _lose = sum(1 for v in _resolved.values() if v["resultado"] == "perdido")
+                        st.toast(f"✅ {_n_resolved} picks resueltos · {_win}W {_lose}L", icon="📊")
+        except Exception:
+            pass  # never block the main flow
+
+    if run_sidebar:
+        st.toast(f"✓ {len(games)*n_sims:,} sims en {_elapsed:.1f}s · {_n_pos} value bets", icon="🔮")
+    st.rerun()
+
+# Stats bar
+live_g=[g for g in games if g["state"]=="in"]
+pre_g=[g for g in games if g["state"]=="pre"]
+odds_g=[g for g in games if g["odds"]]
+sr=st.session_state.get("sim_results",[])
+pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
+
+st.markdown(f"""<div class="stat-grid">
+  <div class="stat-tile"><div class="stat-num">{len(games)}</div><div class="stat-label">Partidos</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len(live_g)}</div><div class="stat-label">En Vivo</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
+  <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
+  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
+</div>""", unsafe_allow_html=True)
+
+st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
+
+# [team profiles badge — moved below after function definitions]
+
+# ── Team Profiles — cargar y mostrar badge ────────────────────────────────
+# Forzar recarga si la cache tiene 0 equipos (puede estar cacheando vacío)
+_tp_profiles_now = _load_all_team_profiles()
+if len(_tp_profiles_now) == 0:
+    _load_all_team_profiles.clear()
+    _tp_profiles_now = _load_all_team_profiles()
+_tp_count_now    = len(_tp_profiles_now)
+_tp_err_now      = st.session_state.get("_tp_load_error","")
+
+if _tp_count_now > 0:
+    _tp_total_games = sum(p.get("n_games",0) for p in _tp_profiles_now.values())
+    _tp_leagues     = len({p.get("league","") for p in _tp_profiles_now.values()})
+    st.markdown(
+        f'<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
+        f'color:#00C896;letter-spacing:1px">'
+        f'🧠 Memoria activa: <b>{_tp_count_now}</b> equipos · '
+        f'<b>{_tp_total_games}</b> partidos · '
+        f'<b>{_tp_leagues}</b> ligas</div>',
+        unsafe_allow_html=True
+    )
+elif _tp_err_now:
+    st.markdown(
+        f'<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
+        f'color:#ef4444;letter-spacing:1px">'
+        f'🧠 Memoria: error — {_tp_err_now[:80]}</div>',
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        '<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
+        'color:#6B7280;letter-spacing:1px">'
+        '🧠 Memoria: aprendiendo... · <b>↓ Poblar Memoria</b> en el sidebar</div>',
+        unsafe_allow_html=True
+    )
+
+# ── Poblar memoria (botón sidebar) ───────────────────────────────────────────
+if st.session_state.pop("run_populate", False):
+    # ── Diagnóstico antes de intentar poblar ─────────────────────────────────
+    diag_lines = []
+    try:
+        s = st.secrets.get("gsheets", {})
+        diag_lines.append(f"gsheets secret keys: {list(s.keys())}")
+        diag_lines.append(f"private_key present: {bool(s.get('private_key'))}")
+        diag_lines.append(f"spreadsheet_id: {s.get('spreadsheet_id','MISSING')}")
+        diag_lines.append(f"_gsheets_available(): {_gsheets_available()}")
+        try:
+            gc = _get_gsheet_client()
+            diag_lines.append("gsheet client: ✅ OK")
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            sh = gc.open_by_key(sid)
+            diag_lines.append(f"spreadsheet opened: ✅ '{sh.title}'")
+            tabs = [ws.title for ws in sh.worksheets()]
+            diag_lines.append(f"existing tabs: {tabs}")
+        except Exception as e:
+            diag_lines.append(f"gsheet client ERROR: {e}")
+    except Exception as e:
+        diag_lines.append(f"secrets ERROR: {e}")
+
+    with st.expander("🔍 Diagnóstico Sheets", expanded=True):
+        for line in diag_lines:
+            st.code(line)
+
+    if not _gsheets_available():
+        st.error("❌ Google Sheets no disponible — revisa diagnóstico arriba")
+        st.stop()
+    else:
+        st.markdown("""
+        <div style='background:rgba(201,168,76,0.08);border:1px solid #C9A84C;
+        border-radius:12px;padding:16px;margin-bottom:16px'>
+        <div style='font-family:Inter,sans-serif;color:#C9A84C;font-size:1.12rem;
+        font-weight:700;margin-bottom:8px'>🧠 POBLANDO MEMORIA DE EQUIPOS</div>
+        <div style='font-size:0.84rem;color:#9ca3af'>
+        Descargando historial de ESPN para todas las ligas y equipos.<br>
+        Esto tarda ~3-5 minutos. No cierres la app.
+        </div></div>
+        """, unsafe_allow_html=True)
+
+        _prog  = st.progress(0)
+        _stat  = st.empty()
+        _written, _failed, _log = populate_all_team_profiles(
+            progress_bar=_prog,
+            status_text=_stat,
+        )
+        _prog.progress(1.0)
+        _stat.empty()
+
+        # Mostrar resumen
+        if _written > 0:
+            st.success(f"✅ Memoria poblada: **{_written}** equipos guardados, {_failed} fallidos")
+        else:
+            st.error(f"❌ 0 equipos guardados. {_failed} fallidos. Revisa el log.")
+
+        # Log expandible — siempre visible
+        with st.expander("📋 Ver log completo", expanded=(_written == 0)):
+            st.code("\n".join(_log))
+
+        # Solo limpiar cache, NO hacer rerun para que el log sea visible
+        st.cache_data.clear()
+
+# ── HANDLER: Poblar Memoria Nacional ─────────────────────────────────────────
+if st.session_state.pop("run_populate_nt", False):
+    if not _gsheets_available():
+        st.error("❌ Google Sheets no disponible — configura las credenciales en secrets.")
+    else:
+        with st.spinner("🌍 Escribiendo datos de selecciones nacionales al Sheet..."):
+            _nt_written, _nt_err = populate_national_teams_sheet()
+        if _nt_err:
+            st.error(f"❌ Error: {_nt_err}")
+        else:
+            st.success(
+                f"✅ **{_nt_written} selecciones** escritas en la hoja `national_teams` del Google Sheet. "
+                f"Incluye: FIFA ranking, GF/GA por partido, forma, sede y local real de cada partido Mar 26-29 2026."
+            )
+            st.balloons()
+
+# ── ROUTING ───────────────────────────────────────────────────────────────────
+import json, os as _os, re as _re
+
+# ── Google Sheets persistence ─────────────────────────────────────────────────
+# Requires st.secrets["gsheets"] with keys:
+#   type, project_id, private_key_id, private_key, client_email,
+#   client_id, auth_uri, token_uri, spreadsheet_id
+#
+# Each user = one sheet tab named after their apodo.
+# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
+# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
+# Row 3+ = picks
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEAM PROFILES — Sistema de aprendizaje por equipo
+# Pestaña "team_profiles" en Google Sheets
+# Aprende de los últimos 10 partidos de cada equipo y usa ese historial
+# para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# _TP constants moved to top
+
+
+# [_load_all_team_profiles moved to top]
+
+
+# _compute_profile_stats moved to top
+# populate_all_team_profiles defined above
+_SYSTEM_TABS = {"pick_history", "line_movement", "team_profiles",
+                "Sheet1", "Hoja1", "sheet1", "hoja1", "SHEET1", "HOJA1",
+                "supervivencia"}
+
+
+# ── ROUTING ──
 if _active_page == "Rongol Picks":
     sr    = st.session_state.get("sim_results", [])
     games = st.session_state.get("_cached_games_data", [])
@@ -12664,750 +13414,4 @@ elif _active_page == "Config":
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
 st.markdown('<div style="text-align:center;font-family:Inter,sans-serif;font-size:0.65rem;color:#333333;letter-spacing:2px;padding:12px 0">THE GAMBLERS DEN · MONTE CARLO ENGINE · ⚠ SOLO FINES INFORMATIVOS</div>',unsafe_allow_html=True)
-
-SOCCER_STD_LINE = {
-    "Bundesliga":       3.0,   # avg 3.24 → line typically opens at 3.0 or 3.5
-    "Premier League":   2.5,
-    "La Liga":          2.5,
-    "Serie A":          2.5,
-    "Ligue 1":          2.5,
-    "Champions League": 2.5,
-    "Europa League":    2.5,
-    "Conference League":2.5,
-    "MLS":              2.5,
-    "Liga MX":          2.5,
-    "CONCACAF Champions Cup": 2.5,
-    "Saudi Pro League":  2.5,
-    "Belgian Pro League":3.0,
-    "Eredivisie":        3.0,
-}
-_TP_TAB       = "team_profiles"
-_TP_MAX_GAMES = 10
-_TP_HEADERS   = [
-    "team_id","team_name","league","sport_group","last_updated",
-    "games_json","n_games","avg_scored","avg_conceded",
-    "avg_scored_home","avg_conceded_home","avg_scored_away","avg_conceded_away",
-    "rate_o15","rate_o25","rate_o35","rate_btts",
-    "rate_o15_home","rate_o25_home","rate_o35_home","rate_btts_home",
-    "rate_o15_away","rate_o25_away","rate_o35_away","rate_btts_away",
-    "thresholds_json","red_card_rate",
-]
-_TP_THRESHOLDS = {
-    "Soccer":     [("o15",1.5),("o25",2.5),("o35",3.5)],
-    "Basketball": [("o100",100),("o105",105),("o110",110),("o115",115),("o120",120),("o125",125)],
-    "Hockey":     [("o3",3.0),("o4",4.0),("o5",5.0),("o6",6.0),("o7",7.0)],
-    "Baseball":   [("o6",6.0),("o7",7.0),("o8",8.0),("o9",9.0),("o10",10.0)],
-    "Football":   [("o17",17),("o21",21),("o24",24),("o28",28),("o35",35),("o42",42)],
-}
-
-ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
-
-_ALL_LEAGUE_SLUGS = {
-    "NBA":                  ("basketball", "nba"),
-    "NFL":                  ("football",   "nfl"),
-    "NCAAF":                ("football",   "college-football"),
-    "MLB":                  ("baseball",   "mlb"),
-    "NHL":                  ("hockey",     "nhl"),
-    "MLS":                  ("soccer",     "usa.1"),
-    "Liga MX":              ("soccer",     "mex.1"),
-    "Premier League":       ("soccer",     "eng.1"),
-    "La Liga":              ("soccer",     "esp.1"),
-    "Bundesliga":           ("soccer",     "ger.1"),
-    "Serie A":              ("soccer",     "ita.1"),
-    "Ligue 1":              ("soccer",     "fra.1"),
-    "Champions League":     ("soccer",     "uefa.champions"),
-    "Europa League":        ("soccer",     "uefa.europa"),
-    "Conference League":    ("soccer",     "uefa.europa.conf"),
-    "CONCACAF Champions Cup":("soccer",    "concacaf.champions"),
-    "Saudi Pro League":      ("soccer",    "sau.1"),
-    "Belgian Pro League":    ("soccer",    "bel.1"),
-    "Eredivisie":            ("soccer",    "ned.1"),
-    # Ligas ocultas (para poblar memoria de equipos favoritos)
-    "Superliga":             ("soccer",    "DEN.1"),
-    "Süper Lig":             ("soccer",    "TUR.1"),
-    "Super League Greece":   ("soccer",    "GRE.1"),
-    "Primeira Liga":         ("soccer",    "POR.1"),
-    "Eliteserien":           ("soccer",    "NOR.1"),
-    "Allsvenskan":           ("soccer",    "SWE.1"),
-}
-
-INJURY_POS_WEIGHTS = {
-    "Soccer": {
-        "F": 0.35, "FW": 0.35, "ATT": 0.35,           # forwards
-        "M": 0.20, "MF": 0.20, "MID": 0.20,            # midfielders
-        "D": 0.12, "DF": 0.12, "DEF": 0.12,            # defenders
-        "G": 0.18, "GK": 0.18, "GKP": 0.18,            # goalkeeper
-    },
-    "Basketball": {
-        "G": 0.35, "PG": 0.35, "SG": 0.35,             # guards
-        "F": 0.30, "SF": 0.30, "PF": 0.30,             # forwards
-        "C": 0.20,                                       # center
-    },
-    "Hockey": {
-        "F": 0.30, "LW": 0.30, "RW": 0.30, "C": 0.30, # forwards
-        "D": 0.20,                                       # defense
-        "G": 0.22,                                       # goalie
-    },
-    "Baseball": {
-        "SP": 0.40, "RP": 0.10,                         # pitchers (if available)
-        "C": 0.12, "1B": 0.14, "2B": 0.12, "3B": 0.14,
-        "SS": 0.14, "OF": 0.14, "DH": 0.14,
-    },
-    "Football": {
-        "QB": 0.45,
-        "WR": 0.20, "TE": 0.20,
-        "RB": 0.12, "FB": 0.12,
-        "OL": 0.08, "OT": 0.08, "OG": 0.08, "C": 0.08,
-        "DE": 0.10, "DT": 0.10, "LB": 0.10, "CB": 0.10, "S": 0.10,
-    },
-}
-
-# Status multiplier: how much of the position weight to apply
-INJURY_STATUS_MULT = {
-    "Out":          1.00,
-    "Injured Reserve":  1.00,
-    "IR":           1.00,
-    "Doubtful":     0.65,
-    "Questionable": 0.30,
-    "Day-To-Day":   0.20,
-    "Probable":     0.05,
-}
-
-# Max total impact per team (cap to avoid absurd values with many injuries)
-INJURY_MAX_IMPACT = {
-    "Soccer": 0.55, "Basketball": 0.50, "Hockey": 0.40,
-    "Baseball": 0.30, "Football": 0.60,
-}
-
-
-SPORT_SYSTEM_PROMPTS = {
-    "Basketball": """You are an elite NBA/basketball betting analyst with 15 years of experience.
-You specialize in: pace-adjusted metrics, rest/travel disadvantage, home-court factor in playoffs vs regular season,
-back-to-back fatigue, point differential trends, ATS (against the spread) patterns, and total points (O/U) analysis.
-Key edge areas: teams playing 2nd game of back-to-back, large home favorites covering less than 60%, pace mismatches.
-Respond in 2-3 sharp sentences. Lead with the single most important insight. Be direct, no fluff.""",
-
-    "Soccer": """You are a sharp soccer betting analyst covering global leagues (Liga MX, Premier League, UCL, La Liga, Bundesliga, Serie A, Ligue 1, Eredivisie, Belgian Pro League, Saudi Pro League, etc.).
-You specialize in: xG (expected goals) patterns, home/away form splits, European competition fatigue, 
-managerial tactics, set-piece efficiency, clean sheet rates, and value in BTTS and Asian handicap markets.
-Key edge areas: mid-table teams in dead rubbers, massive underdogs in cup ties, draw value in evenly matched derbies.
-Respond in 2-3 sharp sentences. Lead with the single most important factor affecting the market. Be direct.""",
-
-    "Football": """You are a sharp NFL/college football betting analyst.
-You specialize in: DVOA efficiency metrics, quarterback matchups, offensive line vs defensive front performance,
-weather impact on totals, division games (tighter spreads), home field primetime effect, and playoff seeding motivation.
-Key edge areas: home dogs in divisional games, bad weather collapsing totals, public money inflating favorites.
-Respond in 2-3 sharp sentences. Lead with the single biggest factor. Be direct, no fluff.""",
-
-    "Hockey": """You are a sharp NHL betting analyst.
-You specialize in: goaltender matchup quality, 5-on-5 expected goals differential, power play efficiency,
-back-to-back and travel fatigue, home ice advantage in divisional games, and puck line vs moneyline value.
-Key edge areas: elite goalie starting after rest vs tired starter, low total games under 5.5, home dogs with top-10 goalie.
-Respond in 2-3 sharp sentences. Lead with the most important factor. Be direct.""",
-
-    "Baseball": """You are a sharp MLB betting analyst.
-You specialize in: starting pitcher ERA/FIP/xFIP differential, bullpen availability (recent workload),
-platoon advantages (L vs R matchups), park factors, day/night splits, and run line vs moneyline value.
-Key edge areas: elite SP heavy favorite where the bullpen becomes a liability, road dogs with ace starters, 
-high totals in launching pad parks.
-Respond in 2-3 sharp sentences. Lead with the pitching matchup insight. Be direct.""",
-}
-
-LEAGUE_HOME_RATE = {
-    "NBA": 0.595,
-    "MLB": 0.540,
-    "NFL": 0.570, "NCAAF": 0.610,
-    "NHL": 0.550,
-    "MLS": 0.470, "Liga MX": 0.470,
-    "Premier League": 0.440, "La Liga": 0.455, "Bundesliga": 0.460,
-    "Serie A": 0.455, "Ligue 1": 0.455,
-    "Champions League": 0.475, "Europa League": 0.465,
-    "Conference League": 0.460, "CONCACAF Champions Cup": 0.480,
-    "Saudi Pro League": 0.465, "Belgian Pro League": 0.455, "Eredivisie": 0.450,
-    }
-
-SOCCER_LEAGUES = {
-    "MLS","Liga MX","Premier League","La Liga","Bundesliga",
-    "Serie A","Ligue 1","Champions League","Europa League","Conference League",
-    "CONCACAF Champions Cup","Saudi Pro League","Belgian Pro League","Eredivisie",
-}
-
-LEAGUE_OU_PRIORS = {
-    # Format: (P_U15, P_U25, P_U35, P_O15, P_O25, P_O35, P_BTTS)
-    # Fuente: Sofascore/FootyStats/FBref — Temporada 2025-26 (en curso ~Jornada 26)
-    # Bundesliga 2025-26: O2.5=62%, O3.5=40%, BTTS=57% (Sofascore)
-    # PL 2025-26:  O2.5=56%, O3.5=31%, BTTS=56%
-    # La Liga:     O2.5=51%, O3.5=28%, BTTS=52%
-    # Serie A:     O2.5=51%, O3.5=27%, BTTS=51%
-    # Ligue 1:     O2.5=56%, O3.5=30%, BTTS=54%
-    # MLS 2025:    O2.5=58%, O3.5=35%, BTTS=55%
-    # Liga MX:     O2.5=52%, O3.5=30%, BTTS=51%
-    "MLS":                   (0.215, 0.420, 0.650, 0.785, 0.580, 0.350, 0.550),
-    "Liga MX":               (0.250, 0.480, 0.700, 0.750, 0.520, 0.300, 0.510),
-    "Premier League":        (0.240, 0.440, 0.690, 0.760, 0.560, 0.310, 0.560),
-    "La Liga":               (0.265, 0.490, 0.720, 0.735, 0.510, 0.280, 0.520),
-    "Bundesliga":            (0.175, 0.380, 0.600, 0.825, 0.620, 0.400, 0.570),
-    "Serie A":               (0.265, 0.490, 0.730, 0.735, 0.510, 0.270, 0.510),
-    "Ligue 1":               (0.245, 0.440, 0.700, 0.755, 0.560, 0.300, 0.540),
-    "Champions League":      (0.185, 0.400, 0.625, 0.815, 0.600, 0.375, 0.610),
-    "Europa League":         (0.225, 0.455, 0.680, 0.775, 0.545, 0.320, 0.580),
-    "Conference League":     (0.255, 0.500, 0.720, 0.745, 0.500, 0.280, 0.550),
-    "CONCACAF Champions Cup":(0.225, 0.460, 0.685, 0.775, 0.540, 0.315, 0.575),
-    "Saudi Pro League":      (0.230, 0.465, 0.690, 0.770, 0.535, 0.310, 0.570),
-    "Belgian Pro League":    (0.195, 0.415, 0.635, 0.805, 0.585, 0.365, 0.615),
-    "Eredivisie":            (0.188, 0.400, 0.622, 0.812, 0.600, 0.378, 0.625),
-    # Ligas ocultas
-    "Superliga":             (0.218, 0.445, 0.665, 0.782, 0.555, 0.335, 0.560),
-    "Süper Lig":             (0.255, 0.488, 0.710, 0.745, 0.512, 0.290, 0.525),
-    "Super League Greece":   (0.262, 0.495, 0.720, 0.738, 0.505, 0.280, 0.515),
-    "Primeira Liga":         (0.268, 0.502, 0.725, 0.732, 0.498, 0.275, 0.510),
-    "Eliteserien":           (0.228, 0.458, 0.678, 0.772, 0.542, 0.322, 0.548),
-    "Allsvenskan":           (0.252, 0.485, 0.705, 0.748, 0.515, 0.295, 0.528),
-    # Selecciones nacionales — fuente: Opta/StatsBomb WCQ/Friendlies 2022-25
-    "World Cup Qualifying UEFA":     (0.285, 0.520, 0.738, 0.715, 0.480, 0.262, 0.490),
-    "World Cup Qualifying CONMEBOL": (0.265, 0.500, 0.722, 0.735, 0.500, 0.278, 0.510),
-    "World Cup Qualifying CONCACAF": (0.245, 0.475, 0.700, 0.755, 0.525, 0.300, 0.520),
-    "World Cup Qualifying CAF":      (0.260, 0.495, 0.718, 0.740, 0.505, 0.282, 0.500),
-    "World Cup Qualifying AFC":      (0.268, 0.505, 0.725, 0.732, 0.495, 0.275, 0.495),
-    "World Cup Qualifying OFC":      (0.272, 0.508, 0.728, 0.728, 0.492, 0.272, 0.492),
-    "International Friendly":        (0.205, 0.430, 0.650, 0.795, 0.570, 0.350, 0.555),
-    "Friendly (Club)":               (0.215, 0.440, 0.658, 0.785, 0.560, 0.342, 0.548),
-    "Nations League UEFA":           (0.278, 0.512, 0.730, 0.722, 0.488, 0.270, 0.495),
-    "Nations League CONCACAF":       (0.255, 0.488, 0.710, 0.745, 0.512, 0.290, 0.510),
-    "Gold Cup":                      (0.242, 0.472, 0.695, 0.758, 0.528, 0.305, 0.525),
-    "FIFA World Cup":                (0.298, 0.535, 0.748, 0.702, 0.465, 0.252, 0.478),
-    "Copa America":                  (0.278, 0.515, 0.732, 0.722, 0.485, 0.268, 0.490),
-    "Euro":                          (0.282, 0.518, 0.735, 0.718, 0.482, 0.265, 0.488),
-}
-
-# Minimum deviation from league prior to qualify as a valid O/U or BTTS pick.
-OU_MIN_EDGE = 0.05  # Reducido: selecciones con lambdas calibradas necesitan menor edge
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SOCCER O/U CALIBRATION — post-simulation correction per league
-# Source: FBref / Understat / Football-Data.co.uk 2022-23 to 2024-25 (3-year avg)
-# Format: (Δ_u25, Δ_u35, Δ_btts)
-# Positive Δ = model underestimates Under → shift up. Negative → shift down.
-# Rule enforced: Δ_u35 >= Δ_u25 always (keeps O3.5 ≤ O2.5 after calibration)
-#
-# Real 3yr averages vs Poisson model output:
-# PL:    O2.5=54%, O3.5=30%, BTTS=55%  | Model raw: ~53%, ~31%, ~57% → small fixes
-# LaLiga:O2.5=51%, O3.5=28%, BTTS=52%  | Model raw: ~49%, ~27%, ~54% → push toward real
-# Bund:  O2.5=58%, O3.5=37%, BTTS=57%  | Model raw: ~63%, ~41%, ~64% → reduce Over
-# SerieA:O2.5=52%, O3.5=28%, BTTS=52%  | Model raw: ~51%, ~29%, ~55% → small
-# Ligue1:O2.5=50%, O3.5=27%, BTTS=51%  | Model raw: ~50%, ~28%, ~53% → small
-# LigaMX:O2.5=52%, O3.5=32%, BTTS=51%  | Model raw: ~51%, ~29%, ~55% → small
-# UCL:   O2.5=59%, O3.5=36%, BTTS=59%  | Model raw: ~61%, ~38%, ~63% → reduce
-# MLS:   O2.5=53%, O3.5=32%, BTTS=54%  | Model raw: ~57%, ~34%, ~60% → reduce
-# ═══════════════════════════════════════════════════════════════════════════════
-SOCCER_CALIB = {
-    # (Δ_U2.5, Δ_U3.5, Δ_BTTS)  — positive = more Under = less Over
-    # Premier League: model ~accurate, tiny BTTS over-pred
-    "Premier League":         ( +0.010,  +0.020, -0.020),
-    # La Liga: model under-predicts Under slightly
-    "La Liga":                ( +0.020,  +0.030, -0.020),
-    # Bundesliga: biggest correction — Poisson over-predicts high scores heavily
-    "Bundesliga":             ( +0.060,  +0.080, -0.080),
-    # Serie A: model over-predicts BTTS, O/U close
-    "Serie A":                ( +0.020,  +0.035, -0.030),
-    # Ligue 1: model over-predicts Over and BTTS
-    "Ligue 1":                ( +0.025,  +0.040, -0.025),
-    # Liga MX: model over-predicts BTTS significantly
-    "Liga MX":                ( +0.010,  +0.035, -0.040),
-    # Champions League: slight over-pred of Over/BTTS
-    "Champions League":       ( +0.020,  +0.030, -0.040),
-    # Europa League
-    "Europa League":          ( +0.015,  +0.025, -0.035),
-    # Conference League: lower scoring than model predicts
-    "Conference League":      ( +0.025,  +0.040, -0.035),
-    # CONCACAF: erratic, higher variance — push Under hard
-    "CONCACAF Champions Cup": ( +0.060,  +0.080, -0.100),
-    # Saudi Pro League: ~avg scoring, similar to MLS
-    "Saudi Pro League":       ( +0.025,  +0.040, -0.045),
-    # Belgian Pro League: high-scoring but model over-predicts
-    "Belgian Pro League":     ( +0.030,  +0.045, -0.030),
-    # Eredivisie: also high-scoring but model over-predicts
-    "Eredivisie":             ( +0.030,  +0.045, -0.035),
-    # MLS: clear Over over-prediction by Poisson
-    "MLS":                    ( +0.040,  +0.055, -0.060),
-    # Ligas ocultas
-    "Superliga":              ( +0.025,  +0.040, -0.030),
-    "Süper Lig":              ( +0.020,  +0.035, -0.035),
-    "Super League Greece":    ( +0.015,  +0.030, -0.025),
-    "Primeira Liga":          ( +0.020,  +0.035, -0.025),
-    "Eliteserien":            ( +0.030,  +0.045, -0.035),
-    "Allsvenskan":            ( +0.025,  +0.040, -0.030),
-}
-
-PUBLIC_BIAS_PTS = {
-    "Basketball": 0.8,   # NBA: strong public Over bias → shift effective line down 0.8 pts
-    "Baseball":   0.3,   # MLB: mild Over bias
-    "Hockey":     0.4,   # NHL: moderate Under-friendly → shift line down 0.4
-    "Football":   0.3,   # NFL: mild public Over bias
-}
-
-# Standard market lines per sport — analyzed for EVERY game regardless of ESPN line
-SPORT_STD_LINES = {
-    "Hockey":   [5.5, 6.5],
-    "Baseball": [7.5, 8.5, 9.5],
-}
-
-run_sidebar = st.session_state.pop("trigger_analyze", False)
-
-# Valores de configuración persistentes (antes estaban en sidebar / panel hamburguesa)
-n_sims     = st.session_state.get("n_sims_val", 10_000)
-sel_groups = st.session_state.get("sel_groups_val", ["Basketball","Baseball","Soccer","Hockey"])
-_avail     = [n for n, cfg in LEAGUES.items() if cfg["group"] in sel_groups and not cfg.get("hidden")]
-_saved_leagues = st.session_state.get("sel_leagues_val", None)
-if _saved_leagues is None:
-    sel_leagues = _avail
-    st.session_state["sel_leagues_val"] = _avail
-else:
-    _new_leagues = [l for l in _avail if l not in _saved_leagues]
-    if _new_leagues:
-        _saved_leagues = _saved_leagues + _new_leagues
-        st.session_state["sel_leagues_val"] = _saved_leagues
-    sel_leagues = [l for l in _saved_leagues if l in _avail]
-use_demo   = st.session_state.get("use_demo_val", False)
-
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-
-
-st.markdown("""
-<div class="den-header">
-  <div class="den-logo">The Gamblers Den</div>
-  <div class="den-subtitle">Monte Carlo · Expected Value · Sports Intelligence</div>
-  <div style="margin-top:10px">
-    <span class="den-corner">♠</span>
-    <span class="den-corner">♣</span>
-    <span class="den-corner">♥</span>
-    <span class="den-corner">♦</span>
-  </div>
-</div>
-<div class="den-divider"></div>
-""", unsafe_allow_html=True)
-
-if not sel_leagues:
-    st.warning("Selecciona al menos una liga en el sidebar.")
-    st.stop()
-
-# Load games
-is_demo=False
-if use_demo:
-    games=get_demo_games(); is_demo=True
-else:
-    _leagues_key = tuple(sorted(sel_leagues))
-    _already_cached = _leagues_key in st.session_state.get("_games_fetched", set())
-
-    # Re-fetch si hay ligas soccer activas pero no hay partidos soccer pre/in en cache
-    if _already_cached:
-        _prev_games = st.session_state.get("_cached_games_data", [])
-        _has_soccer_leagues = any(LEAGUES.get(l,{}).get("group")=="Soccer" for l in sel_leagues)
-        _has_soccer_pre = any(
-            LEAGUES.get(g.get("league",""),{}).get("group")=="Soccer"
-            and g.get("state") in ("pre","in")
-            for g in _prev_games
-        )
-        if _has_soccer_leagues and not _has_soccer_pre:
-            _already_cached = False  # forzar re-fetch — ESPN puede tener partidos nuevos
-
-    if not _already_cached:
-        with st.spinner("Consultando ESPN..."):
-            games,fetch_errors=get_all_games(_leagues_key)
-        _fetched = st.session_state.get("_games_fetched", set())
-        _fetched.add(_leagues_key)
-        st.session_state["_games_fetched"] = _fetched
-        st.session_state["_cached_games_data"] = games
-    else:
-        games,fetch_errors=get_all_games(_leagues_key)
-        st.session_state["_cached_games_data"] = games
-
-    # ── Persist pre-game soccer matches across refreshes ─────────────────────
-    # ESPN soccer API often only returns active games. We cache pre-game soccer
-    # matches so they keep appearing in PICKS even after ESPN drops them.
-    from datetime import timedelta as _td_cache
-    _now_cache = datetime.now(timezone.utc)
-    _today_cdmx_cache = (_now_cache - _td_cache(hours=6)).strftime("%Y-%m-%d")
-    _cached_pre = st.session_state.get("_soccer_pre_cache", {})
-
-    # Store new pre-game soccer matches
-    for _g in games:
-        _gid = _g.get("id","")
-        if not _gid: continue
-        if LEAGUES.get(_g.get("league",""),{}).get("group","") == "Soccer" and _g.get("state") == "pre":
-            _cached_pre[_gid] = _g
-
-    # Purge old days — mantener ventana 5 días para no perder partidos próximos
-    _yesterday_cdmx_cache = (_now_cache - _td_cache(hours=6) - _td_cache(days=1)).strftime("%Y-%m-%d")
-    _valid_cache_dates = {_yesterday_cdmx_cache, _today_cdmx_cache}
-    for _d in range(1, 7):
-        _valid_cache_dates.add((_now_cache - _td_cache(hours=6) + _td_cache(days=_d)).strftime("%Y-%m-%d"))
-    for _gid in [k for k, v in list(_cached_pre.items())]:
-        try:
-            _ev_cdmx = (datetime.strptime((_cached_pre[_gid].get("date","")[:19]).replace("T"," "),
-                        "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) - _td_cache(hours=6)).strftime("%Y-%m-%d")
-            if _ev_cdmx not in _valid_cache_dates:
-                _cached_pre.pop(_gid, None)
-        except: pass
-
-    st.session_state["_soccer_pre_cache"] = _cached_pre
-
-    # Re-inject cached pre-game soccer that ESPN dropped (now showing as live or missing)
-    _current_ids = {_g.get("id","") for _g in games}
-    for _gid, _cg in _cached_pre.items():
-        if _gid not in _current_ids:
-            _cg_copy = dict(_cg); _cg_copy["state"] = "pre"
-            games.append(_cg_copy)
-
-    # ── FILTRO HARD: descartar partidos con fecha > 7 días desde hoy ─────────
-    # Esto es la última línea de defensa contra partidos del Mundial de junio
-    # que se cuelen por cache viejo o por ESPN devolviendo el torneo completo.
-    if not is_demo:
-        from datetime import timedelta as _td_hf, timezone as _tz_hf
-        _now_hf   = datetime.now(_tz_hf.utc)
-        _now_mx_hf = _now_hf - _td_hf(hours=6)
-        _max_date_hf = (_now_mx_hf + _td_hf(days=7)).strftime("%Y-%m-%d")
-        _min_date_hf = (_now_mx_hf - _td_hf(days=1)).strftime("%Y-%m-%d")
-        _games_filtered = []
-        for _g in games:
-            _gstate = _g.get("state","")
-            if _gstate == "in":  # en vivo: siempre mantener
-                _games_filtered.append(_g)
-                continue
-            _gdate_raw = _g.get("date","")
-            if not _gdate_raw:  # sin fecha: mantener (puede ser hoy)
-                _games_filtered.append(_g)
-                continue
-            try:
-                _gdt = datetime.strptime(_gdate_raw[:19].replace("T"," ").replace("Z",""),
-                                         "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_hf.utc)
-                _gdate_mx = (_gdt - _td_hf(hours=6)).strftime("%Y-%m-%d")
-                if _min_date_hf <= _gdate_mx <= _max_date_hf:
-                    _games_filtered.append(_g)
-                # else: partido fuera de ventana → descartar silenciosamente
-            except:
-                _games_filtered.append(_g)  # no parseable → mantener
-        games = _games_filtered
-
-    if not games:
-        # Try to auto-switch to demo so the app is usable
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("↺ Reintentar ESPN", use_container_width=True):
-                st.cache_data.clear()
-                st.session_state.pop("_games_fetched", None)
-                st.rerun()
-        with col_b:
-            if st.button("🧪 Usar demo", use_container_width=True):
-                st.session_state["force_demo"] = True
-                st.rerun()
-
-        leagues_str = ", ".join(sel_leagues[:6])
-
-        # Build more helpful error with ESPN test links
-        _now_mx_err = datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=6)
-        _today_str  = _now_mx_err.strftime("%Y%m%d")
-
-        st.markdown(
-            f'<div class="warn-banner">'
-            f'⚠️ ESPN no devolvió partidos para: <b>{leagues_str}</b>.<br><br>'
-            f'<b>Posibles causas:</b><br>'
-            f'• No hay partidos programados para hoy en esas ligas<br>'
-            f'• ESPN está tardando — presiona "Reintentar ESPN"<br>'
-            f'• Hoy es día de descanso (lunes/martes en NBA, etc.)<br><br>'
-            f'<b>Verifica manualmente:</b> '
-            f'<a href="https://www.espn.com/nba/scoreboard/_/date/{_today_str}" target="_blank" style="color:#FF8C00">NBA</a> · '
-            f'<a href="https://www.espn.com/mlb/scoreboard/_/date/{_today_str}" target="_blank" style="color:#FF8C00">MLB</a> · '
-            f'<a href="https://www.espn.com/soccer/scoreboard" target="_blank" style="color:#FF8C00">Soccer</a>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
-        # Show fetch errors if any
-        if fetch_errors:
-            with st.expander("🔍 Detalle de errores de API"):
-                for err in fetch_errors[:10]:
-                    st.caption(f"• {err}")
-
-        st.stop()
-    else:
-        sel_set=set(sel_leagues)
-        games=[g for g in games if g["league"] in sel_set] or games
-
-if st.session_state.get("force_demo"):
-    games=get_demo_games(); is_demo=True; st.session_state.pop("force_demo",None)
-
-if is_demo:
-    st.markdown('<div class="demo-banner">⚠ MODO DEMO — Datos ilustrativos. Desactiva el toggle en el sidebar para datos reales de ESPN.</div>',unsafe_allow_html=True)
-
-# ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
-_already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260325e"  # FIX DEFINITIVO: todas las funciones antes del routing  # priors por liga, filtro 7 días hard, sin Mundial
-_leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
-_prev_key = st.session_state.get("_sim_key", "")
-_leagues_changed = _leagues_key != _prev_key
-# Invalidar cache de games si versión cambió
-if _prev_key and _SIM_VERSION not in _prev_key:
-    st.session_state.pop("_games_fetched", None)
-    st.session_state.pop("_soccer_pre_cache", None)
-
-# ── AUTO-REFRESH DIARIO a las 6am CDMX ──────────────────────────────────────
-# Cada vez que carga la página, verifica si hay datos nuevos del día
-from datetime import datetime as _dt_ar, timezone as _tz_ar, timedelta as _td_ar
-_now_ar      = _dt_ar.now(_tz_ar.utc) - _td_ar(hours=6)  # hora CDMX
-_today_cdmx  = _now_ar.strftime("%Y-%m-%d")
-_hour_cdmx   = _now_ar.hour
-_last_sim_dt = st.session_state.get("_last_sim_date", "")
-
-# Condiciones para auto-re-simular:
-# 1. Es un día nuevo (distinto al último sim)
-# 2. Son las 6am o más (datos de ESPN ya actualizados)
-_is_new_day  = _today_cdmx != _last_sim_dt
-_after_6am   = _hour_cdmx >= 6
-_auto_refresh = _is_new_day and _after_6am and _already_simulated and not run_sidebar
-
-if _auto_refresh:
-    st.session_state["_sim_key"] = ""  # fuerza re-sim
-    _leagues_changed = True
-    # Clear game cache so ESPN is re-fetched
-    st.session_state["_games_fetched"] = set()
-
-# Auto-countdown: si son las 5am-6am, refrescar en background cada minuto
-if _hour_cdmx == 5 and _already_simulated:
-    _mins_left = 60 - _now_ar.minute
-    st.markdown(
-        f'<div style="font-size:0.6rem;color:#444;text-align:center;padding:2px">'
-        f'⏰ Datos del día a las 6:00 AM CDMX (en ~{_mins_left} min)</div>',
-        unsafe_allow_html=True
-    )
-    # Auto-refresh each minute until 6am
-    st.markdown(
-        '<script>setTimeout(function(){window.location.reload()},60000)</script>',
-        unsafe_allow_html=True
-    )
-
-if (not _already_simulated or _leagues_changed or run_sidebar) and games:
-    with st.spinner("🔮 El Oráculo está analizando los partidos..."):
-        import time as _time
-        _t0 = _time.time()
-        _sr = run_all_simulations(games, n=n_sims)
-        _elapsed = _time.time() - _t0
-    st.session_state["sim_results"] = _sr
-    st.session_state["last_sim_demo"] = is_demo
-    st.session_state["_sim_key"] = _leagues_key
-    # Save today's date so auto-refresh knows when data is fresh
-    from datetime import datetime as _dt_sv2, timezone as _tz_sv2, timedelta as _td_sv2
-    _today_save = (_dt_sv2.now(_tz_sv2.utc) - _td_sv2(hours=6)).strftime("%Y-%m-%d")
-    st.session_state["_last_sim_date"] = _today_save
-    _n_pos = len([r for r in _sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"] > 0])
-    # ── AUTO-SAVE picks to pick_history (skip demo mode) ──────────────────
-    if not is_demo and _gsheets_available():
-        try:
-            _ph_new = _ph_build_picks_from_sim(_sr, fuente="RONGOL")
-            _ph_saved = _ph_save_picks(_ph_new)
-            _ph_load.clear()  # invalidate cache
-            if _ph_saved and _ph_saved > 0:
-                _ph_labels = " · ".join(
-                    f'{p["deporte"]} {p["mercado"]} {p["pick_label"][:12]}'
-                    for p in _ph_new[:3]
-                )
-                st.toast(f"📋 {_ph_saved} pick(s) guardados → {_ph_labels}", icon="📋")
-            elif run_sidebar and _ph_new:
-                st.toast(f"📋 Historial al día ({len(_ph_new)} picks ya registrados)", icon="📋")
-        except Exception as _ph_err:
-            pass  # never block the main flow
-
-    # ── AUTO-RESOLVE: update pendiente → ganado/perdido for finished games ──
-    if not is_demo and _gsheets_available():
-        try:
-            _post_games = [g for g in games if g.get("state") == "post"]
-            if _post_games:
-                _all_ph = _ph_load()
-                _resolved = _ph_auto_resolve(_all_ph)
-                if _resolved:
-                    _n_resolved = _ph_update_results(_resolved)
-                    if _n_resolved and _n_resolved > 0:
-                        _win  = sum(1 for v in _resolved.values() if v["resultado"] == "ganado")
-                        _lose = sum(1 for v in _resolved.values() if v["resultado"] == "perdido")
-                        st.toast(f"✅ {_n_resolved} picks resueltos · {_win}W {_lose}L", icon="📊")
-        except Exception:
-            pass  # never block the main flow
-
-    if run_sidebar:
-        st.toast(f"✓ {len(games)*n_sims:,} sims en {_elapsed:.1f}s · {_n_pos} value bets", icon="🔮")
-    st.rerun()
-
-# Stats bar
-live_g=[g for g in games if g["state"]=="in"]
-pre_g=[g for g in games if g["state"]=="pre"]
-odds_g=[g for g in games if g["odds"]]
-sr=st.session_state.get("sim_results",[])
-pos_ev=len([r for r in sr if r["sim"].get("best_single") and r["sim"]["best_single"]["ev"]>0])
-
-st.markdown(f"""<div class="stat-grid">
-  <div class="stat-tile"><div class="stat-num">{len(games)}</div><div class="stat-label">Partidos</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len(live_g)}</div><div class="stat-label">En Vivo</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#60a5fa">{len(pre_g)}</div><div class="stat-label">Próximos</div></div>
-  <div class="stat-tile"><div class="stat-num">{len(odds_g)}</div><div class="stat-label">Con Cuotas</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{pos_ev}</div><div class="stat-label">Value Bets</div></div>
-  <div class="stat-tile"><div class="stat-num" style="color:#00C896">{len([r for r in sr if r["sim"].get("best_parlay") and r["sim"]["best_parlay"]["ev"]>0])}</div><div class="stat-label">Parlays EV+</div></div>
-</div>""", unsafe_allow_html=True)
-
-st.markdown('<div class="den-divider"></div>', unsafe_allow_html=True)
-
-# [team profiles badge — moved below after function definitions]
-
-# ── Team Profiles — cargar y mostrar badge ────────────────────────────────
-# Forzar recarga si la cache tiene 0 equipos (puede estar cacheando vacío)
-_tp_profiles_now = _load_all_team_profiles()
-if len(_tp_profiles_now) == 0:
-    _load_all_team_profiles.clear()
-    _tp_profiles_now = _load_all_team_profiles()
-_tp_count_now    = len(_tp_profiles_now)
-_tp_err_now      = st.session_state.get("_tp_load_error","")
-
-if _tp_count_now > 0:
-    _tp_total_games = sum(p.get("n_games",0) for p in _tp_profiles_now.values())
-    _tp_leagues     = len({p.get("league","") for p in _tp_profiles_now.values()})
-    st.markdown(
-        f'<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
-        f'color:#00C896;letter-spacing:1px">'
-        f'🧠 Memoria activa: <b>{_tp_count_now}</b> equipos · '
-        f'<b>{_tp_total_games}</b> partidos · '
-        f'<b>{_tp_leagues}</b> ligas</div>',
-        unsafe_allow_html=True
-    )
-elif _tp_err_now:
-    st.markdown(
-        f'<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
-        f'color:#ef4444;letter-spacing:1px">'
-        f'🧠 Memoria: error — {_tp_err_now[:80]}</div>',
-        unsafe_allow_html=True
-    )
-else:
-    st.markdown(
-        '<div style="text-align:center;margin-bottom:8px;font-size:0.806rem;'
-        'color:#6B7280;letter-spacing:1px">'
-        '🧠 Memoria: aprendiendo... · <b>↓ Poblar Memoria</b> en el sidebar</div>',
-        unsafe_allow_html=True
-    )
-
-# ── Poblar memoria (botón sidebar) ───────────────────────────────────────────
-if st.session_state.pop("run_populate", False):
-    # ── Diagnóstico antes de intentar poblar ─────────────────────────────────
-    diag_lines = []
-    try:
-        s = st.secrets.get("gsheets", {})
-        diag_lines.append(f"gsheets secret keys: {list(s.keys())}")
-        diag_lines.append(f"private_key present: {bool(s.get('private_key'))}")
-        diag_lines.append(f"spreadsheet_id: {s.get('spreadsheet_id','MISSING')}")
-        diag_lines.append(f"_gsheets_available(): {_gsheets_available()}")
-        try:
-            gc = _get_gsheet_client()
-            diag_lines.append("gsheet client: ✅ OK")
-            sid = st.secrets["gsheets"]["spreadsheet_id"]
-            sh = gc.open_by_key(sid)
-            diag_lines.append(f"spreadsheet opened: ✅ '{sh.title}'")
-            tabs = [ws.title for ws in sh.worksheets()]
-            diag_lines.append(f"existing tabs: {tabs}")
-        except Exception as e:
-            diag_lines.append(f"gsheet client ERROR: {e}")
-    except Exception as e:
-        diag_lines.append(f"secrets ERROR: {e}")
-
-    with st.expander("🔍 Diagnóstico Sheets", expanded=True):
-        for line in diag_lines:
-            st.code(line)
-
-    if not _gsheets_available():
-        st.error("❌ Google Sheets no disponible — revisa diagnóstico arriba")
-        st.stop()
-    else:
-        st.markdown("""
-        <div style='background:rgba(201,168,76,0.08);border:1px solid #C9A84C;
-        border-radius:12px;padding:16px;margin-bottom:16px'>
-        <div style='font-family:Inter,sans-serif;color:#C9A84C;font-size:1.12rem;
-        font-weight:700;margin-bottom:8px'>🧠 POBLANDO MEMORIA DE EQUIPOS</div>
-        <div style='font-size:0.84rem;color:#9ca3af'>
-        Descargando historial de ESPN para todas las ligas y equipos.<br>
-        Esto tarda ~3-5 minutos. No cierres la app.
-        </div></div>
-        """, unsafe_allow_html=True)
-
-        _prog  = st.progress(0)
-        _stat  = st.empty()
-        _written, _failed, _log = populate_all_team_profiles(
-            progress_bar=_prog,
-            status_text=_stat,
-        )
-        _prog.progress(1.0)
-        _stat.empty()
-
-        # Mostrar resumen
-        if _written > 0:
-            st.success(f"✅ Memoria poblada: **{_written}** equipos guardados, {_failed} fallidos")
-        else:
-            st.error(f"❌ 0 equipos guardados. {_failed} fallidos. Revisa el log.")
-
-        # Log expandible — siempre visible
-        with st.expander("📋 Ver log completo", expanded=(_written == 0)):
-            st.code("\n".join(_log))
-
-        # Solo limpiar cache, NO hacer rerun para que el log sea visible
-        st.cache_data.clear()
-
-# ── HANDLER: Poblar Memoria Nacional ─────────────────────────────────────────
-if st.session_state.pop("run_populate_nt", False):
-    if not _gsheets_available():
-        st.error("❌ Google Sheets no disponible — configura las credenciales en secrets.")
-    else:
-        with st.spinner("🌍 Escribiendo datos de selecciones nacionales al Sheet..."):
-            _nt_written, _nt_err = populate_national_teams_sheet()
-        if _nt_err:
-            st.error(f"❌ Error: {_nt_err}")
-        else:
-            st.success(
-                f"✅ **{_nt_written} selecciones** escritas en la hoja `national_teams` del Google Sheet. "
-                f"Incluye: FIFA ranking, GF/GA por partido, forma, sede y local real de cada partido Mar 26-29 2026."
-            )
-            st.balloons()
-
-# ── ROUTING ───────────────────────────────────────────────────────────────────
-import json, os as _os, re as _re
-
-# ── Google Sheets persistence ─────────────────────────────────────────────────
-# Requires st.secrets["gsheets"] with keys:
-#   type, project_id, private_key_id, private_key, client_email,
-#   client_id, auth_uri, token_uri, spreadsheet_id
-#
-# Each user = one sheet tab named after their apodo.
-# Row format: num | fecha | partido | pick | mercado | momio | momio_fmt | monto | resultado | nota
-# Row 1 = header  |  Row 2 = config (bank_inicial, meta in cols A-B)
-# Row 3+ = picks
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TEAM PROFILES — Sistema de aprendizaje por equipo
-# Pestaña "team_profiles" en Google Sheets
-# Aprende de los últimos 10 partidos de cada equipo y usa ese historial
-# para mejorar λ y las tasas O/U/BTTS en el modelo Monte Carlo.
-# ══════════════════════════════════════════════════════════════════════════════
-
-# _TP constants moved to top
-
-
-# [_load_all_team_profiles moved to top]
-
-
-# _compute_profile_stats moved to top
-# populate_all_team_profiles defined above
-_SYSTEM_TABS = {"pick_history", "line_movement", "team_profiles",
-                "Sheet1", "Hoja1", "sheet1", "hoja1", "SHEET1", "HOJA1",
-                "supervivencia"}
 
