@@ -3632,13 +3632,16 @@ def _pick_from_real_data(r, for_rongol=False):
                 return _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
             if _po >= 58:
                 return _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
-            if _pb >= 45 and _pu >= 40:
+            # BTTS solo si es el mercado MAS probable (mayor que Over Y Under)
+            if _pb > _po and _pb > _pu:
                 return _ret("BTTS", "Ambos Anotan — SÍ", _pb, btts_ev, "")
+            # Under si partido defensivo
+            if _pu >= 52:
+                return _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
+            # Over si partido ofensivo
             if _po >= 50:
                 return _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
-            if _pu >= 55:
-                return _ret("BTTS", "Ambos Anotan — SÍ", _pb, btts_ev, "") if _pb >= 38 else _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
-            return _ret("BTTS", "Ambos Anotan — SÍ", _pb, btts_ev, "") if _pb >= 35 else _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
+            return _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
 
         else:
             # ── PATH B: CON datos reales → scoring system ───────────────────
