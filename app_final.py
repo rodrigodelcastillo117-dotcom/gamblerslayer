@@ -9431,7 +9431,7 @@ elif _active_page == "Picks":
                     _ou_f   = float(str(_ou_v).lstrip("~"))
                     _ou_lbl = ("O" if _p_o >= _p_u else "U") + f"{_ou_f:.1f}"
                     _is_ou  = _mkt == "O/U"
-                    _p_ou   = max(_p_o, _p_u) * 100  # prob% del lado ganador O/U
+                    _p_ou   = max(_p_o, _p_u) * 100 if max(_p_o, _p_u) <= 1 else max(_p_o, _p_u)  # prob% del lado ganador O/U
                     if _a_is_dia:
                         # Away es underdog extremo — pill diamante con handicap del home
                         _dia_lbl = f"H{_hcap}" if _hcap else "FAV"
@@ -11287,28 +11287,111 @@ elif _active_page == "En Vivo":
                     "rationale": f"Q{qtr}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}"})
 
         # ══════════════════════════════════════════════════════════════
-        # 🏒 NHL — básico
+        # 🏒 NHL — línea ajustada en vivo, proyección de goles, ML
         # ══════════════════════════════════════════════════════════════
         elif sport_group == "Hockey":
-            _per_m = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
-            period = int(_per_m.group(1)) if (_per_m and _per_m.group(1)) else 2
-            is_late = period >= 3
+            _per_m   = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
+            _time_m  = _re.search(r"(\d+):(\d+)", status)
+            period   = int(_per_m.group(1)) if (_per_m and _per_m.group(1)) else 2
+            is_ot    = "OT" in status.upper() or "overtime" in status.lower()
+            if is_ot: period = 4
+
+            # Tiempo jugado en este periodo (de 20 min)
+            if _time_m:
+                _min_in_per = int(_time_m.group(1))
+                _sec_in_per = int(_time_m.group(2))
+                # ESPN muestra tiempo restante en el periodo
+                mins_left_in_period = _min_in_per + _sec_in_per / 60
+                mins_played_in_period = max(0, 20 - mins_left_in_period)
+            else:
+                mins_left_in_period = 10
+                mins_played_in_period = 10
+
+            # Tiempo total jugado y restante (regulation = 60 min)
+            periods_played = max(period - 1, 0)
+            mins_played    = periods_played * 20 + mins_played_in_period
+            mins_left_reg  = max(60 - mins_played, 0)
+
+            # Tasa de goles por minuto observada
+            goal_rate = total_score / max(mins_played, 1)  # goles/min
+
+            # Proyección de goles restantes en tiempo regular
+            proj_remaining = goal_rate * mins_left_reg
+            proj_total     = total_score + proj_remaining
+
+            # ── Línea ajustada en vivo ────────────────────────────────
+            # Cuántos goles faltan para Over/Under sobre la línea original
             if ou_line > 0:
-                goals_left = ou_line - total_score
-                if is_late and goals_left > 1.5:
-                    u_p = min(82, (p_u_total + 10) if p_u_total > 0 else 68)
-                    picks.append({"label": f"Under {ou_line:.1f}", "prob": round(u_p,1),
-                        "market": "O/U",
-                        "rationale": f"Periodo {period}, {total_score} goles. Necesitan {goals_left:.1f} más — difícil."})
+                goals_to_over  = max(0, ou_line - total_score)  # goles que faltan para Over
+                over_possible  = goals_to_over > 0  # False si ya se superó la línea
+                under_possible = total_score < ou_line  # False si ya se cubrió Over
+
+                # Línea restante efectiva (lo que las casas cobran en vivo)
+                live_line = round(goals_to_over * 2) / 2  # redondear a 0.5
+
+                # Calcular prob Over en vivo desde proyección
+                if mins_left_reg > 0 and goal_rate > 0:
+                    # Prob Poisson de meter ≥ goals_to_over en el tiempo restante
+                    import math as _mh
+                    _lam_rem = goal_rate * mins_left_reg
+                    if goals_to_over <= 0:
+                        _p_over_live = 1.0  # ya se superó
+                    else:
+                        # P(X >= goals_to_over) donde X ~ Poisson(lam_rem)
+                        _p_under_live = sum(
+                            _mh.exp(-_lam_rem) * (_lam_rem**k) / _mh.factorial(k)
+                            for k in range(int(goals_to_over))
+                        )
+                        _p_over_live = max(0.02, min(0.98, 1 - _p_under_live))
                 else:
-                    best = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
-                    if best[1] > 0:
-                        picks.append({"label": f"{best[0]} {ou_line:.1f}", "prob": best[1],
+                    _p_over_live = 0.05 if goals_to_over > 0 else 1.0
+                _p_under_live = 1.0 - _p_over_live
+
+                # Etiqueta usando línea RESTANTE, no la original
+                if goals_to_over <= 0:
+                    # Over ya cubierto
+                    picks.append({"label": f"Over {ou_line:.1f} ✓", "prob": 97,
+                        "market": "O/U",
+                        "rationale": f"Over {ou_line:.1f} ya cubierto ({total_score} goles marcados).",
+                        "notes": f"{total_score} goles, línea superada"})
+                elif period >= 3 and goals_to_over > 2.5:
+                    # 3er periodo, necesitan 3+ goles → Under casi seguro, no vale apostar
+                    pass  # No mostrar O/U — ya está decidido, mostrar solo ML
+                elif _p_over_live >= _p_under_live:
+                    _label_live = f"Over {live_line:.1f} restantes" if live_line != ou_line else f"Over {ou_line:.1f}"
+                    picks.append({"label": _label_live, "prob": round(_p_over_live * 100, 1),
+                        "market": "O/U",
+                        "rationale": f"P{period}, {total_score} goles. Faltan {goals_to_over:.1f} para Over. Ritmo: {goal_rate*20:.1f}/periodo → proy. {proj_total:.1f}.",
+                        "notes": f"proy. {proj_total:.1f} goles"})
+                else:
+                    _label_live = f"Under {ou_line:.1f}"
+                    _u_pct = round(_p_under_live * 100, 1)
+                    # Solo mostrar Under si tiene sentido real (no si ya es obvio)
+                    if _u_pct < 90 or period < 3:
+                        picks.append({"label": _label_live, "prob": _u_pct,
                             "market": "O/U",
-                            "rationale": f"Periodo {period}, {total_score} goles. {best[0]}: {best[1]:.0f}%."})
-            picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob,1),
-                "market": "ML",
-                "rationale": f"Periodo {period}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}"})
+                            "rationale": f"P{period}, {total_score} goles. Faltan {goals_to_over:.1f} para Over en {mins_left_reg:.0f} min. Ritmo actual: {goal_rate*20:.1f}/periodo.",
+                            "notes": f"faltan {goals_to_over:.1f} para Over"})
+
+            # ML — ajustado por score actual y periodo
+            if period >= 3 and diff != 0:
+                # 3er periodo con ventaja — ajustar prob por minutos restantes
+                _adj = min(97, fav_prob + abs(diff) * (mins_played / 60) * 8)
+                picks.append({"label": f"{fav_team} gana", "prob": round(_adj, 1),
+                    "market": "ML",
+                    "rationale": f"P{period} ({mins_left_reg:.0f} min reg.), gana {fav_score}-{dog_score}. Prob. ajustada: {_adj:.0f}%.",
+                    "notes": f"+{abs(diff)} en P{period}"})
+            elif diff == 0 and period >= 2:
+                # Empate — partido muy abierto
+                picks.append({"label": f"{fav_team} gana o OT", "prob": round(min(75, fav_prob + 10), 1),
+                    "market": "ML",
+                    "rationale": f"Empate {hs}-{as_} en P{period}. Alta prob. de OT — favorito ligero.",
+                    "notes": "posible OT"})
+            else:
+                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob, 1),
+                    "market": "ML",
+                    "rationale": f"P{period}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}",
+                    "notes": f"P{period}"})
 
         # ══════════════════════════════════════════════════════════════
         # 🏈 NFL / otros — básico
