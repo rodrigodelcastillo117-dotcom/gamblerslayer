@@ -9113,90 +9113,115 @@ elif _active_page == "Picks":
 
     def _oracle_pick(r):
         """
-        Best pick por mercado.
-        Soccer: NUNCA ML (3 outcomes, vig alto). Solo O/U 2.5, Under 2.5, BTTS.
-        No-soccer: ML siempre permitido.
+        Best pick para la pestaña Picks.
+        Soccer: NUNCA ML. BTTS/O2.5/U2.5 basado en lambdas reales.
+          BTTS  → lam_h ≥ 1.6 Y lam_a ≥ 1.6
+          O2.5  → lam_tot ≥ 3.4
+          U2.5  → lam_tot < 2.2 Y p_u25 > 58
+          Zona neutra → mejor entre BTTS y O2.5
+        No-soccer: ML solo si favorito ≥ 61%, sino O/U.
         """
         sim = r.get("sim") or {}
         if not sim: return None
         _is_soccer = sim.get("is_soccer", False) or \
                      LEAGUES.get(r.get("league",""), {}).get("group","") == "Soccer"
 
-        # ── Path 1: _scored_candidates (mejor EV, ya filtrado) ──
-        _scored = sim.get("_scored_candidates", [])
-        for _cand in _scored:
-            _mkt = _cand.get("market","")
-            if _is_soccer and _mkt == "ML":
-                continue  # soccer: nunca ML
-            return {"market": _mkt, "label": _cand["label"],
-                    "prob": _cand["prob"], "ev": _cand.get("ev", 0),
-                    "ml": _cand.get("ml", "")}
-
-        # ── Path 2: best_single ──
-        bs = sim.get("best_single") or sim.get("best_pick")
-        if bs and bs.get("label"):
-            _mkt = bs.get("market", "ML")
-            if not (_is_soccer and _mkt == "ML"):
-                return {"market": _mkt, "label": bs["label"],
-                        "prob": bs.get("prob", 0), "ev": bs.get("ev", 0),
-                        "ml": bs.get("ml", "")}
-
-        # ── Path 3: fallback soccer — O/U → Under → BTTS (nunca ML) ──
+        # ── SOCCER: siempre O/U o BTTS, nunca ML ─────────────────────────────
         if _is_soccer:
-            p_o25  = sim.get("p_o25")  or 0
-            p_u25  = sim.get("p_u25")  or 0
-            p_btts = sim.get("p_btts") or 0
-            ou_ml  = sim.get("over_under", "") or ""
-            if p_u25 == 0 and p_o25 > 0: p_u25 = round(100.0 - p_o25, 1)
-            # Calcular desde lambda o prior de liga si todo es 0
-            _lh2 = float(sim.get("lam_real_h") or 0)  # inicializar siempre
-            _la2 = float(sim.get("lam_real_a") or 0)
+            _lh = float(sim.get("lam_real_h") or 0)
+            _la = float(sim.get("lam_real_a") or 0)
+            if _lh == 0 or _la == 0:
+                _llg = float(sim.get("lam_league") or 0)
+                _lh  = _llg * 0.55 if _llg > 0 else 1.35
+                _la  = _llg * 0.45 if _llg > 0 else 1.15
+            _lam_tot = _lh + _la
+
+            p_o25  = float(sim.get("p_o25")  or 0)
+            p_u25  = float(sim.get("p_u25")  or 0)
+            p_btts = float(sim.get("p_btts") or 0)
+            o25_ev = float(sim.get("o25_ev") or 0)
+            u25_ev = float(sim.get("u25_ev") or 0)
+            btts_ev= float(sim.get("btts_ev") or 0)
+            ou_ml  = sim.get("over_under","") or ""
+            if p_u25 == 0 and p_o25 > 0:
+                p_u25 = round(100.0 - p_o25, 1)
+
             if p_o25 == 0:
-                # Intentar usar prior de liga primero (más preciso que lambda genérico)
-                _league_name = r.get("league","")
-                _prior_fb = LEAGUE_OU_PRIORS.get(_league_name)
+                import math as _m2
+                _prior_fb = LEAGUE_OU_PRIORS.get(r.get("league",""))
                 if _prior_fb:
-                    p_o25  = round(_prior_fb[4] * 100, 1)  # P_O25
-                    p_u25  = round(_prior_fb[1] * 100, 1)  # P_U25
-                    p_btts = round(_prior_fb[6] * 100, 1)  # P_BTTS
-                    # Estimar lambdas desde prior si no hay datos reales
-                    if _lh2 == 0 or _la2 == 0:
+                    p_o25  = round(_prior_fb[4] * 100, 1)
+                    p_u25  = round(_prior_fb[1] * 100, 1)
+                    p_btts = round(_prior_fb[6] * 100, 1)
+                    if _lh == 0 or _la == 0:
                         _llg2 = float(sim.get("lam_league") or 0) or 2.5
-                        _lh2 = _llg2 * 0.55
-                        _la2 = _llg2 * 0.45
+                        _lh = _llg2 * 0.55; _la = _llg2 * 0.45
+                        _lam_tot = _lh + _la
                 else:
-                    import math as _m2
-                    if _lh2 == 0 or _la2 == 0:
-                        _llg2 = float(sim.get("lam_league") or 0)
-                        _lh2 = _llg2 * 0.55 if _llg2 > 0 else 1.45
-                        _la2 = _llg2 * 0.45 if _llg2 > 0 else 1.05
-                    _mu2  = _lh2 + _la2
+                    _mu2  = _lh + _la
                     _ple2 = sum(_m2.exp(-_mu2) * (_mu2**k) / _m2.factorial(k) for k in range(3))
                     p_o25 = round((1 - _ple2) * 100, 1)
                     p_u25 = round(_ple2 * 100, 1)
-                    if p_btts == 0:
-                        p_btts = round((1-_m2.exp(-_lh2))*(1-_m2.exp(-_la2))*100, 1)
-            # Seleccionar el mejor mercado balanceando prob, EV y diversidad
-            _bsm = best_soccer_market(p_o25, p_u25, p_btts,
-                                      sim.get("o25_ev",0) or 0,
-                                      sim.get("u25_ev",0) or 0,
-                                      sim.get("btts_ev",0) or 0, ou_ml,
-                                      lam_h=_lh2, lam_a=_la2)
-            if _bsm:
-                return {"market": _bsm[0], "label": _bsm[1],
-                        "prob": _bsm[2], "ev": _bsm[3], "ml": _bsm[4]}
-            return None  # sin datos suficientes
+                    p_btts= round((1-_m2.exp(-_lh))*(1-_m2.exp(-_la))*100, 1)
 
-        # ── Path 4: fallback no-soccer — ML del favorito ──
-        h_prob = sim.get("home_pct", 0) or 0
-        a_prob = sim.get("away_pct", 0) or 0
-        if h_prob >= a_prob:
-            return {"market":"ML","label":r.get("home_team",""),
-                    "prob":h_prob,"ev":sim.get("home_ev",0) or 0,
-                    "ml":sim.get("home_ml","")}
-        return {"market":"ML","label":r.get("away_team",""),
-                "prob":a_prob,"ev":sim.get("away_ev",0) or 0,
-                "ml":sim.get("away_ml","")}
+            # Selección por lambda
+            if _lh >= 1.6 and _la >= 1.6 and p_btts > 0:
+                return {"market":"BTTS","label":"Ambos Anotan — SÍ",
+                        "prob":p_btts,"ev":btts_ev,"ml":""}
+            if _lam_tot >= 3.4 and p_o25 > 0:
+                return {"market":"O/U","label":"Over 2.5",
+                        "prob":p_o25,"ev":o25_ev,"ml":ou_ml}
+            if _lam_tot < 2.2 and p_u25 > 58:
+                return {"market":"O/U","label":"Under 2.5",
+                        "prob":p_u25,"ev":u25_ev,"ml":ou_ml}
+            # Zona neutra: mejor disponible
+            if p_btts > 0 and p_btts >= p_o25:
+                return {"market":"BTTS","label":"Ambos Anotan — SÍ",
+                        "prob":p_btts,"ev":btts_ev,"ml":""}
+            if p_o25 > 0:
+                return {"market":"O/U","label":"Over 2.5",
+                        "prob":p_o25,"ev":o25_ev,"ml":ou_ml}
+            if p_btts > 0:
+                return {"market":"BTTS","label":"Ambos Anotan — SÍ",
+                        "prob":p_btts,"ev":btts_ev,"ml":""}
+            return None
+
+        # ── NO-SOCCER: O/U primero, ML solo si favorito ≥ 61% ────────────────
+        bs = sim.get("best_single") or sim.get("best_pick")
+        if bs and bs.get("market") in ("O/U","BTTS") and (bs.get("prob") or 0) > 50:
+            return {"market": bs["market"], "label": bs["label"],
+                    "prob": bs.get("prob",0), "ev": bs.get("ev",0),
+                    "ml": bs.get("ml","")}
+
+        h_prob = float(sim.get("home_pct",0) or 0)
+        a_prob = float(sim.get("away_pct",0) or 0)
+        fav_prob = max(h_prob, a_prob)
+        if fav_prob >= 61:
+            _fav_home = h_prob >= a_prob
+            return {"market":"ML",
+                    "label": r.get("home_team","") if _fav_home else r.get("away_team",""),
+                    "prob": fav_prob,
+                    "ev": (sim.get("home_ev",0) if _fav_home else sim.get("away_ev",0)) or 0,
+                    "ml": (sim.get("home_ml","") if _fav_home else sim.get("away_ml","")) or ""}
+
+        # Buscar O/U en _scored_candidates
+        for _cand in sim.get("_scored_candidates",[]):
+            if _cand.get("market") in ("O/U","BTTS"):
+                return {"market":_cand["market"],"label":_cand["label"],
+                        "prob":_cand["prob"],"ev":_cand.get("ev",0),"ml":_cand.get("ml","")}
+
+        # Último recurso: best_single no-ML
+        if bs and bs.get("market") != "ML":
+            return {"market":bs["market"],"label":bs["label"],
+                    "prob":bs.get("prob",0),"ev":bs.get("ev",0),"ml":bs.get("ml","")}
+
+        # ML con ≥ 55%
+        if fav_prob >= 55:
+            _fav_home = h_prob >= a_prob
+            return {"market":"ML",
+                    "label": r.get("home_team","") if _fav_home else r.get("away_team",""),
+                    "prob": fav_prob, "ev": 0, "ml": ""}
+        return None
 
     def _build_extra_panels(g, sim, bp):
         """
