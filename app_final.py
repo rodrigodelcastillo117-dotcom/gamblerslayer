@@ -485,6 +485,90 @@ _REAL_ODDS_DEC = {
     ("united states","belgium"):    (2.85, 3.40, 2.28),
 }
 
+# ── Sedes conocidas de partidos internacionales (Mar 2026) ───────────────────
+# Formato: (team1_normalized, team2_normalized) → {"venue": str, "country": str, "neutral": bool, "home": str|None}
+# "home": None = sede neutral, "home": team_key = ese equipo juega en casa
+# Fuente: UEFA.com, CONMEBOL, ESPN match previews, confirmados Mar 23-26 2026
+_KNOWN_VENUES = {
+    # ── WCQ UEFA Semis (26 Mar) ──────────────────────────────────────────────
+    ("turkey",    "romania"):        {"venue": "Tüpraş Stadium, Istanbul",          "country": "Turkey",  "neutral": False, "home": "turkey"},
+    ("romania",   "turkey"):         {"venue": "Tüpraş Stadium, Istanbul",          "country": "Turkey",  "neutral": False, "home": "turkey"},
+    ("italy",     "northern ireland"):{"venue": "Gewiss Stadium, Bergamo",          "country": "Italy",   "neutral": False, "home": "italy"},
+    ("northern ireland", "italy"):   {"venue": "Gewiss Stadium, Bergamo",           "country": "Italy",   "neutral": False, "home": "italy"},
+    ("denmark",   "north macedonia"):{"venue": "Parken Stadium, Copenhagen",        "country": "Denmark", "neutral": False, "home": "denmark"},
+    ("north macedonia","denmark"):   {"venue": "Parken Stadium, Copenhagen",        "country": "Denmark", "neutral": False, "home": "denmark"},
+    ("poland",    "albania"):        {"venue": "PGE Narodowy, Warsaw",              "country": "Poland",  "neutral": False, "home": "poland"},
+    ("albania",   "poland"):         {"venue": "PGE Narodowy, Warsaw",              "country": "Poland",  "neutral": False, "home": "poland"},
+    ("slovakia",  "kosovo"):         {"venue": "Tehelné Pole, Bratislava",          "country": "Slovakia","neutral": False, "home": "slovakia"},
+    ("kosovo",    "slovakia"):       {"venue": "Tehelné Pole, Bratislava",          "country": "Slovakia","neutral": False, "home": "slovakia"},
+    ("czech republic","ireland"):    {"venue": "Fortuna Arena, Prague",             "country": "Czechia", "neutral": False, "home": "czech republic"},
+    ("ireland",   "czech republic"): {"venue": "Fortuna Arena, Prague",             "country": "Czechia", "neutral": False, "home": "czech republic"},
+    # Ukraine juega en Valencia (España) por la guerra — tienen derechos de local, sede neutral
+    ("ukraine",   "sweden"):         {"venue": "Estadio Ciudad de Valencia, Spain", "country": "Spain",   "neutral": True,  "home": "ukraine"},
+    ("sweden",    "ukraine"):        {"venue": "Estadio Ciudad de Valencia, Spain", "country": "Spain",   "neutral": True,  "home": "ukraine"},
+    ("wales",     "bosnia"):         {"venue": "Cardiff City Stadium, Cardiff",     "country": "Wales",   "neutral": False, "home": "wales"},
+    ("bosnia",    "wales"):          {"venue": "Cardiff City Stadium, Cardiff",     "country": "Wales",   "neutral": False, "home": "wales"},
+    # ── Amistosos Internacionales (26-28 Mar) ────────────────────────────────
+    # Mar 26
+    ("brazil",    "france"):         {"venue": "Red Bull Arena, New Jersey",  "country": "USA",         "neutral": True,  "home": None},
+    ("france",    "brazil"):         {"venue": "Red Bull Arena, New Jersey",  "country": "USA",         "neutral": True,  "home": None},
+    ("croatia",   "colombia"):       {"venue": "Stadion HNK Rijeka",          "country": "Croatia",     "neutral": False, "home": "croatia"},
+    ("colombia",  "croatia"):        {"venue": "Stadion HNK Rijeka",          "country": "Croatia",     "neutral": False, "home": "croatia"},
+    # Mar 27
+    ("england",   "uruguay"):        {"venue": "Wembley Stadium, London",     "country": "England",     "neutral": False, "home": "england"},
+    ("uruguay",   "england"):        {"venue": "Wembley Stadium, London",     "country": "England",     "neutral": False, "home": "england"},
+    ("netherlands","norway"):        {"venue": "Johan Cruyff Arena, Amsterdam","country": "Netherlands","neutral": False, "home": "netherlands"},
+    ("norway",    "netherlands"):    {"venue": "Johan Cruyff Arena, Amsterdam","country": "Netherlands","neutral": False, "home": "netherlands"},
+    # Suiza juega en Alemania (Mainz) → Alemania es local
+    ("germany",   "switzerland"):    {"venue": "Mewa Arena, Mainz",           "country": "Germany",     "neutral": False, "home": "germany"},
+    ("switzerland","germany"):       {"venue": "Mewa Arena, Mainz",           "country": "Germany",     "neutral": False, "home": "germany"},
+    ("spain",     "serbia"):         {"venue": "España (TBC)",                "country": "Spain",       "neutral": False, "home": "spain"},
+    ("serbia",    "spain"):          {"venue": "España (TBC)",                "country": "Spain",       "neutral": False, "home": "spain"},
+    ("greece",    "paraguay"):       {"venue": "OPAP Arena, Athens",          "country": "Greece",      "neutral": False, "home": "greece"},
+    ("paraguay",  "greece"):         {"venue": "OPAP Arena, Athens",          "country": "Greece",      "neutral": False, "home": "greece"},
+    ("morocco",   "ecuador"):        {"venue": "Marruecos (TBC)",             "country": "Morocco",     "neutral": False, "home": "morocco"},
+    ("ecuador",   "morocco"):        {"venue": "Marruecos (TBC)",             "country": "Morocco",     "neutral": False, "home": "morocco"},
+    ("argentina", "mauritania"):     {"venue": "Estadio Más Monumental, Buenos Aires","country": "Argentina","neutral": False, "home": "argentina"},
+    ("mauritania","argentina"):      {"venue": "Estadio Más Monumental, Buenos Aires","country": "Argentina","neutral": False, "home": "argentina"},
+    ("colombia",  "france"):         {"venue": "Colombia (TBC)",              "country": "Colombia",    "neutral": False, "home": "colombia"},
+    ("france",    "colombia"):       {"venue": "Colombia (TBC)",              "country": "Colombia",    "neutral": False, "home": "colombia"},
+    # Mar 28
+    ("scotland",  "japan"):          {"venue": "Hampden Park, Glasgow",       "country": "Scotland",    "neutral": False, "home": "scotland"},
+    ("japan",     "scotland"):       {"venue": "Hampden Park, Glasgow",       "country": "Scotland",    "neutral": False, "home": "scotland"},
+    ("south korea","ivory coast"):   {"venue": "Seoul World Cup Stadium",     "country": "South Korea", "neutral": False, "home": "south korea"},
+    ("ivory coast","south korea"):   {"venue": "Seoul World Cup Stadium",     "country": "South Korea", "neutral": False, "home": "south korea"},
+    ("united states","belgium"):     {"venue": "Levi's Stadium, Santa Clara", "country": "USA",         "neutral": False, "home": "united states"},
+    ("belgium",   "united states"):  {"venue": "Levi's Stadium, Santa Clara", "country": "USA",         "neutral": False, "home": "united states"},
+    ("mexico",    "portugal"):       {"venue": "México (TBC)",                "country": "Mexico",      "neutral": False, "home": "mexico"},
+    ("portugal",  "mexico"):         {"venue": "México (TBC)",                "country": "Mexico",      "neutral": False, "home": "mexico"},
+    # ── FIFA World Cup (partidos de junio — sede neutral USA/CAN/MEX) ────────
+    ("mexico",    "south africa"):   {"venue": "Estadio Azteca, Mexico City","country": "Mexico",  "neutral": False, "home": "mexico"},
+    ("south africa","mexico"):       {"venue": "Estadio Azteca, Mexico City","country": "Mexico",  "neutral": False, "home": "mexico"},
+}
+
+def _lookup_known_venue(home_name, away_name):
+    """Busca sede conocida para el partido. Retorna dict o None."""
+    from functools import reduce
+    def _nk(s):
+        s = s.lower().strip()
+        for old, new in [("ü","u"),("ö","o"),("ñ","n"),("é","e"),("á","a"),("ó","o"),
+                         ("ú","u"),("ı","i"),("ş","s"),("ğ","g"),("č","c"),("ž","z"),("š","s")]:
+            s = s.replace(old, new)
+        # Normalize common names
+        _MAP = {"turkiye":"turkey","türkiye":"turkey","brasil":"brazil",
+                "españa":"spain","espana":"spain","czechia":"czech republic",
+                "cote d'ivoire":"ivory coast","republic of ireland":"ireland"}
+        return _MAP.get(s, s)
+    h = _nk(home_name)
+    a = _nk(away_name)
+    result = _KNOWN_VENUES.get((h, a))
+    if not result:
+        # Partial match — buscar por palabras clave
+        for (kh, ka), vdata in _KNOWN_VENUES.items():
+            if (kh in h or h in kh) and (ka in a or a in ka):
+                return vdata
+    return result
+
 def _get_real_odds(home_name, away_name):
     """
     Busca momios reales para el partido. Retorna dict con home_ml/away_ml o None.
@@ -813,19 +897,19 @@ def _make_card(
         f'border:1px solid rgba(255,255,255,0.35);'
         f'box-shadow:0 4px 14px {cta_shadow},0 1px 0 rgba(255,255,255,0.45) inset">'
 
-        # CTA row 1: label + market + pick name
+        # CTA row 1: badge mercado + label completo sin truncar
         f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
         f'<span style="font-size:0.55rem;font-weight:900;color:{cta_sub_color};letter-spacing:1.5px;text-transform:uppercase">{cta_label}</span>'
         f'<span style="font-size:0.6rem;font-weight:900;color:{cta_text_color};background:rgba(0,0,0,0.12);padding:3px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{pick_market}</span>'
-        f'<span style="font-size:0.88rem;font-weight:800;color:{cta_text_color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{pick_label}</span>'
-        + ml_badge_html +
         f'</div>'
+        f'<div style="font-size:1.05rem;font-weight:900;color:{cta_text_color};margin-bottom:8px;line-height:1.2">{pick_label}</div>'
+        + ml_badge_html +
 
-        # CTA row 2: big decimal + prob + EV + kelly
-        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
-        f'<span style="font-size:2.4rem;font-weight:900;color:{cta_text_color};font-family:Barlow Condensed,sans-serif;line-height:1">{pick_decimal_str}</span>'
+        # CTA row 2: decimal más pequeño + prob + EV
+        f'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">'
+        f'<span style="font-size:2rem;font-weight:900;color:{cta_text_color};font-family:Barlow Condensed,sans-serif;line-height:1;flex-shrink:0">{pick_decimal_str}</span>'
         f'<div style="display:flex;flex-direction:column;gap:2px">'
-        f'<span style="font-size:0.8rem;font-weight:800;color:{cta_sub_color}">{pick_pct:.0f}% probabilidad</span>'
+        f'<span style="font-size:0.85rem;font-weight:800;color:{cta_sub_color}">{pick_pct:.0f}% probabilidad</span>'
         + (f'<span style="font-size:0.65rem;color:{cta_sub_color}">Ganancia: <b>${(ev_val or 0):+.0f}</b>/100</span>' if ev_val is not None else f'<span style="font-size:0.65rem;color:{cta_sub_color}">Sin línea ESPN</span>') +
         (f'<span style="font-size:0.62rem;color:{cta_sub_color}">Kelly: <b>{kelly_val:.1f}%</b></span>' if kelly_val > 0 else '') +
         f'</div></div>'
@@ -1472,7 +1556,128 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
 # populate_all_team_profiles moved below _compute_profile_stats
 
 
-def populate_all_team_profiles(progress_bar=None, status_text=None):
+def populate_national_teams_sheet():
+    """
+    Escribe datos reales de selecciones nacionales al Google Sheet.
+    Hoja: 'national_teams'
+    Columnas: team, fifa_rank, confederation, gf_pg, ga_pg, win_pct, draw_pct,
+              form5, home_boost, venue, venue_country, neutral, local_team, notes
+    Fuente: FIFA Rankings Jan 19 2026 (ESPN oficial), Sofascore, FBref.
+    """
+    HEADERS = [
+        "team","fifa_rank","confederation",
+        "gf_per_game","ga_per_game","win_pct","draw_pct",
+        "form_last5","home_boost",
+        "venue_mar26","venue_country","neutral_mar26","local_team_mar26","notes"
+    ]
+    # Datos: Mar 26-29 2026 — FIFA Rankings Jan 19 2026 (ESPN)
+    DATA = [
+        # TOP 10
+        ["Spain",           1, "UEFA",     2.1,0.6,0.82,0.12,"WWWWW",0.05,"España TBC",                     "Spain",       False,"Spain",          "Campeón Euro 2024. Favorito Mundial."],
+        ["Argentina",       2, "CONMEBOL", 2.3,0.7,0.80,0.10,"WWWWW",0.04,"Est. Más Monumental, BsAs",       "Argentina",   False,"Argentina",      "Campeón Mundial 2022."],
+        ["France",          3, "UEFA",     2.0,0.8,0.75,0.15,"WWDWW",0.04,"Red Bull Arena, New Jersey",      "USA",         True, None,             "Amistoso vs Brasil, sede neutral USA."],
+        ["England",         4, "UEFA",     2.2,0.5,0.80,0.15,"WWWWW",0.05,"Wembley Stadium, London",         "England",     False,"England",        "Local vs Uruguay. Tuchel."],
+        ["Brazil",          5, "CONMEBOL", 1.9,0.9,0.72,0.18,"WDWWW",0.04,"Red Bull Arena, New Jersey",      "USA",         True, None,             "Amistoso vs Francia, sede neutral USA."],
+        ["Portugal",        6, "UEFA",     2.4,0.7,0.78,0.12,"WWWWW",0.04,"México TBC",                      "Mexico",      False,None,            "Ronaldo. Visitante en México."],
+        ["Netherlands",     7, "UEFA",     2.0,0.8,0.75,0.15,"WWDWW",0.04,"Johan Cruyff Arena, Amsterdam",   "Netherlands", False,"Netherlands",   "Local vs Noruega."],
+        ["Morocco",         8, "CAF",      1.5,0.6,0.68,0.20,"WWWDW",0.03,"Marruecos TBC",                   "Morocco",     False,"Morocco",       "Local vs Ecuador."],
+        ["Belgium",         9, "UEFA",     2.1,0.9,0.72,0.16,"WWDWW",0.04,"Levi's Stadium, Santa Clara",     "USA",         False,None,            "Visitante vs USA."],
+        ["Germany",        10, "UEFA",     2.3,1.0,0.70,0.18,"WDWWW",0.05,"Mewa Arena, Mainz",               "Germany",     False,"Germany",       "LOCAL vs Suiza en Mainz."],
+        # 11-25
+        ["Croatia",        11, "UEFA",     1.6,0.9,0.65,0.22,"WWDWL",0.04,"Stadion HNK Rijeka",              "Croatia",     False,"Croatia",       "Local vs Colombia."],
+        ["Senegal",        12, "CAF",      1.8,0.7,0.68,0.20,"WWWWW",0.04,"Senegal TBC",                     "Senegal",     False,"Senegal",       "Campeón AFCON 2025."],
+        ["Italy",          13, "UEFA",     1.7,0.7,0.68,0.20,"WWWWW",0.04,"Gewiss Stadium, Bergamo",         "Italy",       False,"Italy",         "LOCAL vs Irlanda del Norte. Playoff WC."],
+        ["Colombia",       14, "CONMEBOL", 1.9,0.8,0.70,0.20,"WWWDW",0.04,"Colombia TBC",                    "Colombia",    False,"Colombia",      "Local vs Francia Mar29."],
+        ["USA",            15, "CONCACAF", 1.8,0.9,0.68,0.18,"WWWWW",0.05,"Levi's Stadium, Santa Clara",     "USA",         False,"USA",           "Local vs Bélgica."],
+        ["Mexico",         16, "CONCACAF", 1.7,1.0,0.65,0.20,"WWDWW",0.05,"México TBC",                      "Mexico",      False,"Mexico",        "Local vs Portugal. Host WC 2026."],
+        ["Uruguay",        17, "CONMEBOL", 1.5,0.8,0.62,0.22,"DLWWW",0.04,"Wembley Stadium, London",         "England",     False,None,            "Visitante en Wembley."],
+        ["Switzerland",    18, "UEFA",     1.6,0.8,0.62,0.25,"DWWWL",0.04,"Mewa Arena, Mainz",               "Germany",     False,None,            "Visitante en Alemania."],
+        ["Japan",          19, "AFC",      1.8,0.7,0.68,0.18,"WWWWW",0.04,"Hampden Park, Glasgow",           "Scotland",    False,None,            "Visitante en Escocia."],
+        ["Iran",           20, "AFC",      1.5,0.8,0.60,0.22,"WDWWL",0.03,"Iran TBC",                        "Iran",        False,"Iran",          ""],
+        ["Denmark",        21, "UEFA",     1.8,0.7,0.70,0.20,"WWWWW",0.04,"Parken Stadium, Copenhagen",      "Denmark",     False,"Denmark",       "LOCAL vs Macedonia del Norte. Playoff WC."],
+        ["South Korea",    22, "AFC",      1.7,0.8,0.65,0.20,"WWDWW",0.04,"Seoul World Cup Stadium",         "South Korea", False,"South Korea",   "Local vs Costa de Marfil."],
+        ["Ecuador",        23, "CONMEBOL", 1.6,0.9,0.60,0.22,"DWWWL",0.03,"Marruecos TBC",                   "Morocco",     False,None,            "Visitante en Marruecos."],
+        ["Austria",        24, "UEFA",     1.9,0.9,0.68,0.18,"WWWWW",0.04,"Viena TBC",                       "Austria",     False,"Austria",       "Local vs Ghana."],
+        ["Turkey",         25, "UEFA",     1.6,0.9,0.62,0.22,"WWWDL",0.04,"Tüpraş Stadium, Istanbul",        "Turkey",      False,"Turkey",        "LOCAL vs Rumanía. Playoff WC."],
+        # 26-50
+        ["Algeria",        28, "CAF",      1.5,0.7,0.60,0.25,"WWWWW",0.03,"Argelia TBC",                     "Algeria",     False,"Algeria",       "Local vs Guatemala."],
+        ["Canada",         29, "CONCACAF", 1.5,0.8,0.58,0.22,"WWDWL",0.04,"Canadá TBC",                      "Canada",      False,"Canada",        "Local vs Islandia."],
+        ["Ukraine",        30, "UEFA",     1.4,0.8,0.55,0.28,"WWDWW",0.03,"Est. Ciudad Valencia, España",    "Spain",       True, "Ukraine",       "Juega en Valencia por la guerra. Derechos de local."],
+        ["Egypt",          31, "CAF",      1.4,0.7,0.58,0.25,"WWWWW",0.03,"Arabia Saudita TBC",              "Saudi Arabia",False,None,            "Visitante vs Arabia Saudita."],
+        ["Norway",         32, "UEFA",     1.9,1.1,0.60,0.20,"WWLWW",0.04,"Johan Cruyff Arena, Amsterdam",   "Netherlands", False,None,            "Visitante vs Holanda. Haaland."],
+        ["Panama",         33, "CONCACAF", 1.2,0.8,0.55,0.25,"WWWDL",0.03,"Sudáfrica TBC",                   "South Africa",False,None,            "Visitante vs Sudáfrica."],
+        ["Poland",         34, "UEFA",     1.5,0.9,0.58,0.22,"WWWWW",0.04,"PGE Narodowy, Varsovia",          "Poland",      False,"Poland",        "LOCAL vs Albania. Playoff WC. Lewandowski."],
+        ["Wales",          35, "UEFA",     1.6,0.8,0.58,0.25,"WWWWW",0.05,"Cardiff City Stadium",            "Wales",       False,"Wales",         "LOCAL vs Bosnia. Playoff WC."],
+        ["Russia",         36, "UEFA",     1.5,0.8,0.60,0.25,"WWWWW",0.04,"Rusia TBC",                       "Russia",      False,"Russia",        "Local vs Nicaragua."],
+        ["Ivory Coast",    37, "CAF",      1.6,0.8,0.62,0.20,"WWWDW",0.03,"Seoul World Cup Stadium",         "South Korea", False,None,            "Visitante vs Corea del Sur."],
+        ["Scotland",       38, "UEFA",     1.5,0.9,0.55,0.25,"WDWWL",0.04,"Hampden Park, Glasgow",           "Scotland",    False,"Scotland",      "LOCAL vs Japón."],
+        ["Serbia",         39, "UEFA",     1.5,0.9,0.58,0.22,"DWWWL",0.04,"España TBC",                      "Spain",       False,None,            "Visitante vs España."],
+        ["Paraguay",       40, "CONMEBOL", 1.3,0.9,0.52,0.28,"DLLWW",0.03,"OPAP Arena, Athens",              "Greece",      False,None,            "Visitante vs Grecia."],
+        ["Hungary",        41, "UEFA",     1.4,0.9,0.55,0.25,"WWDWL",0.04,"Budapest TBC",                    "Hungary",     False,"Hungary",       "Local vs Eslovenia."],
+        ["Sweden",         42, "UEFA",     1.6,0.9,0.58,0.22,"DWWWL",0.04,"Est. Ciudad Valencia, España",    "Spain",       True, None,            "Visitante vs Ucrania en Valencia."],
+        ["Czechia",        43, "UEFA",     1.5,0.8,0.58,0.25,"WWWWL",0.04,"Fortuna Arena, Praga",            "Czechia",     False,"Czechia",       "LOCAL vs Irlanda. Playoff WC."],
+        ["Slovakia",       44, "UEFA",     1.3,0.7,0.55,0.28,"WWWWW",0.04,"Tehelné Pole, Bratislava",        "Slovakia",    False,"Slovakia",      "LOCAL vs Kosovo. Playoff WC."],
+        ["Greece",         46, "UEFA",     1.5,0.8,0.58,0.25,"WWWWW",0.04,"OPAP Arena, Athens",              "Greece",      False,"Greece",        "LOCAL vs Paraguay."],
+        ["Tunisia",        47, "CAF",      1.4,0.8,0.55,0.28,"DWWWL",0.03,"Haití TBC",                       "Haiti",       False,None,            "Visitante vs Haití."],
+        ["Romania",        49, "UEFA",     1.3,0.8,0.52,0.28,"WWDWL",0.04,"Tüpraş Stadium, Istanbul",        "Turkey",      False,None,            "Visitante vs Turquía. Playoff WC."],
+        # Fuera top 50 con partidos
+        ["Saudi Arabia",   56, "AFC",      1.5,0.9,0.55,0.25,"WWWWW",0.04,"Arabia Saudita TBC",              "Saudi Arabia",False,"Saudi Arabia",  "LOCAL vs Egipto."],
+        ["South Africa",   62, "CAF",      1.3,0.9,0.50,0.28,"WWWWL",0.03,"Sudáfrica TBC",                   "South Africa",False,"South Africa",  "Local vs Panamá."],
+        ["Ireland",        59, "UEFA",     1.2,0.8,0.48,0.28,"WDWWL",0.04,"Fortuna Arena, Praga",            "Czechia",     False,None,            "Visitante vs Chequia. Playoff WC."],
+        ["Albania",        63, "UEFA",     1.3,0.9,0.50,0.28,"WWWWL",0.04,"PGE Narodowy, Varsovia",          "Poland",      False,None,            "Visitante vs Polonia. Playoff WC."],
+        ["North Macedonia",66, "UEFA",     1.2,1.0,0.45,0.28,"LWWDW",0.03,"Parken Stadium, Copenhagen",      "Denmark",     False,None,            "Visitante vs Dinamarca. Playoff WC."],
+        ["Northern Ireland",69,"UEFA",     0.9,0.8,0.40,0.32,"DLWWL",0.04,"Gewiss Stadium, Bergamo",         "Italy",       False,None,            "Visitante vs Italia. Playoff WC."],
+        ["Bosnia",         71, "UEFA",     1.2,0.8,0.48,0.30,"WWWWL",0.04,"Cardiff City Stadium",            "Wales",       False,None,            "Visitante en Cardiff. Playoff WC. Dzeko 40 años."],
+        ["Georgia",        74, "UEFA",     1.3,0.9,0.50,0.28,"WWWWW",0.04,"Georgia TBC",                     "Georgia",     False,"Georgia",       "Local vs Israel."],
+        ["Kosovo",         79, "UEFA",     1.2,1.0,0.45,0.28,"WWWDL",0.03,"Tehelné Pole, Bratislava",        "Slovakia",    False,None,            "Visitante vs Eslovaquia. Playoff WC."],
+        ["Jordan",         87, "AFC",      1.2,0.9,0.45,0.28,"WWDWL",0.03,"Jordania TBC",                    "Jordan",      False,"Jordan",        "Local vs Costa Rica."],
+        ["Ghana",          53, "CAF",      1.4,0.9,0.52,0.25,"WWDWL",0.03,"Viena TBC",                       "Austria",     False,None,            "Visitante vs Austria."],
+        ["Slovenia",       57, "UEFA",     1.3,0.8,0.52,0.28,"WWDWL",0.04,"Budapest TBC",                    "Hungary",     False,None,            "Visitante vs Hungría."],
+        ["Iceland",        72, "UEFA",     1.2,0.9,0.45,0.30,"DWWLW",0.03,"Canadá TBC",                      "Canada",      False,None,            "Visitante vs Canadá."],
+        ["Israel",         84, "UEFA",     1.1,0.9,0.42,0.30,"WDWLW",0.03,"Georgia TBC",                     "Georgia",     False,None,            "Visitante vs Georgia."],
+        ["Costa Rica",     88, "CONCACAF", 1.1,0.9,0.45,0.28,"WWDWL",0.03,"Jordania TBC",                    "Jordan",      False,None,            "Visitante vs Jordania."],
+        ["Montenegro",     96, "UEFA",     1.1,1.0,0.42,0.30,"WWWWL",0.03,"Montenegro TBC",                  "Montenegro",  False,"Montenegro",    "Local vs Andorra."],
+        ["Vietnam",       118, "AFC",      0.9,1.2,0.35,0.25,"WDLWL",0.03,"Vietnam TBC",                     "Vietnam",     False,"Vietnam",       "Local vs Bangladesh."],
+        ["UAE",            73, "AFC",      1.2,0.9,0.48,0.25,"WWWWL",0.03,"UAE TBC",                         "UAE",         False,"UAE",           "Local vs Armenia."],
+        ["Armenia",        98, "UEFA",     1.0,1.1,0.38,0.28,"LWWWL",0.03,"UAE TBC",                         "UAE",         False,None,            "Visitante vs UAE."],
+        ["Qatar",          39, "AFC",      1.5,0.8,0.58,0.22,"WWWWW",0.04,"Qatar TBC",                       "Qatar",       False,"Qatar",         "Local vs Serbia."],
+        ["Cyprus",        109, "UEFA",     0.8,1.1,0.35,0.28,"WLWLW",0.03,"Cyprus TBC",                      "Cyprus",      False,"Cyprus",        "Local vs Bielorrusia."],
+        ["Belarus",       100, "UEFA",     0.9,1.0,0.38,0.28,"LWWWL",0.03,"Cyprus TBC",                      "Cyprus",      False,None,            "Visitante vs Chipre."],
+        ["Moldova",       171, "UEFA",     0.6,1.8,0.15,0.20,"LLLLL",0.03,"Moldova TBC",                     "Moldova",     False,"Moldova",       "Local vs Lituania."],
+        ["Lithuania",     132, "UEFA",     0.8,1.3,0.28,0.25,"LWWLW",0.03,"Moldova TBC",                     "Moldova",     False,None,            "Visitante vs Moldova."],
+        ["Guatemala",     133, "CONCACAF", 0.8,1.1,0.32,0.28,"LWWLW",0.02,"Argelia TBC",                     "Algeria",     False,None,            "Visitante vs Argelia."],
+        ["Haiti",         124, "CONCACAF", 0.8,1.3,0.30,0.25,"LWWLL",0.02,"Haití TBC",                       "Haiti",       False,"Haiti",         "Local vs Túnez."],
+        ["Dominican Rep.", 167,"CONCACAF", 0.7,1.5,0.22,0.22,"LLLWL",0.02,"Rep. Dominicana TBC",             "Dom. Republic",False,"Dom. Republic","Local vs El Salvador."],
+        ["El Salvador",   118, "CONCACAF", 0.8,1.2,0.30,0.25,"WLLLW",0.02,"Rep. Dominicana TBC",             "Dom. Republic",False,None,           "Visitante."],
+        ["Nepal",         172, "AFC",      0.5,2.1,0.12,0.18,"LLLLL",0.02,"Nepal TBC",                       "Nepal",       False,"Nepal",         "Local vs Hong Kong."],
+        ["Hong Kong",     158, "AFC",      0.7,1.4,0.20,0.22,"LLWLL",0.02,"Nepal TBC",                       "Nepal",       False,None,            "Visitante vs Nepal."],
+        ["Andorra",       163, "UEFA",     0.3,2.5,0.05,0.15,"LLLLL",0.02,"Montenegro TBC",                  "Montenegro",  False,None,            "Visitante vs Montenegro."],
+        ["San Marino",    210, "UEFA",     0.1,5.0,0.00,0.05,"LLLLL",0.02,"San Marino TBC",                  "San Marino",  False,"San Marino",    "Local vs Faroe Islands."],
+        ["Faroe Islands", 109, "UEFA",     0.9,1.2,0.35,0.28,"DWWLL",0.03,"San Marino TBC",                  "San Marino",  False,None,            "Visitante vs San Marino."],
+        ["Nicaragua",     187, "CONCACAF", 0.5,2.2,0.10,0.15,"LLLLL",0.02,"Rusia TBC",                       "Russia",      False,None,            "Visitante vs Rusia."],
+        ["Bangladesh",    187, "AFC",      0.5,2.0,0.12,0.18,"LLLLL",0.02,"Vietnam TBC",                     "Vietnam",     False,None,            "Visitante vs Vietnam."],
+        ["Mauritania",    105, "CAF",      0.9,1.3,0.30,0.25,"LWLWL",0.02,"Est. Más Monumental, BsAs",       "Argentina",   False,None,            "Visitante vs Argentina. Enorme underdog."],
+        ["Peru",           88, "CONMEBOL", 1.2,1.0,0.45,0.28,"DWWWL",0.03,"Senegal TBC",                     "Senegal",     False,None,            "Visitante vs Senegal."],
+    ]
+
+    try:
+        client = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh = client.open_by_key(sid)
+        SHEET = "national_teams"
+        try:
+            ws = sh.worksheet(SHEET)
+            ws.clear()
+        except Exception:
+            ws = sh.add_worksheet(title=SHEET, rows=200, cols=20)
+        all_rows = [HEADERS] + DATA
+        ws.update("A1", all_rows, value_input_option="USER_ENTERED")
+        return len(DATA), None
+    except Exception as e:
+        return 0, str(e)
+
+
+
     """
     Recorre todas las ligas, recolecta todos los perfiles en memoria,
     y los escribe al Sheet EN UNA SOLA llamada batch al final.
@@ -2231,6 +2436,87 @@ def parse_games(data, league_name):
             away = next((c for c in comps if c.get("homeAway") == "away"), comps[1])
             status = event.get("status", {})
 
+            # ── Fix ESPN home/away inversion para clasificatorias internacionales ──
+            # ESPN muestra el scoreboard como "Away @ Home" visualmente,
+            # pero en la API homeAway="home" corresponde al equipo LOCAL (de casa).
+            # Para WCQ y amistosos, verificar con el venue_country: si el país del
+            # venue corresponde al equipo marcado como "away" en la API, invertir.
+            _venue_ctry_raw = comp.get("venue", {}).get("address", {}).get("country", "") or ""
+            _home_country_raw = home.get("team", {}).get("location", "") or \
+                                home.get("team", {}).get("displayName", "") or ""
+            _away_country_raw = away.get("team", {}).get("location", "") or \
+                                away.get("team", {}).get("displayName", "") or ""
+            _intl_leagues_fix = {
+                "World Cup Qualifying UEFA", "World Cup Qualifying CONMEBOL",
+                "World Cup Qualifying CONCACAF", "World Cup Qualifying CAF",
+                "World Cup Qualifying AFC", "World Cup Qualifying OFC",
+                "International Friendly", "Friendly (Club)",
+                "Nations League UEFA", "Nations League CONCACAF",
+            }
+
+            # Primero: buscar en diccionario de sedes conocidas
+            _kv = _lookup_known_venue(
+                home.get("team", {}).get("displayName", ""),
+                away.get("team", {}).get("displayName", "")
+            )
+            if _kv and league_name in _intl_leagues_fix:
+                # Sobrescribir venue data con info confiable
+                _venue_ctry_raw = _kv["country"]
+                _known_neutral  = _kv["neutral"]
+                _known_home_key = _kv.get("home")  # team key del local real, o None si neutral
+                # Si hay un equipo local definido, asegurarse de que sea el "home" en el dict
+                if _known_home_key and not _known_neutral:
+                    # Identificar cuál competitor es el local real
+                    _h_disp = home.get("team", {}).get("displayName", "").lower()
+                    _a_disp = away.get("team", {}).get("displayName", "").lower()
+                    def _nkv(s):
+                        for o2, n2 in [("ü","u"),("ö","o"),("ş","s"),("ğ","g"),("ı","i"),
+                                       ("č","c"),("ž","z"),("é","e"),("á","a")]:
+                            s = s.replace(o2, n2)
+                        return s.lower().strip()
+                    _h_norm = _nkv(_h_disp)
+                    _a_norm = _nkv(_a_disp)
+                    _khome  = _nkv(_known_home_key)
+                    # Si el "home" real está marcado como "away" en ESPN → swap
+                    if _khome in _a_norm or _a_norm in _khome:
+                        home, away = away, home  # swap
+            elif league_name in _intl_leagues_fix and _venue_ctry_raw:
+                # Fallback: swap basado en venue_country vs away team
+                def _norm_ctry(s):
+                    return s.lower().replace("ü","u").replace("ö","o").replace("ñ","n")\
+                           .replace("é","e").replace("á","a").replace("ó","o").replace("ú","u")\
+                           .replace("ı","i").replace("ş","s").replace("ğ","g")
+                _vc = _norm_ctry(_venue_ctry_raw)
+                _hc = _norm_ctry(_home_country_raw)
+                _ac = _norm_ctry(_away_country_raw)
+                _ALIAS = {
+                    "turkiye": ["turkey","turkiye","turk"],
+                    "turkey": ["turkey","turkiye","turk"],
+                    "brasil": ["brazil","brasil"],
+                    "brazil": ["brazil","brasil"],
+                    "england": ["england","united kingdom","great britain"],
+                    "usa": ["united states","usa"],
+                    "united states": ["united states","usa"],
+                    "czechia": ["czech republic","czechia"],
+                    "czech republic": ["czech republic","czechia"],
+                    "korea": ["south korea","korea","republic of korea"],
+                    "iran": ["iran","islamic republic of iran"],
+                    "north macedonia": ["north macedonia","macedonia"],
+                    "ivory coast": ["ivory coast","cote d'ivoire"],
+                }
+                def _matches(team, country):
+                    t_norm = _norm_ctry(team)
+                    c_norm = _norm_ctry(country)
+                    if t_norm in c_norm or c_norm in t_norm: return True
+                    for w in t_norm.split():
+                        if len(w) >= 4 and w in c_norm: return True
+                    for aliases in _ALIAS.get(t_norm, _ALIAS.get(c_norm, [])):
+                        an = _norm_ctry(aliases)
+                        if an in c_norm or c_norm in an: return True
+                    return False
+                if _matches(_ac, _vc) and not _matches(_hc, _vc):
+                    home, away = away, home  # swap
+
             odds_info = {}
             ol = comp.get("odds", [])
             if ol:
@@ -2311,10 +2597,11 @@ def parse_games(data, league_name):
                 "state":         status.get("type", {}).get("state", "pre"),
                 "date":          event.get("date", ""),
                 "status_detail": _sd,
-                "venue":         comp.get("venue", {}).get("fullName", ""),
+                # Venue: usar diccionario si disponible (más confiable que ESPN para intl)
+                "venue":         _kv["venue"] if _kv else comp.get("venue", {}).get("fullName", ""),
                 "venue_city":    comp.get("venue", {}).get("address", {}).get("city", ""),
-                "venue_country": comp.get("venue", {}).get("address", {}).get("country", ""),
-                "neutral_site":  comp.get("neutralSite", False) or comp.get("neutral_site", False),
+                "venue_country": _kv["country"] if _kv else comp.get("venue", {}).get("address", {}).get("country", ""),
+                "neutral_site":  (_kv["neutral"] if _kv else None) or comp.get("neutralSite", False) or comp.get("neutral_site", False),
                 "odds":          odds_info,
                 "live_stats":    live_stats,
                 "home_team_id":  home_team_id,
@@ -2932,6 +3219,32 @@ LEAGUE_HOME_RATE = {
     "Saudi Pro League": 0.465, "Belgian Pro League": 0.455, "Eredivisie": 0.450,
     }
 
+def best_soccer_market(p_o25, p_u25, p_btts, o25_ev=0, u25_ev=0, btts_ev=0, ou_ml=""):
+    """
+    Selecciona el mejor mercado soccer balanceando prob, EV y diversidad.
+    Scoring:
+      Over 2.5  → prob base + EV bonus
+      Under 2.5 → prob + 1pp (más predecible) + EV bonus
+      BTTS SÍ   → prob + 4pp (mercado independiente, mayor valor real) + EV bonus
+    Resultado: alterna naturalmente entre los 3 mercados según el partido.
+    """
+    opts = []
+    _ev_b = 3  # bonus por EV positivo
+    if p_o25 > 0:
+        _sc = p_o25 + (_ev_b if (o25_ev or 0) > 0 else 0)
+        opts.append(("O/U", "Over 2.5", p_o25, o25_ev or 0, ou_ml, _sc))
+    if p_u25 > 0:
+        _sc = p_u25 + 1 + (_ev_b if (u25_ev or 0) > 0 else 0)
+        opts.append(("O/U", "Under 2.5", p_u25, u25_ev or 0, ou_ml, _sc))
+    if p_btts > 0:
+        _sc = p_btts + 4 + (_ev_b if (btts_ev or 0) > 0 else 0)
+        opts.append(("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev or 0, "", _sc))
+    if not opts:
+        return None
+    best = max(opts, key=lambda x: x[5])
+    return best[0], best[1], best[2], best[3], best[4]
+
+
 def calc_ev(prob, ml):
     try:
         ml=float(str(ml).replace("+",""))
@@ -3083,14 +3396,33 @@ def compute_base_prob(game):
         "FIFA World Cup", "Copa America", "Gold Cup", "Euro",
         "AFC Asian Cup", "Africa Cup", "FIFA Club World Cup",
     }
+    # WCQ y amistosos: ESPN también puede tener records de bracket/torneo incorrectos
+    _SUPPRESS_ESPN_RECORDS = _ALWAYS_NEUTRAL_LEAGUES | {
+        "World Cup Qualifying UEFA", "World Cup Qualifying CONMEBOL",
+        "World Cup Qualifying CONCACAF", "World Cup Qualifying CAF",
+        "World Cup Qualifying AFC", "World Cup Qualifying OFC",
+        "International Friendly", "Friendly (Club)",
+        "Nations League UEFA", "Nations League CONCACAF",
+    }
     _is_always_neutral = league in _ALWAYS_NEUTRAL_LEAGUES
-    if _is_always_neutral:
-        # Borrar records/form de ESPN — son del bracket, no reflejan calidad real
+    if league in _SUPPRESS_ESPN_RECORDS:
+        # Borrar records/form de ESPN — para selecciones son poco confiables
+        # El ranking FIFA + ML de mercado son señales mucho más precisas
         game["home_record"] = ""
         game["away_record"] = ""
         game["home_form"]   = None
         game["away_form"]   = None
         # Si ESPN no tiene ML, intentar inyectar odds reales del diccionario
+        _h_name = game.get("home_team","")
+        _a_name = game.get("away_team","")
+        if not game.get("odds",{}).get("home_ml"):
+            _real_wc = _get_real_odds(_h_name, _a_name)
+            if _real_wc:
+                game.setdefault("odds",{})
+                game["odds"]["home_ml"] = _real_wc["home_ml"]
+                game["odds"]["away_ml"] = _real_wc["away_ml"]
+    if _is_always_neutral:
+        # Torneos en sede neutral: prior 50/50 base (ML corregirá)
         _h_name = game.get("home_team","")
         _a_name = game.get("away_team","")
         if not game.get("odds",{}).get("home_ml"):
@@ -3724,13 +4056,15 @@ def compute_base_prob(game):
         # El ML del mercado (peso 6.0) ya corregirá si existe.
         home_p = 0.5
 
-    # For qualifier/friendly: check if venue country matches away team
-    # ESPN stores country names like "Turkey", "Argentina", etc.
+    # For qualifier/friendly: ahora que parse_games ya corrige el home/away swap,
+    # el "home_team" en el game dict ES el equipo local real.
+    # Solo necesitamos aplicar el boost de cancha normal.
     if not _is_neutral and _is_intl and _venue_country:
-        # Normalize accents
+        # Si el venue está en el país del home team → boost completo de local
+        # Si el venue está en país neutro → boost pequeño
         def _norm(s): return (s.lower().replace("ü","u").replace("ö","o").replace("ñ","n")
-                              .replace("é","e").replace("á","a").replace("ó","o").replace("ú","u"))
-        # Country alias map for ESPN name mismatches
+                              .replace("é","e").replace("á","a").replace("ó","o").replace("ú","u")
+                              .replace("ı","i").replace("ş","s").replace("ğ","g"))
         _CTRY_ALIAS = {
             "turkiye":["turkey","turkiye"],"turkey":["turkey","turkiye"],
             "brasil":["brazil","brasil"],"brazil":["brazil","brasil"],
@@ -3744,23 +4078,21 @@ def compute_base_prob(game):
             "iran":["iran","islamic republic of iran"],
             "north macedonia":["north macedonia","macedonia"],
         }
-        _away_words = set(_norm(_away_team).split())
+        _home_words = set(_norm(_home_team).split())
         _venue_ctry = _norm(_venue_country)
-
         def _venue_matches_team(words, ctry):
             for w in words:
                 if len(w) <= 3: continue
                 if w in ctry or ctry in w: return True
-                # alias check
                 aliases = _CTRY_ALIAS.get(w, [])
                 if any(a in ctry or ctry in a for a in aliases): return True
             return False
-
-        if _venue_matches_team(_away_words, _venue_ctry):
-            _is_neutral = False
-            boost = -_base_boost * (0.3 if has_ml else 1.0)  # away is actual home
+        if _venue_matches_team(_home_words, _venue_ctry):
+            # Home team juega en su país → boost completo de local
+            boost = _base_boost * (0.3 if has_ml else 1.0)
         else:
-            boost = _base_boost * 0.2 * (0.3 if has_ml else 1.0)
+            # Sede neutral o desconocida
+            boost = 0.0
     elif _is_neutral:
         boost = 0.0  # no home advantage at neutral sites
     elif _is_intl:
@@ -6269,7 +6601,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324f"  # priors por liga, filtro 7 días hard, sin Mundial
+_SIM_VERSION = "v20260324l"  # venues completos Mar26-29, Germany home vs Switzerland  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -6482,6 +6814,22 @@ if st.session_state.pop("run_populate", False):
 
         # Solo limpiar cache, NO hacer rerun para que el log sea visible
         st.cache_data.clear()
+
+# ── HANDLER: Poblar Memoria Nacional ─────────────────────────────────────────
+if st.session_state.pop("run_populate_nt", False):
+    if not _gsheets_available():
+        st.error("❌ Google Sheets no disponible — configura las credenciales en secrets.")
+    else:
+        with st.spinner("🌍 Escribiendo datos de selecciones nacionales al Sheet..."):
+            _nt_written, _nt_err = populate_national_teams_sheet()
+        if _nt_err:
+            st.error(f"❌ Error: {_nt_err}")
+        else:
+            st.success(
+                f"✅ **{_nt_written} selecciones** escritas en la hoja `national_teams` del Google Sheet. "
+                f"Incluye: FIFA ranking, GF/GA por partido, forma, sede y local real de cada partido Mar 26-29 2026."
+            )
+            st.balloons()
 
 # ── ROUTING ───────────────────────────────────────────────────────────────────
 def _normalize_team(name):
@@ -7053,14 +7401,13 @@ if _active_page == "Rongol Picks":
                         p_u25 = round(_ples * 100, 1)
                         if p_btts == 0:
                             p_btts = round((1-_ms.exp(-_lhs))*(1-_ms.exp(-_las))*100, 1)
-                opts = []
-                if p_o25 > 0:  opts.append(("O/U", "Over 2.5",  p_o25, sim.get("o25_ev") or 0, ou_ml))
-                if p_u25 > 0:  opts.append(("O/U", "Under 2.5", p_u25, sim.get("u25_ev") or 0, ou_ml))
-                if p_btts > 0: opts.append(("BTTS","Ambos Anotan — SÍ", p_btts, sim.get("btts_ev") or 0, ""))
-                if opts:
-                    best_opt = max(opts, key=lambda x: x[2])
-                    return {"market": best_opt[0], "label": best_opt[1],
-                            "prob": best_opt[2], "ev": best_opt[3], "kelly": 0}
+                _bsm2 = best_soccer_market(p_o25, p_u25, p_btts,
+                                             sim.get("o25_ev") or 0,
+                                             sim.get("u25_ev") or 0,
+                                             sim.get("btts_ev") or 0, ou_ml)
+                if _bsm2:
+                    return {"market": _bsm2[0], "label": _bsm2[1],
+                            "prob": _bsm2[2], "ev": _bsm2[3], "kelly": 0}
                 return None  # sin datos de goles
 
             # Path 4: no-soccer fallback — ML del favorito
@@ -7837,17 +8184,18 @@ if _active_page == "Rongol Picks":
                         'box-shadow:0 4px 18px rgba(0,200,150,0.35),0 1px 0 rgba(255,255,255,0.25) inset">'
 
                         # CTA row 1: market badge + pick label
-                        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+                        # CTA row 1: market badge + pick label (full width, no truncation)
+                        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
                         '<span style="font-size:0.52rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
                         '<span style="font-size:0.62rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:3px 9px;border-radius:6px;letter-spacing:1px;text-transform:uppercase">' + _mkt + '</span>'
-                        '<span style="font-size:1rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
-                        + _ml_badge +
                         '</div>'
+                        # Label completo en su propia línea
+                        '<div style="font-size:1.05rem;font-weight:900;color:#111;margin-bottom:10px;line-height:1.2">' + _lbl + _ml_badge + '</div>'
 
-                        # CTA row 2: big decimal + stats
-                        '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
-                        '<span style="font-size:3rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
-                        '<div style="display:flex;flex-direction:column;gap:4px">'
+                        # CTA row 2: decimal pequeño + prob + EV (horizontal compacto)
+                        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">'
+                        '<span style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1;flex-shrink:0">' + _pick_dec + '</span>'
+                        '<div style="display:flex;flex-direction:column;gap:3px">'
                         '<span style="font-size:0.95rem;font-weight:800;color:rgba(0,0,0,0.75)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
                         + (f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.6)">Ganancia: <b>${(_ev_v or 0):+.0f}/100</b></span>' if _ev_v is not None else '<span style="font-size:0.7rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
                         (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Kelly: <b>{_kelly_v:.1f}%</b></span>' if _kelly_v > 0 else '') +
@@ -8209,15 +8557,14 @@ elif _active_page == "Picks":
                     p_u25 = round(_ple2 * 100, 1)
                     if p_btts == 0:
                         p_btts = round((1-_m2.exp(-_lh2))*(1-_m2.exp(-_la2))*100, 1)
-            # Seleccionar el mercado con mayor prob
-            opts = []
-            if p_o25 > 0:  opts.append(("O/U","Over 2.5",  p_o25, sim.get("o25_ev",0) or 0, ou_ml))
-            if p_u25 > 0:  opts.append(("O/U","Under 2.5", p_u25, sim.get("u25_ev",0) or 0, ou_ml))
-            if p_btts > 0: opts.append(("BTTS","Ambos Anotan — SÍ", p_btts, sim.get("btts_ev",0) or 0, ""))
-            if opts:
-                best_opt = max(opts, key=lambda x: x[2])
-                return {"market": best_opt[0], "label": best_opt[1],
-                        "prob": best_opt[2], "ev": best_opt[3], "ml": best_opt[4]}
+            # Seleccionar el mejor mercado balanceando prob, EV y diversidad
+            _bsm = best_soccer_market(p_o25, p_u25, p_btts,
+                                      sim.get("o25_ev",0) or 0,
+                                      sim.get("u25_ev",0) or 0,
+                                      sim.get("btts_ev",0) or 0, ou_ml)
+            if _bsm:
+                return {"market": _bsm[0], "label": _bsm[1],
+                        "prob": _bsm[2], "ev": _bsm[3], "ml": _bsm[4]}
             return None  # sin datos suficientes
 
         # ── Path 4: fallback no-soccer — ML del favorito ──
@@ -8398,13 +8745,12 @@ elif _active_page == "Picks":
                     _p_btts = round((1-_m.exp(-_lh)) * (1-_m.exp(-_la)) * 100, 1)
             _ou_ml = sim.get("over_under","") or ""
             if _p_o25 > 0 or _p_u25 > 0 or _p_btts > 0:
-                _best = max(
-                    [("O/U","Over 2.5",_p_o25,sim.get("o25_ev") or 0,_ou_ml),
-                     ("O/U","Under 2.5",_p_u25,sim.get("u25_ev") or 0,_ou_ml),
-                     ("BTTS","Ambos Anotan — SÍ",_p_btts,sim.get("btts_ev") or 0,"")],
-                    key=lambda x: x[2]
-                )
-                bp = {"market":_best[0],"label":_best[1],"prob":_best[2],"ev":_best[3],"ml":_best[4]}
+                _bsm3 = best_soccer_market(_p_o25, _p_u25, _p_btts,
+                                           sim.get("o25_ev") or 0,
+                                           sim.get("u25_ev") or 0,
+                                           sim.get("btts_ev") or 0, _ou_ml)
+                if _bsm3:
+                    bp = {"market":_bsm3[0],"label":_bsm3[1],"prob":_bsm3[2],"ev":_bsm3[3],"ml":_bsm3[4]}
             else:
                 _h_pct2 = sim.get("home_pct",0) or 0
                 _a_pct2 = sim.get("away_pct",0) or 0
@@ -8652,18 +8998,18 @@ elif _active_page == "Picks":
             'border:1px solid rgba(255,255,255,0.4);'
             'box-shadow:0 4px 18px rgba(255,185,0,0.35),0 1px 0 rgba(255,255,255,0.5) inset">'
 
-            # CTA row 1: market + label
-            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+            # Fila 1: badge mercado
+            '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
             '<span style="font-size:0.52rem;font-weight:900;color:rgba(0,0,0,0.4);letter-spacing:1.5px;text-transform:uppercase">APOSTAR →</span>'
             '<span style="font-size:0.62rem;font-weight:900;color:#111;background:rgba(0,0,0,0.12);padding:3px 9px;border-radius:6px;text-transform:uppercase;letter-spacing:1px">' + _mkt + '</span>'
-            '<span style="font-size:1rem;font-weight:800;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _lbl + '</span>'
-            + _ml_badge +
             '</div>'
+            # Label completo, sin truncar
+            '<div style="font-size:1.05rem;font-weight:900;color:#111;margin-bottom:10px;line-height:1.2">' + _lbl + _ml_badge + '</div>'
 
-            # CTA row 2: decimal + prob + EV
-            '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
-            '<span style="font-size:3rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + _pick_dec + '</span>'
-            '<div style="flex:1;display:flex;flex-direction:column;gap:4px">'
+            # Fila 2: decimal + prob + EV
+            '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">'
+            '<span style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1;flex-shrink:0">' + _pick_dec + '</span>'
+            '<div style="flex:1;display:flex;flex-direction:column;gap:3px">'
             '<span style="font-size:0.95rem;font-weight:800;color:rgba(0,0,0,0.75)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
             + (f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.6)">Ganancia: <b>${(_ev or 0):+.0f}/100</b></span>' if _ev is not None else '<span style="font-size:0.7rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
             (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Kelly: <b>{_kelly_bp:.1f}%</b></span>' if _kelly_bp > 0 else '') +
@@ -9256,6 +9602,16 @@ elif _active_page == "Parlays":
                     _sp_ico = _SG_ICONS.get(_l["sport"],"🎯")
                     _prob_l = round(_l.get("prob",0), 0)
                     _prob_c = "#00A050" if _prob_l >= 65 else ("#C27A00" if _prob_l >= 55 else "#666")
+                    # Logo del equipo del pick
+                    _pick_label_raw = _l.get("label","")
+                    _pick_team_id = ""
+                    _pick_is_home = _pick_label_raw.lower() in _l["game"].get("home_team","").lower() or \
+                                    _l["game"].get("home_team","").lower() in _pick_label_raw.lower()
+                    if _pick_is_home:
+                        _pick_team_id = _l["game"].get("home_team_id","")
+                    else:
+                        _pick_team_id = _l["game"].get("away_team_id","")
+                    _pick_logo_html = _logo_img(_pick_team_id, _l["league"], 36) if _pick_team_id else ""
                     if _i > 0:
                         _legs_html += (
                             '<div style="display:flex;align-items:center;gap:6px;padding:3px 8px">'
@@ -9276,13 +9632,15 @@ elif _active_page == "Parlays":
                         f'border-radius:8px;padding:4px 10px;font-size:0.7rem;font-weight:900;'
                         f'flex-shrink:0;letter-spacing:0.5px;'
                         f'box-shadow:0 2px 6px {_lc}66">{_l["market"]}</span>'
+                        # Logo
+                        + (f'<div style="flex-shrink:0">{_pick_logo_html}</div>' if _pick_logo_html else "")
+                        +
                         # Pick label + game info
                         f'<div style="flex:1;min-width:0">'
-                        f'<div style="font-size:0.95rem;color:#111;font-weight:900;line-height:1.2;'
-                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_l.get("label","")[:24]}</div>'
+                        f'<div style="font-size:0.95rem;color:#111;font-weight:900;line-height:1.2">{_pick_label_raw}</div>'
                         f'<div style="font-size:0.58rem;color:#888;margin-top:2px;'
                         f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-                        f'{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name[:26]}</div>'
+                        f'{_sp_ico} {_l["sport"]} · {_lg_lbl} · {_g_name[:30]}</div>'
                         f'</div>'
                         # Probability
                         f'<div style="text-align:right;flex-shrink:0">'
@@ -9468,7 +9826,9 @@ elif _active_page == "Parlays":
                 _btts_ev = float(_sim_s.get("btts_ev") or 0)
                 # Si p_o25 es 0, usar prior de liga primero, luego lambda
                 if _p_o25 == 0:
-                    _prior_son = LEAGUE_OU_PRIORS.get(_league)
+                    # LEAGUE_OU_PRIORS es global — acceso seguro via globals()
+                    _PRIORS_SON = globals().get("LEAGUE_OU_PRIORS", {})
+                    _prior_son  = _PRIORS_SON.get(_league) if _PRIORS_SON else None
                     if _prior_son:
                         _p_o25  = round(_prior_son[4] * 100, 1)
                         _p_u25  = round(_prior_son[1] * 100, 1)
@@ -10507,8 +10867,8 @@ elif _active_page == "En Vivo":
             # Add logos (same as Rongol)
             _ht_id_lv = g.get("home_team_id", "")
             _at_id_lv = g.get("away_team_id", "")
-            _logo_h_lv = _logo_img(_ht_id_lv, g["league"], 38) if "_logo_img" in dir() else ""
-            _logo_a_lv = _logo_img(_at_id_lv, g["league"], 38) if "_logo_img" in dir() else ""
+            _logo_h_lv = _logo_img(_ht_id_lv, g["league"], 38) if _ht_id_lv else ""
+            _logo_a_lv = _logo_img(_at_id_lv, g["league"], 38) if _at_id_lv else ""
             _sg_icon_lv = {"Soccer":"⚽","Basketball":"🏀","Hockey":"🏒","Baseball":"⚾","Football":"🏈"}.get(sport_group,"🎯")
             _lg_lbl_lv = league_label(g["league"])
 
@@ -10530,79 +10890,99 @@ elif _active_page == "En Vivo":
             _ev_clr_lv   = "#FFAAAA" if _best_ev <= 0 else "#AAFFCC"
 
             return (
-                '<div style="background:linear-gradient(160deg,#FFF5F5 0%,#FFE8E8 100%);'
-                'border-radius:22px;overflow:hidden;margin-bottom:8px;'
-                'border:1.5px solid rgba(255,59,48,0.35);'
-                'box-shadow:0 8px 28px rgba(255,59,48,0.18),0 1px 0 rgba(255,255,255,0.85) inset">'
+                # ── Card wrapper ──────────────────────────────────────────────
+                '<div style="background:#FFF8F8;border-radius:20px;overflow:hidden;'
+                'margin-bottom:6px;border:1.5px solid rgba(255,59,48,0.3);'
+                'box-shadow:0 6px 20px rgba(255,59,48,0.15)">'
 
-                # Header: league + live badge
-                f'<div style="padding:10px 16px 4px;display:flex;justify-content:space-between;align-items:center">'
-                f'<span style="font-size:0.68rem;font-weight:800;color:#444;letter-spacing:1px;text-transform:uppercase">{_lg_lbl_lv}</span>'
-                f'<span style="background:rgba(255,60,60,0.2);color:#ff6b6b;border:1px solid rgba(255,60,60,0.3);border-radius:8px;padding:2px 8px;font-size:0.6rem;font-weight:800">🔴 EN VIVO{f" {minute}′" if minute else ""}</span>'
+                # ── Header: Liga + badge EN VIVO ───────────────────────────────
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:8px 12px 6px;background:rgba(255,59,48,0.06)">'
+                f'<span style="font-size:0.65rem;font-weight:800;color:#555;'
+                f'letter-spacing:0.8px;text-transform:uppercase">'
+                f'{_sg_icon_lv} {_lg_lbl_lv}</span>'
+                f'<span style="background:#FF3B30;color:#FFF;border-radius:8px;'
+                f'padding:2px 8px;font-size:0.58rem;font-weight:800">'
+                f'🔴 EN VIVO{f" · {minute}′" if minute else ""}</span>'
                 f'</div>'
 
-                # Teams + logos VS
-                f'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 8px">'
-                f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                # ── Score central compacto ─────────────────────────────────────
+                f'<div style="text-align:center;padding:8px 12px 4px">'
+                f'<div style="font-size:1.6rem;font-weight:900;color:#CC0000;'
+                f'font-family:Barlow Condensed,sans-serif;letter-spacing:-1px;line-height:1">'
+                f'{score_str}</div>'
+                f'</div>'
+
+                # ── Teams row: Away | Logo | vs | Logo | Home ──────────────────
+                f'<div style="display:flex;align-items:center;justify-content:center;'
+                f'gap:8px;padding:4px 12px 8px">'
+                f'<div style="flex:1;text-align:right">'
                 + _logo_a_lv +
-                f'<span style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["away_team"][:9]}</span>'
+                f'<div style="font-size:0.65rem;font-weight:800;color:#222;'
+                f'text-transform:uppercase;margin-top:3px">{g["away_team"][:10]}</div>'
                 f'</div>'
-                f'<div style="flex:1.2;text-align:center">'
-                f'<div style="font-size:2rem;font-weight:900;color:#CC0000;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">{score_str}</div>'
-                f'<div style="font-size:0.55rem;color:#BBB;margin-top:4px">{_sg_icon_lv}</div>'
-                f'</div>'
-                f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
+                f'<div style="font-size:0.7rem;color:#CCC;font-weight:700;padding:0 4px">VS</div>'
+                f'<div style="flex:1;text-align:left">'
                 + _logo_h_lv +
-                f'<span style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;text-align:center;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{g["home_team"][:9]}</span>'
-                f'</div></div>'
+                f'<div style="font-size:0.65rem;font-weight:800;color:#222;'
+                f'text-transform:uppercase;margin-top:3px">{g["home_team"][:10]}</div>'
+                f'</div>'
+                f'</div>'
 
-                # Divider
-                '<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 14px"></div>'
-
-                # Prob pills
+                # ── Pills: Score | Away% | Home% ───────────────────────────────
                 + _lv_pills +
                 xg_html +
 
-                # Divider
-                '<div style="height:1px;background:rgba(255,59,48,0.15);margin:0 14px"></div>'
+                # ── CTA rojo ───────────────────────────────────────────────────
+                f'<div style="margin:6px 10px 10px;'
+                f'background:linear-gradient(160deg,#FF3B30,#CC0000);'
+                f'border-radius:12px;padding:11px 14px;'
+                f'box-shadow:0 4px 14px rgba(255,59,48,0.4)">'
 
-                # Red CTA
-                f'<div style="margin:10px 12px 12px;'
-                f'background:linear-gradient(160deg,#FF3B30 0%,#CC0000 100%);'
-                f'border-radius:14px;padding:14px 16px;'
-                f'border:1px solid rgba(255,255,255,0.25);'
-                f'box-shadow:0 4px 18px rgba(255,59,48,0.45),0 1px 0 rgba(255,255,255,0.3) inset">'
-
-                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
-                f'<span style="font-size:0.52rem;font-weight:900;color:rgba(255,255,255,0.6);letter-spacing:1.5px;text-transform:uppercase">🔴 EN VIVO →</span>'
-                f'<span style="font-size:0.62rem;font-weight:900;color:#FFF;background:rgba(255,255,255,0.2);padding:3px 9px;border-radius:6px;letter-spacing:1px;text-transform:uppercase">{_best_market}</span>'
-                f'<span style="font-size:1rem;font-weight:800;color:#FFF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{_best_label}</span>'
+                # Badge mercado
+                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+                f'<span style="font-size:0.5rem;font-weight:800;color:rgba(255,255,255,0.65);'
+                f'letter-spacing:1.5px;text-transform:uppercase">EN VIVO →</span>'
+                f'<span style="font-size:0.6rem;font-weight:900;color:#FFF;'
+                f'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:5px;'
+                f'letter-spacing:1px;text-transform:uppercase">{_best_market}</span>'
                 f'</div>'
 
-                f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
-                f'<span style="font-size:3rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{_best_prob_disp}</span>'
-                f'<div style="display:flex;flex-direction:column;gap:4px">'
-                f'<span style="font-size:0.95rem;font-weight:800;color:rgba(255,255,255,0.9)">probabilidad</span>'
-                f'<span style="font-size:0.65rem;color:rgba(255,255,255,0.65)">Marcador: {score_str}</span>'
+                # Label completo
+                f'<div style="font-size:1rem;font-weight:900;color:#FFF;'
+                f'margin-bottom:8px;line-height:1.2">{_best_label}</div>'
+
+                # Prob grande + marcador
+                f'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">'
+                f'<span style="font-size:2.4rem;font-weight:900;color:#FFF;'
+                f'font-family:Barlow Condensed,sans-serif;line-height:1">{_best_prob_disp}</span>'
+                f'<div style="display:flex;flex-direction:column;gap:2px">'
+                f'<span style="font-size:0.85rem;font-weight:800;color:rgba(255,255,255,0.9)">'
+                f'probabilidad</span>'
+                f'<span style="font-size:0.6rem;color:rgba(255,255,255,0.65)">'
+                f'Score: {score_str}</span>'
                 f'</div></div>'
 
-                f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-top:10px;border-top:1.5px solid rgba(255,255,255,0.2)">'
+                # Stats grid 4 cols
+                f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;'
+                f'padding-top:8px;border-top:1px solid rgba(255,255,255,0.2)">'
                 + "".join(
                     f'<div style="text-align:center">'
-                    f'<div style="font-size:0.55rem;color:rgba(255,255,255,0.5);text-transform:uppercase;font-weight:700;margin-bottom:3px">{lb}</div>'
-                    f'<div style="font-size:0.95rem;font-weight:900;color:{cl}">{vl}</div>'
+                    f'<div style="font-size:0.52rem;color:rgba(255,255,255,0.5);'
+                    f'text-transform:uppercase;font-weight:700;margin-bottom:2px">{lb}</div>'
+                    f'<div style="font-size:0.88rem;font-weight:900;color:{cl}">{vl}</div>'
                     f'</div>'
                     for lb, vl, cl in [
-                        ("PROB",   f"{_best_prob:.0f}%",   "#FFF"),
-                        ("EV/100", _ev_disp_lv,             _ev_clr_lv),
-                        ("DQ",     f"{dq:.0f}%",            "#FFF"),
-                        ("SCORE",  score_str,                "#FFAAAA"),
+                        ("PROB",   f"{_best_prob:.0f}%", "#FFF"),
+                        ("EV/100", _ev_disp_lv,          _ev_clr_lv),
+                        ("DQ",     f"{dq:.0f}%",          "#FFF"),
+                        ("SCORE",  score_str,             "#FFCCCC"),
                     ]
                 ) +
                 f'</div>'
-                f'</div>'  # end CTA
+                f'</div>'   # end CTA
                 + sh +
-                f'</div>'  # end card
+                f'</div>'   # end card
             )
         # ── Render: Sport expander → League sub-expander → 3-per-row cards ──
         for _lv_sg in _LV_SPORT_ORDER:
@@ -12300,6 +12680,13 @@ elif _active_page == "Config":
     st.caption(_mem_label)
     if st.button("🧠 Poblar memoria", key="populate_menu", use_container_width=True):
         st.session_state["run_populate"] = True
+        st.rerun()
+
+    st.markdown('<div class="den-divider" style="margin:10px 0"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:0.65rem;color:var(--text3);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🌍 SELECCIONES NACIONALES</div>', unsafe_allow_html=True)
+    st.caption("Pobla el Google Sheet con rankings FIFA, stats y sedes de todos los partidos internacionales.")
+    if st.button("🌍 Poblar Memoria Nacional", key="populate_nt_btn", use_container_width=True, type="primary"):
+        st.session_state["run_populate_nt"] = True
         st.rerun()
 
 st.markdown('<div class="den-divider" style="margin-top:24px"></div>',unsafe_allow_html=True)
