@@ -5466,17 +5466,29 @@ def run_monte_carlo(game, n=10_000):
         and not (sport_group == "Soccer" and mt == "ML")
     ]
 
-    # Selección por mayor EV
-    # Bonus de estabilidad para mercados de 2 outcomes (O/U, BTTS) vs 3 (H/D/A)
-    MARKET_EV_BONUS = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
+    # Bonus por tipo de mercado según deporte
+    # Baseball/Hockey: ML es mercado de 2 outcomes — vig similar a O/U, debe competir
+    # Soccer: O/U y BTTS siempre sobre ML (3 outcomes = vig alto)
+    # Basketball/Football: O/U leve ventaja por mercado más líquido
+    if sport_group in ("Baseball", "Hockey"):
+        MARKET_EV_BONUS = {"O/U": 0.5, "BTTS": 0.5, "ML": 0.5}
+    elif sport_group == "Soccer":
+        MARKET_EV_BONUS = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
+    else:
+        MARKET_EV_BONUS = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
 
     best_single = None
     best_ev_adj = -9999
 
     for mtype, label, prob, ev, ml, kelly in candidates_main:
-        if prob is None or ev is None: continue
-        # EV ajustado: EV real + bonus de estabilidad por tipo de mercado
-        ev_adj = (ev or 0) + MARKET_EV_BONUS.get(mtype, 0)
+        if prob is None: continue
+        # Para Baseball/Hockey: incluir ML aunque no tenga EV (prob alta es suficiente)
+        _ev_real = ev if ev is not None else (
+            0 if sport_group not in ("Baseball", "Hockey") else
+            # Estimar EV implícito: si prob > 55% sin línea, asignar EV modesto
+            max(0, (prob - 52) * 0.5) if mtype == "ML" else 0
+        )
+        ev_adj = (_ev_real or 0) + MARKET_EV_BONUS.get(mtype, 0)
         if ev_adj > best_ev_adj:
             best_ev_adj = ev_adj
             best_single = {"market":mtype, "label":label, "prob":prob,
@@ -5566,8 +5578,20 @@ def run_monte_carlo(game, n=10_000):
         "score_freq": sorted(_score_freq.items(), key=lambda x: x[1], reverse=True)[:10] if _score_freq else [],
     }
     sim["best_pick"] = best_single or {}
-    # EV-sorted candidates for all tabs — brújula correcta
-    _ev_bonus = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
+    # EV-sorted candidates — bonus por tipo de mercado y deporte
+    # Soccer: O/U y BTTS tienen bonus (3 outcomes = vig alto en ML)
+    # Basketball: O/U tiene bonus (spread y totales son mercados más estables)
+    # Baseball/Hockey: ML compite al mismo nivel (2 outcomes, EV real)
+    _sg_scored = LEAGUES.get(game.get("league",""), {}).get("group", "")
+    if _sg_scored in ("Baseball", "Hockey"):
+        # ML y O/U compiten igual — solo EV decide
+        _ev_bonus = {"O/U": 0.5, "BTTS": 0.5, "ML": 0.5}
+    elif _sg_scored == "Soccer":
+        # Soccer: O/U y BTTS siempre sobre ML (vig de 3 outcomes)
+        _ev_bonus = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
+    else:
+        # Basketball, Football: O/U leve ventaja por mercado más estable
+        _ev_bonus = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
     sim["_scored_candidates"] = sorted([
         {"market":mt, "label":lb, "prob":prob, "ev":ev or 0,
          "ml":ml, "kelly":k or 0,
@@ -6601,7 +6625,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324l"  # venues completos Mar26-29, Germany home vs Switzerland  # priors por liga, filtro 7 días hard, sin Mundial
+_SIM_VERSION = "v20260324n"  # 2picks MLB/NHL, parse_live_minute, soñador fix, ou_line NHL  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -9826,9 +9850,11 @@ elif _active_page == "Parlays":
                 _btts_ev = float(_sim_s.get("btts_ev") or 0)
                 # Si p_o25 es 0, usar prior de liga primero, luego lambda
                 if _p_o25 == 0:
-                    # LEAGUE_OU_PRIORS es global — acceso seguro via globals()
-                    _PRIORS_SON = globals().get("LEAGUE_OU_PRIORS", {})
-                    _prior_son  = _PRIORS_SON.get(_league) if _PRIORS_SON else None
+                    # Acceso directo — LEAGUE_OU_PRIORS es módulo-level
+                    try:
+                        _prior_son = LEAGUE_OU_PRIORS.get(_league)
+                    except Exception:
+                        _prior_son = None
                     if _prior_son:
                         _p_o25  = round(_prior_son[4] * 100, 1)
                         _p_u25  = round(_prior_son[1] * 100, 1)
@@ -10287,16 +10313,61 @@ elif _active_page == "En Vivo":
     # Does NOT require EV+. Uses situation to find the best available bet.
     # ─────────────────────────────────────────────────────────────────────────
     def parse_live_minute(status_detail):
-        """Extract game minute from ESPN status_detail string. Returns int or None."""
+        """
+        Extrae progreso del partido del status_detail de ESPN.
+        Retorna string descriptivo del estado: '74′', 'Q4 3:21', '2P 14:32', 'Inn 6', etc.
+        """
         import re
-        # Soccer: "70:23", "HT", "45+2", "2nd Half"
-        m = re.search(r"(\d{1,3})['′:]?\d{0,2}(?:\+\d+)?", status_detail or "")
-        if m:
-            val = int(m.group(1))
+        sd = (status_detail or "").strip()
+        if not sd: return None
+
+        # Soccer: "74:23", "45+2", "HT", "2nd Half 67"
+        m_soc = re.search(r"(\d{1,3})(?:[:+]\d+)?", sd)
+        if m_soc:
+            val = int(m_soc.group(1))
             if 1 <= val <= 120:
-                return val
-        if "HT" in (status_detail or "").upper() or "half time" in (status_detail or "").lower():
-            return 45
+                # Verificar que no sea hora de reloj (e.g. "7:15 PM")
+                if not re.search(r"\d{1,2}:\d{2}\s*(AM|PM|am|pm)", sd):
+                    return f"{val}′"
+        if "HT" in sd.upper() or "half time" in sd.lower():
+            return "HT"
+
+        # NBA: "Q4", "4th Quarter", "OT"
+        m_qtr = re.search(r"(\d)(?:st|nd|rd|th)\s*(?:quarter|qtr|Q)?|Q(\d)|(\d)Q", sd, re.IGNORECASE)
+        if m_qtr:
+            q = m_qtr.group(1) or m_qtr.group(2) or m_qtr.group(3)
+            m_time = re.search(r"(\d+):(\d{2})", sd)
+            if m_time:
+                return f"Q{q} {m_time.group(1)}:{m_time.group(2)}"
+            return f"Q{q}"
+        if "OT" in sd.upper() or "overtime" in sd.lower():
+            m_time = re.search(r"(\d+):(\d{2})", sd)
+            return f"OT {m_time.group(1)}:{m_time.group(2)}" if m_time else "OT"
+
+        # NHL: "2nd Period", "Period 2", "3rd"
+        m_per = re.search(r"(\d)(?:st|nd|rd|th)?\s*[Pp]eriod|[Pp]eriod\s*(\d)", sd, re.IGNORECASE)
+        if m_per:
+            p = m_per.group(1) or m_per.group(2)
+            m_time = re.search(r"(\d+):(\d{2})", sd)
+            if m_time:
+                return f"P{p} {m_time.group(1)}:{m_time.group(2)}"
+            return f"P{p}"
+
+        # MLB: "Bot 6th", "Top 3rd", "End 8th", "6th Inning"
+        m_inn = re.search(r"(?:top|bot|end|mid)?\s*(\d+)(?:st|nd|rd|th)?\s*(?:inning)?|inn(?:ing)?\s*(\d+)", sd, re.IGNORECASE)
+        if m_inn:
+            inn = m_inn.group(1) or m_inn.group(2)
+            top_bot = ""
+            if re.search(r"\bTop\b", sd, re.IGNORECASE): top_bot = "▲"
+            elif re.search(r"\bBot\b", sd, re.IGNORECASE): top_bot = "▼"
+            return f"{top_bot}Inn {inn}"
+
+        # NFL: "Q3", "3rd Quarter", "2-minute warning"
+        m_nfl = re.search(r"(\d)(?:st|nd|rd|th)\s*quarter", sd, re.IGNORECASE)
+        if m_nfl:
+            m_time = re.search(r"(\d+):(\d{2})", sd)
+            return f"Q{m_nfl.group(1)} {m_time.group(1)}:{m_time.group(2)}" if m_time else f"Q{m_nfl.group(1)}"
+
         return None
 
     def live_pick_soccer(g, sim, minute):
@@ -10781,7 +10852,14 @@ elif _active_page == "En Vivo":
             sim         = run_monte_carlo(g, n=5_000)
             dq          = sim["data_quality"]
             sport_group = LEAGUES.get(g["league"], {}).get("group", "Soccer")
-            minute      = parse_live_minute(g.get("status_detail", ""))
+            minute_str  = parse_live_minute(g.get("status_detail", ""))  # string para display
+            # Para soccer, extraer número de minuto para cálculos
+            import re as _re_lv
+            if sport_group == "Soccer":
+                _min_m = _re_lv.search(r"(\d+)", g.get("status_detail","") or "")
+                minute = int(_min_m.group(1)) if _min_m and int(_min_m.group(1)) <= 120 else 50
+            else:
+                minute = minute_str  # otros deportes usan string
             try:
                 hs = int(g.get("home_score") or 0)
                 as_ = int(g.get("away_score") or 0)
@@ -10882,12 +10960,44 @@ elif _active_page == "En Vivo":
             _best_market = best["market"]
             _best_label  = best.get("label", "")
             _best_prob   = best["prob"]
-            # Mostrar prob% como número principal en vez de 1.91 genérico
             _best_prob_disp = f"{_best_prob:.0f}%"
             _best_ev     = best.get("ev", 0) or 0
-            _best_kelly  = best.get("kelly", 0) or 0
             _ev_disp_lv  = f"{_best_ev:+.0f}" if _best_ev else "N/A"
             _ev_clr_lv   = "#FFAAAA" if _best_ev <= 0 else "#AAFFCC"
+
+            # Segundo pick (solo para deports de 2 outcomes: Baseball, Hockey, Football)
+            _second_pick = picks[1] if len(picks) > 1 and sport_group in ("Baseball","Hockey","Football") else None
+
+            def _lv_pick_block(pk, is_main=True):
+                """Renderiza un bloque de pick dentro del CTA rojo."""
+                _m  = pk["market"]
+                _lb = pk.get("label","")
+                _pr = pk["prob"]
+                _ev = pk.get("ev",0) or 0
+                _evd = f"{_ev:+.0f}" if _ev else "N/A"
+                _evc = "#FFAAAA" if _ev <= 0 else "#AAFFCC"
+                if is_main:
+                    return (
+                        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
+                        f'<span style="font-size:0.5rem;font-weight:800;color:rgba(255,255,255,0.65);letter-spacing:1.5px;text-transform:uppercase">EN VIVO →</span>'
+                        f'<span style="font-size:0.6rem;font-weight:900;color:#FFF;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_m}</span>'
+                        f'</div>'
+                        f'<div style="font-size:1rem;font-weight:900;color:#FFF;margin-bottom:6px;line-height:1.2">{_lb}</div>'
+                        f'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">'
+                        f'<span style="font-size:2.2rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">{_pr:.0f}%</span>'
+                        f'<span style="font-size:0.85rem;font-weight:800;color:rgba(255,255,255,0.85)">probabilidad</span>'
+                        f'</div>'
+                    )
+                else:
+                    return (
+                        f'<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.2)">'
+                        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+                        f'<span style="font-size:0.6rem;font-weight:900;color:#FFF;background:rgba(255,255,255,0.15);padding:2px 7px;border-radius:5px;letter-spacing:1px;text-transform:uppercase">{_m}</span>'
+                        f'<span style="font-size:0.9rem;font-weight:800;color:rgba(255,255,255,0.9)">{_lb}</span>'
+                        f'<span style="margin-left:auto;font-size:1.1rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif">{_pr:.0f}%</span>'
+                        f'</div>'
+                        f'</div>'
+                    )
 
             return (
                 # ── Card wrapper ──────────────────────────────────────────────
@@ -10903,7 +11013,7 @@ elif _active_page == "En Vivo":
                 f'{_sg_icon_lv} {_lg_lbl_lv}</span>'
                 f'<span style="background:#FF3B30;color:#FFF;border-radius:8px;'
                 f'padding:2px 8px;font-size:0.58rem;font-weight:800">'
-                f'🔴 EN VIVO{f" · {minute}′" if minute else ""}</span>'
+                f'🔴 EN VIVO{f" · {minute_str}" if minute_str else ""}</span>'
                 f'</div>'
 
                 # ── Score central compacto ─────────────────────────────────────
@@ -10939,30 +11049,13 @@ elif _active_page == "En Vivo":
                 f'border-radius:12px;padding:11px 14px;'
                 f'box-shadow:0 4px 14px rgba(255,59,48,0.4)">'
 
-                # Badge mercado
-                f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-                f'<span style="font-size:0.5rem;font-weight:800;color:rgba(255,255,255,0.65);'
-                f'letter-spacing:1.5px;text-transform:uppercase">EN VIVO →</span>'
-                f'<span style="font-size:0.6rem;font-weight:900;color:#FFF;'
-                f'background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:5px;'
-                f'letter-spacing:1px;text-transform:uppercase">{_best_market}</span>'
-                f'</div>'
+                # Pick principal
+                + _lv_pick_block(best, is_main=True)
 
-                # Label completo
-                f'<div style="font-size:1rem;font-weight:900;color:#FFF;'
-                f'margin-bottom:8px;line-height:1.2">{_best_label}</div>'
+                # Segundo pick (MLB/NHL/NFL)
+                + (_lv_pick_block(_second_pick, is_main=False) if _second_pick else "")
 
-                # Prob grande + marcador
-                f'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">'
-                f'<span style="font-size:2.4rem;font-weight:900;color:#FFF;'
-                f'font-family:Barlow Condensed,sans-serif;line-height:1">{_best_prob_disp}</span>'
-                f'<div style="display:flex;flex-direction:column;gap:2px">'
-                f'<span style="font-size:0.85rem;font-weight:800;color:rgba(255,255,255,0.9)">'
-                f'probabilidad</span>'
-                f'<span style="font-size:0.6rem;color:rgba(255,255,255,0.65)">'
-                f'Score: {score_str}</span>'
-                f'</div></div>'
-
+                +
                 # Stats grid 4 cols
                 f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;'
                 f'padding-top:8px;border-top:1px solid rgba(255,255,255,0.2)">'
