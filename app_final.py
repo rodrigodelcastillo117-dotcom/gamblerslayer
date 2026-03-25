@@ -11074,6 +11074,13 @@ elif _active_page == "En Vivo":
 
         mins_left = max(90 - minute, 1)
 
+        # ── Señales en vivo del partido ───────────────────────────────────────
+        ctx = _live_context(g, sim, "Soccer")
+        _ou_adj    = ctx["ou_adjustment"]       # ajuste pp a prob O/U
+        _ml_boost  = ctx["ml_boost"]            # boost al favorito
+        _ml_bt     = ctx["ml_boost_team"]       # qué equipo recibe el boost
+        _red_opp   = ctx["red_card_opponent"]   # equipo rival a tarjeta roja
+
         # ── Línea dinámica en vivo ─────────────────────────────────────────────
         # Regla: siempre .5, saltan de 1 en 1, se bajan 1 según minuto
         if total == 0:
@@ -11103,16 +11110,30 @@ elif _active_page == "En Vivo":
 
         ou_label = f"Over {live_line} goles" if live_line else None
 
-        # Dominant team
+        # Aplicar ajuste contextual a ou_prob
+        if ou_prob > 0 and _ou_adj != 0:
+            ou_prob = max(5, min(95, ou_prob + _ou_adj))
+
+        # Señales del contexto para agregar al rationale
+        _ctx_note = (" · " + " · ".join(ctx["signals"][:2])) if ctx["signals"] else ""
+
+        # Dominant team (combinando sim + contexto)
         home_dom = home_pct > away_pct + 10
         away_dom = away_pct > home_pct + 10
         dom_team = g["home_team"] if home_dom else (g["away_team"] if away_dom else None)
         dom_pct  = max(home_pct, away_pct)
+        # Si hay tarjeta roja o dominio claro, el equipo favorecido puede sobrescribir
+        if _red_opp:
+            dom_team = _red_opp
+            dom_pct  = min(97, max(home_pct if _red_opp == g["home_team"] else away_pct) + _ml_boost)
 
-        def score_adjusted_prob(base_pct, goals_ahead, mins_left):
+        def score_adjusted_prob(base_pct, goals_ahead, mins_left, team=None):
             time_factor = max(mins_left, 1) / 90
             boost = goals_ahead * 18 * (1 - time_factor)
-            return min(base_pct + boost, 95)
+            # Boost adicional si este equipo tiene ventaja por tarjeta roja o presión
+            if team and _ml_bt and team == _ml_bt:
+                boost += _ml_boost * (1 - time_factor)
+            return min(base_pct + boost, 97)
 
         # ── 4+ goles → solo ML ────────────────────────────────────────────────
         if total >= 4 or live_line is None:
@@ -11223,13 +11244,205 @@ elif _active_page == "En Vivo":
             }
         return None
 
+    def _live_context(g, sim, sport_group):
+        """
+        Analiza señales en vivo del partido para todos los deportes.
+        Devuelve un dict con señales que influyen en el pick O/U vs ML.
+
+        Señales por deporte:
+        Soccer:  tiros, tiros al arco, corners, ataques, posesión, tarjeta roja
+        NHL:     diferencial de tiros, power plays (situación)
+        NBA:     pace, diferencial de puntos por cuarto, fouls
+        MLB:     run rate, innings, diferencial de carreras
+        """
+        ls = g.get("live_stats") or {}
+        ctx = {
+            "pressure_team": None,      # equipo con más presión ofensiva
+            "pressure_score": 0,        # 0-100, qué tan dominante es la presión
+            "red_card_team": None,       # equipo con tarjeta roja
+            "red_card_opponent": None,  # equipo rival a la tarjeta roja
+            "offensive_game": False,    # partido muy abierto/ofensivo
+            "defensive_game": False,    # partido cerrado/defensivo
+            "signals": [],              # lista de señales descriptivas
+            "ou_adjustment": 0,         # ajuste en pp a la prob O/U (+/-)
+            "ml_boost_team": None,      # equipo que debería tener ML boost
+            "ml_boost": 0,              # cuánto boost de prob
+        }
+
+        try:
+            hs  = int(g.get("home_score") or 0)
+            as_ = int(g.get("away_score") or 0)
+        except:
+            hs, as_ = 0, 0
+
+        home = g.get("home_team","Home")
+        away = g.get("away_team","Away")
+
+        # ════════════════════════════════════════════════════════
+        # ⚽ SOCCER — señales más ricas
+        # ════════════════════════════════════════════════════════
+        if sport_group == "Soccer" and ls:
+            shots    = ls.get("shots", {})
+            sot      = ls.get("shots_on_target", {})
+            corners  = ls.get("corners", {})
+            attacks  = ls.get("attacks", {})
+            poss     = ls.get("possession", {})
+            red      = ls.get("red_cards", {})
+
+            h_shots = int(shots.get("home") or 0)
+            a_shots = int(shots.get("away") or 0)
+            h_sot   = int(sot.get("home") or 0)
+            a_sot   = int(sot.get("away") or 0)
+            h_cor   = int(corners.get("home") or 0)
+            a_cor   = int(corners.get("away") or 0)
+            h_att   = int(attacks.get("home") or 0)
+            a_att   = int(attacks.get("away") or 0)
+            h_pos   = float(poss.get("home") or 50)
+            h_red   = int(red.get("home") or 0)
+            a_red   = int(red.get("away") or 0)
+
+            # Score de presión ofensiva (0-100) por equipo
+            total_shots = h_shots + a_shots
+            total_sot   = h_sot + a_sot
+            total_cor   = h_cor + a_cor
+            total_att   = h_att + a_att
+
+            if total_shots > 0:
+                h_press = (h_shots/total_shots*40 + (h_sot/max(total_sot,1))*30 +
+                           (h_cor/max(total_cor,1))*15 + (h_pos/100)*15)
+                a_press = 100 - h_press
+            else:
+                h_press = h_pos
+                a_press = 100 - h_pos
+
+            if abs(h_press - a_press) >= 15:
+                ctx["pressure_team"]  = home if h_press > a_press else away
+                ctx["pressure_score"] = round(max(h_press, a_press))
+
+            # Tarjeta roja — cambio MUY grande en probabilidades
+            if h_red > 0:
+                ctx["red_card_team"]     = home
+                ctx["red_card_opponent"] = away
+                # El equipo con 10 jugadores pierde ~15pp de win prob
+                ctx["ml_boost_team"] = away
+                ctx["ml_boost"]      = 15 + (h_red * 8)
+                ctx["signals"].append(f"🟥 {home} con {h_red} tarjeta(s) roja(s) — juega con {11-h_red} jugadores")
+                ctx["ou_adjustment"] -= 8  # menos goles esperados en general
+            if a_red > 0:
+                ctx["red_card_team"]     = away
+                ctx["red_card_opponent"] = home
+                ctx["ml_boost_team"] = home
+                ctx["ml_boost"]      = 15 + (a_red * 8)
+                ctx["signals"].append(f"🟥 {away} con {a_red} tarjeta(s) roja(s) — juega con {11-a_red} jugadores")
+                ctx["ou_adjustment"] -= 8
+
+            # Partido ofensivo vs defensivo
+            if total_shots >= 20 or total_sot >= 8:
+                ctx["offensive_game"] = True
+                ctx["ou_adjustment"] += 6
+                ctx["signals"].append(f"🔥 Partido muy ofensivo: {total_shots} tiros, {total_sot} al arco")
+            elif total_shots <= 6 and total_sot <= 2:
+                ctx["defensive_game"] = True
+                ctx["ou_adjustment"] -= 6
+                ctx["signals"].append(f"🛡️ Partido defensivo: solo {total_shots} tiros, {total_sot} al arco")
+
+            # Dominancia de un equipo (presión alta + posesión)
+            if ctx["pressure_team"] and ctx["pressure_score"] >= 65:
+                ctx["ml_boost_team"] = ctx["pressure_team"]
+                ctx["ml_boost"]      = max(ctx["ml_boost"], round((ctx["pressure_score"] - 50) * 0.4))
+                ctx["signals"].append(
+                    f"⚡ {ctx['pressure_team']} domina: {round(max(h_press,a_press)):.0f}% presión "
+                    f"({max(h_shots,a_shots)} tiros, {max(h_sot,a_sot)} al arco, {max(h_cor,a_cor)} corners)"
+                )
+
+            # Corners elevados = partido abierto
+            if total_cor >= 8:
+                ctx["ou_adjustment"] += 4
+                ctx["signals"].append(f"📐 {total_cor} corners — partido muy abierto")
+
+        # ════════════════════════════════════════════════════════
+        # 🏒 NHL — señales disponibles: tiros (situación ESPN)
+        # ════════════════════════════════════════════════════════
+        elif sport_group == "Hockey" and ls:
+            h_shots = int(ls.get("home_shots") or ls.get("shots",{}).get("home") or 0)
+            a_shots = int(ls.get("away_shots") or ls.get("shots",{}).get("away") or 0)
+            total_shots = h_shots + a_shots
+
+            if total_shots > 0:
+                h_press = h_shots / total_shots * 100
+                a_press = 100 - h_press
+                if abs(h_press - a_press) >= 20:
+                    ctx["pressure_team"]  = home if h_press > a_press else away
+                    ctx["pressure_score"] = round(max(h_press, a_press))
+                    ctx["ml_boost_team"]  = ctx["pressure_team"]
+                    ctx["ml_boost"]       = round((ctx["pressure_score"] - 50) * 0.3)
+                    ctx["signals"].append(
+                        f"🏒 {ctx['pressure_team']} domina en tiros: {max(h_shots,a_shots)}-{min(h_shots,a_shots)}"
+                    )
+
+            # Pace de tiros = indicador ofensivo
+            if total_shots >= 25:
+                ctx["offensive_game"] = True
+                ctx["ou_adjustment"] += 5
+                ctx["signals"].append(f"🔥 Partido muy abierto en NHL: {total_shots} tiros totales")
+            elif total_shots <= 10:
+                ctx["defensive_game"] = True
+                ctx["ou_adjustment"] -= 4
+                ctx["signals"].append(f"🛡️ Partido cerrado: solo {total_shots} tiros")
+
+        # ════════════════════════════════════════════════════════
+        # 🏀 NBA — señales: pace derivado del marcador y tiempo
+        # ════════════════════════════════════════════════════════
+        elif sport_group == "Basketball":
+            # Sin stats ESPN directas — usar pace derivado
+            _status = g.get("status_detail","") or ""
+            import re as _re_ctx
+            _qtr_m = _re_ctx.search(r"(\d+)(?:st|nd|rd|th)", _status, _re_ctx.IGNORECASE)
+            _time_m = _re_ctx.search(r"(\d+):(\d+)", _status)
+            qtr = int(_qtr_m.group(1)) if _qtr_m else 2
+            mins_in_qtr = (int(_time_m.group(1)) + int(_time_m.group(2))/60) if _time_m else 6
+            mins_played = (qtr-1)*12 + max(0, 12-mins_in_qtr)
+            total_pts   = hs + as_
+            if mins_played > 5:
+                pace = total_pts / mins_played  # pts/min
+                proj = round(total_pts + pace * max(48-mins_played, 0))
+                ou_line = float(str(sim.get("ou_line") or "220").lstrip("~") or "220")
+                if pace > 2.4:
+                    ctx["offensive_game"] = True
+                    ctx["ou_adjustment"] += round((pace - 2.25) * 20)
+                    ctx["signals"].append(f"🏀 Pace muy alto: {pace:.1f} pts/min → proy. {proj} pts")
+                elif pace < 2.0:
+                    ctx["defensive_game"] = True
+                    ctx["ou_adjustment"] -= round((2.25 - pace) * 20)
+                    ctx["signals"].append(f"🛡️ Pace lento: {pace:.1f} pts/min → proy. {proj} pts")
+
+        # ════════════════════════════════════════════════════════
+        # ⚾ MLB — señales: run rate por inning
+        # ════════════════════════════════════════════════════════
+        elif sport_group == "Baseball":
+            _status = g.get("status_detail","") or ""
+            import re as _re_mlb
+            _inn_m = _re_mlb.search(r"(\d+)", _status)
+            inning = int(_inn_m.group(1)) if _inn_m else 5
+            innings_played = max(inning - 1, 1)
+            total_runs = hs + as_
+            if innings_played >= 2:
+                run_rate = total_runs / innings_played
+                if run_rate > 1.8:
+                    ctx["offensive_game"] = True
+                    ctx["ou_adjustment"] += round((run_rate - 1.0) * 8)
+                    ctx["signals"].append(f"⚾ Run rate alto: {run_rate:.1f}/inn — partido ofensivo")
+                elif run_rate < 0.6:
+                    ctx["defensive_game"] = True
+                    ctx["ou_adjustment"] -= round((1.0 - run_rate) * 8)
+                    ctx["signals"].append(f"🛡️ Run rate bajo: {run_rate:.1f}/inn — pitchers dominando")
+
+        return ctx
+
     def live_pick_other(g, sim):
         """
-        Picks en vivo por deporte con lógica contextual:
-        MLB  — inning, run rate proyectado, O/U contextual, remontadas
-        NBA  — cuarto, pace, proyección de puntos, spread ajustado
-        NHL  — periodo, goles vs línea (básico)
-        NFL  — cuarto, ML (básico)
+        Picks en vivo por deporte con lógica contextual + señales en vivo.
+        Usa _live_context para ajustar picks según tiros, pace, run rate, etc.
         """
         import re as _re
         try:
@@ -11249,7 +11462,7 @@ elif _active_page == "En Vivo":
         fav_prob    = max(home_pct, away_pct)
         fav_score   = hs if fav_is_home else as_
         dog_score   = as_ if fav_is_home else hs
-        diff        = fav_score - dog_score  # positivo = favorito va ganando
+        diff        = fav_score - dog_score
 
         p_o_total = float(sim.get("p_o_total") or 0)
         p_u_total = float(sim.get("p_u_total") or 0)
@@ -11257,6 +11470,24 @@ elif _active_page == "En Vivo":
             ou_line = float(str(sim.get("ou_line") or "").lstrip("~"))
         except:
             ou_line = 0.0
+
+        # ── Contexto en vivo ──────────────────────────────────────────────────
+        ctx = _live_context(g, sim, sport_group)
+        _ou_adj   = ctx["ou_adjustment"]    # ajuste pp a prob O/U
+        _ml_boost = ctx["ml_boost"]         # boost al equipo dominante
+        _ml_bt    = ctx["ml_boost_team"]    # qué equipo recibe el boost
+        _ctx_note = (" · " + " · ".join(ctx["signals"][:2])) if ctx["signals"] else ""
+
+        # Aplicar ML boost al favorito si el contexto lo indica
+        if _ml_bt and _ml_boost > 0:
+            if _ml_bt == g["home_team"]:
+                home_pct = min(97, home_pct + _ml_boost)
+            else:
+                away_pct = min(97, away_pct + _ml_boost)
+            # Recalcular favorito
+            fav_is_home = home_pct >= away_pct
+            fav_team    = g["home_team"] if fav_is_home else g["away_team"]
+            fav_prob    = max(home_pct, away_pct)
 
         picks = []
 
@@ -11394,13 +11625,14 @@ elif _active_page == "En Vivo":
                     "rationale": f"Q{qtr}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}"})
 
         # ══════════════════════════════════════════════════════════════
-        # 🏒 NHL — línea ajustada en vivo, proyección de goles, ML
+        # 🏒 NHL — línea dinámica por goles+periodo, ML ajustado
+        # Regla: línea sube 1.0 por cada 2 goles, baja en P3
         # ══════════════════════════════════════════════════════════════
         elif sport_group == "Hockey":
             _per_m  = _re.search(r"(\d+)(?:st|nd|rd|th)", status, _re.IGNORECASE)
             _time_m = _re.search(r"(\d+):(\d+)", status)
 
-            # Prioridad: live_period/live_clock de ESPN (campo directo) > regex en status_detail
+            # Periodo: ESPN directo > regex status > fallback
             _espn_period = int(g.get("live_period") or 0)
             _espn_clock  = g.get("live_clock") or ""
             _clock_m     = _re.search(r"(\d+):(\d+)", _espn_clock)
@@ -11410,14 +11642,13 @@ elif _active_page == "En Vivo":
             elif _per_m:
                 period = int(_per_m.group(1))
             else:
-                # ESPN: "19:04 - 1st", "End of 2nd" — buscar ordinal en status
                 _per_sd = _re.search(r"(\d)(?:st|nd|rd|th)", status, _re.IGNORECASE)
                 period = int(_per_sd.group(1)) if _per_sd else 1
 
             is_ot = "OT" in status.upper() or "overtime" in status.lower() or period > 3
             if is_ot: period = 4
 
-            # Tiempo restante en el periodo (ESPN manda tiempo RESTANTE, no jugado)
+            # Tiempo restante (ESPN manda tiempo RESTANTE en el periodo)
             if _clock_m:
                 mins_left_in_period = int(_clock_m.group(1)) + int(_clock_m.group(2)) / 60
             elif _time_m:
@@ -11430,79 +11661,89 @@ elif _active_page == "En Vivo":
             mins_played           = periods_played * 20 + mins_played_in_period
             mins_left_reg         = max(60 - mins_played, 0)
 
-            # ── Tasa de goles blend: observada + promedio NHL ─────────────────
-            NHL_AVG_RATE   = 6.0 / 60  # ~6 goles/60min promedio NHL
-            obs_rate       = total_score / max(mins_played, 1)
-            obs_weight     = min(0.85, mins_played / 60)  # más peso a obs conforme avanza
-            blended_rate   = obs_weight * obs_rate + (1 - obs_weight) * NHL_AVG_RATE
-            proj_remaining = blended_rate * mins_left_reg
-            proj_total     = total_score + proj_remaining
-
-            # ── Línea dinámica NHL en vivo ────────────────────────────────────
+            # ── Línea dinámica basada en GOLES ACTUALES + PERIODO ────────────
+            # Misma lógica que las casas: sube 1.0 cada 2 goles, baja en P3
             _nhl_line = _nhl_live_line(total_score, period if not is_ot else 4)
+
+            # ── Tasa de goles: blend observada + promedio NHL ─────────────────
+            NHL_AVG_RATE = 6.0 / 60  # ~6 goles/60min promedio NHL
+            obs_rate     = total_score / max(mins_played, 1)
+            obs_weight   = min(0.85, mins_played / 60)
+            blended_rate = obs_weight * obs_rate + (1 - obs_weight) * NHL_AVG_RATE
+            proj_total   = total_score + blended_rate * mins_left_reg
 
             import math as _mh
 
             def _poisson_p_over(lam, k_min):
                 if k_min <= 0: return 1.0
                 if lam <= 0:   return 0.02
-                p_under = sum(
-                    _mh.exp(-lam) * (lam**k) / _mh.factorial(k)
-                    for k in range(int(k_min))
-                )
-                return max(0.02, min(0.98, 1 - p_under))
+                p_u = sum(_mh.exp(-lam) * (lam**k) / _mh.factorial(k) for k in range(int(k_min)))
+                return max(0.02, min(0.98, 1 - p_u))
 
+            # ── Pick O/U en vivo ──────────────────────────────────────────────
+            _ou_pick = None
             if _nhl_line:
-                _lam_rem       = blended_rate * mins_left_reg
-                goals_to_line  = max(0.0, _nhl_line - total_score)
-                _p_over_live   = _poisson_p_over(_lam_rem, goals_to_line)
-                _p_under_live  = 1.0 - _p_over_live
+                _lam_rem      = blended_rate * mins_left_reg
+                goals_to_line = max(0.0, _nhl_line - total_score)
+                _p_over       = _poisson_p_over(_lam_rem, goals_to_line)
+                _p_under      = 1.0 - _p_over
+
+                # Aplicar ajuste contextual (tiros, dominancia de tiros)
+                if _ou_adj != 0:
+                    _p_over  = max(0.02, min(0.98, _p_over + _ou_adj / 100))
+                    _p_under = 1.0 - _p_over
 
                 if goals_to_line <= 0:
-                    picks.append({"label": f"Over {_nhl_line:.1f} ✓", "prob": 97,
+                    _ou_pick = {"label": f"Over {_nhl_line:.1f} ✓", "prob": 97,
                         "market": "O/U",
-                        "rationale": f"Over {_nhl_line:.1f} ya cubierto ({total_score} goles).",
-                        "notes": f"línea en vivo {_nhl_line:.1f}"})
-                elif _p_over_live >= 0.50:
-                    picks.append({"label": f"Over {_nhl_line:.1f}",
-                        "prob": round(_p_over_live * 100, 1),
-                        "market": "O/U",
-                        "rationale": (
-                            f"P{period} ({mins_left_reg:.0f} min reg.), {total_score} goles. "
-                            f"Línea en vivo: {_nhl_line:.1f}. "
-                            f"Ritmo blend: {blended_rate*60:.1f}/60min → proy. {proj_total:.1f}."
-                        ),
-                        "notes": f"línea en vivo {_nhl_line:.1f}"})
-                elif _p_under_live >= 0.60 and not (period >= 3 and _p_under_live > 0.90):
-                    picks.append({"label": f"Under {_nhl_line:.1f}",
-                        "prob": round(_p_under_live * 100, 1),
+                        "rationale": f"¡Over {_nhl_line:.1f} ya cubierto! {total_score} goles.{_ctx_note}",
+                        "notes": f"línea en vivo {_nhl_line:.1f}"}
+                elif _p_over >= 0.50:
+                    _ou_pick = {"label": f"Over {_nhl_line:.1f}",
+                        "prob": round(_p_over * 100, 1),
                         "market": "O/U",
                         "rationale": (
-                            f"P{period} ({mins_left_reg:.0f} min reg.), {total_score} goles. "
-                            f"Línea en vivo: {_nhl_line:.1f}. Faltan {goals_to_line:.1f} para Over. "
-                            f"Proy. {proj_total:.1f} goles."
+                            f"P{period}, {total_score} goles. Línea: {_nhl_line:.1f}. "
+                            f"Faltan {goals_to_line:.1f}. Ritmo: {blended_rate*60:.1f}/60min "
+                            f"→ proy. {proj_total:.1f}.{_ctx_note}"
                         ),
-                        "notes": f"línea en vivo {_nhl_line:.1f}"})
-                # Under >90% en P3 → solo ML
+                        "notes": f"proy. {proj_total:.1f} — línea {_nhl_line:.1f}"}
+                elif _p_under >= 0.60 and not (period >= 3 and _p_under > 0.90):
+                    _ou_pick = {"label": f"Under {_nhl_line:.1f}",
+                        "prob": round(_p_under * 100, 1),
+                        "market": "O/U",
+                        "rationale": (
+                            f"P{period}, {total_score} goles. Línea: {_nhl_line:.1f}. "
+                            f"Faltan {goals_to_line:.1f} en {mins_left_reg:.0f} min. "
+                            f"Proy. {proj_total:.1f}.{_ctx_note}"
+                        ),
+                        "notes": f"faltan {goals_to_line:.1f} — línea {_nhl_line:.1f}"}
+                else:
+                    _ou_pick = None
 
-            # ── ML ajustado ───────────────────────────────────────────────────
+            # ── ML ajustado por score, tiempo y contexto ─────────────────────
             if period >= 3 and diff != 0:
                 _adj = min(97, fav_prob + abs(diff) * (mins_played / 60) * 8)
-                picks.append({"label": f"{fav_team} gana", "prob": round(_adj, 1),
+                _ml_pick = {"label": f"{fav_team} gana", "prob": round(_adj, 1),
                     "market": "ML",
-                    "rationale": f"P{period} ({mins_left_reg:.0f} min reg.), gana {fav_score}-{dog_score}. Prob. ajustada: {_adj:.0f}%.",
-                    "notes": f"+{abs(diff)} en P{period}"})
+                    "rationale": f"P{period} ({mins_left_reg:.0f} min), {fav_team} gana {fav_score}-{dog_score}. Prob. ajustada: {_adj:.0f}%.{_ctx_note}",
+                    "notes": f"+{abs(diff)} en P{period}"}
             elif diff == 0 and period >= 2:
-                picks.append({"label": f"{fav_team} gana o OT",
+                _ml_pick = {"label": f"{fav_team} gana o OT",
                     "prob": round(min(75, fav_prob + 10), 1),
                     "market": "ML",
                     "rationale": f"Empate {hs}-{as_} en P{period}. Alta prob. de OT.",
-                    "notes": "posible OT"})
+                    "notes": "posible OT"}
             else:
-                picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob, 1),
+                _ml_pick = {"label": f"{fav_team} gana", "prob": round(fav_prob, 1),
                     "market": "ML",
                     "rationale": f"P{period}, {fav_team} {fav_prob:.0f}% · {as_}-{hs}",
-                    "notes": f"P{period}"})
+                    "notes": f"P{period}"}
+
+            # ── Orden de picks: ML primero, O/U segundo ───────────────────────
+            picks.append(_ml_pick)
+            if _ou_pick:
+                picks.append(_ou_pick)
 
         # ══════════════════════════════════════════════════════════════
         # 🏈 NFL / otros — básico
@@ -11695,7 +11936,19 @@ elif _active_page == "En Vivo":
 
             picks    = result["picks"]
             headline = result.get("headline","")
-            best     = max(picks, key=lambda p: p["prob"])
+            # Pick principal: para hockey/baseball el ML es siempre más relevante en vivo
+            # Para soccer: el primer pick ya está ordenado por lógica contextual
+            # NO usar max(prob) — un Under 67% no es más útil que un ML 51% cuando hay score
+            if sport_group in ("Hockey", "Baseball", "Football"):
+                # Priorizar ML sobre O/U en deportes donde el resultado importa más
+                _ml_picks = [p for p in picks if p["market"] == "ML"]
+                _ou_picks = [p for p in picks if p["market"] == "O/U"]
+                best = _ml_picks[0] if _ml_picks else (picks[0] if picks else None)
+            else:
+                # Soccer: primer pick es el más contextualmente relevante
+                best = picks[0] if picks else None
+            if not best:
+                return None
             prob_color = "#00C896" if best["prob"] >= 70 else "#C9A84C" if best["prob"] >= 55 else "#f97316"
 
             # Picks mini-grid — red accents matching card theme
@@ -11784,8 +12037,12 @@ elif _active_page == "En Vivo":
             _ev_disp_lv  = f"{_best_ev:+.0f}" if _best_ev else "N/A"
             _ev_clr_lv   = "#888888" if not _best_ev else ("#FFAAAA" if _best_ev < 0 else "#AAFFCC")
 
-            # Segundo pick (solo para deports de 2 outcomes: Baseball, Hockey, Football)
-            _second_pick = picks[1] if len(picks) > 1 and sport_group in ("Baseball","Hockey","Football") else None
+            # Segundo pick: para hockey/baseball mostrar el O/U contextual
+            if sport_group in ("Hockey", "Baseball", "Football") and len(picks) > 1:
+                _ou_picks_2 = [p for p in picks if p["market"] == "O/U" and p != best]
+                _second_pick = _ou_picks_2[0] if _ou_picks_2 else (picks[1] if len(picks) > 1 else None)
+            else:
+                _second_pick = picks[1] if len(picks) > 1 else None
 
             def _lv_pick_block(pk, is_main=True):
                 """Renderiza un bloque de pick dentro del CTA rojo."""
