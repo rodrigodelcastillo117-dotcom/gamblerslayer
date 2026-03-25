@@ -3587,15 +3587,18 @@ def _pick_from_real_data(r, for_rongol=False):
                 import math as _ms4
                 p_away_o15 = round((1 - sum(_ms4.exp(-_la_r)*(_la_r**k)/_ms4.factorial(k) for k in range(2)))*100, 1)
 
-        # Pick = mayor % entre mercados útiles (U2.5 excluido — sin valor en casas)
+        # Pick = mayor % según simulación
+        # U2.5 incluido solo si la sim lo dice claramente (≥60%)
         opts = []
-        if p_home     > 0: opts.append(("ML",   home_team,                  p_home,     sim.get("home_ev",0) or 0, sim.get("home_ml","") or ""))
-        if p_away     > 0: opts.append(("ML",   away_team,                  p_away,     sim.get("away_ev",0) or 0, sim.get("away_ml","") or ""))
-        if p_draw     > 0: opts.append(("ML",   "Empate",                   p_draw,     0, ""))
-        if p_o25      > 0: opts.append(("O/U",  "Over 2.5",                 p_o25,      o25_ev, ou_ml))
-        if p_btts     > 0: opts.append(("BTTS", "Ambos Anotan — SÍ",        p_btts,     btts_ev, ""))
-        if p_home_o15 > 0: opts.append(("O/U",  f"{home_team} Over 1.5",    p_home_o15, 0, ""))
-        if p_away_o15 > 0: opts.append(("O/U",  f"{away_team} Over 1.5",    p_away_o15, 0, ""))
+        if p_home     > 0: opts.append(("ML",   home_team,               p_home,     sim.get("home_ev",0) or 0, sim.get("home_ml","") or ""))
+        if p_away     > 0: opts.append(("ML",   away_team,               p_away,     sim.get("away_ev",0) or 0, sim.get("away_ml","") or ""))
+        if p_draw     > 0: opts.append(("ML",   "Empate",                p_draw,     0, ""))
+        if p_o25      > 0: opts.append(("O/U",  "Over 2.5",              p_o25,      o25_ev, ou_ml))
+        if p_btts     > 0: opts.append(("BTTS", "Ambos Anotan — SÍ",     p_btts,     btts_ev, ""))
+        if p_home_o15 > 0: opts.append(("O/U",  f"{home_team} Over 1.5", p_home_o15, 0, ""))
+        if p_away_o15 > 0: opts.append(("O/U",  f"{away_team} Over 1.5", p_away_o15, 0, ""))
+        # U2.5 solo si la sim es contundente
+        if p_u25      >= 60: opts.append(("O/U", "Under 2.5",            p_u25,      u25_ev, ou_ml))
 
         if not opts:
             return None
