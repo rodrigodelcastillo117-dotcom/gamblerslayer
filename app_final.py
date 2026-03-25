@@ -3494,33 +3494,35 @@ def win_pct_strict(rec):
 # ── League-level historical home win rates (used when no record data available)
 # Source: multi-season averages. Home advantage is real but varies by sport.
 
-def best_soccer_market(p_o25, p_u25, p_btts, o25_ev=0, u25_ev=0, btts_ev=0, ou_ml=""):
+def best_soccer_market(p_o25, p_u25, p_btts, o25_ev=0, u25_ev=0, btts_ev=0, ou_ml="",
+                       lam_h=0.0, lam_a=0.0):
     """
-    Selecciona el mejor mercado soccer balanceando prob, EV y diversidad.
-    Filosofía:
-      - BTTS  → mercado independiente del resultado, alta frecuencia real (~55-60% ligas top)
-      - Over 2.5 → mercado ofensivo, buena diversidad
-      - Under 2.5 → SOLO cuando el partido es genuinamente defensivo (p_u25 > 58% Y p_o25 < 42%)
-                    Evita que Under gane por default estadístico (~55% base de cualquier partido)
+    Selecciona el mejor mercado soccer usando LAMBDAS como condición principal.
+    Reglas:
+      BTTS  → lam_h ≥ 1.6 Y lam_a ≥ 1.6 (ambos equipos muy ofensivos)
+      Over 2.5 → lam_h + lam_a ≥ 3.1 (partido muy ofensivo)
+      Under 2.5 → lam_h + lam_a < 2.4 (partido genuinamente defensivo)
+      Zona neutra 2.4-3.1 → None (usar ML o DO)
+    Si no hay lambdas reales, fallback a probabilidades.
     """
+    _lam_tot = (lam_h or 0) + (lam_a or 0)
     opts = []
-    _ev_b = 3  # bonus por EV positivo
+    _ev_b = 3
 
-    # Over 2.5 — mercado ofensivo
-    if p_o25 > 0:
+    # BTTS: ambos muy ofensivos
+    if p_btts > 0 and (_lam_tot == 0 or (lam_h >= 1.6 and lam_a >= 1.6)):
+        _sc = p_btts + 4 + (_ev_b if (btts_ev or 0) > 0 else 0)
+        opts.append(("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev or 0, "", _sc))
+
+    # Over 2.5: muy ofensivo en conjunto
+    if p_o25 > 0 and (_lam_tot == 0 or _lam_tot >= 3.1):
         _sc = p_o25 + (_ev_b if (o25_ev or 0) > 0 else 0)
         opts.append(("O/U", "Over 2.5", p_o25, o25_ev or 0, ou_ml, _sc))
 
-    # Under 2.5 — SOLO si partido genuinamente defensivo
-    # Condición: p_u25 > 58% Y p_o25 < 42% → lambda total probablemente < 2.3
-    if p_u25 > 0 and p_u25 > 58 and (p_o25 or 0) < 42:
+    # Under 2.5: genuinamente defensivo
+    if p_u25 > 0 and p_u25 > 58 and (_lam_tot == 0 or _lam_tot < 2.4):
         _sc = p_u25 + (_ev_b if (u25_ev or 0) > 0 else 0)
         opts.append(("O/U", "Under 2.5", p_u25, u25_ev or 0, ou_ml, _sc))
-
-    # BTTS — siempre compite con buen bonus
-    if p_btts > 0:
-        _sc = p_btts + 4 + (_ev_b if (btts_ev or 0) > 0 else 0)
-        opts.append(("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev or 0, "", _sc))
 
     if not opts:
         return None
@@ -4946,10 +4948,10 @@ def run_monte_carlo(game, n=10_000):
         # Use LEAGUE_AVG_GOALS as the implicit line — NOT lam_h+lam_a
         ou_val = _lg_avg
         # Para NHL y MLB: redondear a líneas estándar reales que usan las casas
-        # NHL: solo 5.5 o 6.5 (nunca 6.1, 6.2, etc.)
+        # NHL: línea base SIEMPRE 5.5 (estándar real de mercado)
         # MLB: múltiplos de 0.5 (7.5, 8.0, 8.5, 9.0, etc.)
         if _is_hock:
-            ou_val = 5.5 if ou_val < 6.0 else 6.5
+            ou_val = 5.5  # siempre 5.5 como línea base — no 6.5
         elif _is_base:
             ou_val = round(ou_val * 2) / 2  # redondear al 0.5 más cercano
 
@@ -5426,13 +5428,18 @@ def run_monte_carlo(game, n=10_000):
                 ("O/U", uu_label, p_u_total, u_total_ev, str(OU_ML), quarter_kelly(p_u_total, OU_ML)),
             ]
 
-            # Para NHL: si la línea ESPN es 6.5+, agregar Over 5.5 como candidato
-            # Las casas inflan la línea NHL a 6.5 — Over 5.5 tiene mejor EV real
+            # Para NHL: si ESPN da 6.5, agregar Over 5.5 como candidato PRINCIPAL
+            # 5.5 es la línea base real del mercado NHL — 6.5 es inflada por las casas
             if is_hockey and ou_line >= 6.0:
-                _o55 = _p_over_line(ou_line - 1.0)  # P(total > 5.5) ≈ mucho mayor
+                _o55 = _p_over_line(ou_line - 1.0)  # P(total > 5.5) — más alta que 6.5
+                _u55 = 1.0 - _o55
                 _o55_label = f"Over {ou_line - 1.0:.1f}"
+                _u55_label = f"Under {ou_line - 1.0:.1f}"
                 _o55_ev = calc_ev(_o55, OU_ML)
+                _u55_ev = calc_ev(_u55, OU_ML)
+                # Agregar 5.5 con prioridad alta — el EV de Over 5.5 suele ser mejor
                 candidates.append(("O/U", _o55_label, _o55, _o55_ev, str(OU_ML), quarter_kelly(_o55, OU_ML)))
+                candidates.append(("O/U", _u55_label, _u55, _u55_ev, str(OU_ML), quarter_kelly(_u55, OU_ML)))
 
             # Adjacent lines via normal approx
             _multi_lines = {}
@@ -5449,40 +5456,55 @@ def run_monte_carlo(game, n=10_000):
     else:
         _multi_lines = {}
 
-    # ── Soccer: BTTS + O/U goals ──────────────────────────────────────────────
+    # ── Soccer: BTTS + O/U goals — selección basada en LAMBDA real ───────────
     if p_btts is not None and sport_group == "Soccer":
-        # Retrieve league prior probabilities
         _prior = LEAGUE_OU_PRIORS.get(game["league"])
         _prior_vals = _prior if _prior else (0.23, 0.47, 0.68, 0.77, 0.53, 0.32, 0.57)
         _pu15_pr, _pu25_pr, _pu35_pr, _po15_pr, _po25_pr, _po35_pr = _prior_vals[:6]
-        # When ESPN line is present, bypass prior filter — market IS the benchmark
         _bypass_prior = bool(game["odds"].get("over_under",""))
 
-        def _ou_edge(sim_p, prior_p):
-            """Returns True if sim deviates enough from prior to be meaningful."""
-            # dq==0: siempre permitir O/U para que compita con BTTS (no dejar BTTS solo)
-            return _bypass_prior or dq == 0 or (sim_p is not None and abs(sim_p - prior_p) >= OU_MIN_EDGE)
+        # ── Lambdas reales del partido ─────────────────────────────────────────
+        _lh = lam_h if lam_h and lam_h > 0 else 0.0
+        _la = lam_a if lam_a and lam_a > 0 else 0.0
+        _lam_tot = _lh + _la
 
-        # BTTS: use real league prior (computed from Poisson at league avg)
-        _btts_prior = _prior[6] if _prior else 0.57  # 7th element = P_BTTS
-        # Cuando DQ=0 (sin datos reales), el Poisson con lambda promedio de liga da
-        # un BTTS artificialmente bajo. Usar el prior de liga como base.
+        # Usar prior de liga si no hay lambdas reales (DQ=0)
+        if _lam_tot == 0 and _prior:
+            # Estimar desde prior: P_O25 ≈ Poisson(λ > 2.5)
+            # λ_liga promedio implícito del prior
+            _lam_tot = 2.5  # default liga promedio
+            _lh = _lam_tot * 0.55
+            _la = _lam_tot * 0.45
+
+        # ── Reglas de mercado basadas en lambda ────────────────────────────────
+        # BTTS: ambos equipos ofensivos (cada uno ≥ 1.6 goles esperados)
+        _btts_eligible = (_lh >= 1.6 and _la >= 1.6)
+        # Over 2.5: partido muy ofensivo en conjunto (suma ≥ 3.1)
+        _o25_eligible  = (_lam_tot >= 3.1)
+        # Under 2.5: partido genuinamente defensivo (suma < 2.4)
+        _u25_eligible  = (_lam_tot > 0 and _lam_tot < 2.4)
+        # Si no hay lambdas reales (DQ=0) y hay bypass_prior → permitir todos
+        if dq == 0 and _bypass_prior:
+            _btts_eligible = True
+            _o25_eligible  = True
+
+        # ── BTTS final prob ────────────────────────────────────────────────────
+        _btts_prior = _prior[6] if _prior else 0.57
         _p_btts_final = p_btts
         if dq == 0 and _prior and _btts_prior > 0:
-            # Blend: 70% prior + 30% Poisson cuando no hay datos
             _p_btts_final = round(0.70 * _btts_prior + 0.30 * p_btts, 3)
 
-        # O/U: cuando dq==0, también blend con prior para competencia justa con BTTS
+        # ── O/U final probs ────────────────────────────────────────────────────
         _p_o25_final = p_o25
         _p_u25_final = p_u25
         if dq == 0 and _prior and len(_prior) >= 5:
-            _po25_pr_val = _prior[4]  # índice 4 = P_O25 del prior
-            _pu25_pr_val = _prior[1]  # índice 1 = P_U25 del prior
+            _po25_pr_val = _prior[4]
             if _po25_pr_val > 0 and p_o25 is not None:
                 _p_o25_final = round(0.70 * _po25_pr_val + 0.30 * p_o25, 3)
                 _p_u25_final = round(1.0 - _p_o25_final, 3)
 
-        if abs(_p_btts_final - _btts_prior) >= OU_MIN_EDGE or _bypass_prior or dq == 0:
+        # ── Agregar candidatos según elegibilidad ──────────────────────────────
+        if _btts_eligible:
             _btts_ev_f    = calc_ev(_p_btts_final, BTTS_ML)
             _no_btts_ev_f = calc_ev(1-_p_btts_final, BTTS_ML)
             candidates += [
@@ -5490,17 +5512,15 @@ def run_monte_carlo(game, n=10_000):
                 ("BTTS","Ambos Anotan — NO",1-_p_btts_final,_no_btts_ev_f,str(BTTS_ML),quarter_kelly(1-_p_btts_final,BTTS_ML)),
             ]
 
-        # O/U: only add when simulation deviates meaningfully from league prior
-        # (dq==0 ahora siempre pasa _ou_edge y usa probs ajustadas al prior)
-        if _ou_edge(p_o25, _po25_pr):
+        if _o25_eligible and _p_o25_final is not None:
             candidates.append(("O/U","Over 2.5", _p_o25_final, calc_ev(_p_o25_final, OU_ML), str(OU_ML), quarter_kelly(_p_o25_final,OU_ML)))
-        # Under 2.5: solo si partido genuinamente defensivo (lambda < 2.4)
-        # Evita que Under gane por default estadístico (~55% en cualquier partido)
-        _lam_total_check = (lam_h or 0) + (lam_a or 0)
-        _is_defensive = _lam_total_check > 0 and _lam_total_check < 2.4
-        if _ou_edge(p_u25, _pu25_pr) and _is_defensive:
+
+        if _u25_eligible and _p_u25_final is not None:
             candidates.append(("O/U","Under 2.5",_p_u25_final, calc_ev(_p_u25_final, OU_ML), str(OU_ML), quarter_kelly(_p_u25_final,OU_ML)))
-        # U3.5 eliminado — siempre gana por default ~80%, sin valor
+
+        # Guardar lambdas en game para uso posterior
+        game["_lh_used"] = round(_lh, 3)
+        game["_la_used"] = round(_la, 3)
 
     # DC only meaningful for soccer WITH real ESPN moneyline (DC_ML is fictitious otherwise)
     # Without real ML odds, DO EV is calculated vs a made-up -200 → always looks positive
@@ -7942,7 +7962,8 @@ if _active_page == "Rongol Picks":
                 _bsm2 = best_soccer_market(p_o25, p_u25, p_btts,
                                              sim.get("o25_ev") or 0,
                                              sim.get("u25_ev") or 0,
-                                             sim.get("btts_ev") or 0, ou_ml)
+                                             sim.get("btts_ev") or 0, ou_ml,
+                                             lam_h=_lhs, lam_a=_las)
                 if _bsm2:
                     return {"market": _bsm2[0], "label": _bsm2[1],
                             "prob": _bsm2[2], "ev": _bsm2[3], "kelly": 0}
@@ -9106,7 +9127,8 @@ elif _active_page == "Picks":
             _bsm = best_soccer_market(p_o25, p_u25, p_btts,
                                       sim.get("o25_ev",0) or 0,
                                       sim.get("u25_ev",0) or 0,
-                                      sim.get("btts_ev",0) or 0, ou_ml)
+                                      sim.get("btts_ev",0) or 0, ou_ml,
+                                      lam_h=_lh2, lam_a=_la2)
             if _bsm:
                 return {"market": _bsm[0], "label": _bsm[1],
                         "prob": _bsm[2], "ev": _bsm[3], "ml": _bsm[4]}
@@ -9293,7 +9315,9 @@ elif _active_page == "Picks":
                 _bsm3 = best_soccer_market(_p_o25, _p_u25, _p_btts,
                                            sim.get("o25_ev") or 0,
                                            sim.get("u25_ev") or 0,
-                                           sim.get("btts_ev") or 0, _ou_ml)
+                                           sim.get("btts_ev") or 0, _ou_ml,
+                                           lam_h=float(sim.get("lam_real_h") or _lh or 0),
+                                           lam_a=float(sim.get("lam_real_a") or _la or 0))
                 if _bsm3:
                     bp = {"market":_bsm3[0],"label":_bsm3[1],"prob":_bsm3[2],"ev":_bsm3[3],"ml":_bsm3[4]}
             else:
@@ -10843,10 +10867,10 @@ elif _active_page == "Parlays":
                         f'<div style="font-size:0.92rem;color:#000000;font-weight:900;line-height:1.3;'
                         f'display:flex;align-items:center;flex-wrap:wrap;gap:3px">'
                         f'{_flag_s} {_sl["label"]}{_date_badge}</div>'
-                        f'<div style="font-size:0.65rem;color:#444;margin-top:2px;'
-                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">'
-                        f'{_lg_s} · {_sl["partido"][:32]}</div>'
-                        f'<div style="font-size:0.58rem;color:#888;margin-top:1px">{_sl["info"]}</div>'
+                        f'<div style="font-size:0.75rem;color:#222;margin-top:3px;'
+                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700">'
+                        f'{_lg_s} · {_sl["partido"][:36]}</div>'
+                        f'<div style="font-size:0.62rem;color:#666;margin-top:1px">{_sl["info"]}</div>'
                         f'</div>'
                         # Prob
                         f'<div style="text-align:right;flex-shrink:0">'
