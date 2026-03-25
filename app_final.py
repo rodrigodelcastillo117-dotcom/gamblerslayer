@@ -7777,6 +7777,7 @@ import json, os as _os, re as _re
 # _compute_profile_stats moved to top
 # populate_all_team_profiles defined above
 _SYSTEM_TABS = {"pick_history", "line_movement", "team_profiles",
+                "national_teams",
                 "Sheet1", "Hoja1", "sheet1", "hoja1", "SHEET1", "HOJA1",
                 "supervivencia"}
 
