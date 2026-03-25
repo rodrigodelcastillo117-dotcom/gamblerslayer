@@ -3612,25 +3612,46 @@ def _pick_from_real_data(r, for_rongol=False):
         if h_red > 0.3 or a_red > 0.3:
             score_u25 += 4
 
-        # Prior de liga: ajuste LEVE cuando hay datos, FUERTE solo cuando DQ=0
-        # Esto da varianza real: cada partido tiene probs distintas del sim
-        if _prior:
-            _pw = 5 if _has_data else 20
-            score_btts += (_prior[6] - 0.5) * _pw
-            score_o25  += (_prior[4] - 0.5) * _pw
-            score_u25  += (_prior[1] - 0.5) * _pw
+        # ── Decisión final ────────────────────────────────────────────────
+        if _has_data:
+            # CON datos reales: scoring system diferencia partido a partido
+            if _prior:
+                score_btts += (_prior[6] - 0.5) * 8
+                score_o25  += (_prior[4] - 0.5) * 8
+                score_u25  += (_prior[1] - 0.5) * 8
 
-        # Decisión: mercado con mayor score total
-        opts = []
-        if p_btts > 0:  opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"",score_btts))
-        if p_o25  > 0:  opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml,score_o25))
-        if p_u25  > 40: opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml,score_u25))
+            opts = []
+            if p_btts > 0:  opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"",score_btts))
+            if p_o25  > 0:  opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml,score_o25))
+            if p_u25  > 40: opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml,score_u25))
+            if opts:
+                best = max(opts, key=lambda x: x[5])
+                return _ret(best[0], best[1], best[2], best[3], best[4])
 
-        if opts:
-            best = max(opts, key=lambda x: x[5])
-            return _ret(best[0], best[1], best[2], best[3], best[4])
+        else:
+            # SIN datos reales (DQ=0): usar prior de liga directamente
+            # Prior refleja el comportamiento REAL histórico de cada competencia
+            if _prior:
+                _pb = _prior[6]; _po = _prior[4]; _pu = _prior[1]
+                # BTTS si liga ofensiva (BTTS>52%)
+                if _pb >= 0.52 and p_btts > 0:
+                    return _ret("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"")
+                # Over 2.5 si liga muy ofensiva (O25>55%)
+                if _po >= 0.55 and p_o25 > 0:
+                    return _ret("O/U","Over 2.5",p_o25,o25_ev,ou_ml)
+                # Under 2.5 si liga defensiva (U25>52%)
+                if _pu >= 0.52 and p_u25 > 0:
+                    return _ret("O/U","Under 2.5",p_u25,u25_ev,ou_ml)
+                # Neutral: mejor por prob bruta del sim
+                best_opts = []
+                if p_btts > 0: best_opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,""))
+                if p_o25 > 0:  best_opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml))
+                if p_u25 > 0:  best_opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml))
+                if best_opts:
+                    best = max(best_opts, key=lambda x: x[2])
+                    return _ret(best[0], best[1], best[2], best[3], best[4])
 
-        # Fallback: resultado más probable de la sim
+        # Fallback: resultado más probable del sim
         if p_home > p_away:
             return _ret("ML", r.get("home_team",""), p_home, sim.get("home_ev",0) or 0)
         if p_away > 0:
