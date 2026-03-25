@@ -3629,65 +3629,77 @@ def _pick_from_real_data(r, for_rongol=False):
                 return _ret(best[0], best[1], best[2], best[3], best[4])
 
         else:
-            # SIN datos directos de equipo — usar score_freq de la simulación
-            # score_freq tiene los marcadores simulados del Monte Carlo para ESTE partido
-            # Esto da varianza real entre partidos aunque DQ=0
-            _sf = sim.get("score_freq") or []
-            if _sf:
-                # Recalcular BTTS, O25, U25 desde los marcadores simulados
-                _total_sim = sum(cnt for _, cnt in _sf)
-                if _total_sim > 0:
-                    _btts_sim = sum(cnt for (h,a), cnt in _sf if h > 0 and a > 0) / _total_sim
-                    _o25_sim  = sum(cnt for (h,a), cnt in _sf if h+a > 2.5)       / _total_sim
-                    _u25_sim  = sum(cnt for (h,a), cnt in _sf if h+a < 2.5)       / _total_sim
-                    _o35_sim  = sum(cnt for (h,a), cnt in _sf if h+a > 3.5)       / _total_sim
-                    # Estas son las probs REALES de la simulación para ESTE partido
-                    p_btts_sf = round(_btts_sim * 100, 1)
-                    p_o25_sf  = round(_o25_sim  * 100, 1)
-                    p_u25_sf  = round(_u25_sim  * 100, 1)
+            # SIN datos directos — estimar lambdas desde probabilidades ML del partido
+            # Las probs ML (home_pct, away_pct, draw_pct) SÍ varían por partido aunque DQ=0
+            # porque se calculan con Elo implícito de records (W-L) y ranking FIFA
+            # Usamos estas probs para estimar agresividad ofensiva de cada equipo
+            import math as _mrd2
+            import random as _rnd2
 
-                    # Mezclar con prior de liga (70% sim, 30% prior)
-                    if _prior:
-                        p_btts_sf = round(0.7*p_btts_sf + 0.3*_prior[6]*100, 1)
-                        p_o25_sf  = round(0.7*p_o25_sf  + 0.3*_prior[4]*100, 1)
-                        p_u25_sf  = round(0.7*p_u25_sf  + 0.3*_prior[1]*100, 1)
-
-                    # Decisión por scores — varían partido a partido
-                    s_btts = p_btts_sf
-                    s_o25  = p_o25_sf
-                    s_u25  = p_u25_sf
-
-                    # Bonus por señales del partido
-                    # Si la sim dice partido de pocos goles → bonus Under
-                    if p_u25_sf > 52: s_u25 += 5
-                    # Si la sim dice ofensivo → bonus Over/BTTS
-                    if p_o25_sf > 55: s_o25 += 5
-                    if p_btts_sf > 53: s_btts += 4
-
-                    opts_sf = []
-                    if p_btts_sf > 0: opts_sf.append(("BTTS","Ambos Anotan — SÍ",p_btts_sf,btts_ev,"",s_btts))
-                    if p_o25_sf  > 0: opts_sf.append(("O/U","Over 2.5",p_o25_sf,o25_ev,ou_ml,s_o25))
-                    if p_u25_sf  > 0: opts_sf.append(("O/U","Under 2.5",p_u25_sf,u25_ev,ou_ml,s_u25))
-                    if opts_sf:
-                        best_sf = max(opts_sf, key=lambda x: x[5])
-                        return _ret(best_sf[0], best_sf[1], best_sf[2], best_sf[3], best_sf[4])
-
-            # Sin score_freq: usar prior directamente
+            # Obtener lambda base de la liga
+            _lam_base = 1.35  # promedio por equipo
             if _prior:
-                _pb = _prior[6]; _po = _prior[4]; _pu = _prior[1]
-                if _pb >= 0.52 and p_btts > 0:
-                    return _ret("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"")
-                if _po >= 0.55 and p_o25 > 0:
-                    return _ret("O/U","Over 2.5",p_o25,o25_ev,ou_ml)
-                if _pu >= 0.52 and p_u25 > 0:
-                    return _ret("O/U","Under 2.5",p_u25,u25_ev,ou_ml)
-                best_opts = []
-                if p_btts > 0: best_opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,""))
-                if p_o25 > 0:  best_opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml))
-                if p_u25 > 0:  best_opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml))
-                if best_opts:
-                    best = max(best_opts, key=lambda x: x[2])
-                    return _ret(best[0], best[1], best[2], best[3], best[4])
+                # Inferir lambda de liga desde P_O25 del prior
+                # P(Poisson(λ) > 2.5) ≈ P_O25 → resolver λ numéricamente (aprox)
+                _po_pr = _prior[4]
+                if _po_pr > 0.6:   _lam_base = 1.65
+                elif _po_pr > 0.5: _lam_base = 1.40
+                elif _po_pr > 0.4: _lam_base = 1.20
+                else:              _lam_base = 1.05
+
+            # Ajustar lambdas por fuerza relativa de cada equipo
+            # Un equipo más probable de ganar → ataca más, defiende mejor
+            _p_h = p_home / 100 if p_home > 0 else 0.4
+            _p_a = p_away / 100 if p_away > 0 else 0.3
+            _p_d = max(0, 1 - _p_h - _p_a)
+
+            # λ_h proporcional a prob de victoria local + mitad del empate
+            _str_h = _p_h + 0.5 * _p_d
+            _str_a = _p_a + 0.5 * _p_d
+            _str_tot = max(_str_h + _str_a, 0.01)
+
+            _lam_h = _lam_base * (_str_h / (_str_tot / 2))
+            _lam_a = _lam_base * (_str_a / (_str_tot / 2))
+            _lam_h = max(0.5, min(2.8, _lam_h))
+            _lam_a = max(0.5, min(2.8, _lam_a))
+
+            # Mini simulación Poisson para este partido (1000 iteraciones rápidas)
+            _btts_c = _o25_c = _u25_c = 0
+            _n_mini = 1000
+            for _ in range(_n_mini):
+                # Poisson sampling simple
+                def _pois(lam):
+                    import math
+                    L = math.exp(-lam); k = 0; p2 = 1.0
+                    while p2 > L: k += 1; p2 *= _rnd2.random()
+                    return k - 1
+                _gh = _pois(_lam_h); _ga = _pois(_lam_a)
+                if _gh > 0 and _ga > 0: _btts_c += 1
+                if _gh + _ga > 2.5: _o25_c += 1
+                else: _u25_c += 1
+
+            p_btts_e = round(_btts_c / _n_mini * 100, 1)
+            p_o25_e  = round(_o25_c  / _n_mini * 100, 1)
+            p_u25_e  = round(_u25_c  / _n_mini * 100, 1)
+
+            # Mezclar con prior de liga (60% simulación, 40% prior)
+            if _prior:
+                p_btts_e = round(0.6*p_btts_e + 0.4*_prior[6]*100, 1)
+                p_o25_e  = round(0.6*p_o25_e  + 0.4*_prior[4]*100, 1)
+                p_u25_e  = round(0.6*p_u25_e  + 0.4*_prior[1]*100, 1)
+
+            # Decisión final
+            s_btts = p_btts_e
+            s_o25  = p_o25_e
+            s_u25  = p_u25_e
+
+            opts_e = []
+            if p_btts_e > 0: opts_e.append(("BTTS","Ambos Anotan — SÍ",p_btts_e,btts_ev,"",s_btts))
+            if p_o25_e  > 0: opts_e.append(("O/U","Over 2.5",p_o25_e,o25_ev,ou_ml,s_o25))
+            if p_u25_e  > 0: opts_e.append(("O/U","Under 2.5",p_u25_e,u25_ev,ou_ml,s_u25))
+            if opts_e:
+                best_e = max(opts_e, key=lambda x: x[5])
+                return _ret(best_e[0], best_e[1], best_e[2], best_e[3], best_e[4])
 
         # Fallback: resultado más probable del sim
         if p_home > p_away:
@@ -6381,9 +6393,12 @@ def _ph_build_picks_from_sim(sr, fuente="RONGOL"):
             "prob_pct":  bp["prob"],
         }
 
-    # Group by sport, take best per sport
+    # Group by sport, take best per sport — SOLO partidos pre-partido
     sport_pools = {}
     for r in sr:
+        # Solo guardar picks de partidos que NO han empezado
+        if r.get("state","pre") != "pre":
+            continue
         sg = LEAGUES.get(r["league"],{}).get("group","Soccer")
         bp = _sport_best_ph(r)
         if bp:
@@ -7950,16 +7965,55 @@ if (not _already_simulated or _leagues_changed or run_sidebar) and games:
     # ── AUTO-RESOLVE: update pendiente → ganado/perdido for finished games ──
     if not is_demo and _gsheets_available():
         try:
-            _post_games = [g for g in games if g.get("state") == "post"]
+            _post_games = [g for g in games if g.get("state") == "post"
+                          and g.get("home_score") and g.get("away_score")]
             if _post_games:
                 _all_ph = _ph_load()
-                _resolved = _ph_auto_resolve(_all_ph)
-                if _resolved:
-                    _n_resolved = _ph_update_results(_resolved)
-                    if _n_resolved and _n_resolved > 0:
-                        _win  = sum(1 for v in _resolved.values() if v["resultado"] == "ganado")
-                        _lose = sum(1 for v in _resolved.values() if v["resultado"] == "perdido")
-                        st.toast(f"✅ {_n_resolved} picks resueltos · {_win}W {_lose}L", icon="📊")
+                _pending_ph = [p for p in _all_ph if p.get("resultado") == "pendiente"]
+                if _pending_ph:
+                    _resolved = {}
+                    # Primero intentar resolver con partidos de la sesión actual
+                    for p in _pending_ph:
+                        partido = p.get("partido","")
+                        _parts = partido.split(" vs ") if " vs " in partido else partido.split(" @ ")
+                        if len(_parts) < 2:
+                            continue
+                        t1, t2 = _parts[0].strip(), _parts[1].strip()
+                        for g in _post_games:
+                            _hm = _team_match(t1, g["home_team"], g["away_team"])
+                            _am = _team_match(t2, g["home_team"], g["away_team"])
+                            # Partial match fallback
+                            if not (_hm or _am):
+                                _h = g["home_team"].lower(); _a = g["away_team"].lower()
+                                _t1l = t1.lower()[:7]; _t2l = t2.lower()[:7]
+                                _hm = _h.startswith(_t1l) or _a.startswith(_t1l)
+                                _am = _h.startswith(_t2l) or _a.startswith(_t2l)
+                            if not (_hm and _am):
+                                continue
+                            # Match encontrado — evaluar
+                            _pick_clean = p.get("pick_label","").split("(")[0].strip()
+                            _fake = {"partido": partido, "pick": _pick_clean,
+                                    "mercado": p["mercado"], "league": p.get("liga","")}
+                            _g_eval = dict(g); _g_eval["league"] = p.get("liga", g.get("league",""))
+                            _res = _evaluate_pick(_fake, _g_eval)
+                            if _res:
+                                _resolved[p["pick_id"]] = {
+                                    "resultado":  _res,
+                                    "home_score": str(g.get("home_score","")),
+                                    "away_score": str(g.get("away_score","")),
+                                }
+                                break
+                    # También intentar desde ESPN para picks más viejos
+                    _still_pending = [p for p in _pending_ph if p["pick_id"] not in _resolved]
+                    if _still_pending:
+                        _resolved.update(_ph_auto_resolve(_still_pending))
+                    if _resolved:
+                        _n_resolved = _ph_update_results(_resolved)
+                        if _n_resolved and _n_resolved > 0:
+                            _win  = sum(1 for v in _resolved.values() if v["resultado"] == "ganado")
+                            _lose = sum(1 for v in _resolved.values() if v["resultado"] == "perdido")
+                            _ph_load.clear()
+                            st.toast(f"✅ {_n_resolved} picks resueltos · {_win}W {_lose}L", icon="📊")
         except Exception:
             pass  # never block the main flow
 
