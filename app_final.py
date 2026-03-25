@@ -7972,7 +7972,21 @@ if _active_page == "Rongol Picks":
                 if _bsm2:
                     return {"market": _bsm2[0], "label": _bsm2[1],
                             "prob": _bsm2[2], "ev": _bsm2[3], "kelly": 0}
-                return None  # sin datos de goles
+                # Zona neutra (λ 2.4-3.1): ningún mercado cumple condiciones estrictas
+                # Usar el mejor pick disponible sin restricción de lambda
+                _bsm_fallback = best_soccer_market(p_o25, p_u25, p_btts,
+                                                    sim.get("o25_ev") or 0,
+                                                    sim.get("u25_ev") or 0,
+                                                    sim.get("btts_ev") or 0, ou_ml)
+                if _bsm_fallback:
+                    return {"market": _bsm_fallback[0], "label": _bsm_fallback[1],
+                            "prob": _bsm_fallback[2], "ev": _bsm_fallback[3], "kelly": 0}
+                # Último fallback: O/U con mayor prob
+                if p_o25 > 0 or p_btts > 0:
+                    if p_btts >= p_o25:
+                        return {"market":"BTTS","label":"Ambos Anotan — SÍ","prob":p_btts,"ev":0,"kelly":0}
+                    return {"market":"O/U","label":"Over 2.5","prob":p_o25,"ev":0,"kelly":0}
+                return None
 
             # Path 4: no-soccer fallback — ML del favorito
             h_prob = sim.get("home_pct", 0) or 0
@@ -8630,13 +8644,13 @@ if _active_page == "Rongol Picks":
                                 _is_ou_pick = _mkt == "O/U"
                                 if _a_dia:
                                     _dl = f"H{_hcap_v}" if _hcap_v else "💎FAV"
-                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_ou_lbl,f"{_p_o*100:.0f}%" if _p_o>=_p_u else f"{_p_u*100:.0f}%",highlight=_is_ou_pick) + _mk_pill(_home[:6],f"{_h_pct:.0f}%")
+                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_ou_lbl,f"{_p_o:.0f}%" if _p_o>=_p_u else f"{_p_u:.0f}%",highlight=_is_ou_pick) + _mk_pill(_home[:6],f"{_h_pct:.0f}%")
                                 elif _h_dia:
                                     _dl = f"A{_hcap_v}" if _hcap_v else "💎FAV"
-                                    _pills = _mk_pill(_away[:6],f"{_a_pct:.0f}%") + _mk_pill(_ou_lbl,f"{_p_o*100:.0f}%" if _p_o>=_p_u else f"{_p_u*100:.0f}%",highlight=_is_ou_pick) + _mk_pill(_dl,">15",diamond=True)
+                                    _pills = _mk_pill(_away[:6],f"{_a_pct:.0f}%") + _mk_pill(_ou_lbl,f"{_p_o:.0f}%" if _p_o>=_p_u else f"{_p_u:.0f}%",highlight=_is_ou_pick) + _mk_pill(_dl,">15",diamond=True)
                                 else:
                                     _pills = (_mk_pill(_away[:6], f"{_a_pct:.0f}%") +
-                                              _mk_pill(_ou_lbl, f"{_p_o*100:.0f}%" if _p_o>=_p_u else f"{_p_u*100:.0f}%", highlight=_is_ou_pick) +
+                                              _mk_pill(_ou_lbl, f"{_p_o:.0f}%" if _p_o>=_p_u else f"{_p_u:.0f}%", highlight=_is_ou_pick) +
                                               _mk_pill(_home[:6], f"{_h_pct:.0f}%"))
                             except:
                                 _pills = _mk_pill(_away[:7], f"{_a_pct:.0f}%") + _mk_pill(_home[:7], f"{_h_pct:.0f}%")
@@ -9344,9 +9358,17 @@ elif _active_page == "Picks":
                     f'<div style="font-size:0.65rem;color:#888;margin-top:5px">Sin datos · {_a_pct2:.0f}% / {_h_pct2:.0f}%</div>'
                     '</div>'
                 )
-        _mkt = bp.get("market","")
-        _lbl = bp.get("label","")
-        _prob_bp = bp.get("prob",0) or 0
+        # Si bp sigue siendo None (zona neutra, sin pick de goles) → ML del favorito
+        if not bp:
+            _h_pct_f = sim.get("home_pct",0) or 0
+            _a_pct_f = sim.get("away_pct",0) or 0
+            if _h_pct_f >= _a_pct_f:
+                bp = {"market":"ML","label":g.get("home_team",""),"prob":_h_pct_f,"ev":sim.get("home_ev",0) or 0,"ml":sim.get("home_ml","")}
+            else:
+                bp = {"market":"ML","label":g.get("away_team",""),"prob":_a_pct_f,"ev":sim.get("away_ev",0) or 0,"ml":sim.get("away_ml","")}
+        _mkt = bp.get("market","") if bp else ""
+        _lbl = bp.get("label","") if bp else ""
+        _prob_bp = (bp.get("prob",0) or 0) if bp else 0
         _prob_bp = _prob_bp if _prob_bp <= 1 else _prob_bp / 100
         _ev  = bp.get("ev")
         # Calcular EV implícito si es None (sin momio ESPN de respaldo)
@@ -11478,10 +11500,18 @@ elif _active_page == "En Vivo":
         sport_group = LEAGUES.get(g.get("league",""), {}).get("group", "")
         status      = g.get("status_detail", "") or ""
 
-        fav_is_home = home_pct >= away_pct
+        # En vivo: el favorito es quien va ganando (score actual), no el pre-partido
+        # Si van empatados, usar las probabilidades del sim
+        if hs > as_:
+            fav_is_home = True
+        elif as_ > hs:
+            fav_is_home = False
+        else:
+            fav_is_home = home_pct >= away_pct  # empate → usar prob pre-partido
         fav_team    = g["home_team"] if fav_is_home else g["away_team"]
         dog_team    = g["away_team"] if fav_is_home else g["home_team"]
-        fav_prob    = max(home_pct, away_pct)
+        # Prob del equipo que va ganando (puede ser el underdog pre-partido)
+        fav_prob    = home_pct if fav_is_home else away_pct
         fav_score   = hs if fav_is_home else as_
         dog_score   = as_ if fav_is_home else hs
         diff        = fav_score - dog_score
