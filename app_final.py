@@ -870,8 +870,8 @@ def _make_card(
         f'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
         f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
         + logo_away_html +
-        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
-        f'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{away[:9]}</span>'
+        f'<span style="font-size:0.82rem;font-weight:900;color:#111;text-transform:uppercase;'
+        f'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{away[:11]}</span>'
         f'</div>'
         f'<div style="flex:1.2;text-align:center">'
         f'<div style="font-size:1.6rem;font-weight:900;color:#111;'
@@ -880,8 +880,8 @@ def _make_card(
         f'</div>'
         f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
         + logo_home_html +
-        f'<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
-        f'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{home[:9]}</span>'
+        f'<span style="font-size:0.82rem;font-weight:900;color:#111;text-transform:uppercase;'
+        f'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{home[:11]}</span>'
         f'</div></div>'
 
         # Divider
@@ -906,13 +906,10 @@ def _make_card(
         + ml_badge_html +
 
         # CTA row 2: decimal más pequeño + prob + EV
-        f'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">'
-        f'<span style="font-size:2rem;font-weight:900;color:{cta_text_color};font-family:Barlow Condensed,sans-serif;line-height:1;flex-shrink:0">{pick_decimal_str}</span>'
-        f'<div style="display:flex;flex-direction:column;gap:2px">'
-        f'<span style="font-size:0.85rem;font-weight:800;color:{cta_sub_color}">{pick_pct:.0f}% probabilidad</span>'
-        + (f'<span style="font-size:0.65rem;color:{cta_sub_color}">Ganancia: <b>${(ev_val or 0):+.0f}</b>/100</span>' if ev_val is not None else f'<span style="font-size:0.65rem;color:{cta_sub_color}">Sin línea ESPN</span>') +
-        (f'<span style="font-size:0.62rem;color:{cta_sub_color}">Kelly: <b>{kelly_val:.1f}%</b></span>' if kelly_val > 0 else '') +
-        f'</div></div>'
+        f'<div style="margin-bottom:8px">'
+        f'<span style="font-size:2.8rem;font-weight:900;color:{cta_text_color};font-family:Barlow Condensed,sans-serif;line-height:1">{pick_pct:.0f}%</span>'
+        f'<span style="font-size:1rem;font-weight:700;color:{cta_sub_color};margin-left:6px">probabilidad</span>'
+        f'</div>'
 
         # Stats grid
         f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding-top:7px;border-top:1px solid {stats_border}">'
@@ -1554,6 +1551,142 @@ def _fetch_recent_form_raw(sport, league, team_id, n_games=10):
 
 
 # populate_all_team_profiles moved below _compute_profile_stats
+
+
+def populate_all_team_profiles(progress_bar=None, status_text=None):
+    """
+    Itera todas las ligas activas, descarga los últimos partidos de ESPN
+    para cada equipo, calcula sus stats y los escribe en batch al tab
+    'team_profiles' del Google Sheet.
+    Returns: (written_count, failed_count, log_lines)
+    """
+    import json, time, datetime
+    from collections import defaultdict
+
+    log = []
+    written = 0
+    failed  = 0
+
+    if not _gsheets_available():
+        return 0, 1, ["❌ Google Sheets no disponible"]
+
+    try:
+        gc = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_TP_TAB)
+        except Exception:
+            ws = sh.add_worksheet(title=_TP_TAB, rows=2000, cols=len(_TP_HEADERS)+5)
+            log.append(f"✅ Hoja '{_TP_TAB}' creada")
+    except Exception as e:
+        return 0, 1, [f"❌ Error conectando Sheets: {e}"]
+
+    # Recopilar todos los equipos de los partidos actuales
+    all_games = st.session_state.get("_games_fetched", [])
+    if not all_games:
+        log.append("⚠ No hay partidos en memoria — simula primero desde cualquier tab")
+        return 0, 0, log
+
+    # Agrupar por (league, team)
+    team_games = defaultdict(list)  # key: (league, team_name)
+    for g in all_games:
+        lg = g.get("league", "")
+        sg = LEAGUES.get(lg, {}).get("group", "Soccer")
+        for role, opp_role in [("home_team","away_team"), ("away_team","home_team")]:
+            tname = g.get(role, "")
+            if not tname: continue
+            is_home = role == "home_team"
+            hs = g.get("home_score") or ""
+            as_ = g.get("away_score") or ""
+            try:
+                scored   = int(hs if is_home else as_) if (hs and as_) else None
+                conceded = int(as_ if is_home else hs) if (hs and as_) else None
+            except:
+                scored = conceded = None
+            if scored is None: continue
+            team_games[(lg, tname)].append({
+                "scored":   scored,
+                "conceded": conceded,
+                "home":     is_home,
+                "date":     g.get("date",""),
+                "opponent": g.get(opp_role,""),
+            })
+
+    total = len(team_games)
+    if total == 0:
+        log.append("⚠ Ningún partido con score completo encontrado en memoria")
+        return 0, 0, log
+
+    log.append(f"📊 {total} equipos con historial encontrados")
+
+    rows = [_TP_HEADERS]  # encabezados
+    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    for i, ((lg, tname), games) in enumerate(team_games.items()):
+        if progress_bar:
+            progress_bar.progress(min(0.99, i / total))
+        if status_text:
+            status_text.text(f"Procesando {i+1}/{total}: {tname} ({lg})")
+
+        sg = LEAGUES.get(lg, {}).get("group", "Soccer")
+        try:
+            stats = _compute_profile_stats(games[-_TP_MAX_GAMES:], sg)
+        except Exception as e:
+            failed += 1
+            log.append(f"❌ {tname} ({lg}): {e}")
+            continue
+
+        thr = _TP_THRESHOLDS.get(sg, [])
+        thr_dict = {}
+        for key, thr_val in thr:
+            thr_dict[f"rate_{key}"] = round(
+                sum(1 for g in games if (g["scored"]+g["conceded"]) > thr_val) / len(games), 3
+            ) if games else 0
+
+        row = [
+            f"{lg}::{tname}",      # team_id
+            tname,                  # team_name
+            lg,                     # league
+            sg,                     # sport_group
+            now_str,                # last_updated
+            json.dumps(games[-_TP_MAX_GAMES:]),  # games_json
+            stats.get("n_games",0),
+            stats.get("avg_scored",0),
+            stats.get("avg_conceded",0),
+            stats.get("avg_scored_home",0),
+            stats.get("avg_conceded_home",0),
+            stats.get("avg_scored_away",0),
+            stats.get("avg_conceded_away",0),
+            stats.get("rate_o15",0),
+            stats.get("rate_o25",0),
+            stats.get("rate_o35",0),
+            stats.get("rate_btts",0),
+            stats.get("rate_o15_home",0),
+            stats.get("rate_o25_home",0),
+            stats.get("rate_o35_home",0),
+            stats.get("rate_btts_home",0),
+            stats.get("rate_o15_away",0),
+            stats.get("rate_o25_away",0),
+            stats.get("rate_o35_away",0),
+            stats.get("rate_btts_away",0),
+            json.dumps(thr_dict),   # thresholds_json
+            stats.get("red_card_rate",0),
+        ]
+        rows.append(row)
+        written += 1
+
+    # Batch write
+    try:
+        ws.clear()
+        ws.update("A1", rows, value_input_option="USER_ENTERED")
+        log.append(f"✅ {written} equipos escritos en '{_TP_TAB}'")
+    except Exception as e:
+        failed += written
+        written = 0
+        log.append(f"❌ Error escribiendo al sheet: {e}")
+
+    return written, failed, log
 
 
 def populate_national_teams_sheet():
@@ -4773,9 +4906,14 @@ def run_monte_carlo(game, n=10_000):
     _nonsoccer_no_line = ou_val == 0.0 and _lg_avg > 0 and (_is_bball or _is_base or _is_hock or _is_foot)
     if _nonsoccer_no_line:
         # Use LEAGUE_AVG_GOALS as the implicit line — NOT lam_h+lam_a
-        # Using lam_h+lam_a creates a tautological 50/50 (model total == line)
-        # League avg is the correct neutral prior (NBA≈228, MLB≈9, NHL≈6.2)
         ou_val = _lg_avg
+        # Para NHL y MLB: redondear a líneas estándar reales que usan las casas
+        # NHL: solo 5.5 o 6.5 (nunca 6.1, 6.2, etc.)
+        # MLB: múltiplos de 0.5 (7.5, 8.0, 8.5, 9.0, etc.)
+        if _is_hock:
+            ou_val = 5.5 if ou_val < 6.0 else 6.5
+        elif _is_base:
+            ou_val = round(ou_val * 2) / 2  # redondear al 0.5 más cercano
 
     # ── Lambda sanity check: re-center lambdas to ou_val if badly misaligned ──
     # Happens when ESPN line exists but get_lambda used form data on wrong scale
@@ -6625,7 +6763,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324n"  # 2picks MLB/NHL, parse_live_minute, soñador fix, ou_line NHL  # priors por liga, filtro 7 días hard, sin Mundial
+_SIM_VERSION = "v20260324q"  # populate_all_team_profiles restaurada  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -8030,15 +8168,15 @@ if _active_page == "Rongol Picks":
                     _logo_h = _logo_img(_ht_id, _league, 44)
 
                     # ── Odds pills ───────────────────────────────────────────────
-                    def _mk_pill(lbl, dec, highlight=False, diamond=False):
+                    def _mk_pill(lbl, val, highlight=False, diamond=False):
+                        """Pill mostrando label + probabilidad% (sin momios)."""
                         if diamond:
                             return (
                                 '<div style="flex:1;background:linear-gradient(160deg,#1a0a2e 0%,#0d0618 100%);'
                                 'border-radius:10px;border:1px solid rgba(167,139,250,0.5);'
-                                'border-top:1px solid rgba(196,181,253,0.3);'
-                                'box-shadow:0 3px 8px rgba(139,92,246,0.3);padding:10px 4px;text-align:center">'
-                                '<span style="font-size:0.65rem;color:#a78bfa;display:block;margin-bottom:3px;font-weight:700">' + str(lbl) + '</span>'
-                                '<span style="font-size:1.2rem;font-weight:900;color:#c4b5fd;font-family:Barlow Condensed,sans-serif;line-height:1">💎</span>'
+                                'padding:10px 4px;text-align:center">'
+                                '<span style="font-size:0.6rem;color:#a78bfa;display:block;margin-bottom:3px;font-weight:700">' + str(lbl) + '</span>'
+                                '<span style="font-size:1.1rem;font-weight:900;color:#c4b5fd;line-height:1">💎</span>'
                                 '</div>'
                             )
                         lc = "#3D8EFF" if any(x in str(lbl) for x in ("O","U","x","X")) else ("#FFE066" if highlight else "#A0A0A8")
@@ -8047,10 +8185,9 @@ if _active_page == "Rongol Picks":
                         return (
                             '<div style="flex:1;background:' + bg + ';'
                             'border-radius:10px;border:1px solid ' + bdr + ';'
-                            'border-top:1px solid rgba(255,255,255,0.18);'
                             'box-shadow:0 3px 8px rgba(0,0,0,0.4);padding:10px 4px;text-align:center">'
-                            '<span style="font-size:0.65rem;color:' + lc + ';display:block;margin-bottom:3px;font-weight:700">' + str(lbl) + '</span>'
-                            '<span style="font-size:1.2rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif;line-height:1">' + str(dec) + '</span>'
+                            '<span style="font-size:0.6rem;color:' + lc + ';display:block;margin-bottom:3px;font-weight:700">' + str(lbl) + '</span>'
+                            '<span style="font-size:1.15rem;font-weight:900;color:#F0F0F2;font-family:Barlow Condensed,sans-serif;line-height:1">' + str(val) + '</span>'
                             '</div>'
                         )
 
@@ -8068,7 +8205,7 @@ if _active_page == "Rongol Picks":
                         except: return None
 
                     if _sg == "Soccer":
-                        _pills = _mk_pill("1x",_a_dec) + _mk_pill("x",_d_dec) + _mk_pill("2x",_h_dec)
+                        _pills = _mk_pill(_away[:7], f"{_a_pct:.0f}%") + _mk_pill("X", f"{_d_pct:.0f}%") + _mk_pill(_home[:7], f"{_h_pct:.0f}%")
                     else:
                         _ou_v = _sim_r.get("ou_line","") or ""
                         _p_o  = _sim_r.get("p_o_total",0) or 0
@@ -8085,25 +8222,25 @@ if _active_page == "Rongol Picks":
                                 _is_ou_pick = _mkt == "O/U"
                                 if _a_dia:
                                     _dl = f"H{_hcap_v}" if _hcap_v else "💎FAV"
-                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_ou_lbl,_ou_dec_v,highlight=_is_ou_pick) + _mk_pill(_home[:6],_h_dec)
+                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_ou_lbl,f"{_p_o*100:.0f}%" if _p_o>=_p_u else f"{_p_u*100:.0f}%",highlight=_is_ou_pick) + _mk_pill(_home[:6],f"{_h_pct:.0f}%")
                                 elif _h_dia:
                                     _dl = f"A{_hcap_v}" if _hcap_v else "💎FAV"
-                                    _pills = _mk_pill(_away[:6],_a_dec) + _mk_pill(_ou_lbl,_ou_dec_v,highlight=_is_ou_pick) + _mk_pill(_dl,">15",diamond=True)
+                                    _pills = _mk_pill(_away[:6],f"{_a_pct:.0f}%") + _mk_pill(_ou_lbl,f"{_p_o*100:.0f}%" if _p_o>=_p_u else f"{_p_u*100:.0f}%",highlight=_is_ou_pick) + _mk_pill(_dl,">15",diamond=True)
                                 else:
-                                    _pills = (_mk_pill(_away[:6], _a_dec) +
-                                              _mk_pill(_ou_lbl, _ou_dec_v, highlight=_is_ou_pick) +
-                                              _mk_pill(_home[:6], _h_dec))
+                                    _pills = (_mk_pill(_away[:6], f"{_a_pct:.0f}%") +
+                                              _mk_pill(_ou_lbl, f"{_p_o*100:.0f}%" if _p_o>=_p_u else f"{_p_u*100:.0f}%", highlight=_is_ou_pick) +
+                                              _mk_pill(_home[:6], f"{_h_pct:.0f}%"))
                             except:
-                                _pills = _mk_pill(_away[:7], _a_dec) + _mk_pill(_home[:7], _h_dec)
+                                _pills = _mk_pill(_away[:7], f"{_a_pct:.0f}%") + _mk_pill(_home[:7], f"{_h_pct:.0f}%")
                         else:
                             if _a_dia or _h_dia:
                                 _dl = f"H/C {_hcap_v}" if _hcap_v else "💎"
                                 if _a_dia:
-                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_home[:7],_h_dec,highlight=True)
+                                    _pills = _mk_pill(_dl,">15",diamond=True) + _mk_pill(_home[:7],f"{_h_pct:.0f}%",highlight=True)
                                 else:
-                                    _pills = _mk_pill(_away[:7],_a_dec,highlight=True) + _mk_pill(_dl,">15",diamond=True)
+                                    _pills = _mk_pill(_away[:7],f"{_a_pct:.0f}%",highlight=True) + _mk_pill(_dl,">15",diamond=True)
                             else:
-                                _pills = _mk_pill(_away[:7], _a_dec) + _mk_pill(_home[:7], _h_dec)
+                                _pills = _mk_pill(_away[:7], f"{_a_pct:.0f}%") + _mk_pill(_home[:7], f"{_h_pct:.0f}%")
 
                     # ── Spread pill (non-soccer with ESPN spread) ────────────────
                     _spr_line_str = _rp.get("odds",{}).get("spread_line","") or _sim_r.get("spread_line","") or ""
@@ -8120,9 +8257,9 @@ if _active_page == "Rongol Picks":
                             except:
                                 _spr_dec_v = "1.91"
                             # Add spread pill replacing one side
-                            _pills = (_mk_pill(_away[:6], _a_dec) +
+                            _pills = (_mk_pill(_away[:6], f"{_a_pct:.0f}%") +
                                       _mk_pill(_spr_lbl, _spr_dec_v, highlight=(_mkt=="Spread")) +
-                                      _mk_pill(_home[:6], _h_dec))
+                                      _mk_pill(_home[:6], f"{_h_pct:.0f}%"))
                         except:
                             pass
 
@@ -8178,7 +8315,7 @@ if _active_page == "Rongol Picks":
                         '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
                         + _logo_a +
                         '<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
-                        'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _away[:9] + '</span>'
+                        'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _away[:11] + '</span>'
                         '</div>'
                         '<div style="flex:1.2;text-align:center">'
                         '<div style="font-size:1.6rem;font-weight:900;color:#111;'
@@ -8188,7 +8325,7 @@ if _active_page == "Rongol Picks":
                         '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
                         + _logo_h +
                         '<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
-                        'text-align:center;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _home[:9] + '</span>'
+                        'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _home[:11] + '</span>'
                         '</div></div>'
 
                         # Divider
@@ -8216,14 +8353,11 @@ if _active_page == "Rongol Picks":
                         # Label completo en su propia línea
                         '<div style="font-size:1.05rem;font-weight:900;color:#111;margin-bottom:10px;line-height:1.2">' + _lbl + _ml_badge + '</div>'
 
-                        # CTA row 2: decimal pequeño + prob + EV (horizontal compacto)
-                        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">'
-                        '<span style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1;flex-shrink:0">' + _pick_dec + '</span>'
-                        '<div style="display:flex;flex-direction:column;gap:3px">'
-                        '<span style="font-size:0.95rem;font-weight:800;color:rgba(0,0,0,0.75)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
-                        + (f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.6)">Ganancia: <b>${(_ev_v or 0):+.0f}/100</b></span>' if _ev_v is not None else '<span style="font-size:0.7rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
-                        (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Kelly: <b>{_kelly_v:.1f}%</b></span>' if _kelly_v > 0 else '') +
-                        '</div></div>'
+                        # Probabilidad grande, sin momio
+                        '<div style="margin-bottom:10px">'
+                        '<span style="font-size:2.8rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + f"{_pick_pct:.0f}%" + '</span>'
+                        '<span style="font-size:1rem;font-weight:700;color:rgba(0,0,0,0.55);margin-left:6px">probabilidad</span>'
+                        '</div>'
 
                         # Stats grid
                         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-top:10px;border-top:1.5px solid rgba(0,0,0,0.12)">'
@@ -8910,7 +9044,7 @@ elif _active_page == "Picks":
             except: return None
 
         if _sg == "Soccer":
-            _pills_h = _opill("1x",_a_dec) + _opill("x",_d_dec) + _opill("2x",_h_dec)
+            _pills_h = _opill(g["away_team"][:7],f"{_a_pct:.0f}%") + _opill("X",f"{_d_pct:.0f}%") + _opill(g["home_team"][:7],f"{_h_pct:.0f}%")
         else:
             _ou_v = sim.get("ou_line","") or ""
             _p_o  = sim.get("p_o_total",0) or 0
@@ -8926,16 +9060,17 @@ elif _active_page == "Picks":
                     _ou_f   = float(str(_ou_v).lstrip("~"))
                     _ou_lbl = ("O" if _p_o >= _p_u else "U") + f"{_ou_f:.1f}"
                     _is_ou  = _mkt == "O/U"
+                    _p_ou   = max(_p_o, _p_u) * 100  # prob% del lado ganador O/U
                     if _a_is_dia:
                         # Away es underdog extremo — pill diamante con handicap del home
                         _dia_lbl = f"H{_hcap}" if _hcap else "FAV"
-                        _pills_h = _opill(_dia_lbl, ">15", diamond=True) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(g["home_team"][:6],_h_dec)
+                        _pills_h = _opill(_dia_lbl, ">15", diamond=True) + _opill(_ou_lbl,f"{_p_ou:.0f}%",hi=_is_ou) + _opill(g["home_team"][:6],f"{_h_pct:.0f}%")
                     elif _h_is_dia:
                         # Home es underdog extremo — pill diamante
                         _dia_lbl = f"A{_hcap}" if _hcap else "FAV"
-                        _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(_dia_lbl, ">15", diamond=True)
+                        _pills_h = _opill(g["away_team"][:6],f"{_a_pct:.0f}%") + _opill(_ou_lbl,f"{_p_ou:.0f}%",hi=_is_ou) + _opill(_dia_lbl, ">15", diamond=True)
                     else:
-                        _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_ou_lbl,"1.91",hi=_is_ou) + _opill(g["home_team"][:6],_h_dec)
+                        _pills_h = _opill(g["away_team"][:6],f"{_a_pct:.0f}%") + _opill(_ou_lbl,f"{_p_ou:.0f}%",hi=_is_ou) + _opill(g["home_team"][:6],f"{_h_pct:.0f}%")
                 except:
                     _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
             else:
@@ -8974,6 +9109,29 @@ elif _active_page == "Picks":
         _lg_lbl = league_label(g["league"])
         _dqc    = "#00C896" if dq>=70 else "#C9A84C" if dq>=40 else "#ef4444"
 
+        # ── Segundo pick ML (solo Baseball y Hockey cuando pick principal es O/U) ──
+        _sg_card = LEAGUES.get(g.get("league",""),{}).get("group","")
+        _h_pct_c = sim.get("home_pct",0) or 0
+        _a_pct_c = sim.get("away_pct",0) or 0
+        _second_pick_html = ""
+        if _sg_card in ("Baseball","Hockey") and _mkt == "O/U":
+            _fav_team_c = g["home_team"] if _h_pct_c >= _a_pct_c else g["away_team"]
+            _fav_pct_c  = max(_h_pct_c, _a_pct_c)
+            _fav_dec_c  = _h_dec if _h_pct_c >= _a_pct_c else _a_dec
+            _second_pick_html = (
+                '<div style="margin-top:8px;padding:8px 12px;background:rgba(0,0,0,0.07);'
+                'border-radius:8px;display:flex;align-items:center;justify-content:space-between">'
+                '<div style="display:flex;align-items:center;gap:6px">'
+                '<span style="font-size:0.6rem;font-weight:900;color:#333;background:rgba(0,0,0,0.1);'
+                'padding:2px 7px;border-radius:5px;text-transform:uppercase">ML</span>'
+                f'<span style="font-size:0.88rem;font-weight:800;color:#111">{_fav_team_c} gana</span>'
+                '</div>'
+                f'<div style="display:flex;align-items:baseline;gap:4px">'
+                f'<span style="font-size:1.1rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif">{_fav_dec_c}</span>'
+                f'<span style="font-size:0.72rem;color:#555">{_fav_pct_c:.0f}%</span>'
+                f'</div></div>'
+            )
+
         return (
             '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#E9E9EE 100%);'
             'border-radius:22px;overflow:hidden;margin-bottom:8px;'
@@ -8994,7 +9152,8 @@ elif _active_page == "Picks":
             '<div style="text-align:center;flex:1">'
             + _logo_a +
             '<div style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;'
-            'margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px">' + g["away_team"][:9] + '</div>'
+            'margin-top:5px;font-size:0.85rem;font-weight:900;color:#111;text-transform:uppercase;'
+            'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + g["away_team"][:11] + '</div>'
             '</div>'
             '<div style="flex:1;text-align:center">'
             '<div style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;letter-spacing:-2px;line-height:1">VS</div>'
@@ -9003,7 +9162,8 @@ elif _active_page == "Picks":
             '<div style="text-align:center;flex:1">'
             + _logo_h +
             '<div style="font-size:0.7rem;font-weight:800;color:#111;text-transform:uppercase;'
-            'margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72px">' + g["home_team"][:9] + '</div>'
+            'margin-top:5px;font-size:0.85rem;font-weight:900;color:#111;text-transform:uppercase;'
+            'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + g["home_team"][:11] + '</div>'
             '</div></div>'
 
             # Divider
@@ -9030,17 +9190,17 @@ elif _active_page == "Picks":
             # Label completo, sin truncar
             '<div style="font-size:1.05rem;font-weight:900;color:#111;margin-bottom:10px;line-height:1.2">' + _lbl + _ml_badge + '</div>'
 
-            # Fila 2: decimal + prob + EV
-            '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">'
-            '<span style="font-size:2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1;flex-shrink:0">' + _pick_dec + '</span>'
-            '<div style="flex:1;display:flex;flex-direction:column;gap:3px">'
-            '<span style="font-size:0.95rem;font-weight:800;color:rgba(0,0,0,0.75)">' + f"{_pick_pct:.0f}% probabilidad" + '</span>'
-            + (f'<span style="font-size:0.7rem;color:rgba(0,0,0,0.6)">Ganancia: <b>${(_ev or 0):+.0f}/100</b></span>' if _ev is not None else '<span style="font-size:0.7rem;color:rgba(0,0,0,0.4)">Sin línea ESPN</span>') +
-            (f'<span style="font-size:0.65rem;color:rgba(0,0,0,0.55)">Kelly: <b>{_kelly_bp:.1f}%</b></span>' if _kelly_bp > 0 else '') +
-            '</div></div>'
+            # Fila 2: probabilidad grande (sin momio)
+            '<div style="margin-bottom:10px">'
+            '<span style="font-size:2.8rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + f"{_pick_pct:.0f}%" + '</span>'
+            '<span style="font-size:1rem;font-weight:700;color:rgba(0,0,0,0.55);margin-left:6px">probabilidad</span>'
+            '</div>'
+
+            # ── Segundo pick: ML del favorito (solo Baseball y Hockey) ─────────
+            + _second_pick_html
 
             # Stats grid
-            '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;'
+            + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;'
             'padding-top:10px;border-top:1.5px solid rgba(0,0,0,0.12)">'
             + "".join(
                 '<div style="text-align:center">'
@@ -9945,6 +10105,11 @@ elif _active_page == "Parlays":
 
                     # 1. Probabilidad bruta (peso 40%) — base del score
                     s += prob * 0.40
+
+                    # 1b. Bonus de mercado — mismo criterio que best_soccer_market
+                    # BTTS: +4pp, Under: +1pp, Over: sin bonus
+                    if market == "BTTS":
+                        s += 4.0
 
                     # 2. EV vs mercado (peso 25%) — edge real sobre la casa
                     #    Clampear para evitar outliers de partidos sin línea
