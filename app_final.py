@@ -3517,80 +3517,29 @@ def _pick_from_real_data(r, for_rongol=False):
         return base
 
     # ══════════════════════════════════════════════════════════════════════
-    # ⚽ SOCCER — simulación MC + datos reales de equipos
+    # ⚽ SOCCER — muestra lo que tenga mayor % según la simulación
     # ══════════════════════════════════════════════════════════════════════
     if _is_soc:
+        # Probs del sim (0-100)
+        p_home  = float(sim.get("home_pct") or 0)
+        p_away  = float(sim.get("away_pct") or 0)
+        p_draw  = float(sim.get("draw_pct") or 0)
         p_o25   = float(sim.get("p_o25")  or 0)
         p_u25   = float(sim.get("p_u25")  or 0)
         p_btts  = float(sim.get("p_btts") or 0)
-        p_home  = float(sim.get("home_pct") or 0)
-        p_away  = float(sim.get("away_pct") or 0)
-        o25_ev  = float(sim.get("o25_ev")  or 0)
-        u25_ev  = float(sim.get("u25_ev")  or 0)
+        o25_ev  = float(sim.get("o25_ev") or 0)
+        u25_ev  = float(sim.get("u25_ev") or 0)
         btts_ev = float(sim.get("btts_ev") or 0)
         ou_ml   = sim.get("over_under","") or ""
         if p_u25 == 0 and p_o25 > 0: p_u25 = round(100.0 - p_o25, 1)
 
-        # Datos reales de equipos
-        h_scored   = float(r.get("home_avg_scored")   or 0)
-        h_conceded = float(r.get("home_avg_conceded") or 0)
-        a_scored   = float(r.get("away_avg_scored")   or 0)
-        a_conceded = float(r.get("away_avg_conceded") or 0)
-        h_prof     = r.get("home_profile") or {}
-        a_prof     = r.get("away_profile") or {}
-        h_rate_o25  = float(h_prof.get("rate_o25_home") or h_prof.get("rate_o25") or 0)
-        a_rate_o25  = float(a_prof.get("rate_o25_away") or a_prof.get("rate_o25") or 0)
-        h_rate_btts = float(h_prof.get("rate_btts_home") or h_prof.get("rate_btts") or 0)
-        a_rate_btts = float(a_prof.get("rate_btts_away") or a_prof.get("rate_btts") or 0)
-        h_red       = float(h_prof.get("red_card_rate") or 0)
-        a_red       = float(a_prof.get("red_card_rate") or 0)
-        h2h         = r.get("h2h") or {}
-        h2h_o25     = float(h2h.get("over25_rate") or 0)
-        h2h_btts    = float(h2h.get("btts_rate")   or 0)
-        h2h_n       = int(h2h.get("count") or 0)
-        weather     = r.get("weather") or {}
-        wind_kmh    = float(weather.get("wind_kmh") or weather.get("wind") or 0)
-        rain        = bool(weather.get("rain") or weather.get("precip"))
-        _prior      = LEAGUE_OU_PRIORS.get(_league)
-        _has_data   = (h_scored > 0 or a_scored > 0 or h_rate_o25 > 0 or h2h_n >= 3)
+        # Si el sim tiene probs de goles → usarlas directamente
+        _has_goal_probs = (p_o25 > 0 or p_btts > 0)
 
-        # Calcular probs si faltan (DQ=0)
-        if p_o25 == 0:
-            if _prior:
-                p_o25  = round(_prior[4] * 100, 1)
-                p_u25  = round(_prior[1] * 100, 1)
-                p_btts = round(_prior[6] * 100, 1)
-            elif h_scored > 0 and a_scored > 0:
-                _lh = (h_scored + a_conceded) / 2
-                _la = (a_scored + h_conceded) / 2
-                _mu = _lh + _la
-                _ple = sum(_mrd.exp(-_mu) * (_mu**k) / _mrd.factorial(k) for k in range(3))
-                p_o25  = round((1 - _ple) * 100, 1)
-                p_u25  = round(_ple * 100, 1)
-                p_btts = round((1-_mrd.exp(-_lh))*(1-_mrd.exp(-_la))*100, 1)
-
-        # Score por mercado — empieza con prob de la simulación
-        # ── Decisión: 2 paths claros ─────────────────────────────────────────
-
-        if not _has_data:
-            # ── PATH A: SIN datos de equipo → mini-simulación Poisson ──────
-            # Usa p_home/p_away (Elo implícito del sim) para estimar lambdas
-            # Esto diferencia cada partido aunque DQ=0
-            import random as _rnd2
-
-            # REGLA 0: ML si hay favorito claro (≥55%)
-            # Para WCQ: Türkiye(local), Italy(local), Denmark(local) pueden tener >55%
-            # home_team = LOCAL (ya corregido por _KNOWN_VENUES)
-            _fav_p0 = max(p_home, p_away)
-            if _fav_p0 >= 55:
-                _is_home_fav = p_home >= p_away
-                return _ret("ML",
-                    r.get("home_team","") if _is_home_fav else r.get("away_team",""),
-                    _fav_p0,
-                    (sim.get("home_ev",0) if _is_home_fav else sim.get("away_ev",0)) or 0,
-                    (sim.get("home_ml","") if _is_home_fav else sim.get("away_ml","")) or "")
-
-            # Lambda base desde prior de liga
+        if not _has_goal_probs:
+            # DQ=0: correr mini-sim Poisson con lambdas del prior + fuerza del equipo
+            import math as _ms2, random as _rs2
+            _prior = LEAGUE_OU_PRIORS.get(_league)
             _lam_base = 1.35
             if _prior:
                 _po_pr = _prior[4]
@@ -3599,116 +3548,45 @@ def _pick_from_real_data(r, for_rongol=False):
                 elif _po_pr > 0.4: _lam_base = 1.20
                 else:              _lam_base = 1.05
 
-            # Lambdas ajustados por fuerza relativa de cada equipo
-            _p_h = p_home / 100 if p_home > 0 else 0.38
-            _p_a = p_away / 100 if p_away > 0 else 0.28
-            _p_d = max(0.01, 1 - _p_h - _p_a)
-            _str_h = _p_h + 0.5 * _p_d
-            _str_a = _p_a + 0.5 * _p_d
-            _str_tot = _str_h + _str_a
-            _lam_h = max(0.5, min(2.8, _lam_base * (_str_h / (_str_tot / 2))))
-            _lam_a = max(0.5, min(2.8, _lam_base * (_str_a / (_str_tot / 2))))
+            _ph = p_home/100 if p_home > 0 else 0.38
+            _pa = p_away/100 if p_away > 0 else 0.28
+            _pd = max(0.01, 1-_ph-_pa)
+            _sh = _ph + 0.5*_pd; _sa = _pa + 0.5*_pd; _st = _sh + _sa
+            _lh = max(0.5, min(2.8, _lam_base*(_sh/(_st/2))))
+            _la = max(0.5, min(2.8, _lam_base*(_sa/(_st/2))))
 
-            # Mini-sim Poisson (2000 iteraciones)
-            _btts_c = _o25_c = _u25_c = 0
-            _N = 2000
-            import math as _mrd2
-            for _i2 in range(_N):
-                def _pois2(lam):
-                    _L=_mrd2.exp(-lam); _k=0; _pp=1.0
-                    while _pp>_L: _k+=1; _pp*=_rnd2.random()
+            _N = 3000
+            _bc = _oc = _uc = 0
+            for _ in range(_N):
+                def _p(lam):
+                    _L=_ms2.exp(-lam); _k=0; _pp=1.0
+                    while _pp>_L: _k+=1; _pp*=_rs2.random()
                     return _k-1
-                _gh2 = _pois2(_lam_h); _ga2 = _pois2(_lam_a)
-                if _gh2 > 0 and _ga2 > 0: _btts_c += 1
-                if _gh2 + _ga2 > 2.5: _o25_c += 1
-                else: _u25_c += 1
+                _gh=_p(_lh); _ga=_p(_la)
+                if _gh>0 and _ga>0: _bc+=1
+                if _gh+_ga>2.5: _oc+=1
+                else: _uc+=1
 
-            _pb = round(_btts_c / _N * 100, 1)
-            _po = round(_o25_c  / _N * 100, 1)
-            _pu = round(_u25_c  / _N * 100, 1)
+            p_btts = round(_bc/_N*100, 1)
+            p_o25  = round(_oc/_N*100, 1)
+            p_u25  = round(_uc/_N*100, 1)
 
-            # Reglas de decisión sobre resultados de la mini-sim
-            if _pu >= 70:
-                return _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
-            if _po >= 58:
-                return _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
-            # BTTS solo si es el mercado MAS probable (mayor que Over Y Under)
-            if _pb > _po and _pb > _pu:
-                return _ret("BTTS", "Ambos Anotan — SÍ", _pb, btts_ev, "")
-            # Under si partido defensivo
-            if _pu >= 52:
-                return _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
-            # Over si partido ofensivo
-            if _po >= 50:
-                return _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
-            return _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
+        # Construir lista de opciones con su probabilidad
+        opts = []
+        if p_btts > 0: opts.append(("BTTS",  "Ambos Anotan — SÍ", p_btts, btts_ev, ""))
+        if p_o25  > 0: opts.append(("O/U",   "Over 2.5",          p_o25,  o25_ev,  ou_ml))
+        if p_u25  > 0: opts.append(("O/U",   "Under 2.5",         p_u25,  u25_ev,  ou_ml))
+        if p_home > 0: opts.append(("ML",    r.get("home_team",""),p_home, sim.get("home_ev",0) or 0, sim.get("home_ml","") or ""))
+        if p_away > 0: opts.append(("ML",    r.get("away_team",""),p_away, sim.get("away_ev",0) or 0, sim.get("away_ml","") or ""))
+        if p_draw > 0: opts.append(("ML",    "Empate",             p_draw, 0, ""))
 
-        else:
-            # ── PATH B: CON datos reales → scoring system ───────────────────
-            score_btts = p_btts
-            score_o25  = p_o25
-            score_u25  = p_u25
+        if not opts:
+            return None
 
-            if h_scored > 0 and a_scored > 0:
-                avg_total = h_scored + a_scored
-                if avg_total > 2.7:   score_o25 += 8; score_btts += 5
-                elif avg_total < 2.2: score_u25 += 8; score_o25  -= 5
-                if h_scored < 0.9 or a_scored < 0.9: score_btts -= 10
-                elif h_scored >= 1.5 and a_scored >= 1.5: score_btts += 8
-                if h_conceded > 1.5 and a_conceded > 1.5: score_o25 += 6; score_btts += 4
+        # Devolver el que tenga mayor probabilidad — simple y directo
+        best = max(opts, key=lambda x: x[2])
+        return _ret(best[0], best[1], best[2], best[3], best[4])
 
-            if h_rate_o25 > 0 and a_rate_o25 > 0:
-                avg_ro25 = (h_rate_o25 + a_rate_o25) / 2
-                if avg_ro25 > 0.60:   score_o25 += 7
-                elif avg_ro25 < 0.40: score_u25 += 7; score_o25 -= 5
-            if h_rate_btts > 0 and a_rate_btts > 0:
-                avg_rbtts = (h_rate_btts + a_rate_btts) / 2
-                if avg_rbtts > 0.55:  score_btts += 7
-                elif avg_rbtts < 0.40: score_btts -= 8
-
-            if h2h_n >= 3:
-                if h2h_o25 > 0.60:   score_o25 += 6; score_btts += 3
-                elif h2h_o25 < 0.40: score_u25 += 6; score_o25  -= 4
-                if h2h_btts > 0.55:  score_btts += 6
-
-            if wind_kmh > 40 or rain: score_o25 -= 5; score_btts -= 3; score_u25 += 5
-            if h_red > 0.3 or a_red > 0.3: score_u25 += 4
-
-            if _prior:
-                score_btts += (_prior[6] - 0.5) * 8
-                score_o25  += (_prior[4] - 0.5) * 8
-                score_u25  += (_prior[1] - 0.5) * 8
-
-            # ML si favorito claro (≥55%)
-            _fav_p2 = max(p_home, p_away)
-            if _fav_p2 >= 55:
-                _fh2 = p_home >= p_away
-                return _ret("ML",
-                    r.get("home_team","") if _fh2 else r.get("away_team",""),
-                    _fav_p2,
-                    (sim.get("home_ev",0) if _fh2 else sim.get("away_ev",0)) or 0,
-                    (sim.get("home_ml","") if _fh2 else sim.get("away_ml","")) or "")
-
-            # Under solo si ≥70%
-            if p_u25 >= 70 and score_u25 >= max(score_o25, score_btts):
-                return _ret("O/U", "Under 2.5", p_u25, u25_ev, ou_ml)
-
-            # Scoring normal
-            opts = []
-            if p_btts > 0:  opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"",score_btts))
-            if p_o25  > 0:  opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml,score_o25))
-            if p_u25  > 50: opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml,score_u25))
-            if opts:
-                best = max(opts, key=lambda x: x[5])
-                return _ret(best[0], best[1], best[2], best[3], best[4])
-            return _ret("O/U", "Over 2.5", p_o25, o25_ev, ou_ml)
-
-        # Fallback: resultado más probable del sim
-        if p_home > p_away:
-            return _ret("ML", r.get("home_team",""), p_home, sim.get("home_ev",0) or 0)
-        if p_away > 0:
-            return _ret("ML", r.get("away_team",""), p_away, sim.get("away_ev",0) or 0)
-        return None
 
     # ══════════════════════════════════════════════════════════════════════
     # 🏒 NHL — ML del favorito + O/U 5.5 de ESPN
