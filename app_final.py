@@ -9302,6 +9302,13 @@ elif _active_page == "Picks":
             _p_u25  = sim.get("p_u25")  or 0
             _p_btts = sim.get("p_btts") or 0
             if _p_u25 == 0 and _p_o25 > 0: _p_u25 = round(100.0 - _p_o25, 1)
+            # Inicializar lambdas siempre para evitar UnboundLocalError
+            _lh = float(sim.get("lam_real_h") or 0)
+            _la = float(sim.get("lam_real_a") or 0)
+            if _lh == 0 or _la == 0:
+                _llg = float(sim.get("lam_league") or 0)
+                _lh = _llg * 0.55 if _llg > 0 else 1.45
+                _la = _llg * 0.45 if _llg > 0 else 1.05
             if _p_o25 == 0:
                 # Usar prior de liga primero
                 _lgn_oc = g.get("league","")
@@ -9312,12 +9319,6 @@ elif _active_page == "Picks":
                     _p_btts = round(_prior_oc[6] * 100, 1)
                 else:
                     import math as _m
-                    _lh = float(sim.get("lam_real_h") or 0)
-                    _la = float(sim.get("lam_real_a") or 0)
-                    if _lh == 0 or _la == 0:
-                        _llg = float(sim.get("lam_league") or 0)
-                        _lh = _llg * 0.55 if _llg > 0 else 1.45
-                        _la = _llg * 0.45 if _llg > 0 else 1.05
                     _mu = _lh + _la
                     _p_le2 = sum(_m.exp(-_mu) * (_mu**k) / _m.factorial(k) for k in range(3))
                     _p_o25 = round((1 - _p_le2) * 100, 1)
