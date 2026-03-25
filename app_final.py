@@ -5416,6 +5416,14 @@ def run_monte_carlo(game, n=10_000):
                 ("O/U", uu_label, p_u_total, u_total_ev, str(OU_ML), quarter_kelly(p_u_total, OU_ML)),
             ]
 
+            # Para NHL: si la línea ESPN es 6.5+, agregar Over 5.5 como candidato
+            # Las casas inflan la línea NHL a 6.5 — Over 5.5 tiene mejor EV real
+            if is_hockey and ou_line >= 6.0:
+                _o55 = _p_over_line(ou_line - 1.0)  # P(total > 5.5) ≈ mucho mayor
+                _o55_label = f"Over {ou_line - 1.0:.1f}"
+                _o55_ev = calc_ev(_o55, OU_ML)
+                candidates.append(("O/U", _o55_label, _o55, _o55_ev, str(OU_ML), quarter_kelly(_o55, OU_ML)))
+
             # Adjacent lines via normal approx
             _multi_lines = {}
             for _l in _lines_to_show:
@@ -5442,7 +5450,8 @@ def run_monte_carlo(game, n=10_000):
 
         def _ou_edge(sim_p, prior_p):
             """Returns True if sim deviates enough from prior to be meaningful."""
-            return _bypass_prior or (sim_p is not None and abs(sim_p - prior_p) >= OU_MIN_EDGE)
+            # dq==0: siempre permitir O/U para que compita con BTTS (no dejar BTTS solo)
+            return _bypass_prior or dq == 0 or (sim_p is not None and abs(sim_p - prior_p) >= OU_MIN_EDGE)
 
         # BTTS: use real league prior (computed from Poisson at league avg)
         _btts_prior = _prior[6] if _prior else 0.57  # 7th element = P_BTTS
@@ -5452,6 +5461,17 @@ def run_monte_carlo(game, n=10_000):
         if dq == 0 and _prior and _btts_prior > 0:
             # Blend: 70% prior + 30% Poisson cuando no hay datos
             _p_btts_final = round(0.70 * _btts_prior + 0.30 * p_btts, 3)
+
+        # O/U: cuando dq==0, también blend con prior para competencia justa con BTTS
+        _p_o25_final = p_o25
+        _p_u25_final = p_u25
+        if dq == 0 and _prior and len(_prior) >= 5:
+            _po25_pr_val = _prior[4]  # índice 4 = P_O25 del prior
+            _pu25_pr_val = _prior[1]  # índice 1 = P_U25 del prior
+            if _po25_pr_val > 0 and p_o25 is not None:
+                _p_o25_final = round(0.70 * _po25_pr_val + 0.30 * p_o25, 3)
+                _p_u25_final = round(1.0 - _p_o25_final, 3)
+
         if abs(_p_btts_final - _btts_prior) >= OU_MIN_EDGE or _bypass_prior or dq == 0:
             _btts_ev_f    = calc_ev(_p_btts_final, BTTS_ML)
             _no_btts_ev_f = calc_ev(1-_p_btts_final, BTTS_ML)
@@ -5461,12 +5481,12 @@ def run_monte_carlo(game, n=10_000):
             ]
 
         # O/U: only add when simulation deviates meaningfully from league prior
-        # This prevents U3.5 from always winning just because it's "likely" by default
+        # (dq==0 ahora siempre pasa _ou_edge y usa probs ajustadas al prior)
         if _ou_edge(p_o25, _po25_pr):
-            candidates.append(("O/U","Over 2.5", p_o25, o25_ev, str(OU_ML), quarter_kelly(p_o25,OU_ML)))
+            candidates.append(("O/U","Over 2.5", _p_o25_final, calc_ev(_p_o25_final, OU_ML), str(OU_ML), quarter_kelly(_p_o25_final,OU_ML)))
         # Over 3.5 eliminado — mercado secundario, ruido en la selección principal
         if _ou_edge(p_u25, _pu25_pr):
-            candidates.append(("O/U","Under 2.5",p_u25, u25_ev, str(OU_ML), quarter_kelly(p_u25,OU_ML)))
+            candidates.append(("O/U","Under 2.5",_p_u25_final, calc_ev(_p_u25_final, OU_ML), str(OU_ML), quarter_kelly(_p_u25_final,OU_ML)))
         # U3.5 eliminado — siempre gana por default ~80%, sin valor
 
     # DC only meaningful for soccer WITH real ESPN moneyline (DC_ML is fictitious otherwise)
@@ -10372,7 +10392,7 @@ elif _active_page == "Parlays":
                 # ── ENRIQUECER CON MEMORIA DEL SHEET (team_profiles) ─────────
                 # Jerarquía: H2H > team stats reales > sim Poisson > prior liga
                 # _get_tp definida a nivel módulo abajo
-
+                _league = _sr_s.get("league", "")
                 _tp_h = _get_tp(_sr_s.get("home_team",""), _league)
                 _tp_a = _get_tp(_sr_s.get("away_team",""), _league)
 
