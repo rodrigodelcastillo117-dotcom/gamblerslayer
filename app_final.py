@@ -5696,13 +5696,13 @@ def run_monte_carlo(game, n=10_000):
     ]
 
     # Bonus por tipo de mercado según deporte
-    # Baseball/Hockey: ML es mercado de 2 outcomes — vig similar a O/U, debe competir
-    # Soccer: O/U y BTTS siempre sobre ML (3 outcomes = vig alto)
-    # Basketball/Football: O/U leve ventaja por mercado más líquido
     if sport_group in ("Baseball", "Hockey"):
         MARKET_EV_BONUS = {"O/U": 0.5, "BTTS": 0.5, "ML": 0.5}
     elif sport_group == "Soccer":
         MARKET_EV_BONUS = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
+    elif sport_group == "Basketball":
+        # NBA: ML del favorito compite con O/U — bonus extra por prob alta
+        MARKET_EV_BONUS = {"O/U": 1.5, "BTTS": 0.0, "ML": 1.0}
     else:
         MARKET_EV_BONUS = {"O/U": 1.5, "BTTS": 1.5, "ML": 0.0}
 
@@ -5711,22 +5711,26 @@ def run_monte_carlo(game, n=10_000):
 
     for mtype, label, prob, ev, ml, kelly in candidates_main:
         if prob is None: continue
-        # Para Baseball/Hockey: incluir ML aunque no tenga EV (prob alta es suficiente)
         _ev_real = ev if ev is not None else (
-            0 if sport_group not in ("Baseball", "Hockey") else
-            # Estimar EV implícito: si prob > 55% sin línea, asignar EV modesto
+            0 if sport_group not in ("Baseball", "Hockey", "Basketball") else
             max(0, (prob - 52) * 0.5) if mtype == "ML" else 0
         )
-        ev_adj = (_ev_real or 0) + MARKET_EV_BONUS.get(mtype, 0)
+        # Para NBA: penalizar fuertemente picks con prob < 30% (underdogs extremos)
+        _prob_penalty = 0
+        if sport_group == "Basketball" and mtype == "ML" and (prob or 0) < 30:
+            _prob_penalty = -50  # nunca seleccionar underdog como pick principal
+        ev_adj = (_ev_real or 0) + MARKET_EV_BONUS.get(mtype, 0) + _prob_penalty
         if ev_adj > best_ev_adj:
             best_ev_adj = ev_adj
             best_single = {"market":mtype, "label":label, "prob":prob,
                            "ev":ev or 0, "ml":ml, "kelly":kelly or 0}
 
-    # Si ningún candidato tiene datos de EV → fallback por mayor prob
+    # Si ningún candidato tiene datos de EV → fallback por MAYOR prob (no primera posición)
     if best_single is None:
         for mtype, label, prob, ev, ml, kelly in candidates_main:
             if prob is None: continue
+            # Solo considerar picks con prob razonable (>40% para ML)
+            if mtype == "ML" and (prob or 0) < 40: continue
             if best_single is None or (prob or 0) > best_single.get("prob", 0):
                 best_single = {"market":mtype, "label":label, "prob":prob,
                                "ev":ev or 0, "ml":ml, "kelly":kelly or 0}
@@ -7959,6 +7963,10 @@ if _active_page == "Rongol Picks":
                         p_u25 = round(_ples * 100, 1)
                         if p_btts == 0:
                             p_btts = round((1-_ms.exp(-_lhs))*(1-_ms.exp(-_las))*100, 1)
+                # Asegurar que _lhs/_las siempre estén definidas para best_soccer_market
+                if '_lhs' not in dir():
+                    _lhs = float(sim.get("lam_real_h") or 0)
+                    _las = float(sim.get("lam_real_a") or 0)
                 _bsm2 = best_soccer_market(p_o25, p_u25, p_btts,
                                              sim.get("o25_ev") or 0,
                                              sim.get("u25_ev") or 0,
@@ -10249,9 +10257,9 @@ elif _active_page == "Parlays":
                         f'</div>'
                         # Probability
                         f'<div style="text-align:right;flex-shrink:0">'
-                        f'<div style="font-size:1.3rem;font-weight:900;color:{_prob_c};'
+                        f'<div style="font-size:0.95rem;font-weight:900;color:{_prob_c};'
                         f'font-family:Barlow Condensed,sans-serif;line-height:1">{_prob_l:.0f}%</div>'
-                        f'<div style="font-size:0.5rem;color:#AAA;text-transform:uppercase;letter-spacing:1px">prob</div>'
+                        f'<div style="font-size:0.45rem;color:#AAA;text-transform:uppercase;letter-spacing:1px">prob</div>'
                         f'</div>'
                         f'</div>'
                     )
@@ -10268,44 +10276,43 @@ elif _active_page == "Parlays":
                 st.markdown(
                     # Outer card — white, more compact
                     '<div style="background:linear-gradient(160deg,#F6F6F9 0%,#EFEFF4 100%);'
-                    'border-radius:16px;overflow:hidden;margin:0 0 8px;'
+                    'border-radius:14px;overflow:hidden;margin:0 0 8px;'
                     'border:1px solid rgba(0,0,0,0.07);'
-                    'box-shadow:0 4px 16px rgba(0,0,0,0.18),0 1px 0 rgba(255,255,255,0.9) inset>'
+                    'box-shadow:0 3px 10px rgba(0,0,0,0.12),0 1px 0 rgba(255,255,255,0.9) inset>'
 
                     # Header row — compact
-                    f'<div style="padding:8px 14px 5px;display:flex;justify-content:space-between;align-items:center">'
+                    f'<div style="padding:7px 12px 4px;display:flex;justify-content:space-between;align-items:center">'
                     f'<div>'
-                    f'<div style="font-size:0.55rem;font-weight:700;color:#999;letter-spacing:1.2px;text-transform:uppercase">{len(_multi_legs)} PATAS · HOY+4D · MULTI-DEPORTE</div>'
-                    f'<div style="font-size:0.68rem;color:#444;margin-top:1px;font-weight:600">{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
+                    f'<div style="font-size:0.52rem;font-weight:700;color:#999;letter-spacing:1.2px;text-transform:uppercase">{len(_multi_legs)} PATAS · HOY+4D · MULTI-DEPORTE</div>'
+                    f'<div style="font-size:0.62rem;color:#444;margin-top:1px;font-weight:600">{"  ·  ".join(_SG_ICONS.get(l["sport"],"🎯")+" "+l["sport"] for l in _multi_legs)}</div>'
                     f'</div>'
                     f'<div style="text-align:right">'
-                    f'<div style="font-size:1.5rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_multi_prob_pct:.1f}%</div>'
-                    f'<div style="font-size:0.48rem;color:#888">prob. combinada</div>'
-                    f'<div style="font-size:0.62rem;color:{_ev_clr};font-weight:800">EV {_multi_ev:+.1f}</div>'
+                    f'<div style="font-size:1.1rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">{_multi_prob_pct:.1f}%</div>'
+                    f'<div style="font-size:0.45rem;color:#888">prob. combinada</div>'
+                    f'<div style="font-size:0.58rem;color:{_ev_clr};font-weight:800">EV {_multi_ev:+.1f}</div>'
                     f'</div></div>'
 
                     # Divider
                     '<div style="height:1px;background:rgba(0,0,0,0.07);margin:0 10px"></div>'
 
                     # Legs
-                    f'<div style="padding:8px 12px">{_legs_html}</div>'
+                    f'<div style="padding:6px 10px">{_legs_html}</div>'
 
-                    # Orange CTA
-                    f'<div style="margin:0 8px 10px;'
+                    # Orange CTA — más pequeño
+                    f'<div style="margin:0 8px 8px;'
                     f'background:linear-gradient(160deg,#FF8C00 0%,#E07000 100%);'
-                    f'border-radius:12px;padding:10px 14px;'
-                    f'border:1px solid rgba(255,255,255,0.35);'
-                    f'box-shadow:0 4px 14px rgba(255,140,0,0.4),0 1px 0 rgba(255,255,255,0.4) inset">'
+                    f'border-radius:10px;padding:7px 12px;'
+                    f'border:1px solid rgba(255,255,255,0.35)">'
                     f'<div style="display:flex;align-items:center;justify-content:space-between">'
                     f'<div>'
-                    f'<div style="font-size:0.5rem;font-weight:900;color:rgba(255,255,255,0.65);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:2px">💰 PAGO ESTIMADO</div>'
-                    f'<div style="font-size:1.7rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">+${round(_multi_payout-100):,}/100</div>'
+                    f'<div style="font-size:0.48rem;font-weight:900;color:rgba(255,255,255,0.65);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:1px">💰 PAGO EST.</div>'
+                    f'<div style="font-size:1.1rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif;line-height:1">+${round(_multi_payout-100):,}/100</div>'
                     f'</div>'
                     f'<div style="text-align:right">'
-                    f'<div style="font-size:0.48rem;color:rgba(255,255,255,0.6);margin-bottom:2px">Cuota acumulada</div>'
-                    f'<div style="font-size:1.2rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif">{round(_multi_payout/100,1)}×</div>'
+                    f'<div style="font-size:0.45rem;color:rgba(255,255,255,0.6);margin-bottom:1px">Cuota acum.</div>'
+                    f'<div style="font-size:0.95rem;font-weight:900;color:#FFF;font-family:Barlow Condensed,sans-serif">{round(_multi_payout/100,1)}×</div>'
                     f'</div></div>'
-                    f'<div style="font-size:0.5rem;color:rgba(255,255,255,0.5);margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.15)">Verifica cuotas en tu casa de apuestas antes de apostar.</div>'
+                    f'<div style="font-size:0.45rem;color:rgba(255,255,255,0.5);margin-top:3px">Verifica cuotas en tu casa antes de apostar.</div>'
                     f'</div>'
                     f'</div>',
                     unsafe_allow_html=True
