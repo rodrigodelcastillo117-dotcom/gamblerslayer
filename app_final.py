@@ -404,9 +404,10 @@ _selected = st.radio(
 )
 _active_page = st.session_state["active_page"]
 
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
+# ── Cargar team_profiles cache al inicio (una vez por sesión) ─────────────────
+if "_tp_cache_loaded" not in st.session_state:
+    load_team_profiles_cache()
+    st.session_state["_tp_cache_loaded"] = True
 # MOMIOS REALES — Casas de apuestas europeas (cuotas decimales)
 # Fuente: capturas de pantalla verificadas. Se usan como fallback cuando ESPN
 # no tiene ML para partidos de selecciones nacionales.
@@ -907,8 +908,8 @@ def _make_card(
 
         # CTA row 2: decimal más pequeño + prob + EV
         f'<div style="margin-bottom:8px">'
-        f'<span style="font-size:2.8rem;font-weight:900;color:{cta_text_color};font-family:Barlow Condensed,sans-serif;line-height:1">{pick_pct:.0f}%</span>'
-        f'<span style="font-size:1rem;font-weight:700;color:{cta_sub_color};margin-left:6px">probabilidad</span>'
+        f'<span style="font-size:3.2rem;font-weight:900;color:{cta_text_color};font-family:Barlow Condensed,sans-serif;line-height:1;display:block">{pick_pct:.0f}%</span>'
+        f'<span style="font-size:0.9rem;font-weight:700;color:{cta_sub_color};display:block;margin-top:2px">probabilidad</span>'
         f'</div>'
 
         # Stats grid
@@ -1583,10 +1584,13 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
         return 0, 1, [f"❌ Error conectando Sheets: {e}"]
 
     # Recopilar todos los equipos de los partidos actuales
-    all_games = st.session_state.get("_games_fetched", [])
+    all_games = st.session_state.get("_cached_games_data", [])
     if not all_games:
         log.append("⚠ No hay partidos en memoria — simula primero desde cualquier tab")
         return 0, 0, log
+
+    # Filtrar solo dicts válidos con partidos completados (tienen score)
+    all_games = [g for g in all_games if isinstance(g, dict) and g.get("home_team")]
 
     # Agrupar por (league, team)
     team_games = defaultdict(list)  # key: (league, team_name)
@@ -1689,7 +1693,46 @@ def populate_all_team_profiles(progress_bar=None, status_text=None):
     return written, failed, log
 
 
-def populate_national_teams_sheet():
+def load_team_profiles_cache():
+    """
+    Lee el tab 'team_profiles' del Google Sheet y carga en session_state._tp_cache_data.
+    Dict: {league::team_name → stats_dict}
+    Llama al inicio de la app si hay Sheets disponibles.
+    """
+    if not _gsheets_available():
+        return 0
+    try:
+        gc  = _get_gsheet_client()
+        sid = st.secrets["gsheets"]["spreadsheet_id"]
+        sh  = gc.open_by_key(sid)
+        try:
+            ws = sh.worksheet(_TP_TAB)
+        except Exception:
+            return 0
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return 0
+        headers = rows[0]
+        cache = {}
+        for row in rows[1:]:
+            if len(row) < 2: continue
+            d = {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
+            # Convertir números
+            for k in ("n_games","avg_scored","avg_conceded","avg_scored_home","avg_conceded_home",
+                      "avg_scored_away","avg_conceded_away","rate_o15","rate_o25","rate_o35",
+                      "rate_btts","rate_o15_home","rate_o25_home","rate_btts_home",
+                      "rate_o25_away","rate_btts_away","red_card_rate"):
+                try: d[k] = float(d.get(k,0) or 0)
+                except: d[k] = 0.0
+            team_id = d.get("team_id","")
+            tname   = d.get("team_name","")
+            if team_id: cache[team_id] = d
+            if tname:   cache[tname]   = d  # fallback por nombre solo
+        st.session_state["_tp_cache_data"] = cache
+        st.session_state["_tp_count_cached"] = len([k for k in cache if "::" in k])
+        return st.session_state["_tp_count_cached"]
+    except Exception:
+        return 0
     """
     Escribe datos reales de selecciones nacionales al Google Sheet.
     Hoja: 'national_teams'
@@ -5418,10 +5461,18 @@ def run_monte_carlo(game, n=10_000):
 
         # BTTS: use real league prior (computed from Poisson at league avg)
         _btts_prior = _prior[6] if _prior else 0.57  # 7th element = P_BTTS
-        if abs(p_btts - _btts_prior) >= OU_MIN_EDGE or _bypass_prior:
+        # Cuando DQ=0 (sin datos reales), el Poisson con lambda promedio de liga da
+        # un BTTS artificialmente bajo. Usar el prior de liga como base.
+        _p_btts_final = p_btts
+        if dq == 0 and _prior and _btts_prior > 0:
+            # Blend: 70% prior + 30% Poisson cuando no hay datos
+            _p_btts_final = round(0.70 * _btts_prior + 0.30 * p_btts, 3)
+        if abs(_p_btts_final - _btts_prior) >= OU_MIN_EDGE or _bypass_prior or dq == 0:
+            _btts_ev_f    = calc_ev(_p_btts_final, BTTS_ML)
+            _no_btts_ev_f = calc_ev(1-_p_btts_final, BTTS_ML)
             candidates += [
-                ("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,str(BTTS_ML),quarter_kelly(p_btts,BTTS_ML)),
-                ("BTTS","Ambos Anotan — NO",1-p_btts,no_btts_ev,str(BTTS_ML),quarter_kelly(1-p_btts,BTTS_ML)),
+                ("BTTS","Ambos Anotan — SÍ",_p_btts_final,_btts_ev_f,str(BTTS_ML),quarter_kelly(_p_btts_final,BTTS_ML)),
+                ("BTTS","Ambos Anotan — NO",1-_p_btts_final,_no_btts_ev_f,str(BTTS_ML),quarter_kelly(1-_p_btts_final,BTTS_ML)),
             ]
 
         # O/U: only add when simulation deviates meaningfully from league prior
@@ -6763,7 +6814,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324q"  # populate_all_team_profiles restaurada  # priors por liga, filtro 7 días hard, sin Mundial
+_SIM_VERSION = "v20260324s"  # Soñador memoria: H2H+team_stats+sim, load_tp_cache  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -8314,7 +8365,7 @@ if _active_page == "Rongol Picks":
                         '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px 6px">'
                         '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
                         + _logo_a +
-                        '<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
+                        '<span style="font-size:0.85rem;font-weight:900;color:#111;text-transform:uppercase;'
                         'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _away[:11] + '</span>'
                         '</div>'
                         '<div style="flex:1.2;text-align:center">'
@@ -8324,7 +8375,7 @@ if _active_page == "Rongol Picks":
                         '</div>'
                         '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
                         + _logo_h +
-                        '<span style="font-size:0.6rem;font-weight:800;color:#111;text-transform:uppercase;'
+                        '<span style="font-size:0.85rem;font-weight:900;color:#111;text-transform:uppercase;'
                         'text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _home[:11] + '</span>'
                         '</div></div>'
 
@@ -8355,8 +8406,8 @@ if _active_page == "Rongol Picks":
 
                         # Probabilidad grande, sin momio
                         '<div style="margin-bottom:10px">'
-                        '<span style="font-size:2.8rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + f"{_pick_pct:.0f}%" + '</span>'
-                        '<span style="font-size:1rem;font-weight:700;color:rgba(0,0,0,0.55);margin-left:6px">probabilidad</span>'
+                        '<span style="font-size:3.2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1;display:block">' + f"{_pick_pct:.0f}%" + '</span>'
+                        '<span style="font-size:0.9rem;font-weight:700;color:rgba(0,0,0,0.55);display:block;margin-top:2px">probabilidad</span>'
                         '</div>'
 
                         # Stats grid
@@ -9072,18 +9123,18 @@ elif _active_page == "Picks":
                     else:
                         _pills_h = _opill(g["away_team"][:6],f"{_a_pct:.0f}%") + _opill(_ou_lbl,f"{_p_ou:.0f}%",hi=_is_ou) + _opill(g["home_team"][:6],f"{_h_pct:.0f}%")
                 except:
-                    _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
+                    _pills_h = _opill(g["away_team"][:7],f"{_a_pct:.0f}%") + _opill(g["home_team"][:7],f"{_h_pct:.0f}%")
             else:
                 if _a_is_dia or _h_is_dia:
                     _fav_team = g["home_team"][:6] if _h_pct >= _a_pct else g["away_team"][:6]
                     _fav_d    = _h_dec if _h_pct >= _a_pct else _a_dec
                     _dia_lbl  = f"H/C {_hcap}" if _hcap else "💎 FAV"
                     if _a_is_dia:
-                        _pills_h = _opill(_dia_lbl, ">15", diamond=True) + _opill(_fav_team, _fav_d, hi=True)
+                        _pills_h = _opill(_dia_lbl, ">15", diamond=True) + _opill(g["home_team"][:7], f"{_h_pct:.0f}%", hi=True)
                     else:
-                        _pills_h = _opill(_fav_team, _fav_d, hi=True) + _opill(_dia_lbl, ">15", diamond=True)
+                        _pills_h = _opill(g["away_team"][:7], f"{_a_pct:.0f}%", hi=True) + _opill(_dia_lbl, ">15", diamond=True)
                 else:
-                    _pills_h = _opill(g["away_team"][:7],_a_dec) + _opill(g["home_team"][:7],_h_dec)
+                    _pills_h = _opill(g["away_team"][:7],f"{_a_pct:.0f}%") + _opill(g["home_team"][:7],f"{_h_pct:.0f}%")
 
         # Spread pill
         _spr_line_o = g.get("odds",{}).get("spread_line","") or ""
@@ -9192,8 +9243,8 @@ elif _active_page == "Picks":
 
             # Fila 2: probabilidad grande (sin momio)
             '<div style="margin-bottom:10px">'
-            '<span style="font-size:2.8rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1">' + f"{_pick_pct:.0f}%" + '</span>'
-            '<span style="font-size:1rem;font-weight:700;color:rgba(0,0,0,0.55);margin-left:6px">probabilidad</span>'
+            '<span style="font-size:3.2rem;font-weight:900;color:#111;font-family:Barlow Condensed,sans-serif;line-height:1;display:block">' + f"{_pick_pct:.0f}%" + '</span>'
+            '<span style="font-size:0.9rem;font-weight:700;color:rgba(0,0,0,0.55);display:block;margin-top:2px">probabilidad</span>'
             '</div>'
 
             # ── Segundo pick: ML del favorito (solo Baseball y Hockey) ─────────
@@ -10003,14 +10054,91 @@ elif _active_page == "Parlays":
                 _o25ev   = float(_sim_s.get("o25_ev") or 0)
                 _p_u25   = float(_sim_s.get("p_u25") or 0)
                 _u25ev   = float(_sim_s.get("u25_ev") or 0)
-                # Calcular p_u25 desde p_o25 si no existe
                 if _p_u25 == 0 and _p_o25 > 0:
                     _p_u25 = round(100.0 - _p_o25, 1)
                 _p_btts  = float(_sim_s.get("p_btts") or 0)
                 _btts_ev = float(_sim_s.get("btts_ev") or 0)
-                # Si p_o25 es 0, usar prior de liga primero, luego lambda
+
+                # ── ENRIQUECER CON MEMORIA DEL SHEET (team_profiles) ─────────
+                # Jerarquía: H2H > team stats reales > sim Poisson > prior liga
+                def _get_tp(team_name, league):
+                    """Lee stats reales del equipo desde team_profiles en cache."""
+                    try:
+                        _tp_cache = st.session_state.get("_tp_cache_data", {})
+                        key = f"{league}::{team_name}"
+                        return _tp_cache.get(key) or _tp_cache.get(team_name)
+                    except:
+                        return None
+
+                _tp_h = _get_tp(_sr_s.get("home_team",""), _league)
+                _tp_a = _get_tp(_sr_s.get("away_team",""), _league)
+
+                # Si tenemos stats reales de ambos equipos, calcular lambdas reales
+                if _tp_h and _tp_a:
+                    _lam_h_mem = float(_tp_h.get("avg_scored_home") or _tp_h.get("avg_scored") or 0)
+                    _lam_a_mem = float(_tp_a.get("avg_scored_away") or _tp_a.get("avg_scored") or 0)
+                    _lam_gc_h  = float(_tp_h.get("avg_conceded_home") or _tp_h.get("avg_conceded") or 0)
+                    _lam_gc_a  = float(_tp_a.get("avg_conceded_away") or _tp_a.get("avg_conceded") or 0)
+
+                    if _lam_h_mem > 0 and _lam_a_mem > 0:
+                        import math as _math_mem
+                        # Lambda ajustada: ataque del local vs defensa del visitante (Dixon-Coles style)
+                        _lam_h_adj = (_lam_h_mem + _lam_gc_a) / 2.0
+                        _lam_a_adj = (_lam_a_mem + _lam_gc_h) / 2.0
+                        _mu_mem    = _lam_h_adj + _lam_a_adj
+
+                        # Recalcular p_o25 y p_btts con lambdas reales
+                        _p_le2_mem = sum(_math_mem.exp(-_mu_mem) * (_mu_mem**k) / _math_mem.factorial(k) for k in range(3))
+                        _p_o25_mem = round((1 - _p_le2_mem) * 100, 1)
+                        _p_btts_mem = round((1 - _math_mem.exp(-_lam_h_adj)) * (1 - _math_mem.exp(-_lam_a_adj)) * 100, 1)
+
+                        # Usar rates históricas si disponibles (más confiables que Poisson puro)
+                        _rate_o25_h = float(_tp_h.get("rate_o25") or 0)
+                        _rate_o25_a = float(_tp_a.get("rate_o25") or 0)
+                        _rate_btts_h = float(_tp_h.get("rate_btts") or 0)
+                        _rate_btts_a = float(_tp_a.get("rate_btts") or 0)
+
+                        if _rate_o25_h > 0 and _rate_o25_a > 0:
+                            # Blend: 50% Poisson + 50% tasa histórica de ambos
+                            _p_o25_hist = round((_rate_o25_h + _rate_o25_a) / 2 * 100, 1)
+                            _p_o25_mem  = round(0.50 * _p_o25_mem + 0.50 * _p_o25_hist, 1)
+
+                        if _rate_btts_h > 0 and _rate_btts_a > 0:
+                            _p_btts_hist = round((_rate_btts_h + _rate_btts_a) / 2 * 100, 1)
+                            _p_btts_mem  = round(0.50 * _p_btts_mem + 0.50 * _p_btts_hist, 1)
+
+                        # Aplicar con más peso que el sim puro cuando hay datos reales
+                        _n_h = int(_tp_h.get("n_games") or 0)
+                        _n_a = int(_tp_a.get("n_games") or 0)
+                        _mem_weight = min(0.70, (_n_h + _n_a) / 30.0)  # max 70% peso de memoria
+
+                        if _mem_weight > 0.1:
+                            if _p_o25 > 0:
+                                _p_o25 = round(_mem_weight * _p_o25_mem + (1 - _mem_weight) * _p_o25, 1)
+                                _p_u25 = round(100.0 - _p_o25, 1)
+                            else:
+                                _p_o25 = _p_o25_mem
+                                _p_u25 = round(100.0 - _p_o25, 1)
+                            if _p_btts > 0:
+                                _p_btts = round(_mem_weight * _p_btts_mem + (1 - _mem_weight) * _p_btts, 1)
+                            else:
+                                _p_btts = _p_btts_mem
+
+                # H2H como señal adicional (ya presente en _h2h dict)
+                _h2h_o25_rate = float(_h2h.get("over25_rate") or _h2h.get("o25_rate") or 0)
+                _h2h_btts_rate = float(_h2h.get("btts_rate") or 0)
+                _h2h_n = int(_h2h.get("n") or _h2h.get("n_games") or 0)
+
+                if _h2h_n >= 3:  # mínimo 3 partidos H2H para ser señal confiable
+                    _h2h_weight = min(0.35, _h2h_n / 20.0)  # max 35% peso H2H
+                    if _h2h_o25_rate > 0 and _p_o25 > 0:
+                        _p_o25 = round((1 - _h2h_weight) * _p_o25 + _h2h_weight * _h2h_o25_rate * 100, 1)
+                        _p_u25 = round(100.0 - _p_o25, 1)
+                    if _h2h_btts_rate > 0 and _p_btts > 0:
+                        _p_btts = round((1 - _h2h_weight) * _p_btts + _h2h_weight * _h2h_btts_rate * 100, 1)
+
+                # Si aún sin datos, usar prior de liga
                 if _p_o25 == 0:
-                    # Acceso directo — LEAGUE_OU_PRIORS es módulo-level
                     try:
                         _prior_son = LEAGUE_OU_PRIORS.get(_league)
                     except Exception:
