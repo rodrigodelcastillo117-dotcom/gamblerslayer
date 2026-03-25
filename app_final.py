@@ -1093,6 +1093,7 @@ if "_tp_cache_loaded" not in st.session_state:
 
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
+    games=st.session_state.get("_cached_games_data",[])
     if not sr:
         st.markdown("""<div class="empty-state">
           <div class="empty-icon">🎲</div>
@@ -2149,6 +2150,7 @@ if _active_page == "Rongol Picks":
         st.markdown(f'<div style="text-align:center;font-family:Inter,sans-serif;font-size:0.806rem;color:#444444">📅 {today_str} · {total_sims:,} simulaciones · {_src}</div>',unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 elif _active_page == "Picks":
+    games = st.session_state.get("_cached_games_data", [])
     # (CSS handled per-element)
     # PRÓXIMOS PARTIDOS — sport tiles + date/league expanders  (TOP of tab)
     # ══════════════════════════════════════════════════════════════════════════
@@ -3028,6 +3030,7 @@ elif _active_page == "Picks":
 
 # ══════════════════════════════════════════════════════════════════════════════
 elif _active_page == "Parlays":
+    games = st.session_state.get("_cached_games_data", [])
     sr=st.session_state.get("sim_results",[])
     if not sr:
         st.markdown("""<div class="empty-state">
@@ -6656,6 +6659,7 @@ color:#f0c040;letter-spacing:1px">⚔️ Arena de Supervivencia</div>
 
 
 elif _active_page == "Config":
+    games = st.session_state.get("_cached_games_data", [])
     st.markdown('<div class="section-heading">⚙️ Config</div>', unsafe_allow_html=True)
 
     st.markdown('<div style="font-size:0.65rem;color:var(--orange);font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">🔮 SIMULACIONES</div>', unsafe_allow_html=True)
@@ -12659,7 +12663,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260325a"  # Confianza: rationale, umbral 52%, picks variados, NT  # priors por liga, filtro 7 días hard, sin Mundial
+_SIM_VERSION = "v20260325b"  # Fix: games definida en todos los tabs, font-family OK  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
