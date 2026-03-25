@@ -3612,17 +3612,19 @@ def _pick_from_real_data(r, for_rongol=False):
         if h_red > 0.3 or a_red > 0.3:
             score_u25 += 4
 
-        # Sin datos reales: prior de liga ajusta el score
-        if not _has_data and _prior:
-            score_btts += (_prior[6] - 0.5) * 40
-            score_o25  += (_prior[4] - 0.5) * 40
-            score_u25  += (_prior[1] - 0.5) * 40
+        # Prior de liga: ajuste LEVE cuando hay datos, FUERTE solo cuando DQ=0
+        # Esto da varianza real: cada partido tiene probs distintas del sim
+        if _prior:
+            _pw = 5 if _has_data else 20
+            score_btts += (_prior[6] - 0.5) * _pw
+            score_o25  += (_prior[4] - 0.5) * _pw
+            score_u25  += (_prior[1] - 0.5) * _pw
 
         # Decisión: mercado con mayor score total
         opts = []
         if p_btts > 0:  opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"",score_btts))
         if p_o25  > 0:  opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml,score_o25))
-        if p_u25  > 45: opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml,score_u25))
+        if p_u25  > 40: opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml,score_u25))
 
         if opts:
             best = max(opts, key=lambda x: x[5])
@@ -3636,30 +3638,49 @@ def _pick_from_real_data(r, for_rongol=False):
         return None
 
     # ══════════════════════════════════════════════════════════════════════
-    # 🏒 NHL — ML del favorito
+    # 🏒 NHL — ML del favorito + O/U 5.5 de ESPN
     # ══════════════════════════════════════════════════════════════════════
     elif _sg == "Hockey":
         h_pct = float(sim.get("home_pct") or 0)
         a_pct = float(sim.get("away_pct") or 0)
         _fh   = h_pct >= a_pct
-        return _ret("ML",
-            r.get("home_team","") if _fh else r.get("away_team",""),
-            max(h_pct, a_pct),
-            (sim.get("home_ev",0) if _fh else sim.get("away_ev",0)) or 0,
-            (sim.get("home_ml","") if _fh else sim.get("away_ml","")) or "")
+        fav_t = r.get("home_team","") if _fh else r.get("away_team","")
+        fav_p = max(h_pct, a_pct)
+        fav_ev= (sim.get("home_ev",0) if _fh else sim.get("away_ev",0)) or 0
+        fav_ml= (sim.get("home_ml","") if _fh else sim.get("away_ml","")) or ""
+        # O/U linea ESPN (base 5.5)
+        p_o = float(sim.get("p_o_total") or 0)
+        p_u = float(sim.get("p_u_total") or 0)
+        try:    ou_line = float(str(sim.get("ou_line","") or "").lstrip("~"))
+        except: ou_line = 5.5
+        if ou_line == 0: ou_line = 5.5
+        ou_best = max(p_o, p_u)
+        ou_lbl  = f"Over {ou_line:.1f}" if p_o >= p_u else f"Under {ou_line:.1f}"
+        # Si O/U tiene más certeza que ML → O/U, sino ML
+        if ou_best >= 55 and ou_best > fav_p:
+            return _ret("O/U", ou_lbl, ou_best, 0, "")
+        return _ret("ML", fav_t, fav_p, fav_ev, fav_ml)
 
     # ══════════════════════════════════════════════════════════════════════
-    # 🏀 NBA — ML del favorito
+    # 🏀 NBA — ML del favorito + O/U linea ESPN real
     # ══════════════════════════════════════════════════════════════════════
     elif _sg == "Basketball":
         h_pct = float(sim.get("home_pct") or 0)
         a_pct = float(sim.get("away_pct") or 0)
         _fh   = h_pct >= a_pct
-        return _ret("ML",
-            r.get("home_team","") if _fh else r.get("away_team",""),
-            max(h_pct, a_pct),
-            (sim.get("home_ev",0) if _fh else sim.get("away_ev",0)) or 0,
-            (sim.get("home_ml","") if _fh else sim.get("away_ml","")) or "")
+        fav_t = r.get("home_team","") if _fh else r.get("away_team","")
+        fav_p = max(h_pct, a_pct)
+        fav_ev= (sim.get("home_ev",0) if _fh else sim.get("away_ev",0)) or 0
+        fav_ml= (sim.get("home_ml","") if _fh else sim.get("away_ml","")) or ""
+        p_o = float(sim.get("p_o_total") or 0)
+        p_u = float(sim.get("p_u_total") or 0)
+        try:    ou_line = float(str(sim.get("ou_line","") or "").lstrip("~"))
+        except: ou_line = 0.0
+        ou_best = max(p_o, p_u)
+        if ou_line > 0 and ou_best >= 55 and ou_best > fav_p:
+            ou_lbl = f"Over {ou_line:.1f}" if p_o >= p_u else f"Under {ou_line:.1f}"
+            return _ret("O/U", ou_lbl, ou_best, 0, "")
+        return _ret("ML", fav_t, fav_p, fav_ev, fav_ml)
 
     # ══════════════════════════════════════════════════════════════════════
     # ⚾ MLB — ML del favorito
