@@ -3570,86 +3570,127 @@ def _pick_from_real_data(r, for_rongol=False):
                 p_btts = round((1-_mrd.exp(-_lh))*(1-_mrd.exp(-_la))*100, 1)
 
         # Score por mercado — empieza con prob de la simulación
-        score_btts = p_btts
-        score_o25  = p_o25
-        score_u25  = p_u25
+        # ── Decisión: 2 paths claros ─────────────────────────────────────────
 
-        # Ajuste por goles reales del equipo
-        if h_scored > 0 and a_scored > 0:
-            avg_total = h_scored + a_scored
-            if avg_total > 2.7:
-                score_o25  += 8; score_btts += 5
-            elif avg_total < 2.2:
-                score_u25  += 8; score_o25  -= 5
-            if h_scored < 0.9 or a_scored < 0.9:
-                score_btts -= 10
-            elif h_scored >= 1.5 and a_scored >= 1.5:
-                score_btts += 8
-            if h_conceded > 1.5 and a_conceded > 1.5:
-                score_o25 += 6; score_btts += 4
+        if not _has_data:
+            # ── PATH A: SIN datos de equipo → mini-simulación Poisson ──────
+            # Usa p_home/p_away (Elo implícito del sim) para estimar lambdas
+            # Esto diferencia cada partido aunque DQ=0
+            import random as _rnd2
 
-        # Ajuste por tasas históricas del equipo
-        if h_rate_o25 > 0 and a_rate_o25 > 0:
-            avg_ro25 = (h_rate_o25 + a_rate_o25) / 2
-            if avg_ro25 > 0.60:   score_o25 += 7
-            elif avg_ro25 < 0.40: score_u25 += 7; score_o25 -= 5
-        if h_rate_btts > 0 and a_rate_btts > 0:
-            avg_rbtts = (h_rate_btts + a_rate_btts) / 2
-            if avg_rbtts > 0.55:   score_btts += 7
-            elif avg_rbtts < 0.40: score_btts -= 8
+            # REGLA 0: ML si hay favorito claro (≥55%)
+            # Para WCQ: Türkiye(local), Italy(local), Denmark(local) pueden tener >55%
+            # home_team = LOCAL (ya corregido por _KNOWN_VENUES)
+            _fav_p0 = max(p_home, p_away)
+            if _fav_p0 >= 55:
+                _is_home_fav = p_home >= p_away
+                return _ret("ML",
+                    r.get("home_team","") if _is_home_fav else r.get("away_team",""),
+                    _fav_p0,
+                    (sim.get("home_ev",0) if _is_home_fav else sim.get("away_ev",0)) or 0,
+                    (sim.get("home_ml","") if _is_home_fav else sim.get("away_ml","")) or "")
 
-        # Ajuste por H2H
-        if h2h_n >= 3:
-            if h2h_o25 > 0.60:   score_o25 += 6; score_btts += 3
-            elif h2h_o25 < 0.40: score_u25 += 6; score_o25  -= 4
-            if h2h_btts > 0.55:  score_btts += 6
+            # Lambda base desde prior de liga
+            _lam_base = 1.35
+            if _prior:
+                _po_pr = _prior[4]
+                if _po_pr > 0.6:   _lam_base = 1.65
+                elif _po_pr > 0.5: _lam_base = 1.40
+                elif _po_pr > 0.4: _lam_base = 1.20
+                else:              _lam_base = 1.05
 
-        # Clima adverso → menos goles
-        if wind_kmh > 40 or rain:
-            score_o25 -= 5; score_btts -= 3; score_u25 += 5
+            # Lambdas ajustados por fuerza relativa de cada equipo
+            _p_h = p_home / 100 if p_home > 0 else 0.38
+            _p_a = p_away / 100 if p_away > 0 else 0.28
+            _p_d = max(0.01, 1 - _p_h - _p_a)
+            _str_h = _p_h + 0.5 * _p_d
+            _str_a = _p_a + 0.5 * _p_d
+            _str_tot = _str_h + _str_a
+            _lam_h = max(0.5, min(2.8, _lam_base * (_str_h / (_str_tot / 2))))
+            _lam_a = max(0.5, min(2.8, _lam_base * (_str_a / (_str_tot / 2))))
 
-        # Tarjetas rojas frecuentes → menos goles
-        if h_red > 0.3 or a_red > 0.3:
-            score_u25 += 4
+            # Mini-sim Poisson (2000 iteraciones)
+            _btts_c = _o25_c = _u25_c = 0
+            _N = 2000
+            import math as _mrd2
+            for _i2 in range(_N):
+                def _pois2(lam):
+                    _L=_mrd2.exp(-lam); _k=0; _pp=1.0
+                    while _pp>_L: _k+=1; _pp*=_rnd2.random()
+                    return _k-1
+                _gh2 = _pois2(_lam_h); _ga2 = _pois2(_lam_a)
+                if _gh2 > 0 and _ga2 > 0: _btts_c += 1
+                if _gh2 + _ga2 > 2.5: _o25_c += 1
+                else: _u25_c += 1
 
-        # ── Decisión final ────────────────────────────────────────────────
-        if _has_data:
-            # CON datos reales: scoring system diferencia partido a partido
+            _pb = round(_btts_c / _N * 100, 1)
+            _po = round(_o25_c  / _N * 100, 1)
+            _pu = round(_u25_c  / _N * 100, 1)
+
+            # Reglas de decisión sobre resultados de la mini-sim
+            if _pu >= 70:
+                return _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
+            if _po >= 58:
+                return _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
+            if _pb >= 45 and _pu >= 40:
+                return _ret("BTTS", "Ambos Anotan — SÍ", _pb, btts_ev, "")
+            if _po >= 50:
+                return _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
+            if _pu >= 55:
+                return _ret("BTTS", "Ambos Anotan — SÍ", _pb, btts_ev, "") if _pb >= 38 else _ret("O/U", "Under 2.5", _pu, u25_ev, ou_ml)
+            return _ret("BTTS", "Ambos Anotan — SÍ", _pb, btts_ev, "") if _pb >= 35 else _ret("O/U", "Over 2.5", _po, o25_ev, ou_ml)
+
+        else:
+            # ── PATH B: CON datos reales → scoring system ───────────────────
+            score_btts = p_btts
+            score_o25  = p_o25
+            score_u25  = p_u25
+
+            if h_scored > 0 and a_scored > 0:
+                avg_total = h_scored + a_scored
+                if avg_total > 2.7:   score_o25 += 8; score_btts += 5
+                elif avg_total < 2.2: score_u25 += 8; score_o25  -= 5
+                if h_scored < 0.9 or a_scored < 0.9: score_btts -= 10
+                elif h_scored >= 1.5 and a_scored >= 1.5: score_btts += 8
+                if h_conceded > 1.5 and a_conceded > 1.5: score_o25 += 6; score_btts += 4
+
+            if h_rate_o25 > 0 and a_rate_o25 > 0:
+                avg_ro25 = (h_rate_o25 + a_rate_o25) / 2
+                if avg_ro25 > 0.60:   score_o25 += 7
+                elif avg_ro25 < 0.40: score_u25 += 7; score_o25 -= 5
+            if h_rate_btts > 0 and a_rate_btts > 0:
+                avg_rbtts = (h_rate_btts + a_rate_btts) / 2
+                if avg_rbtts > 0.55:  score_btts += 7
+                elif avg_rbtts < 0.40: score_btts -= 8
+
+            if h2h_n >= 3:
+                if h2h_o25 > 0.60:   score_o25 += 6; score_btts += 3
+                elif h2h_o25 < 0.40: score_u25 += 6; score_o25  -= 4
+                if h2h_btts > 0.55:  score_btts += 6
+
+            if wind_kmh > 40 or rain: score_o25 -= 5; score_btts -= 3; score_u25 += 5
+            if h_red > 0.3 or a_red > 0.3: score_u25 += 4
+
             if _prior:
                 score_btts += (_prior[6] - 0.5) * 8
                 score_o25  += (_prior[4] - 0.5) * 8
                 score_u25  += (_prior[1] - 0.5) * 8
 
-            # ── Reglas unificadas (mismas que DQ=0) ──────────────────────
-            # Under 2.5: solo si sim ≥70% Y scoring lo confirma
+            # ML si favorito claro (≥55%)
+            _fav_p2 = max(p_home, p_away)
+            if _fav_p2 >= 55:
+                _fh2 = p_home >= p_away
+                return _ret("ML",
+                    r.get("home_team","") if _fh2 else r.get("away_team",""),
+                    _fav_p2,
+                    (sim.get("home_ev",0) if _fh2 else sim.get("away_ev",0)) or 0,
+                    (sim.get("home_ml","") if _fh2 else sim.get("away_ml","")) or "")
+
+            # Under solo si ≥70%
             if p_u25 >= 70 and score_u25 >= max(score_o25, score_btts):
                 return _ret("O/U", "Under 2.5", p_u25, u25_ev, ou_ml)
 
-            # BTTS: partido cerrado donde ambos anotan
-            if p_btts >= 50 and p_u25 >= 48 and score_btts >= max(score_o25, score_u25):
-                return _ret("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev, "")
-
-            # Over 2.5: partido abierto
-            if p_o25 >= 52 and score_o25 >= max(score_btts, score_u25):
-                return _ret("O/U", "Over 2.5", p_o25, o25_ev, ou_ml)
-
-            # ML: favorito claro (≥60%)
-            _fav_p2 = max(p_home, p_away)
-            if _fav_p2 >= 60:
-                _fav_home2 = p_home >= p_away
-                return _ret("ML",
-                    r.get("home_team","") if _fav_home2 else r.get("away_team",""),
-                    _fav_p2,
-                    (sim.get("home_ev",0) if _fav_home2 else sim.get("away_ev",0)) or 0,
-                    (sim.get("home_ml","") if _fav_home2 else sim.get("away_ml","")) or "")
-
-            # Partido cerrado 55-70% U25
-            if p_u25 >= 55:
-                if p_btts >= 40:
-                    return _ret("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev, "")
-                return _ret("O/U", "Under 2.5", p_u25, u25_ev, ou_ml)
-
-            # Scoring normal para el resto
+            # Scoring normal
             opts = []
             if p_btts > 0:  opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"",score_btts))
             if p_o25  > 0:  opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml,score_o25))
@@ -3657,100 +3698,7 @@ def _pick_from_real_data(r, for_rongol=False):
             if opts:
                 best = max(opts, key=lambda x: x[5])
                 return _ret(best[0], best[1], best[2], best[3], best[4])
-            # Default: Over 2.5
-            if p_o25 > 0:
-                return _ret("O/U", "Over 2.5", p_o25, o25_ev, ou_ml)
-
-        else:
-            # SIN datos directos — estimar lambdas desde probabilidades ML del partido
-            # Las probs ML (home_pct, away_pct, draw_pct) SÍ varían por partido aunque DQ=0
-            # porque se calculan con Elo implícito de records (W-L) y ranking FIFA
-            # Usamos estas probs para estimar agresividad ofensiva de cada equipo
-            import math as _mrd2
-            import random as _rnd2
-
-            # Obtener lambda base de la liga
-            _lam_base = 1.35  # promedio por equipo
-            if _prior:
-                # Inferir lambda de liga desde P_O25 del prior
-                # P(Poisson(λ) > 2.5) ≈ P_O25 → resolver λ numéricamente (aprox)
-                _po_pr = _prior[4]
-                if _po_pr > 0.6:   _lam_base = 1.65
-                elif _po_pr > 0.5: _lam_base = 1.40
-                elif _po_pr > 0.4: _lam_base = 1.20
-                else:              _lam_base = 1.05
-
-            # Ajustar lambdas por fuerza relativa de cada equipo
-            # Un equipo más probable de ganar → ataca más, defiende mejor
-            _p_h = p_home / 100 if p_home > 0 else 0.4
-            _p_a = p_away / 100 if p_away > 0 else 0.3
-            _p_d = max(0, 1 - _p_h - _p_a)
-
-            # λ_h proporcional a prob de victoria local + mitad del empate
-            _str_h = _p_h + 0.5 * _p_d
-            _str_a = _p_a + 0.5 * _p_d
-            _str_tot = max(_str_h + _str_a, 0.01)
-
-            _lam_h = _lam_base * (_str_h / (_str_tot / 2))
-            _lam_a = _lam_base * (_str_a / (_str_tot / 2))
-            _lam_h = max(0.5, min(2.8, _lam_h))
-            _lam_a = max(0.5, min(2.8, _lam_a))
-
-            # Mini simulación Poisson para este partido (1000 iteraciones rápidas)
-            _btts_c = _o25_c = _u25_c = 0
-            _n_mini = 1000
-            for _ in range(_n_mini):
-                # Poisson sampling simple
-                def _pois(lam):
-                    import math
-                    L = math.exp(-lam); k = 0; p2 = 1.0
-                    while p2 > L: k += 1; p2 *= _rnd2.random()
-                    return k - 1
-                _gh = _pois(_lam_h); _ga = _pois(_lam_a)
-                if _gh > 0 and _ga > 0: _btts_c += 1
-                if _gh + _ga > 2.5: _o25_c += 1
-                else: _u25_c += 1
-
-            p_btts_e = round(_btts_c / _n_mini * 100, 1)
-            p_o25_e  = round(_o25_c  / _n_mini * 100, 1)
-            p_u25_e  = round(_u25_c  / _n_mini * 100, 1)
-            # NO mezclar con prior — la mini-sim ya usa lambdas calibrados
-            # por la fuerza relativa de cada equipo específico
-
-            # ── Reglas de decisión exactas ────────────────────────────────
-            # REGLA 1: Under 2.5 solo si sim ≥70% — partido muy defensivo
-            if p_u25_e >= 70:
-                return _ret("O/U", "Under 2.5", p_u25_e, u25_ev, ou_ml)
-
-            # REGLA 2: BTTS cuando sim muestra ambos anotan pero <3 goles
-            # Señal: BTTS≥50% Y U25≥48% = partido cerrado donde ambos marcan
-            if p_btts_e >= 50 and p_u25_e >= 48:
-                return _ret("BTTS", "Ambos Anotan — SÍ", p_btts_e, btts_ev, "")
-
-            # REGLA 3: Over 2.5 si sim dice >52% (partido abierto)
-            if p_o25_e >= 52:
-                return _ret("O/U", "Over 2.5", p_o25_e, o25_ev, ou_ml)
-
-            # REGLA 4: partido cerrado (U25>55% pero no llega a 70%)
-            # → BTTS si ambos tienen chance de anotar, sino U2.5
-            if p_u25_e >= 55:
-                if p_btts_e >= 40:
-                    return _ret("BTTS", "Ambos Anotan — SÍ", p_btts_e, btts_ev, "")
-                return _ret("O/U", "Under 2.5", p_u25_e, u25_ev, ou_ml)
-
-            # REGLA 5: ML del favorito si tiene ventaja clara (≥60%)
-            # Ej: Polonia 60% sobre Albania, Italia 65% sobre N.Ireland
-            _fav_p = max(p_home, p_away)
-            if _fav_p >= 60:
-                _fav_team = r.get("home_team","") if p_home >= p_away else r.get("away_team","")
-                _fav_ev   = sim.get("home_ev",0) if p_home >= p_away else sim.get("away_ev",0)
-                _fav_ml   = sim.get("home_ml","") if p_home >= p_away else sim.get("away_ml","")
-                return _ret("ML", _fav_team, _fav_p, _fav_ev or 0, _fav_ml or "")
-
-            # DEFAULT: BTTS si ambos tienen algo (≥38%), sino Over 2.5
-            if p_btts_e >= 38:
-                return _ret("BTTS", "Ambos Anotan — SÍ", p_btts_e, btts_ev, "")
-            return _ret("O/U", "Over 2.5", p_o25_e, o25_ev, ou_ml)
+            return _ret("O/U", "Over 2.5", p_o25, o25_ev, ou_ml)
 
         # Fallback: resultado más probable del sim
         if p_home > p_away:
