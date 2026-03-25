@@ -11300,11 +11300,11 @@ elif _active_page == "En Vivo":
             if _time_m:
                 _min_in_per = int(_time_m.group(1))
                 _sec_in_per = int(_time_m.group(2))
-                # ESPN muestra tiempo restante en el periodo
-                mins_left_in_period = _min_in_per + _sec_in_per / 60
+                # ESPN muestra tiempo RESTANTE en el periodo
+                mins_left_in_period  = _min_in_per + _sec_in_per / 60
                 mins_played_in_period = max(0, 20 - mins_left_in_period)
             else:
-                mins_left_in_period = 10
+                mins_left_in_period  = 10
                 mins_played_in_period = 10
 
             # Tiempo total jugado y restante (regulation = 60 min)
@@ -11312,80 +11312,99 @@ elif _active_page == "En Vivo":
             mins_played    = periods_played * 20 + mins_played_in_period
             mins_left_reg  = max(60 - mins_played, 0)
 
-            # Tasa de goles por minuto observada
-            goal_rate = total_score / max(mins_played, 1)  # goles/min
-
-            # Proyección de goles restantes en tiempo regular
-            proj_remaining = goal_rate * mins_left_reg
+            # ── Tasa de goles: blend entre observada y promedio NHL ───────────
+            # NHL: ~6.0 goles/60min promedio de liga (2024-25)
+            NHL_AVG_RATE = 6.0 / 60  # goles/min
+            obs_rate     = total_score / max(mins_played, 1)
+            # Peso de la tasa observada crece conforme avanza el partido
+            # Con 10 min jugados → 20% obs; con 30 min → 50%; con 50 min → 80%
+            obs_weight   = min(0.85, mins_played / 60)
+            blended_rate = obs_weight * obs_rate + (1 - obs_weight) * NHL_AVG_RATE
+            proj_remaining = blended_rate * mins_left_reg
             proj_total     = total_score + proj_remaining
 
-            # ── Línea ajustada en vivo ────────────────────────────────
-            # Cuántos goles faltan para Over/Under sobre la línea original
+            import math as _mh
+
+            def _poisson_p_over(lam, k_min):
+                """P(X >= k_min) donde X ~ Poisson(lam)."""
+                if k_min <= 0: return 1.0
+                if lam <= 0:   return 0.02
+                p_under = sum(
+                    _mh.exp(-lam) * (lam**k) / _mh.factorial(k)
+                    for k in range(int(k_min))
+                )
+                return max(0.02, min(0.98, 1 - p_under))
+
+            # ── Evaluar líneas: ESPN (6.5) y alternativa (5.5) ───────────────
             if ou_line > 0:
-                goals_to_over  = max(0, ou_line - total_score)  # goles que faltan para Over
-                over_possible  = goals_to_over > 0  # False si ya se superó la línea
-                under_possible = total_score < ou_line  # False si ya se cubrió Over
+                _lam_rem = blended_rate * mins_left_reg
 
-                # Línea restante efectiva (lo que las casas cobran en vivo)
-                live_line = round(goals_to_over * 2) / 2  # redondear a 0.5
+                # Línea ESPN (6.5)
+                goals_to_espn  = max(0.0, ou_line - total_score)
+                _p_over_espn   = _poisson_p_over(_lam_rem, goals_to_espn)
+                _p_under_espn  = 1.0 - _p_over_espn
 
-                # Calcular prob Over en vivo desde proyección
-                if mins_left_reg > 0 and goal_rate > 0:
-                    # Prob Poisson de meter ≥ goals_to_over en el tiempo restante
-                    import math as _mh
-                    _lam_rem = goal_rate * mins_left_reg
-                    if goals_to_over <= 0:
-                        _p_over_live = 1.0  # ya se superó
-                    else:
-                        # P(X >= goals_to_over) donde X ~ Poisson(lam_rem)
-                        _p_under_live = sum(
-                            _mh.exp(-_lam_rem) * (_lam_rem**k) / _mh.factorial(k)
-                            for k in range(int(goals_to_over))
-                        )
-                        _p_over_live = max(0.02, min(0.98, 1 - _p_under_live))
+                # Línea alternativa (5.5) solo si ESPN >= 6.0
+                alt_line = ou_line - 1.0 if ou_line >= 6.0 else None
+                if alt_line is not None:
+                    goals_to_alt   = max(0.0, alt_line - total_score)
+                    _p_over_alt    = _poisson_p_over(_lam_rem, goals_to_alt)
+                    _p_under_alt   = 1.0 - _p_over_alt
                 else:
-                    _p_over_live = 0.05 if goals_to_over > 0 else 1.0
-                _p_under_live = 1.0 - _p_over_live
+                    goals_to_alt = goals_to_espn
+                    _p_over_alt  = _p_over_espn
+                    _p_under_alt = _p_under_espn
 
-                # Etiqueta usando línea RESTANTE, no la original
-                if goals_to_over <= 0:
-                    # Over ya cubierto
+                # ── Elegir el pick O/U más informativo ───────────────────────
+                # Prioridad:
+                # 1. Over ya cubierto (ESPN) → celebrar
+                # 2. Over línea alternativa (5.5) si prob > 50% y ritmo lo justifica
+                # 3. Under ESPN si prob > 60% y partido ya avanzado
+                # 4. Suprimir si Under es trivialmente obvio (>90% en P3)
+
+                if goals_to_espn <= 0:
                     picks.append({"label": f"Over {ou_line:.1f} ✓", "prob": 97,
                         "market": "O/U",
                         "rationale": f"Over {ou_line:.1f} ya cubierto ({total_score} goles marcados).",
-                        "notes": f"{total_score} goles, línea superada"})
-                elif period >= 3 and goals_to_over > 2.5:
-                    # 3er periodo, necesitan 3+ goles → Under casi seguro, no vale apostar
-                    pass  # No mostrar O/U — ya está decidido, mostrar solo ML
-                elif _p_over_live >= _p_under_live:
-                    _label_live = f"Over {live_line:.1f} restantes" if live_line != ou_line else f"Over {ou_line:.1f}"
-                    picks.append({"label": _label_live, "prob": round(_p_over_live * 100, 1),
-                        "market": "O/U",
-                        "rationale": f"P{period}, {total_score} goles. Faltan {goals_to_over:.1f} para Over. Ritmo: {goal_rate*20:.1f}/periodo → proy. {proj_total:.1f}.",
-                        "notes": f"proy. {proj_total:.1f} goles"})
-                else:
-                    _label_live = f"Under {ou_line:.1f}"
-                    _u_pct = round(_p_under_live * 100, 1)
-                    # Solo mostrar Under si tiene sentido real (no si ya es obvio)
-                    if _u_pct < 90 or period < 3:
-                        picks.append({"label": _label_live, "prob": _u_pct,
-                            "market": "O/U",
-                            "rationale": f"P{period}, {total_score} goles. Faltan {goals_to_over:.1f} para Over en {mins_left_reg:.0f} min. Ritmo actual: {goal_rate*20:.1f}/periodo.",
-                            "notes": f"faltan {goals_to_over:.1f} para Over"})
+                        "notes": f"{total_score} goles"})
 
-            # ML — ajustado por score actual y periodo
+                elif alt_line is not None and _p_over_alt >= 0.50 and goals_to_alt > 0:
+                    # La línea 5.5 sigue siendo apostable — Over 5.5
+                    picks.append({"label": f"Over {alt_line:.1f}",
+                        "prob": round(_p_over_alt * 100, 1),
+                        "market": "O/U",
+                        "rationale": (
+                            f"P{period} ({mins_left_reg:.0f} min reg.), {total_score} goles marcados. "
+                            f"Ritmo blend: {blended_rate*60:.1f}/60min → proy. {proj_total:.1f}. "
+                            f"Faltan {goals_to_alt:.1f} para Over {alt_line:.1f}."
+                        ),
+                        "notes": f"proy. {proj_total:.1f} goles"})
+
+                elif _p_under_espn >= 0.60 and not (period >= 3 and _p_under_espn > 0.90):
+                    # Under ESPN con confianza razonable (no trivialmente obvio en P3)
+                    picks.append({"label": f"Under {ou_line:.1f}",
+                        "prob": round(_p_under_espn * 100, 1),
+                        "market": "O/U",
+                        "rationale": (
+                            f"P{period} ({mins_left_reg:.0f} min reg.), {total_score} goles. "
+                            f"Faltan {goals_to_espn:.1f} para Over. "
+                            f"Ritmo blend: {blended_rate*60:.1f}/60min → proy. {proj_total:.1f}."
+                        ),
+                        "notes": f"faltan {goals_to_espn:.1f} para Over"})
+                # Si Under>90% en P3 → silencio en O/U, solo ML abajo
+
+            # ── ML ajustado por score y periodo ──────────────────────────────
             if period >= 3 and diff != 0:
-                # 3er periodo con ventaja — ajustar prob por minutos restantes
                 _adj = min(97, fav_prob + abs(diff) * (mins_played / 60) * 8)
                 picks.append({"label": f"{fav_team} gana", "prob": round(_adj, 1),
                     "market": "ML",
                     "rationale": f"P{period} ({mins_left_reg:.0f} min reg.), gana {fav_score}-{dog_score}. Prob. ajustada: {_adj:.0f}%.",
                     "notes": f"+{abs(diff)} en P{period}"})
             elif diff == 0 and period >= 2:
-                # Empate — partido muy abierto
-                picks.append({"label": f"{fav_team} gana o OT", "prob": round(min(75, fav_prob + 10), 1),
+                picks.append({"label": f"{fav_team} gana o OT",
+                    "prob": round(min(75, fav_prob + 10), 1),
                     "market": "ML",
-                    "rationale": f"Empate {hs}-{as_} en P{period}. Alta prob. de OT — favorito ligero.",
+                    "rationale": f"Empate {hs}-{as_} en P{period}. Alta prob. de OT.",
                     "notes": "posible OT"})
             else:
                 picks.append({"label": f"{fav_team} gana", "prob": round(fav_prob, 1),
