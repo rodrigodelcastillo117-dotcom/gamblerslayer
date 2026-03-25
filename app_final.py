@@ -3620,13 +3620,46 @@ def _pick_from_real_data(r, for_rongol=False):
                 score_o25  += (_prior[4] - 0.5) * 8
                 score_u25  += (_prior[1] - 0.5) * 8
 
+            # ── Reglas unificadas (mismas que DQ=0) ──────────────────────
+            # Under 2.5: solo si sim ≥70% Y scoring lo confirma
+            if p_u25 >= 70 and score_u25 >= max(score_o25, score_btts):
+                return _ret("O/U", "Under 2.5", p_u25, u25_ev, ou_ml)
+
+            # BTTS: partido cerrado donde ambos anotan
+            if p_btts >= 50 and p_u25 >= 48 and score_btts >= max(score_o25, score_u25):
+                return _ret("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev, "")
+
+            # Over 2.5: partido abierto
+            if p_o25 >= 52 and score_o25 >= max(score_btts, score_u25):
+                return _ret("O/U", "Over 2.5", p_o25, o25_ev, ou_ml)
+
+            # ML: favorito claro (≥60%)
+            _fav_p2 = max(p_home, p_away)
+            if _fav_p2 >= 60:
+                _fav_home2 = p_home >= p_away
+                return _ret("ML",
+                    r.get("home_team","") if _fav_home2 else r.get("away_team",""),
+                    _fav_p2,
+                    (sim.get("home_ev",0) if _fav_home2 else sim.get("away_ev",0)) or 0,
+                    (sim.get("home_ml","") if _fav_home2 else sim.get("away_ml","")) or "")
+
+            # Partido cerrado 55-70% U25
+            if p_u25 >= 55:
+                if p_btts >= 40:
+                    return _ret("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev, "")
+                return _ret("O/U", "Under 2.5", p_u25, u25_ev, ou_ml)
+
+            # Scoring normal para el resto
             opts = []
             if p_btts > 0:  opts.append(("BTTS","Ambos Anotan — SÍ",p_btts,btts_ev,"",score_btts))
             if p_o25  > 0:  opts.append(("O/U","Over 2.5",p_o25,o25_ev,ou_ml,score_o25))
-            if p_u25  > 40: opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml,score_u25))
+            if p_u25  > 50: opts.append(("O/U","Under 2.5",p_u25,u25_ev,ou_ml,score_u25))
             if opts:
                 best = max(opts, key=lambda x: x[5])
                 return _ret(best[0], best[1], best[2], best[3], best[4])
+            # Default: Over 2.5
+            if p_o25 > 0:
+                return _ret("O/U", "Over 2.5", p_o25, o25_ev, ou_ml)
 
         else:
             # SIN datos directos — estimar lambdas desde probabilidades ML del partido
@@ -3688,18 +3721,40 @@ def _pick_from_real_data(r, for_rongol=False):
                 p_o25_e  = round(0.6*p_o25_e  + 0.4*_prior[4]*100, 1)
                 p_u25_e  = round(0.6*p_u25_e  + 0.4*_prior[1]*100, 1)
 
-            # Decisión final
-            s_btts = p_btts_e
-            s_o25  = p_o25_e
-            s_u25  = p_u25_e
+            # ── Reglas de decisión exactas ────────────────────────────────
+            # REGLA 1: Under 2.5 solo si sim ≥70% — partido muy defensivo
+            if p_u25_e >= 70:
+                return _ret("O/U", "Under 2.5", p_u25_e, u25_ev, ou_ml)
 
-            opts_e = []
-            if p_btts_e > 0: opts_e.append(("BTTS","Ambos Anotan — SÍ",p_btts_e,btts_ev,"",s_btts))
-            if p_o25_e  > 0: opts_e.append(("O/U","Over 2.5",p_o25_e,o25_ev,ou_ml,s_o25))
-            if p_u25_e  > 0: opts_e.append(("O/U","Under 2.5",p_u25_e,u25_ev,ou_ml,s_u25))
-            if opts_e:
-                best_e = max(opts_e, key=lambda x: x[5])
-                return _ret(best_e[0], best_e[1], best_e[2], best_e[3], best_e[4])
+            # REGLA 2: BTTS cuando sim muestra ambos anotan pero <3 goles
+            # Señal: BTTS≥50% Y U25≥48% = partido cerrado donde ambos marcan
+            if p_btts_e >= 50 and p_u25_e >= 48:
+                return _ret("BTTS", "Ambos Anotan — SÍ", p_btts_e, btts_ev, "")
+
+            # REGLA 3: Over 2.5 si sim dice >52% (partido abierto)
+            if p_o25_e >= 52:
+                return _ret("O/U", "Over 2.5", p_o25_e, o25_ev, ou_ml)
+
+            # REGLA 4: partido cerrado (U25>55% pero no llega a 70%)
+            # → BTTS si ambos tienen chance de anotar, sino U2.5
+            if p_u25_e >= 55:
+                if p_btts_e >= 40:
+                    return _ret("BTTS", "Ambos Anotan — SÍ", p_btts_e, btts_ev, "")
+                return _ret("O/U", "Under 2.5", p_u25_e, u25_ev, ou_ml)
+
+            # REGLA 5: ML del favorito si tiene ventaja clara (≥60%)
+            # Ej: Polonia 60% sobre Albania, Italia 65% sobre N.Ireland
+            _fav_p = max(p_home, p_away)
+            if _fav_p >= 60:
+                _fav_team = r.get("home_team","") if p_home >= p_away else r.get("away_team","")
+                _fav_ev   = sim.get("home_ev",0) if p_home >= p_away else sim.get("away_ev",0)
+                _fav_ml   = sim.get("home_ml","") if p_home >= p_away else sim.get("away_ml","")
+                return _ret("ML", _fav_team, _fav_p, _fav_ev or 0, _fav_ml or "")
+
+            # DEFAULT: BTTS si ambos tienen algo (≥38%), sino Over 2.5
+            if p_btts_e >= 38:
+                return _ret("BTTS", "Ambos Anotan — SÍ", p_btts_e, btts_ev, "")
+            return _ret("O/U", "Over 2.5", p_o25_e, o25_ev, ou_ml)
 
         # Fallback: resultado más probable del sim
         if p_home > p_away:
