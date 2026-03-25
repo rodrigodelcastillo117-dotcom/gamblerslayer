@@ -3517,10 +3517,11 @@ def _pick_from_real_data(r, for_rongol=False):
         return base
 
     # ══════════════════════════════════════════════════════════════════════
-    # ⚽ SOCCER — muestra lo que tenga mayor % según la simulación
+    # ⚽ SOCCER — pick = mercado con mayor % según simulación
+    # Mercados: ML local, ML visitante, Empate, O2.5, U2.5, BTTS,
+    #           Local Over 1.5 goles, Visitante Over 1.5 goles
     # ══════════════════════════════════════════════════════════════════════
     if _is_soc:
-        # Probs del sim (0-100)
         p_home  = float(sim.get("home_pct") or 0)
         p_away  = float(sim.get("away_pct") or 0)
         p_draw  = float(sim.get("draw_pct") or 0)
@@ -3533,57 +3534,73 @@ def _pick_from_real_data(r, for_rongol=False):
         ou_ml   = sim.get("over_under","") or ""
         if p_u25 == 0 and p_o25 > 0: p_u25 = round(100.0 - p_o25, 1)
 
-        # Si el sim tiene probs de goles → usarlas directamente
-        _has_goal_probs = (p_o25 > 0 or p_btts > 0)
+        home_team = r.get("home_team","")
+        away_team = r.get("away_team","")
 
-        if not _has_goal_probs:
-            # DQ=0: correr mini-sim Poisson con lambdas del prior + fuerza del equipo
+        # p_home_o15: prob de que el equipo LOCAL anote más de 1.5 goles
+        # p_away_o15: prob de que el equipo VISITANTE anote más de 1.5 goles
+        p_home_o15 = 0.0
+        p_away_o15 = 0.0
+
+        # Mini-sim cuando no hay probs de goles (DQ=0)
+        if p_o25 == 0 and p_home > 0:
             import math as _ms2, random as _rs2
             _prior = LEAGUE_OU_PRIORS.get(_league)
-            _lam_base = 1.35
+            _lb = 1.35
             if _prior:
-                _po_pr = _prior[4]
-                if _po_pr > 0.6:   _lam_base = 1.65
-                elif _po_pr > 0.5: _lam_base = 1.40
-                elif _po_pr > 0.4: _lam_base = 1.20
-                else:              _lam_base = 1.05
-
-            _ph = p_home/100 if p_home > 0 else 0.38
-            _pa = p_away/100 if p_away > 0 else 0.28
+                _po = _prior[4]
+                if _po > 0.6:   _lb = 1.65
+                elif _po > 0.5: _lb = 1.40
+                elif _po > 0.4: _lb = 1.20
+                else:           _lb = 1.05
+            _ph = p_home/100; _pa = p_away/100
             _pd = max(0.01, 1-_ph-_pa)
-            _sh = _ph + 0.5*_pd; _sa = _pa + 0.5*_pd; _st = _sh + _sa
-            _lh = max(0.5, min(2.8, _lam_base*(_sh/(_st/2))))
-            _la = max(0.5, min(2.8, _lam_base*(_sa/(_st/2))))
-
-            _N = 3000
-            _bc = _oc = _uc = 0
+            _sh = _ph+0.5*_pd; _sa = _pa+0.5*_pd; _st = _sh+_sa
+            _lh = max(0.4, min(3.0, _lb*(_sh/(_st/2))))
+            _la = max(0.4, min(3.0, _lb*(_sa/(_st/2))))
+            def _pois(lam):
+                import math
+                L=math.exp(-lam); k=0; p=1.0
+                while p>L: k+=1; p*=_rs2.random()
+                return k-1
+            _N=3000; _bc=_oc=_uc=_ho15=_ao15=0
             for _ in range(_N):
-                def _p(lam):
-                    _L=_ms2.exp(-lam); _k=0; _pp=1.0
-                    while _pp>_L: _k+=1; _pp*=_rs2.random()
-                    return _k-1
-                _gh=_p(_lh); _ga=_p(_la)
+                _gh=_pois(_lh); _ga=_pois(_la)
                 if _gh>0 and _ga>0: _bc+=1
                 if _gh+_ga>2.5: _oc+=1
                 else: _uc+=1
+                if _gh>1.5: _ho15+=1
+                if _ga>1.5: _ao15+=1
+            p_btts     = round(_bc/_N*100, 1)
+            p_o25      = round(_oc/_N*100, 1)
+            p_u25      = round(_uc/_N*100, 1)
+            p_home_o15 = round(_ho15/_N*100, 1)
+            p_away_o15 = round(_ao15/_N*100, 1)
+        else:
+            # Con datos del sim: calcular home/away o1.5 desde lambdas reales
+            _lh_r = float(sim.get("lam_real_h") or 0)
+            _la_r = float(sim.get("lam_real_a") or 0)
+            if _lh_r > 0:
+                import math as _ms3
+                p_home_o15 = round((1 - sum(_ms3.exp(-_lh_r)*(_lh_r**k)/_ms3.factorial(k) for k in range(2)))*100, 1)
+            if _la_r > 0:
+                import math as _ms4
+                p_away_o15 = round((1 - sum(_ms4.exp(-_la_r)*(_la_r**k)/_ms4.factorial(k) for k in range(2)))*100, 1)
 
-            p_btts = round(_bc/_N*100, 1)
-            p_o25  = round(_oc/_N*100, 1)
-            p_u25  = round(_uc/_N*100, 1)
-
-        # Construir lista de opciones con su probabilidad
+        # Construir opciones — solo mercados puros, sin DO ni O1.5 general
         opts = []
-        if p_btts > 0: opts.append(("BTTS",  "Ambos Anotan — SÍ", p_btts, btts_ev, ""))
-        if p_o25  > 0: opts.append(("O/U",   "Over 2.5",          p_o25,  o25_ev,  ou_ml))
-        if p_u25  > 0: opts.append(("O/U",   "Under 2.5",         p_u25,  u25_ev,  ou_ml))
-        if p_home > 0: opts.append(("ML",    r.get("home_team",""),p_home, sim.get("home_ev",0) or 0, sim.get("home_ml","") or ""))
-        if p_away > 0: opts.append(("ML",    r.get("away_team",""),p_away, sim.get("away_ev",0) or 0, sim.get("away_ml","") or ""))
-        if p_draw > 0: opts.append(("ML",    "Empate",             p_draw, 0, ""))
+        if p_home     > 0: opts.append(("ML",   home_team,                     p_home,     sim.get("home_ev",0) or 0, sim.get("home_ml","") or ""))
+        if p_away     > 0: opts.append(("ML",   away_team,                     p_away,     sim.get("away_ev",0) or 0, sim.get("away_ml","") or ""))
+        if p_draw     > 0: opts.append(("ML",   "Empate",                      p_draw,     0, ""))
+        if p_o25      > 0: opts.append(("O/U",  "Over 2.5",                    p_o25,      o25_ev, ou_ml))
+        if p_u25      > 0: opts.append(("O/U",  "Under 2.5",                   p_u25,      u25_ev, ou_ml))
+        if p_btts     > 0: opts.append(("BTTS", "Ambos Anotan — SÍ",           p_btts,     btts_ev, ""))
+        if p_home_o15 > 0: opts.append(("O/U",  f"{home_team} Over 1.5",       p_home_o15, 0, ""))
+        if p_away_o15 > 0: opts.append(("O/U",  f"{away_team} Over 1.5",       p_away_o15, 0, ""))
 
         if not opts:
             return None
 
-        # Devolver el que tenga mayor probabilidad — simple y directo
         best = max(opts, key=lambda x: x[2])
         return _ret(best[0], best[1], best[2], best[3], best[4])
 
@@ -9954,14 +9971,9 @@ elif _active_page == "Parlays":
 
         def _build_game_parlays(r):
             """
-            Build candidate 2-leg parlays from a single game.
-            Soccer generates up to 3 candidates:
-              a) ML + BTTS (Ambos Anotan)
-              b) ML + Over 2.5
-              c) BTTS + Over 2.5  ← combo goles pura
-            Non-soccer generates 1 candidate:
-              ML + O/U (better side by prob)
-            Returns list of parlay dicts (may be empty).
+            Build 2-leg parlays desde un partido.
+            Pick principal = _pick_from_real_data (el de mayor %).
+            Segunda pata = segundo mejor mercado del mismo partido.
             """
             sim = r["sim"]
             sg  = LEAGUES.get(r["league"],{}).get("group","Soccer")
@@ -9979,58 +9991,56 @@ elif _active_page == "Parlays":
                     "payout": round((1/cp)*100, 0) if cp > 0 else 0,
                 }
 
-            results = []
+            results_p = []
+
+            # Pick principal del partido
+            _bp = _pick_from_real_data(r, for_rongol=False)
+            if not _bp:
+                return results_p
+
+            leg1 = {"market": _bp["market"], "label": _bp["label"], "prob": _bp["prob"]}
 
             if sg == "Soccer":
-                _btts_pb = sim.get("p_btts") or 0
-                _o25_pb  = sim.get("p_o25")  or 0
-                h_prob   = sim.get("home_pct") or 0
-                a_prob   = sim.get("away_pct") or 0
-                h_ml     = sim.get("home_ml"); a_ml = sim.get("away_ml")
-                ml_team  = r["home_team"] if h_prob >= a_prob else r["away_team"]
-                ml_prob  = h_prob if h_prob >= a_prob else a_prob
-                ml_ml    = h_ml if h_prob >= a_prob else a_ml
-
-                leg_ml   = {"market":"ML",   "label": ml_team,        "prob": ml_prob} if ml_ml else None
-                leg_btts = {"market":"BTTS",  "label": "Ambos Anotan", "prob": _btts_pb} if _btts_pb > 0 else None
-                leg_o25  = {"market":"O/U",   "label": "Over 2.5",     "prob": _o25_pb}  if _o25_pb  > 0 else None
-
-                # a) ML + BTTS
-                if leg_ml and leg_btts:
-                    results.append(_make(leg_ml, leg_btts, "ML + AA"))
-                # b) ML + O2.5
-                if leg_ml and leg_o25:
-                    results.append(_make(leg_ml, leg_o25, "ML + O2.5"))
-                # c) BTTS + O2.5  ← combo goles pura (sin ML)
-                if leg_btts and leg_o25:
-                    results.append(_make(leg_btts, leg_o25, "AA + O2.5"))
-
+                # Construir todas las opciones y tomar la segunda mejor
+                h_prob = float(sim.get("home_pct") or 0)
+                a_prob = float(sim.get("away_pct") or 0)
+                p_o25  = float(sim.get("p_o25")  or 0)
+                p_u25  = float(sim.get("p_u25")  or 0)
+                p_btts = float(sim.get("p_btts") or 0)
+                all_opts = []
+                if h_prob > 0: all_opts.append(("ML",   r["home_team"],         h_prob))
+                if a_prob > 0: all_opts.append(("ML",   r["away_team"],          a_prob))
+                if p_o25  > 0: all_opts.append(("O/U",  "Over 2.5",             p_o25))
+                if p_u25  > 0: all_opts.append(("O/U",  "Under 2.5",            p_u25))
+                if p_btts > 0: all_opts.append(("BTTS", "Ambos Anotan — SÍ",    p_btts))
+                # Excluir la primera pata
+                all_opts = [o for o in all_opts if not (o[0]==leg1["market"] and o[1]==leg1["label"])]
+                if all_opts:
+                    all_opts.sort(key=lambda x: x[2], reverse=True)
+                    leg2 = {"market": all_opts[0][0], "label": all_opts[0][1], "prob": all_opts[0][2]}
+                    results_p.append(_make(leg1, leg2, f"{leg1['market']} + {leg2['market']}"))
+                    # También combo BTTS + O2.5 si disponibles
+                    if p_btts > 0 and p_o25 > 0 and leg1["market"] not in ("BTTS","O/U"):
+                        lb = {"market":"BTTS","label":"Ambos Anotan — SÍ","prob":p_btts}
+                        lo = {"market":"O/U", "label":"Over 2.5",          "prob":p_o25}
+                        results_p.append(_make(lb, lo, "AA + O2.5"))
             else:
-                # Non-soccer: ML + best O/U side
-                h_prob = sim.get("home_pct") or 0
-                a_prob = sim.get("away_pct") or 0
-                h_ml   = sim.get("home_ml"); a_ml = sim.get("away_ml")
-                ml_team = r["home_team"] if h_prob >= a_prob else r["away_team"]
-                ml_prob = h_prob if h_prob >= a_prob else a_prob
-                ml_ml   = h_ml if h_prob >= a_prob else a_ml
-                if not ml_ml:
-                    return results  # no ML = skip
-
-                leg_ml = {"market":"ML","label":ml_team,"prob":ml_prob}
+                # No-soccer: pick principal + O/U
                 _ou_line = sim.get("ou_line") or ""
-                _p_over  = sim.get("p_o_total") or 0
-                _p_under = sim.get("p_u_total") or 0
+                _p_over  = float(sim.get("p_o_total") or 0)
+                _p_under = float(sim.get("p_u_total") or 0)
                 if _ou_line and (_p_over > 0 or _p_under > 0):
-                    try: _line = float(_ou_line.lstrip("~"))
+                    try: _line = float(str(_ou_line).lstrip("~"))
                     except: _line = None
                     if _line:
                         if _p_over >= _p_under:
-                            leg_ou = {"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over}
+                            leg2 = {"market":"O/U","label":f"Over {_line:.1f}","prob":_p_over}
                         else:
-                            leg_ou = {"market":"O/U","label":f"Under {_line:.1f}","prob":_p_under}
-                        results.append(_make(leg_ml, leg_ou, "ML + O/U"))
+                            leg2 = {"market":"O/U","label":f"Under {_line:.1f}","prob":_p_under}
+                        if leg2["label"] != leg1.get("label"):
+                            results_p.append(_make(leg1, leg2, "ML + O/U"))
 
-            return results
+            return results_p
 
         # ── Build parlays per sport ───────────────────────────────────────────
         # Soccer: pick best among ALL combos (ML+AA, ML+O2.5, AA+O2.5) by comb_prob
@@ -10109,7 +10119,7 @@ elif _active_page == "Parlays":
         _gmap_par = {g.get("id",""): g for g in games}
 
         def _best_leg_for_sport(sg_target):
-            """Mejor pick individual (1 sola pata) del deporte, solo hoy CDMX."""
+            """Mejor pick individual del deporte usando _pick_from_real_data."""
             _candidates = []
             for _r in sr_current:
                 _gid = _r.get("id","")
@@ -10119,45 +10129,18 @@ elif _active_page == "Parlays":
                 if _gd_m is None or _gd_m not in _valid_par: continue
                 _sg = LEAGUES.get(_r["league"],{}).get("group","Soccer")
                 if _sg != sg_target: continue
-                _sim = _r["sim"]
-                _game_obj = _gmap_par.get(_gid, _r)  # use games map for full game obj
-                if sg_target == "Soccer":
-                    _hp = _sim.get("home_pct") or 0
-                    _ap = _sim.get("away_pct") or 0
-                    _bp = _sim.get("p_btts") or 0
-                    _o25 = _sim.get("p_o25") or 0
-                    _fav_team = _r["home_team"] if _hp >= _ap else _r["away_team"]
-                    _fav_prob = max(_hp, _ap)
-                    # ML: siempre incluir si hay probabilidad
-                    if _fav_prob > 0:
-                        _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
-                                            "market":"ML","label":_fav_team,"prob":_fav_prob})
-                    # BTTS: incluir si prob >= 45%
-                    if _bp >= 45:
-                        _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
-                                            "market":"BTTS","label":"Ambos Anotan","prob":_bp})
-                    # O2.5: incluir si prob >= 48%
-                    if _o25 >= 48:
-                        _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
-                                            "market":"O/U","label":"Over 2.5","prob":_o25})
-                else:
-                    _hp = _sim.get("home_pct") or 0
-                    _ap = _sim.get("away_pct") or 0
-                    _ml_prob = max(_hp, _ap)
-                    _ml_lbl  = _r["home_team"] if _hp >= _ap else _r["away_team"]
-                    if _ml_prob > 0:
-                        _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
-                                            "market":"ML","label":_ml_lbl,"prob":_ml_prob})
-                    _multi_r = _sim.get("multi_lines",{})
-                    if _multi_r:
-                        for _l, _d in _multi_r.items():
-                            _po = _d["over"]; _pu = _d["under"]
-                            if _po >= _pu and _po >= 52:
-                                _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
-                                                    "market":"O/U","label":f"Over {_l:.1f}","prob":_po})
-                            elif _pu > _po and _pu >= 52:
-                                _candidates.append({"sport":sg_target,"game":_game_obj,"league":_r["league"],
-                                                    "market":"O/U","label":f"Under {_l:.1f}","prob":_pu})
+                _game_obj = _gmap_par.get(_gid, _r)
+                # Usar la misma función que Picks y Rongol
+                _bp = _pick_from_real_data(_r, for_rongol=False)
+                if _bp and _bp.get("prob",0) > 0:
+                    _candidates.append({
+                        "sport":   sg_target,
+                        "game":    _game_obj,
+                        "league":  _r["league"],
+                        "market":  _bp["market"],
+                        "label":   _bp["label"],
+                        "prob":    _bp["prob"],
+                    })
             if not _candidates: return None
             return max(_candidates, key=lambda x: x["prob"])
 
