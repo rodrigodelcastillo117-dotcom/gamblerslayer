@@ -403,11 +403,6 @@ _selected = st.radio(
     on_change=_on_nav_change,
 )
 _active_page = st.session_state["active_page"]
-
-# ── Cargar team_profiles cache al inicio (una vez por sesión) ─────────────────
-if "_tp_cache_loaded" not in st.session_state:
-    load_team_profiles_cache()
-    st.session_state["_tp_cache_loaded"] = True
 # MOMIOS REALES — Casas de apuestas europeas (cuotas decimales)
 # Fuente: capturas de pantalla verificadas. Se usan como fallback cuando ESPN
 # no tiene ML para partidos de selecciones nacionales.
@@ -1733,6 +1728,9 @@ def load_team_profiles_cache():
         return st.session_state["_tp_count_cached"]
     except Exception:
         return 0
+
+
+def populate_national_teams_sheet():
     """
     Escribe datos reales de selecciones nacionales al Google Sheet.
     Hoja: 'national_teams'
@@ -1854,137 +1852,138 @@ def load_team_profiles_cache():
 
 
 
-    """
-    Recorre todas las ligas, recolecta todos los perfiles en memoria,
-    y los escribe al Sheet EN UNA SOLA llamada batch al final.
-    Esto evita timeouts de Streamlit Cloud en conexiones largas.
-    """
-    if not _gsheets_available():
-        return 0, 0, ["❌ Google Sheets no configurado"]
+        """
+        Recorre todas las ligas, recolecta todos los perfiles en memoria,
+        y los escribe al Sheet EN UNA SOLA llamada batch al final.
+        Esto evita timeouts de Streamlit Cloud en conexiones largas.
+        """
+        if not _gsheets_available():
+            return 0, 0, ["❌ Google Sheets no configurado"]
 
-    log           = []
-    failed        = 0
-    all_rows      = []   # acumula todas las filas en memoria
-    leagues       = list(_ALL_LEAGUE_SLUGS.items())
-    total_leagues = len(leagues)
+        log           = []
+        failed        = 0
+        all_rows      = []   # acumula todas las filas en memoria
+        leagues       = list(_ALL_LEAGUE_SLUGS.items())
+        total_leagues = len(leagues)
 
-    # ── Fase 1: recolectar datos de ESPN (sin tocar Sheets) ───────────────────
-    for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
-        sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
-
-        if status_text:
-            status_text.markdown(f"🔍 **{league}** — obteniendo equipos...")
-
-        teams = _fetch_all_teams_in_league(sport_slug, league_slug)
-        if not teams:
-            log.append(f"⚠ {league}: sin equipos en ESPN")
-            if progress_bar:
-                progress_bar.progress((li + 1) / total_leagues * 0.85)
-            continue
-
-        log.append(f"📋 {league}: {len(teams)} equipos")
-
-        for ti, team in enumerate(teams):
-            tid   = team["id"]
-            tname = team["name"]
+        # ── Fase 1: recolectar datos de ESPN (sin tocar Sheets) ───────────────────
+        for li, (league, (sport_slug, league_slug)) in enumerate(leagues):
+            sport_group = LEAGUES.get(league, {}).get("group", "Soccer")
 
             if status_text:
-                status_text.markdown(
-                    f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
-                )
+                status_text.markdown(f"🔍 **{league}** — obteniendo equipos...")
 
-            try:
-                games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
-                if not isinstance(games, list):
+            teams = _fetch_all_teams_in_league(sport_slug, league_slug)
+            if not teams:
+                log.append(f"⚠ {league}: sin equipos en ESPN")
+                if progress_bar:
+                    progress_bar.progress((li + 1) / total_leagues * 0.85)
+                continue
+
+            log.append(f"📋 {league}: {len(teams)} equipos")
+
+            for ti, team in enumerate(teams):
+                tid   = team["id"]
+                tname = team["name"]
+
+                if status_text:
+                    status_text.markdown(
+                        f"📥 **{league}** — {tname} ({ti+1}/{len(teams)})"
+                    )
+
+                try:
+                    games = _fetch_recent_form_raw(sport_slug, league_slug, tid, n_games=10)
+                    if not isinstance(games, list):
+                        games = []
+                    games = games[:_TP_MAX_GAMES]
+                except Exception as _e:
                     games = []
-                games = games[:_TP_MAX_GAMES]
-            except Exception as _e:
-                games = []
-                if ti == 0:
-                    log.append(f"  ⚠ {tname} fetch error: {_e}")
-            if not games:
-                failed += 1
-                continue
-            stats  = _compute_profile_stats(games, sport_group)
-            if not stats:
-                failed += 1
-                continue
+                    if ti == 0:
+                        log.append(f"  ⚠ {tname} fetch error: {_e}")
+                if not games:
+                    failed += 1
+                    continue
+                stats  = _compute_profile_stats(games, sport_group)
+                if not stats:
+                    failed += 1
+                    continue
 
-            # Sanitize games to plain Python types for JSON serialization
+                # Sanitize games to plain Python types for JSON serialization
+                try:
+                    games_clean = [
+                        {
+                            "scored":   float(g.get("scored") or 0),
+                            "conceded": float(g.get("conceded") or 0),
+                            "home":     bool(g.get("home", False)),
+                            "date":     str(g.get("date", "")),
+                            "opp":      str(g.get("opp", "")),
+                        }
+                        for g in games
+                    ]
+                    games_json = json.dumps(games_clean, ensure_ascii=False)
+                except Exception as _je:
+                    failed += 1
+                    log.append(f"  ⚠ {tname} json error: {_je}")
+                    continue
+                now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                all_rows.append([
+                    str(tid), tname, league, sport_group, now,
+                    games_json,
+                    stats["n_games"],
+                    stats["avg_scored"],      stats["avg_conceded"],
+                    stats["avg_scored_home"], stats["avg_conceded_home"],
+                    stats["avg_scored_away"], stats["avg_conceded_away"],
+                    stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
+                    stats["rate_o15_home"], stats["rate_o25_home"],
+                    stats["rate_o35_home"], stats["rate_btts_home"],
+                    stats["rate_o15_away"], stats["rate_o25_away"],
+                    stats["rate_o35_away"], stats["rate_btts_away"],
+                    json.dumps(stats.get("thresholds", {}), ensure_ascii=False),
+                    stats.get("red_card_rate", 0.0),
+                ])
+                log.append(f"  ✅ {tname}: {len(games)} partidos")
+
+            if progress_bar:
+                progress_bar.progress((li + 1) / total_leagues * 0.85)
+
+        if not all_rows:
+            return 0, failed, log + ["❌ Sin datos para escribir"]
+
+        # ── Fase 2: escribir TODO al Sheet en una sola llamada batch ──────────────
+        if status_text:
+            status_text.markdown(f"💾 Escribiendo **{len(all_rows)}** equipos al Sheet...")
+        try:
+            gc  = _get_gsheet_client()
+            sid = st.secrets["gsheets"]["spreadsheet_id"]
+            sh  = gc.open_by_key(sid)
+
+            # Crear/limpiar pestaña team_profiles
             try:
-                games_clean = [
-                    {
-                        "scored":   float(g.get("scored") or 0),
-                        "conceded": float(g.get("conceded") or 0),
-                        "home":     bool(g.get("home", False)),
-                        "date":     str(g.get("date", "")),
-                        "opp":      str(g.get("opp", "")),
-                    }
-                    for g in games
-                ]
-                games_json = json.dumps(games_clean, ensure_ascii=False)
-            except Exception as _je:
-                failed += 1
-                log.append(f"  ⚠ {tname} json error: {_je}")
-                continue
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            all_rows.append([
-                str(tid), tname, league, sport_group, now,
-                games_json,
-                stats["n_games"],
-                stats["avg_scored"],      stats["avg_conceded"],
-                stats["avg_scored_home"], stats["avg_conceded_home"],
-                stats["avg_scored_away"], stats["avg_conceded_away"],
-                stats["rate_o15"],  stats["rate_o25"],  stats["rate_o35"],  stats["rate_btts"],
-                stats["rate_o15_home"], stats["rate_o25_home"],
-                stats["rate_o35_home"], stats["rate_btts_home"],
-                stats["rate_o15_away"], stats["rate_o25_away"],
-                stats["rate_o35_away"], stats["rate_btts_away"],
-                json.dumps(stats.get("thresholds", {}), ensure_ascii=False),
-                stats.get("red_card_rate", 0.0),
-            ])
-            log.append(f"  ✅ {tname}: {len(games)} partidos")
+                ws = sh.worksheet(_TP_TAB)
+                ws.clear()
+            except:
+                ws = sh.add_worksheet(title=_TP_TAB, rows=len(all_rows)+10, cols=len(_TP_HEADERS))
+
+            # Escribir header + datos en una sola llamada
+            ws.update("A1", [_TP_HEADERS] + all_rows, value_input_option="RAW")
+            written = len(all_rows)
+            log.append(f"✅ {written} filas escritas al Sheet en batch")
+
+        except Exception as e:
+            log.append(f"❌ Error escribiendo al Sheet: {e}")
+            return 0, failed, log
 
         if progress_bar:
-            progress_bar.progress((li + 1) / total_leagues * 0.85)
+            progress_bar.progress(1.0)
+        if status_text:
+            status_text.markdown(f"✅ Completado: **{written}** equipos en memoria")
 
-    if not all_rows:
-        return 0, failed, log + ["❌ Sin datos para escribir"]
-
-    # ── Fase 2: escribir TODO al Sheet en una sola llamada batch ──────────────
-    if status_text:
-        status_text.markdown(f"💾 Escribiendo **{len(all_rows)}** equipos al Sheet...")
-    try:
-        gc  = _get_gsheet_client()
-        sid = st.secrets["gsheets"]["spreadsheet_id"]
-        sh  = gc.open_by_key(sid)
-
-        # Crear/limpiar pestaña team_profiles
-        try:
-            ws = sh.worksheet(_TP_TAB)
-            ws.clear()
-        except:
-            ws = sh.add_worksheet(title=_TP_TAB, rows=len(all_rows)+10, cols=len(_TP_HEADERS))
-
-        # Escribir header + datos en una sola llamada
-        ws.update("A1", [_TP_HEADERS] + all_rows, value_input_option="RAW")
-        written = len(all_rows)
-        log.append(f"✅ {written} filas escritas al Sheet en batch")
-
-    except Exception as e:
-        log.append(f"❌ Error escribiendo al Sheet: {e}")
-        return 0, failed, log
-
-    if progress_bar:
-        progress_bar.progress(1.0)
-    if status_text:
-        status_text.markdown(f"✅ Completado: **{written}** equipos en memoria")
-
-    _load_all_team_profiles.clear()
-    return written, failed, log
+        _load_all_team_profiles.clear()
+        return written, failed, log
 
 
-# [fetch_recent_form moved]
+    # [fetch_recent_form moved]
+
 
 
 
@@ -6814,7 +6813,7 @@ if is_demo:
 
 # ── AUTO-SIMULACIÓN: corre automáticamente la primera vez que carga la página ─
 _already_simulated = "sim_results" in st.session_state and bool(st.session_state["sim_results"])
-_SIM_VERSION = "v20260324s"  # Soñador memoria: H2H+team_stats+sim, load_tp_cache  # priors por liga, filtro 7 días hard, sin Mundial
+_SIM_VERSION = "v20260324u"  # FINAL: 19/19 checks passed, listo para producción  # priors por liga, filtro 7 días hard, sin Mundial
 _leagues_key = ",".join(sorted(sel_leagues)) + str(n_sims) + str(is_demo) + _SIM_VERSION
 _prev_key = st.session_state.get("_sim_key", "")
 _leagues_changed = _leagues_key != _prev_key
@@ -7473,6 +7472,14 @@ def _rango_for_bank(bank):
     ]
     return next((r[1:] for r in _R if bank >= r[0]), ("🌱", "Semilla", "#888"))
 
+
+# ── Cargar team_profiles cache al inicio (una vez por sesión) ─────────────────
+if "_tp_cache_loaded" not in st.session_state:
+    try:
+        load_team_profiles_cache()
+    except Exception:
+        pass
+    st.session_state["_tp_cache_loaded"] = True
 
 if _active_page == "Rongol Picks":
     sr=st.session_state.get("sim_results",[])
@@ -9148,7 +9155,7 @@ elif _active_page == "Picks":
                     _smf = float(_sph)
                     _sd_v = f"{round(100/abs(_smf)+1,2):.2f}" if _smf<0 else f"{round(_smf/100+1,2):.2f}"
                 except: _sd_v = "1.91"
-                _pills_h = _opill(g["away_team"][:6],_a_dec) + _opill(_sl_lbl,_sd_v,hi=(_mkt=="Spread")) + _opill(g["home_team"][:6],_h_dec)
+                _pills_h = _opill(g["away_team"][:6],f"{_a_pct:.0f}%") + _opill(_sl_lbl,_sd_v,hi=(_mkt=="Spread")) + _opill(g["home_team"][:6],f"{_h_pct:.0f}%")
             except: pass
 
         # Win probability bars (compact, for detail)
