@@ -3714,12 +3714,8 @@ def _pick_from_real_data(r, for_rongol=False):
             p_btts_e = round(_btts_c / _n_mini * 100, 1)
             p_o25_e  = round(_o25_c  / _n_mini * 100, 1)
             p_u25_e  = round(_u25_c  / _n_mini * 100, 1)
-
-            # Mezclar con prior de liga (60% simulación, 40% prior)
-            if _prior:
-                p_btts_e = round(0.6*p_btts_e + 0.4*_prior[6]*100, 1)
-                p_o25_e  = round(0.6*p_o25_e  + 0.4*_prior[4]*100, 1)
-                p_u25_e  = round(0.6*p_u25_e  + 0.4*_prior[1]*100, 1)
+            # NO mezclar con prior — la mini-sim ya usa lambdas calibrados
+            # por la fuerza relativa de cada equipo específico
 
             # ── Reglas de decisión exactas ────────────────────────────────
             # REGLA 1: Under 2.5 solo si sim ≥70% — partido muy defensivo
