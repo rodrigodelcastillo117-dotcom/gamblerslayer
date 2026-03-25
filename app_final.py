@@ -3497,23 +3497,31 @@ def win_pct_strict(rec):
 def best_soccer_market(p_o25, p_u25, p_btts, o25_ev=0, u25_ev=0, btts_ev=0, ou_ml=""):
     """
     Selecciona el mejor mercado soccer balanceando prob, EV y diversidad.
-    Scoring:
-      Over 2.5  → prob base + EV bonus
-      Under 2.5 → prob + 1pp (más predecible) + EV bonus
-      BTTS SÍ   → prob + 4pp (mercado independiente, mayor valor real) + EV bonus
-    Resultado: alterna naturalmente entre los 3 mercados según el partido.
+    Filosofía:
+      - BTTS  → mercado independiente del resultado, alta frecuencia real (~55-60% ligas top)
+      - Over 2.5 → mercado ofensivo, buena diversidad
+      - Under 2.5 → SOLO cuando el partido es genuinamente defensivo (p_u25 > 58% Y p_o25 < 42%)
+                    Evita que Under gane por default estadístico (~55% base de cualquier partido)
     """
     opts = []
     _ev_b = 3  # bonus por EV positivo
+
+    # Over 2.5 — mercado ofensivo
     if p_o25 > 0:
         _sc = p_o25 + (_ev_b if (o25_ev or 0) > 0 else 0)
         opts.append(("O/U", "Over 2.5", p_o25, o25_ev or 0, ou_ml, _sc))
-    if p_u25 > 0:
-        _sc = p_u25 + 1 + (_ev_b if (u25_ev or 0) > 0 else 0)
+
+    # Under 2.5 — SOLO si partido genuinamente defensivo
+    # Condición: p_u25 > 58% Y p_o25 < 42% → lambda total probablemente < 2.3
+    if p_u25 > 0 and p_u25 > 58 and (p_o25 or 0) < 42:
+        _sc = p_u25 + (_ev_b if (u25_ev or 0) > 0 else 0)
         opts.append(("O/U", "Under 2.5", p_u25, u25_ev or 0, ou_ml, _sc))
+
+    # BTTS — siempre compite con buen bonus
     if p_btts > 0:
         _sc = p_btts + 4 + (_ev_b if (btts_ev or 0) > 0 else 0)
         opts.append(("BTTS", "Ambos Anotan — SÍ", p_btts, btts_ev or 0, "", _sc))
+
     if not opts:
         return None
     best = max(opts, key=lambda x: x[5])
@@ -5486,8 +5494,11 @@ def run_monte_carlo(game, n=10_000):
         # (dq==0 ahora siempre pasa _ou_edge y usa probs ajustadas al prior)
         if _ou_edge(p_o25, _po25_pr):
             candidates.append(("O/U","Over 2.5", _p_o25_final, calc_ev(_p_o25_final, OU_ML), str(OU_ML), quarter_kelly(_p_o25_final,OU_ML)))
-        # Over 3.5 eliminado — mercado secundario, ruido en la selección principal
-        if _ou_edge(p_u25, _pu25_pr):
+        # Under 2.5: solo si partido genuinamente defensivo (lambda < 2.4)
+        # Evita que Under gane por default estadístico (~55% en cualquier partido)
+        _lam_total_check = (lam_h or 0) + (lam_a or 0)
+        _is_defensive = _lam_total_check > 0 and _lam_total_check < 2.4
+        if _ou_edge(p_u25, _pu25_pr) and _is_defensive:
             candidates.append(("O/U","Under 2.5",_p_u25_final, calc_ev(_p_u25_final, OU_ML), str(OU_ML), quarter_kelly(_p_u25_final,OU_ML)))
         # U3.5 eliminado — siempre gana por default ~80%, sin valor
 
@@ -5620,8 +5631,10 @@ def run_monte_carlo(game, n=10_000):
                 candidates.append(("O/U","Over 2.5", p_o25,
                                    calc_ev(p_o25,OU_ML), str(OU_ML),
                                    quarter_kelly(p_o25,OU_ML)))
+            # Under 2.5 fallback: solo si partido genuinamente defensivo
+            _lam_tot_fb = (lam_h or 0) + (lam_a or 0)
             _uu_in = any(mt=="O/U" and "Under 2.5" in lb for mt,lb,*_ in candidates)
-            if not _uu_in:
+            if not _uu_in and _lam_tot_fb > 0 and _lam_tot_fb < 2.4:
                 candidates.append(("O/U","Under 2.5", 1-p_o25,
                                    calc_ev(1-p_o25,OU_ML), str(OU_ML),
                                    quarter_kelly(1-p_o25,OU_ML)))
@@ -10327,6 +10340,8 @@ elif _active_page == "Parlays":
             for _sr_s in st.session_state.get("sim_results", []):
                 _sg_s  = LEAGUES.get(_sr_s.get("league",""), {}).get("group", "")
                 if _sg_s != "Soccer": continue
+                # Excluir FIFA World Cup — es en junio, no tiene sentido en parlay de esta semana
+                if _sr_s.get("league","") in ("FIFA World Cup", "FIFA Club World Cup"): continue
                 _sim_s = _sr_s.get("sim", {})
                 _g_s   = next((g for g in games if g.get("id") == _sr_s.get("id")), None)
                 if _g_s and _g_s.get("state") == "post": continue
@@ -10659,10 +10674,13 @@ elif _active_page == "Parlays":
                         "date": _gd_son or "",
                     })
 
-                # ── 3. Under 2.5 ─────────────────────────────────────────────
+                # ── 3. Under 2.5 — SOLO si partido realmente defensivo ────────
+                # Condición: lambda total < 2.4 (ambos equipos promedian < 1.2 goles c/u)
+                # Esto evita que Under domine por default estadístico
                 _p_u25_son = _p_u25 if _p_u25 > 0 else (100.0 - _p_o25 if _p_o25 > 0 else 0.0)
                 _u25ev_son = _u25ev if _u25ev != 0 else float(_sim_s.get("u25_ev") or 0)
-                if _p_u25_son >= 45:  # threshold bajo — el score rankea por calidad
+                _lam_for_under = _lam_tot if _lam_tot > 0 else 2.5  # default = no aplica
+                if _p_u25_son >= 55 and _lam_for_under < 2.4:  # defensivo real + lambda bajo
                     _info_lam_u = f"λ={_lam_tot:.1f}" if _lam_tot > 0 else ""
                     _son_raw.append({
                         "game_id": _game_id, "league": _league,
@@ -10672,7 +10690,7 @@ elif _active_page == "Parlays":
                         "score": _son_score(_p_u25_son, _u25ev_son, 0, _dq, "O/U",
                                             h2h_rate=(1 - _over25_h2h) if _over25_h2h else 0,
                                             rank_bon=0, **_score_params),
-                        "info": f"{_info_lam_u} {_conf_lbl}".strip(),
+                        "info": f"{_info_lam_u} defensivo {_conf_lbl}".strip(),
                         "date": _gd_son or "",
                     })
 
@@ -10806,33 +10824,35 @@ elif _active_page == "Parlays":
 
                     if _si > 0:
                         _son_legs_html += (
-                            '<div style="display:flex;align-items:center;gap:4px;padding:2px 0">'
-                            '<div style="flex:1;height:1px;background:rgba(0,207,255,0.12)"></div>'
-                            '<span style="font-size:0.5rem;color:rgba(0,207,255,0.3)">✕</span>'
-                            '<div style="flex:1;height:1px;background:rgba(0,207,255,0.12)"></div>'
+                            '<div style="display:flex;align-items:center;gap:4px;padding:3px 0">'
+                            '<div style="flex:1;height:1px;background:rgba(0,207,255,0.15)"></div>'
+                            '<span style="font-size:0.55rem;color:rgba(0,150,200,0.5)">✕</span>'
+                            '<div style="flex:1;height:1px;background:rgba(0,207,255,0.15)"></div>'
                             '</div>'
                         )
                     _son_legs_html += (
-                        f'<div style="display:flex;align-items:center;gap:8px;'
-                        f'padding:8px 10px;border-radius:11px;'
-                        f'background:rgba(0,207,255,0.05);border:1px solid rgba(0,207,255,0.13)">'
+                        f'<div style="display:flex;align-items:center;gap:10px;'
+                        f'padding:11px 13px;border-radius:13px;margin:2px 0;'
+                        f'background:rgba(0,150,220,0.08);border:1.5px solid rgba(0,180,255,0.2)">'
                         # Market badge
-                        f'<span style="background:{_mc}22;color:{_ma};border:1.5px solid {_mc}55;'
-                        f'border-radius:7px;padding:2px 7px;font-size:0.65rem;font-weight:900;'
-                        f'flex-shrink:0">{_sl["market"]}</span>'
+                        f'<span style="background:{_mc}33;color:{_ma};border:2px solid {_mc}88;'
+                        f'border-radius:8px;padding:3px 9px;font-size:0.72rem;font-weight:900;'
+                        f'flex-shrink:0;letter-spacing:0.5px">{_sl["market"]}</span>'
                         # Team + league + date badge
                         f'<div style="flex:1;min-width:0">'
-                        f'<div style="font-size:0.82rem;color:#111;font-weight:800;line-height:1.2;display:flex;align-items:center;flex-wrap:wrap;gap:2px">'
+                        f'<div style="font-size:0.92rem;color:#000000;font-weight:900;line-height:1.3;'
+                        f'display:flex;align-items:center;flex-wrap:wrap;gap:3px">'
                         f'{_flag_s} {_sl["label"]}{_date_badge}</div>'
-                        f'<div style="font-size:0.55rem;color:#888;margin-top:1px;'
-                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-                        f'{_lg_s} · {_sl["partido"][:28]} · {_sl["info"]}</div>'
+                        f'<div style="font-size:0.65rem;color:#444;margin-top:2px;'
+                        f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">'
+                        f'{_lg_s} · {_sl["partido"][:32]}</div>'
+                        f'<div style="font-size:0.58rem;color:#888;margin-top:1px">{_sl["info"]}</div>'
                         f'</div>'
-                        # Prob + score
+                        # Prob
                         f'<div style="text-align:right;flex-shrink:0">'
-                        f'<div style="font-size:1rem;font-weight:900;color:#0099BB;'
+                        f'<div style="font-size:1.15rem;font-weight:900;color:#005588;'
                         f'font-family:Barlow Condensed,sans-serif;line-height:1">{_sl["prob"]:.0f}%</div>'
-                        f'<div style="font-size:0.5rem;color:#AAA">score {_sl["score"]:.1f}</div>'
+                        f'<div style="font-size:0.52rem;color:#888">score {_sl["score"]:.1f}</div>'
                         f'</div></div>'
                     )
 
@@ -11001,10 +11021,16 @@ elif _active_page == "En Vivo":
     def live_pick_soccer(g, sim, minute):
         """
         Context-aware soccer live pick.
-        NOTE: sim values p_btts, p_o25, p_o35 are already 0-100 (percentages), NOT 0-1 floats.
-        home_pct / away_pct / draw_pct are also 0-100.
-        O/U target rule: always total_goals + 1.5 (rounded up to nearest 0.5 line).
-          0 goles → Over 0.5 | 1 gol → Over 1.5 (skip, use BTTS) | 2 goles → Over 2.5 | 3 → Over 3.5
+        Líneas O/U en vivo — siempre en .5, saltan de 1 en 1:
+          0 goles, min <50  → 2.5
+          0 goles, min >=50 → 1.5
+          1 gol,   min <75  → 3.5
+          1 gol,   min >=75 → 2.5
+          2 goles, min <70  → 4.5
+          2 goles, min >=70 → 3.5
+          3 goles, min <65  → 5.5
+          3 goles, min >=65 → 4.5
+          4+ goles          → cierre (solo ML)
         """
         try:
             hs  = int(g.get("home_score") or 0)
@@ -11018,140 +11044,157 @@ elif _active_page == "En Vivo":
         home_pct = sim.get("home_pct", 50)
         away_pct = sim.get("away_pct", 50)
         draw_pct = sim.get("draw_pct", 0)
-        p_btts   = sim.get("p_btts") or 0   # already 0-100
-        p_o25    = sim.get("p_o25")  or 0   # already 0-100
-        p_o35    = sim.get("p_o35")  or 0   # already 0-100
+        p_btts   = sim.get("p_btts") or 0
+        p_o25    = sim.get("p_o25")  or 0
+        p_o35    = sim.get("p_o35")  or 0
 
-        # Dominant team: 10+ pp advantage in win probability
+        mins_left = max(90 - minute, 1)
+
+        # ── Línea dinámica en vivo ─────────────────────────────────────────────
+        # Regla: siempre .5, saltan de 1 en 1, se bajan 1 según minuto
+        if total == 0:
+            live_line = 1.5 if minute >= 50 else 2.5
+        elif total == 1:
+            live_line = 2.5 if minute >= 75 else 3.5
+        elif total == 2:
+            live_line = 3.5 if minute >= 70 else 4.5
+        elif total == 3:
+            live_line = 4.5 if minute >= 65 else 5.5
+        else:
+            live_line = None  # 4+ goles → cierre, solo ML
+
+        # Probabilidad para la línea activa
+        if live_line == 2.5:
+            ou_prob = p_o25
+        elif live_line == 3.5:
+            ou_prob = p_o35
+        elif live_line == 1.5:
+            ou_prob = min(95, p_o25 + 25)  # Over 1.5 siempre más prob que Over 2.5
+        elif live_line == 4.5:
+            ou_prob = max(p_o35 * 0.65, 15)
+        elif live_line == 5.5:
+            ou_prob = max(p_o35 * 0.40, 10)
+        else:
+            ou_prob = 0
+
+        ou_label = f"Over {live_line} goles" if live_line else None
+
+        # Dominant team
         home_dom = home_pct > away_pct + 10
         away_dom = away_pct > home_pct + 10
         dom_team = g["home_team"] if home_dom else (g["away_team"] if away_dom else None)
         dom_pct  = max(home_pct, away_pct)
 
-        # ── O/U target: total + 1.5 ──────────────────────────────────────────
-        # Casas de apuesta siempre ofrecen la siguiente línea sobre lo que va
-        ou_line  = total + 1.5  # e.g. 1-1 → Over 2.5 | 2-0 → Over 2.5 | 2-1 → Over 3.5
-        # Probability for that line from sim (only 2.5 and 3.5 tracked)
-        if ou_line <= 2.5:
-            ou_label = "Over 2.5 goles"
-            ou_prob  = p_o25
-        elif ou_line <= 3.5:
-            ou_label = "Over 3.5 goles"
-            ou_prob  = p_o35
-        else:
-            ou_label = f"Over {ou_line} goles"
-            ou_prob  = max(p_o35 * 0.55, 15)  # estimate beyond 3.5
-
-        # Adjust leader probability by score advantage
         def score_adjusted_prob(base_pct, goals_ahead, mins_left):
-            """Boost win probability based on lead size and time remaining."""
             time_factor = max(mins_left, 1) / 90
             boost = goals_ahead * 18 * (1 - time_factor)
             return min(base_pct + boost, 95)
 
-        mins_left = max(90 - minute, 1)
-
-        # ── Situation patterns ────────────────────────────────────────────────
-
-        # 1. 0-0 después del min 60 + un equipo dominando
-        if total == 0 and minute >= 60 and dom_team:
-            p_goal = min(97, 40 + minute * 0.5)  # more time elapsed → more likely a goal comes
+        # ── 4+ goles → solo ML ────────────────────────────────────────────────
+        if total >= 4 or live_line is None:
+            leader   = g["home_team"] if hs > as_ else (g["away_team"] if as_ > hs else None)
+            base_pct = home_pct if hs >= as_ else away_pct
+            adj_pct  = score_adjusted_prob(base_pct, abs(hs - as_), mins_left)
+            _lbl = f"{leader} gana" if leader else "Partido muy abierto"
             return {
-                "picks": [
-                    {"label": f"{dom_team} gana", "prob": dom_pct, "market": "ML",
-                     "rationale": f"0-0 min {minute} con {dom_team} dominando ({dom_pct:.0f}%). El tiempo apremia — equipos dominantes suelen anotar tardío."},
-                    {"label": "Over 0.5 goles", "prob": round(p_goal, 1), "market": "O/U",
-                     "rationale": f"Solo {mins_left} min restantes, aún 0-0. Estadísticamente >90% de partidos tienen al menos 1 gol."},
-                ],
-                "headline": f"0-0 min {minute} — {dom_team} presiona"
+                "picks": [{"label": _lbl, "prob": round(adj_pct, 1), "market": "ML",
+                    "rationale": f"{hs}-{as_} al min {minute}. Con {total} goles las casas cierran O/U — ML es el único mercado activo."}],
+                "headline": f"{hs}-{as_} min {minute} — partido abierto"
             }
 
-        # 2. 0-0 antes del min 60
-        if total == 0 and minute < 60:
-            if p_btts >= 55:
-                return {
-                    "picks": [{"label": "Ambos Anotan — SÍ", "prob": p_btts, "market": "BTTS",
-                                "rationale": f"0-0 al min {minute}, ambos equipos ofensivos ({p_btts:.0f}%). BTTS SÍ es la apuesta natural con tiempo por jugar."}],
-                    "headline": f"0-0 min {minute} — partido abierto"
-                }
-            p_goal = min(95, 20 + minute * 0.6)
-            return {
-                "picks": [{"label": "Over 0.5 goles", "prob": round(p_goal, 1), "market": "O/U",
-                            "rationale": f"0-0 al min {minute}. Menos del 5% de partidos en estas ligas terminan sin goles."}],
-                "headline": f"0-0 min {minute}"
-            }
+        # ── 0-0 ───────────────────────────────────────────────────────────────
+        if total == 0:
+            if minute >= 50:
+                # Línea ya bajó a 1.5 — Over 1.5 es la apuesta viva
+                p_goal = min(92, 55 + (minute - 50) * 0.5)
+                picks = [{"label": "Over 1.5 goles", "prob": round(p_goal, 1), "market": "O/U",
+                    "rationale": f"0-0 min {minute} — línea en vivo ya bajó a 1.5. {mins_left} min restantes, estadísticamente >90% de partidos tienen ≥1 gol.",
+                    "notes": "línea en vivo 1.5"}]
+                if dom_team:
+                    picks.append({"label": f"{dom_team} gana", "prob": dom_pct, "market": "ML",
+                        "rationale": f"{dom_team} dominando ({dom_pct:.0f}%). Con 0-0 tardío el tiempo apremia para el que va perdiendo."})
+            else:
+                # Línea 2.5 — usar BTTS si es partido abierto
+                if p_btts >= 55:
+                    picks = [{"label": "Ambos Anotan — SÍ", "prob": p_btts, "market": "BTTS",
+                        "rationale": f"0-0 al min {minute}, partido ofensivo ({p_btts:.0f}%). BTTS SÍ con línea en 2.5.",
+                        "notes": "línea en vivo 2.5"}]
+                else:
+                    p_goal = min(90, 20 + minute * 0.6)
+                    picks = [{"label": "Over 2.5 goles", "prob": round(p_goal, 1), "market": "O/U",
+                        "rationale": f"0-0 al min {minute}. Línea en vivo: 2.5. {mins_left} min para meter 3 goles.",
+                        "notes": "línea en vivo 2.5"}]
+            return {"picks": picks, "headline": f"0-0 min {minute}"}
 
-        # 3. Empate 1-1 o 2-2 — BTTS ya cumplido → Over total+1.5
+        # ── Empate ≥ 1-1 ──────────────────────────────────────────────────────
         if hs == as_ and total >= 2:
             picks = [{"label": ou_label, "prob": ou_prob, "market": "O/U",
-                      "rationale": f"{hs}-{as_} al min {minute}. BTTS ya cumplido. Casas ofrecen {ou_label} como siguiente línea natural — {ou_prob:.0f}% según simulación."}]
+                "rationale": f"{hs}-{as_} al min {minute}. Línea en vivo: {live_line}. BTTS ya cumplido — siguiente apuesta es {ou_label} ({ou_prob:.0f}%).",
+                "notes": f"línea en vivo {live_line}"}]
             if dom_team:
                 dc_prob = min(dom_pct + draw_pct * 0.4, 92)
-                picks.append({"label": f"{dom_team} gana o empata (DO)", "prob": round(dc_prob, 1), "market": "DO",
-                               "rationale": f"{dom_team} con mayor dominio. Doble Oportunidad cubre empate o victoria — {dc_prob:.0f}%."})
+                picks.append({"label": f"{dom_team} gana o empata", "prob": round(dc_prob, 1), "market": "DO",
+                    "rationale": f"Doble Oportunidad {dom_team} — cubre empate o victoria ({dc_prob:.0f}%)."})
             return {"picks": picks, "headline": f"Empate {hs}-{as_} min {minute}"}
 
-        # 4. Empate 1-1 temprano (antes min 50) → BTTS ya cumplido + Over próxima línea
-        if hs == as_ and total == 2 and minute < 50:
-            return {
-                "picks": [
-                    {"label": ou_label, "prob": ou_prob, "market": "O/U",
-                     "rationale": f"1-1 al min {minute} — partido muy abierto. {ou_label} ({ou_prob:.0f}%) es la apuesta de casas con tiempo de sobra."},
-                    {"label": "Ambos Anotan — SÍ", "prob": p_btts, "market": "BTTS",
-                     "rationale": f"BTTS ya confirmado. Si quieres apostar algo que ya cumplió, busca otra línea en tu casa."},
-                ],
-                "headline": f"1-1 min {minute} — partido abierto"
-            }
-
-        # 5. Ganando por 1 gol, minuto >= 70 → ML líder ajustado + Under próxima línea
-        if abs(hs - as_) == 1 and minute >= 70:
-            leader      = g["home_team"] if hs > as_ else g["away_team"]
-            base_pct    = home_pct if hs > as_ else away_pct
-            adj_pct     = score_adjusted_prob(base_pct, 1, mins_left)
-            under_prob  = round(100 - ou_prob, 1)
-            return {
-                "picks": [
-                    {"label": f"{leader} gana", "prob": round(adj_pct, 1), "market": "ML",
-                     "rationale": f"{leader} arriba 1-0 al min {minute} ({mins_left} min restantes). Probabilidad ajustada por marcador: {adj_pct:.0f}%."},
-                    {"label": f"Under {ou_line} goles", "prob": under_prob, "market": "O/U",
-                     "rationale": f"Solo {total} gol(es), min {minute}. Partido controlado — Under {ou_line} al {under_prob:.0f}%."},
-                ],
-                "headline": f"{hs}-{as_} min {minute} — ventaja mínima"
-            }
-
-        # 6. Ganando por 1 gol, antes del min 70 → ML + Over próxima línea
-        if abs(hs - as_) == 1 and minute < 70:
+        # ── Ventaja de 1 gol ──────────────────────────────────────────────────
+        if abs(hs - as_) == 1:
             leader   = g["home_team"] if hs > as_ else g["away_team"]
             trailer  = g["away_team"] if hs > as_ else g["home_team"]
             base_pct = home_pct if hs > as_ else away_pct
             adj_pct  = score_adjusted_prob(base_pct, 1, mins_left)
-            return {
-                "picks": [
-                    {"label": f"{leader} gana", "prob": round(adj_pct, 1), "market": "ML",
-                     "rationale": f"{leader} arriba min {minute}. Prob ajustada {adj_pct:.0f}% — {trailer} buscará empatar, lo que abre la línea de goles."},
-                    {"label": ou_label, "prob": ou_prob, "market": "O/U",
-                     "rationale": f"Con {trailer} necesitando empatar, {ou_label} ({ou_prob:.0f}%) es apuesta viva — {mins_left} min restantes."},
-                ],
-                "headline": f"{hs}-{as_} min {minute}"
-            }
 
-        # 7. Ventaja de 2+ goles → ML ajustado por marcador
+            if minute >= 75:
+                # Línea bajó a 2.5 — el líder va a cerrar
+                under_prob = round(100 - ou_prob, 1)
+                return {
+                    "picks": [
+                        {"label": f"{leader} gana", "prob": round(adj_pct, 1), "market": "ML",
+                            "rationale": f"{leader} arriba min {minute} ({mins_left} min). Prob ajustada: {adj_pct:.0f}%.",
+                            "notes": f"+1 en min {minute}"},
+                        {"label": f"Under {live_line} goles", "prob": under_prob, "market": "O/U",
+                            "rationale": f"Línea bajó a {live_line} en vivo. Under {live_line}: {under_prob:.0f}% — partido controlado.",
+                            "notes": f"línea en vivo {live_line}"},
+                    ],
+                    "headline": f"{hs}-{as_} min {minute} — ventaja mínima"
+                }
+            else:
+                # Línea 3.5 — trailer buscará empatar = partido abierto
+                return {
+                    "picks": [
+                        {"label": f"{leader} gana", "prob": round(adj_pct, 1), "market": "ML",
+                            "rationale": f"{leader} arriba min {minute}. {trailer} buscará empatar — partido abierto.",
+                            "notes": f"+1 en min {minute}"},
+                        {"label": ou_label, "prob": ou_prob, "market": "O/U",
+                            "rationale": f"Línea en vivo: {live_line}. {trailer} necesita al menos 1 gol → partido abierto ({ou_prob:.0f}%).",
+                            "notes": f"línea en vivo {live_line}"},
+                    ],
+                    "headline": f"{hs}-{as_} min {minute}"
+                }
+
+        # ── Ventaja de 2+ goles ───────────────────────────────────────────────
         if abs(hs - as_) >= 2:
             leader   = g["home_team"] if hs > as_ else g["away_team"]
             base_pct = home_pct if hs > as_ else away_pct
             adj_pct  = score_adjusted_prob(base_pct, abs(hs - as_), mins_left)
             return {
-                "picks": [{"label": f"{leader} gana", "prob": round(adj_pct, 1), "market": "ML",
-                            "rationale": f"{leader} gana {hs}-{as_} al min {minute}. Ventaja de {abs(hs-as_)} goles — prob ajustada {adj_pct:.0f}%."}],
+                "picks": [
+                    {"label": f"{leader} gana", "prob": round(adj_pct, 1), "market": "ML",
+                        "rationale": f"{leader} gana {hs}-{as_} al min {minute}. Ventaja {abs(hs-as_)} goles — {adj_pct:.0f}%."},
+                    {"label": ou_label, "prob": ou_prob, "market": "O/U",
+                        "rationale": f"Línea en vivo: {live_line}. Partido muy abierto offensivamente ({ou_prob:.0f}%).",
+                        "notes": f"línea en vivo {live_line}"},
+                ],
                 "headline": f"{hs}-{as_} min {minute} — {leader} domina"
             }
 
-        # 8. Default
+        # ── Default ───────────────────────────────────────────────────────────
         bs = sim.get("best_single")
         if bs:
             return {
-                "picks": [{"label": bs["label"], "prob": round(bs["prob"] * 100, 1), "market": bs["market"],
-                            "rationale": "Pick de mayor probabilidad según simulación Monte Carlo (5,000 iteraciones)."}],
+                "picks": [{"label": bs["label"], "prob": round(bs["prob"] * 100, 1) if bs["prob"] <= 1 else bs["prob"],
+                    "market": bs["market"],
+                    "rationale": f"Pick Monte Carlo. Línea en vivo estimada: {live_line}."}],
                 "headline": f"{hs}-{as_} min {minute}"
             }
         return None
@@ -11193,6 +11236,37 @@ elif _active_page == "En Vivo":
 
         picks = []
 
+        # ── Línea dinámica NHL en vivo ─────────────────────────────────────────
+        # Base: 5.5. Salta de 1 en 1. Baja según goles y tiempo (periodos).
+        # P1=0-20min, P2=20-40min, P3=40-60min
+        def _nhl_live_line(goals, period):
+            if goals == 0:
+                return 4.5 if period >= 3 else 5.5
+            elif goals == 1:
+                return 4.5 if period >= 3 else 5.5  # 1 gol aún no sube la línea base
+            elif goals == 2:
+                return 5.5 if period <= 2 else 4.5
+            elif goals == 3:
+                return 6.5 if period <= 2 else 5.5
+            elif goals == 4:
+                return 7.5 if period == 1 else 6.5
+            else:
+                return None  # 5+ goles → cierre
+
+        # ── Línea dinámica MLB en vivo ─────────────────────────────────────────
+        # Base: 7.5. Salta de 1 en 1. Baja en inning 5+.
+        def _mlb_live_line(runs, inning):
+            if runs <= 1:
+                return 6.5 if inning >= 5 else 7.5
+            elif runs <= 3:
+                return 7.5 if inning >= 5 else 8.5
+            elif runs <= 5:
+                return 8.5 if inning >= 5 else 9.5
+            elif runs <= 7:
+                return 9.5 if inning >= 7 else 10.5
+            else:
+                return None  # cierre
+
         # ══════════════════════════════════════════════════════════════
         # ⚾ MLB — run rate, inning, O/U contextual, remontadas
         # ══════════════════════════════════════════════════════════════
@@ -11205,24 +11279,30 @@ elif _active_page == "En Vivo":
             innings_left   = max(9 - inning, 0)
             proj_total = round(total_score + run_rate * innings_left * 0.85, 1)
 
-            if ou_line > 0:
-                runs_needed = ou_line - total_score
+            # Línea dinámica MLB
+            _mlb_line = _mlb_live_line(total_score, inning)
+
+            if _mlb_line:
+                runs_needed = _mlb_line - total_score
                 if is_late and runs_needed > innings_left * 1.5:
-                    u_prob = min(88, (p_u_total + 15) if p_u_total > 0 else 75)
-                    picks.append({"label": f"Under {ou_line:.1f} carreras", "prob": round(u_prob,1),
+                    u_prob = min(88, 75)
+                    picks.append({"label": f"Under {_mlb_line:.1f} carreras", "prob": round(u_prob,1),
                         "market": "O/U",
-                        "rationale": f"Inning {inning}, {as_}-{hs} ({total_score} carreras). Necesitan {runs_needed:.1f} en {innings_left} inn. Proyección: {proj_total:.1f} — Under favorito."})
-                elif proj_total > ou_line and run_rate > 1.2:
-                    o_prob = min(82, (p_o_total + 10) if p_o_total > 0 else 62)
-                    picks.append({"label": f"Over {ou_line:.1f} carreras", "prob": round(o_prob,1),
+                        "rationale": f"Inn {inning}, {as_}-{hs} ({total_score} carr.). Línea en vivo: {_mlb_line:.1f}. Necesitan {runs_needed:.1f} en {innings_left} inn — Under favorito.",
+                        "notes": f"línea en vivo {_mlb_line:.1f}"})
+                elif proj_total > _mlb_line and run_rate > 1.2:
+                    o_prob = min(82, 62)
+                    picks.append({"label": f"Over {_mlb_line:.1f} carreras", "prob": round(o_prob,1),
                         "market": "O/U",
-                        "rationale": f"Pace {run_rate:.1f}/inn → proyección {proj_total:.1f} carreras, supera línea {ou_line:.1f}."})
+                        "rationale": f"Pace {run_rate:.1f}/inn → proy. {proj_total:.1f} vs línea en vivo {_mlb_line:.1f}.",
+                        "notes": f"línea en vivo {_mlb_line:.1f}"})
                 else:
-                    best = ("Over", p_o_total) if p_o_total >= p_u_total else ("Under", p_u_total)
-                    if best[1] > 0:
-                        picks.append({"label": f"{best[0]} {ou_line:.1f} carreras", "prob": best[1],
-                            "market": "O/U",
-                            "rationale": f"Inning {inning}, pace {run_rate:.1f}/inn. {best[0]} {ou_line:.1f}: {best[1]:.0f}%."})
+                    _side = "Over" if proj_total >= _mlb_line else "Under"
+                    _prob = min(75, 55)
+                    picks.append({"label": f"{_side} {_mlb_line:.1f} carreras", "prob": _prob,
+                        "market": "O/U",
+                        "rationale": f"Inn {inning}, pace {run_rate:.1f}/inn. Línea en vivo: {_mlb_line:.1f}.",
+                        "notes": f"línea en vivo {_mlb_line:.1f}"})
 
             if diff > 0 and is_late:
                 w_adj = min(95, fav_prob + diff * 4)
@@ -11326,21 +11406,20 @@ elif _active_page == "En Vivo":
             mins_played           = periods_played * 20 + mins_played_in_period
             mins_left_reg         = max(60 - mins_played, 0)
 
-            # ── Tasa de goles: blend entre observada y promedio NHL ───────────
-            # NHL: ~6.0 goles/60min promedio de liga (2024-25)
-            NHL_AVG_RATE = 6.0 / 60  # goles/min
-            obs_rate     = total_score / max(mins_played, 1)
-            # Peso de la tasa observada crece conforme avanza el partido
-            # Con 10 min jugados → 20% obs; con 30 min → 50%; con 50 min → 80%
-            obs_weight   = min(0.85, mins_played / 60)
-            blended_rate = obs_weight * obs_rate + (1 - obs_weight) * NHL_AVG_RATE
+            # ── Tasa de goles blend: observada + promedio NHL ─────────────────
+            NHL_AVG_RATE   = 6.0 / 60  # ~6 goles/60min promedio NHL
+            obs_rate       = total_score / max(mins_played, 1)
+            obs_weight     = min(0.85, mins_played / 60)  # más peso a obs conforme avanza
+            blended_rate   = obs_weight * obs_rate + (1 - obs_weight) * NHL_AVG_RATE
             proj_remaining = blended_rate * mins_left_reg
             proj_total     = total_score + proj_remaining
+
+            # ── Línea dinámica NHL en vivo ────────────────────────────────────
+            _nhl_line = _nhl_live_line(total_score, period if not is_ot else 4)
 
             import math as _mh
 
             def _poisson_p_over(lam, k_min):
-                """P(X >= k_min) donde X ~ Poisson(lam)."""
                 if k_min <= 0: return 1.0
                 if lam <= 0:   return 0.02
                 p_under = sum(
@@ -11349,65 +11428,40 @@ elif _active_page == "En Vivo":
                 )
                 return max(0.02, min(0.98, 1 - p_under))
 
-            # ── Evaluar líneas: ESPN (6.5) y alternativa (5.5) ───────────────
-            if ou_line > 0:
-                _lam_rem = blended_rate * mins_left_reg
+            if _nhl_line:
+                _lam_rem       = blended_rate * mins_left_reg
+                goals_to_line  = max(0.0, _nhl_line - total_score)
+                _p_over_live   = _poisson_p_over(_lam_rem, goals_to_line)
+                _p_under_live  = 1.0 - _p_over_live
 
-                # Línea ESPN (6.5)
-                goals_to_espn  = max(0.0, ou_line - total_score)
-                _p_over_espn   = _poisson_p_over(_lam_rem, goals_to_espn)
-                _p_under_espn  = 1.0 - _p_over_espn
-
-                # Línea alternativa (5.5) solo si ESPN >= 6.0
-                alt_line = ou_line - 1.0 if ou_line >= 6.0 else None
-                if alt_line is not None:
-                    goals_to_alt   = max(0.0, alt_line - total_score)
-                    _p_over_alt    = _poisson_p_over(_lam_rem, goals_to_alt)
-                    _p_under_alt   = 1.0 - _p_over_alt
-                else:
-                    goals_to_alt = goals_to_espn
-                    _p_over_alt  = _p_over_espn
-                    _p_under_alt = _p_under_espn
-
-                # ── Elegir el pick O/U más informativo ───────────────────────
-                # Prioridad:
-                # 1. Over ya cubierto (ESPN) → celebrar
-                # 2. Over línea alternativa (5.5) si prob > 50% y ritmo lo justifica
-                # 3. Under ESPN si prob > 60% y partido ya avanzado
-                # 4. Suprimir si Under es trivialmente obvio (>90% en P3)
-
-                if goals_to_espn <= 0:
-                    picks.append({"label": f"Over {ou_line:.1f} ✓", "prob": 97,
+                if goals_to_line <= 0:
+                    picks.append({"label": f"Over {_nhl_line:.1f} ✓", "prob": 97,
                         "market": "O/U",
-                        "rationale": f"Over {ou_line:.1f} ya cubierto ({total_score} goles marcados).",
-                        "notes": f"{total_score} goles"})
-
-                elif alt_line is not None and _p_over_alt >= 0.50 and goals_to_alt > 0:
-                    # La línea 5.5 sigue siendo apostable — Over 5.5
-                    picks.append({"label": f"Over {alt_line:.1f}",
-                        "prob": round(_p_over_alt * 100, 1),
-                        "market": "O/U",
-                        "rationale": (
-                            f"P{period} ({mins_left_reg:.0f} min reg.), {total_score} goles marcados. "
-                            f"Ritmo blend: {blended_rate*60:.1f}/60min → proy. {proj_total:.1f}. "
-                            f"Faltan {goals_to_alt:.1f} para Over {alt_line:.1f}."
-                        ),
-                        "notes": f"proy. {proj_total:.1f} goles"})
-
-                elif _p_under_espn >= 0.60 and not (period >= 3 and _p_under_espn > 0.90):
-                    # Under ESPN con confianza razonable (no trivialmente obvio en P3)
-                    picks.append({"label": f"Under {ou_line:.1f}",
-                        "prob": round(_p_under_espn * 100, 1),
+                        "rationale": f"Over {_nhl_line:.1f} ya cubierto ({total_score} goles).",
+                        "notes": f"línea en vivo {_nhl_line:.1f}"})
+                elif _p_over_live >= 0.50:
+                    picks.append({"label": f"Over {_nhl_line:.1f}",
+                        "prob": round(_p_over_live * 100, 1),
                         "market": "O/U",
                         "rationale": (
                             f"P{period} ({mins_left_reg:.0f} min reg.), {total_score} goles. "
-                            f"Faltan {goals_to_espn:.1f} para Over. "
+                            f"Línea en vivo: {_nhl_line:.1f}. "
                             f"Ritmo blend: {blended_rate*60:.1f}/60min → proy. {proj_total:.1f}."
                         ),
-                        "notes": f"faltan {goals_to_espn:.1f} para Over"})
-                # Si Under>90% en P3 → silencio en O/U, solo ML abajo
+                        "notes": f"línea en vivo {_nhl_line:.1f}"})
+                elif _p_under_live >= 0.60 and not (period >= 3 and _p_under_live > 0.90):
+                    picks.append({"label": f"Under {_nhl_line:.1f}",
+                        "prob": round(_p_under_live * 100, 1),
+                        "market": "O/U",
+                        "rationale": (
+                            f"P{period} ({mins_left_reg:.0f} min reg.), {total_score} goles. "
+                            f"Línea en vivo: {_nhl_line:.1f}. Faltan {goals_to_line:.1f} para Over. "
+                            f"Proy. {proj_total:.1f} goles."
+                        ),
+                        "notes": f"línea en vivo {_nhl_line:.1f}"})
+                # Under >90% en P3 → solo ML
 
-            # ── ML ajustado por score y periodo ──────────────────────────────
+            # ── ML ajustado ───────────────────────────────────────────────────
             if period >= 3 and diff != 0:
                 _adj = min(97, fav_prob + abs(diff) * (mins_played / 60) * 8)
                 picks.append({"label": f"{fav_team} gana", "prob": round(_adj, 1),
